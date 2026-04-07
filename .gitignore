@@ -45,6 +45,16 @@ Thumbs.db
 .idea/
 *.swp
 
+# Claude Code per-developer settings (not project code)
+.claude/
+.openclaude/
+.openzca/
+
+# Zalo QR codes — may contain valid session
+qr.png
+*-qr.png
+zalo-qr*.png
+
 # Old build artifacts at repo root
 modoroclaw-mac.zip
 modoroclaw-mac-portable*.zip

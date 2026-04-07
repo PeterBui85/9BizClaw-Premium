@@ -8,6 +8,7 @@ echo     MODOROClaw - Push source to GitHub for Mac build
 echo   ====================================================
 echo.
 
+:: Doi URL nay neu repo o account khac (huybt-peter, modoro-digital, v.v.)
 set REPO_URL=https://github.com/modoro-digital/MODOROClaw-Mac.git
 set BRANCH=main
 
