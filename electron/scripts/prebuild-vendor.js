@@ -363,6 +363,93 @@ function npmInstallVendorPackages() {
   log('✓ @tuyenhx/openzalo installed at', path.dirname(openzaloPlugin));
 }
 
+// On Windows ONLY, pack vendor/ into a single uncompressed tar + write a
+// meta.json sidecar. Reason: shipping ~50,000 loose files through NSIS is
+// pathologically slow (each file hits MFT + NTFS journal + Defender scan,
+// ~3-5 ms per file → 5-10 minutes install on a slow SSD). Shipping ONE big
+// file hits SSD's sequential write ceiling instead → 20-30 seconds install.
+// NSIS LZMA will compress the .tar during EXE packaging — no gzip needed
+// (double-compression loses efficiency).
+//
+// The EXE ships BOTH the .tar AND vendor-meta.json under resources/.
+// On first app launch, main.js reads meta → extracts tar → userData/vendor/.
+// Subsequent launches skip extraction (meta.bundle_version matches userData
+// vendor-version.txt).
+//
+// Mac DMG is untouched — drag-drop APFS copy is already fast enough.
+function packVendorForWindows() {
+  if (process.platform !== 'win32' && detectTargetPlatform() !== 'win32') return;
+
+  log('packing vendor/ → vendor-bundle.tar for Windows (one-big-file install)...');
+
+  const tarPath = path.join(ROOT, 'vendor-bundle.tar');
+  const metaPath = path.join(ROOT, 'vendor-meta.json');
+
+  // Count files + total bytes (for first-launch progress bar math)
+  let fileCount = 0;
+  let totalBytes = 0;
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        fileCount++;
+        try { totalBytes += fs.statSync(full).size; } catch {}
+      }
+    }
+  }
+  walk(VENDOR);
+  log(`  ${fileCount} files, ${(totalBytes / 1024 / 1024).toFixed(1)} MB raw`);
+
+  // Remove stale archive from previous builds
+  if (fs.existsSync(tarPath)) fs.unlinkSync(tarPath);
+  if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
+
+  // Use Windows native tar.exe (BSD tar) — same binary prebuild uses for extract.
+  // Create uncompressed tar (no -z) — NSIS LZMA will compress better at build time.
+  // -C ROOT, archive just "vendor" subdir so extract restores as vendor/ cleanly.
+  const tarBin = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  const tarArgs = ['-cf', tarPath, '-C', ROOT, 'vendor'];
+  log(`  running: ${tarBin} ${tarArgs.join(' ')}`);
+  const tarRes = spawnSync(tarBin, tarArgs, { stdio: 'inherit', shell: false });
+  if (tarRes.status !== 0) fatal(`tar pack failed (exit ${tarRes.status})`);
+  if (!fs.existsSync(tarPath)) fatal(`tar created exit 0 but file missing: ${tarPath}`);
+
+  const tarSize = fs.statSync(tarPath).size;
+  log(`  ✓ vendor-bundle.tar = ${(tarSize / 1024 / 1024).toFixed(1)} MB`);
+
+  // SHA256 the tar so first-launch extract can verify integrity before touching disk
+  const tarSha256 = sha256File(tarPath);
+  log(`  sha256: ${tarSha256}`);
+
+  // Bundle version: commit hash would be ideal but not always available during
+  // local dev builds. Use timestamp + pinned package versions as fingerprint.
+  const bundleVersion = `${NODE_VERSION}_openclaw-2026.4.5_${Date.now()}`;
+
+  const meta = {
+    version: 1,
+    filename: 'vendor-bundle.tar',
+    file_count: fileCount,
+    unpacked_bytes: totalBytes,
+    archive_bytes: tarSize,
+    bundle_version: bundleVersion,
+    sha256: tarSha256,
+    created_at: new Date().toISOString(),
+    node_version: NODE_VERSION,
+    target_platform: 'win32',
+  };
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
+  log(`  ✓ vendor-meta.json written`);
+
+  // DELETE vendor/ directory after packing — we ship the tar, not the directory.
+  // electron-builder must not copy vendor/ (would double-bundle). This is safe
+  // because next build iteration will re-extract Node + re-npm-install fresh.
+  log('  removing vendor/ directory (will be re-created on next build)...');
+  rmrf(VENDOR);
+  log('  ✓ vendor/ removed (ship vendor-bundle.tar instead)');
+}
+
 async function main() {
   const platform = detectTargetPlatform();
   if (platform !== 'darwin' && platform !== 'win32') {
@@ -373,12 +460,44 @@ async function main() {
   const arch = detectTargetArch();
   log('target:', platform, arch, '   node', NODE_VERSION);
 
+  // Skip everything if vendor-bundle.tar + meta already exist and match pinned
+  // versions. Saves ~4 minutes on rebuild when nothing has changed.
+  if (platform === 'win32') {
+    const tarPath = path.join(ROOT, 'vendor-bundle.tar');
+    const metaPath = path.join(ROOT, 'vendor-meta.json');
+    if (fs.existsSync(tarPath) && fs.existsSync(metaPath)) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+        if (meta.node_version === NODE_VERSION && meta.bundle_version && meta.sha256) {
+          // Verify tar integrity hasn't been tampered with since meta was written
+          const actualSha = sha256File(tarPath);
+          if (actualSha === meta.sha256) {
+            log('vendor-bundle.tar already built for', NODE_VERSION, '— skipping rebuild');
+            log('  file:', tarPath);
+            log('  file_count:', meta.file_count);
+            log('  archive_bytes:', (meta.archive_bytes / 1024 / 1024).toFixed(1), 'MB');
+            return;
+          } else {
+            warn('vendor-bundle.tar SHA mismatch vs meta — rebuilding');
+          }
+        }
+      } catch (e) {
+        warn('vendor-meta.json unreadable — rebuilding:', e.message);
+      }
+    }
+  }
+
   mkdirp(VENDOR);
 
   await downloadAndExtractNode(platform, arch);
   npmInstallVendorPackages();
 
-  log('vendor ready at', VENDOR);
+  if (platform === 'win32') {
+    packVendorForWindows();
+    log('vendor archive ready at', path.join(ROOT, 'vendor-bundle.tar'));
+  } else {
+    log('vendor ready at', VENDOR);
+  }
 }
 
 main().catch((e) => {

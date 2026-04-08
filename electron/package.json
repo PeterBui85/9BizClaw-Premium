@@ -46,18 +46,6 @@
     ],
     "extraResources": [
       {
-        "from": "vendor",
-        "to": "vendor",
-        "filter": [
-          "**/*",
-          "!**/{test,tests,__tests__,*.test.js,*.spec.js,*.test.mjs}",
-          "!**/{example,examples,demo,demos}",
-          "!**/.github/**",
-          "!**/{.DS_Store,Thumbs.db,.git,.svn,.hg,.editorconfig,.eslintrc*,.prettierrc*,.npmignore}",
-          "!**/{appveyor.yml,.travis.yml,circle.yml}"
-        ]
-      },
-      {
         "from": "../AGENTS.md",
         "to": "workspace-templates/AGENTS.md"
       },
@@ -166,7 +154,17 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "extraResources": [
+        {
+          "from": "vendor-bundle.tar",
+          "to": "vendor-bundle.tar"
+        },
+        {
+          "from": "vendor-meta.json",
+          "to": "vendor-meta.json"
+        }
+      ]
     },
     "mac": {
       "target": [
@@ -184,6 +182,20 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "type": "distribution",
+      "extraResources": [
+        {
+          "from": "vendor",
+          "to": "vendor",
+          "filter": [
+            "**/*",
+            "!**/{test,tests,__tests__,*.test.js,*.spec.js,*.test.mjs}",
+            "!**/{example,examples,demo,demos}",
+            "!**/.github/**",
+            "!**/{.DS_Store,Thumbs.db,.git,.svn,.hg,.editorconfig,.eslintrc*,.prettierrc*,.npmignore}",
+            "!**/{appveyor.yml,.travis.yml,circle.yml}"
+          ]
+        }
+      ],
       "extendInfo": {
         "NSHighResolutionCapable": true,
         "LSMinimumSystemVersion": "11.0.0",

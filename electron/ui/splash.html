@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MODOROClaw — Đang chuẩn bị</title>
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --surface: #131317;
+    --border: rgba(255, 255, 255, 0.08);
+    --text-primary: #f5f5f7;
+    --text-secondary: rgba(245, 245, 247, 0.7);
+    --text-tertiary: rgba(245, 245, 247, 0.45);
+    --accent: #e86a5a;
+    --accent-glow: rgba(232, 106, 90, 0.4);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 56px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #e86a5a 0%, #d14432 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 28px;
+    box-shadow: 0 12px 32px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  .logo-text {
+    font-size: 30px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.4px;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+  }
+  .sub {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 40px;
+    line-height: 1.5;
+  }
+  .progress-wrap {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+  .progress-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #e86a5a, #d14432);
+    border-radius: 4px;
+    width: 0%;
+    transition: width 180ms ease-out;
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+  .status-line {
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-height: 18px;
+    font-variant-numeric: tabular-nums;
+  }
+  .footer {
+    margin-top: 36px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.12);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo"><span class="logo-text">M</span></div>
+    <h1>Đang chuẩn bị MODOROClaw</h1>
+    <p class="sub">Quá trình này chỉ diễn ra một lần duy nhất.<br/>Vui lòng chờ trong giây lát.</p>
+    <div class="progress-wrap">
+      <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+      <div class="progress-meta">
+        <span id="percent">0%</span>
+        <span id="files"></span>
+      </div>
+    </div>
+    <div class="status-line"><span class="spinner"></span><span id="status">Khởi tạo...</span></div>
+    <div class="footer">MODORO Tech Corp</div>
+  </div>
+<script>
+  // Listen for progress updates from main process via IPC
+  const { ipcRenderer } = require('electron');
+  const fill = document.getElementById('fill');
+  const percent = document.getElementById('percent');
+  const status = document.getElementById('status');
+  const files = document.getElementById('files');
+  ipcRenderer.on('splash-progress', (_e, data) => {
+    if (!data) return;
+    if (typeof data.percent === 'number') {
+      fill.style.width = Math.max(0, Math.min(100, data.percent)) + '%';
+      percent.textContent = Math.floor(data.percent) + '%';
+    }
+    if (typeof data.message === 'string') {
+      status.textContent = data.message;
+    }
+    if (data.fileCount && data.totalFiles) {
+      files.textContent = data.fileCount.toLocaleString('vi-VN') + ' / ' + data.totalFiles.toLocaleString('vi-VN');
+    }
+  });
+  ipcRenderer.on('splash-error', (_e, message) => {
+    status.textContent = message || 'Lỗi không xác định';
+    fill.style.background = 'linear-gradient(90deg, #e84545, #c62828)';
+  });
+</script>
+</body>
+</html>

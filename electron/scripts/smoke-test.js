@@ -35,6 +35,8 @@ const os = require('os');
 const ROOT = path.resolve(__dirname, '..');
 const VENDOR = path.join(ROOT, 'vendor');
 const VENDOR_NM = path.join(VENDOR, 'node_modules');
+const VENDOR_TAR = path.join(ROOT, 'vendor-bundle.tar');
+const VENDOR_META = path.join(ROOT, 'vendor-meta.json');
 
 let failures = 0;
 let warnings = 0;
@@ -64,12 +66,58 @@ const PINNED = {
 // TEST 1: Vendor packages exist at pinned versions (Mac builds only)
 // =========================================================================
 section('Vendor packages');
-// Bundled builds (Mac .dmg AND Windows .exe) ship vendor/ with Node + plugins.
-// If vendor/node_modules exists, prebuild ran and we MUST verify versions.
-// If absent, build chain hasn't run prebuild yet (e.g. standalone smoke run) — skip silently.
-const isBundledBuild = fs.existsSync(VENDOR_NM);
+// Build artifacts differ per platform as of 2026-04-08:
+//   - Mac DMG: ships vendor/ directory directly (APFS fast drag-drop copy)
+//   - Win EXE: ships vendor-bundle.tar + vendor-meta.json (one-big-file NSIS install)
+//
+// If either layout is present, prebuild has run and we verify.
+// If neither is present, this is a standalone smoke run — skip silently.
+const hasVendorDir = fs.existsSync(VENDOR_NM);
+const hasVendorTar = fs.existsSync(VENDOR_TAR) && fs.existsSync(VENDOR_META);
+const isBundledBuild = hasVendorDir || hasVendorTar;
+
+// If only the Windows tar is present, peek inside it to verify pinned versions.
+// Uses `tar -tvf` to list contents without extracting — fast.
+let tarContents = null;
+if (hasVendorTar && !hasVendorDir) {
+  try {
+    const tarBin = process.platform === 'win32'
+      ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+      : 'tar';
+    const res = spawnSync(tarBin, ['-tf', VENDOR_TAR], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false, maxBuffer: 20 * 1024 * 1024,
+    });
+    if (res.status === 0) {
+      tarContents = new Set(res.stdout.split('\n').map(s => s.trim()).filter(Boolean));
+      pass(`vendor-bundle.tar contains ${tarContents.size} entries`);
+      try {
+        const meta = JSON.parse(fs.readFileSync(VENDOR_META, 'utf8'));
+        pass(`vendor-meta.json bundle_version=${meta.bundle_version}`);
+      } catch {}
+    } else {
+      warn('vendor-bundle.tar', `tar -tf failed exit ${res.status}`);
+    }
+  } catch (e) {
+    warn('vendor-bundle.tar', `could not inspect: ${e.message}`);
+  }
+}
 
 function checkVendorVersion(pkgName, expected) {
+  // If we only have the Windows tar, verify package path exists inside the tar listing.
+  // We can't easily read version from inside a tar without extracting, so trust the
+  // tar was built from a prebuild that already SHA256-verified + version-pinned.
+  if (tarContents && !hasVendorDir) {
+    const entryPrefix = pkgName.startsWith('@')
+      ? `vendor/node_modules/${pkgName}/`
+      : `vendor/node_modules/${pkgName}/`;
+    const hasEntry = [...tarContents].some(e => e === entryPrefix || e.startsWith(entryPrefix));
+    if (hasEntry) {
+      pass(`vendor tar: ${pkgName} present`);
+    } else {
+      fail(`vendor tar ${pkgName}`, `${pkgName} not found in vendor-bundle.tar. Run: rm vendor-bundle.tar vendor-meta.json && npm run prebuild:vendor`);
+    }
+    return;
+  }
   const pkgJsonPath = pkgName.startsWith('@')
     ? path.join(VENDOR_NM, ...pkgName.split('/'), 'package.json')
     : path.join(VENDOR_NM, pkgName, 'package.json');

@@ -127,14 +127,208 @@ function getWorkspaceTemplateRoot() {
 //
 // Returns null in dev mode → callers fall back to system Node + global
 // openclaw, exactly as before.
+//
+// Platform layout (as of 2026-04-08):
+//   Mac DMG (packaged): resources/vendor/                    — ships directly
+//   Win EXE (packaged): userData/vendor/                     — extracted from tar on first launch
+//                       resources/vendor-bundle.tar          — source archive
+//                       resources/vendor-meta.json           — integrity + file count
+//   Dev (both):         electron/vendor/                     — local prebuild output
+//
+// The Windows indirection exists because shipping ~50k loose files through
+// NSIS is pathologically slow. See CLAUDE.md "Vendor tar-and-extract" section.
 function getBundledVendorDir() {
   try {
-    if (app && app.isPackaged) {
-      const v = path.join(process.resourcesPath, 'vendor');
-      if (fs.existsSync(v)) return v;
+    if (!app || !app.isPackaged) return null;
+    if (process.platform === 'win32') {
+      // Windows packaged: extracted vendor lives in userData (written by
+      // ensureVendorExtracted on first launch). Falls back to resources/vendor
+      // if the old direct-ship layout is still present (old installs).
+      const extracted = path.join(app.getPath('userData'), 'vendor');
+      if (fs.existsSync(extracted)) return extracted;
+      const legacy = path.join(process.resourcesPath, 'vendor');
+      if (fs.existsSync(legacy)) return legacy;
+      return null;
     }
+    // Mac / Linux packaged: vendor ships directly in resources/
+    const v = path.join(process.resourcesPath, 'vendor');
+    if (fs.existsSync(v)) return v;
   } catch {}
   return null;
+}
+
+// Windows-only: extract vendor-bundle.tar from resources/ to userData/vendor/
+// if not already extracted (first launch or after update). Emits progress via
+// the optional onProgress callback so a splash window can show a progress bar.
+//
+// Behavior:
+//   - Checks userData/vendor-version.txt vs resources/vendor-meta.json.bundle_version
+//   - If match → resolve immediately (no-op, subsequent launches)
+//   - If mismatch or missing → spawn Windows native tar.exe to extract the .tar
+//     Progress = count lines from tar -v stdout / meta.file_count
+//   - After successful extract, write userData/vendor-version.txt = bundle_version
+//   - Returns { skipped: bool, extracted: bool, durationMs: number }
+//
+// Errors are fatal to the launch — if extraction fails, show an error dialog
+// and quit. There's no safe fallback: bot can't run without vendor.
+async function ensureVendorExtracted({ onProgress } = {}) {
+  // Mac + Linux + dev mode → no-op. Only Windows packaged uses the tar indirection.
+  if (process.platform !== 'win32') return { skipped: true };
+  if (!app.isPackaged) return { skipped: true };
+
+  const resDir = process.resourcesPath;
+  const tarPath = path.join(resDir, 'vendor-bundle.tar');
+  const metaPath = path.join(resDir, 'vendor-meta.json');
+  const userData = app.getPath('userData');
+  const targetDir = path.join(userData, 'vendor');
+  const versionStamp = path.join(userData, 'vendor-version.txt');
+
+  if (!fs.existsSync(tarPath) || !fs.existsSync(metaPath)) {
+    // Old-layout install (vendor shipped directly in resources/). No-op.
+    console.log('[vendor-extract] no tar/meta in resources — assuming legacy direct-ship layout');
+    return { skipped: true };
+  }
+
+  let meta;
+  try {
+    meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  } catch (e) {
+    throw new Error(`vendor-meta.json unreadable: ${e.message}`);
+  }
+
+  // Check if already extracted with matching version
+  try {
+    if (fs.existsSync(versionStamp)) {
+      const current = fs.readFileSync(versionStamp, 'utf8').trim();
+      if (current === meta.bundle_version && fs.existsSync(path.join(targetDir, 'node', 'node.exe'))) {
+        console.log('[vendor-extract] already extracted at', targetDir, '→', meta.bundle_version);
+        return { skipped: true, reason: 'already_extracted' };
+      }
+      console.log('[vendor-extract] version mismatch — re-extracting. have:', current, 'want:', meta.bundle_version);
+    }
+  } catch {}
+
+  console.log('[vendor-extract] extracting vendor bundle...');
+  console.log('  source:', tarPath);
+  console.log('  target:', targetDir);
+  console.log('  file_count:', meta.file_count, ' archive_bytes:', meta.archive_bytes);
+  const startedAt = Date.now();
+
+  if (onProgress) onProgress({ percent: 0, message: 'Đang chuẩn bị giải nén...' });
+
+  // Clean up any partial extract from a previous failed launch
+  try { if (fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true }); } catch {}
+  try { fs.mkdirSync(userData, { recursive: true }); } catch {}
+
+  // Verify SHA256 BEFORE extraction — defends against corrupted install, disk
+  // bit rot, MITM at download (if future version streams from network).
+  if (meta.sha256 && onProgress) {
+    onProgress({ percent: 2, message: 'Đang kiểm tra tính toàn vẹn...' });
+    try {
+      const crypto = require('crypto');
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(tarPath);
+      await new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      const actual = hash.digest('hex');
+      if (actual !== meta.sha256) {
+        throw new Error(`vendor-bundle.tar SHA256 mismatch (expected ${meta.sha256.slice(0, 16)}..., got ${actual.slice(0, 16)}...). File is corrupt or tampered. Re-install MODOROClaw.`);
+      }
+      console.log('[vendor-extract] sha256 verified');
+    } catch (e) {
+      if (e.message && e.message.includes('mismatch')) throw e;
+      console.warn('[vendor-extract] sha256 check skipped:', e.message);
+    }
+  }
+
+  // Spawn Windows native tar.exe — same binary prebuild-vendor uses.
+  // Avoid Git Bash MSYS tar (fails on drive letters with "Cannot connect to C:").
+  const tarBin = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  if (!fs.existsSync(tarBin)) {
+    throw new Error(`Windows native tar.exe not found at ${tarBin}. Need Windows 10 1803+ or later.`);
+  }
+
+  // -x extract, -f file, -v verbose (one line per extracted entry → progress),
+  // -C target dir. The archive contains "vendor/" as top-level; we extract to
+  // userData, so final path is userData/vendor/...
+  const tarArgs = ['-xvf', tarPath, '-C', userData];
+
+  if (onProgress) onProgress({ percent: 5, message: 'Đang giải nén thành phần...' });
+
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const child = spawn(tarBin, tarArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+
+    let extractedCount = 0;
+    let lastPercentReported = 5;
+    let stderrBuf = '';
+
+    // tar -v writes one line per entry to stderr (BSD) or stdout (GNU). Listen on both.
+    const onLine = () => {
+      extractedCount++;
+      if (meta.file_count && onProgress) {
+        // Reserve 5-95% for extraction (5% verify, 95-100% cleanup/verify)
+        const percent = 5 + Math.floor((extractedCount / meta.file_count) * 90);
+        if (percent > lastPercentReported) {
+          lastPercentReported = percent;
+          onProgress({ percent, message: `Đang giải nén... ${extractedCount.toLocaleString('vi-VN')} / ${meta.file_count.toLocaleString('vi-VN')} file` });
+        }
+      }
+    };
+
+    const lineReader = (stream) => {
+      let buf = '';
+      stream.on('data', (chunk) => {
+        buf += chunk.toString('utf8');
+        let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx);
+          buf = buf.slice(idx + 1);
+          if (line.trim()) onLine();
+        }
+      });
+      stream.on('end', () => { if (buf.trim()) onLine(); });
+    };
+
+    lineReader(child.stdout);
+    // BSD tar (Windows native) writes verbose lines to stderr. Count those too.
+    // BUT real errors ALSO go to stderr. Save full stderr for error reporting.
+    let stderrTimer = null;
+    child.stderr.on('data', (chunk) => {
+      const s = chunk.toString('utf8');
+      stderrBuf += s;
+      // Each line in stderr is either a file name (verbose) or an error.
+      // On BSD tar, verbose output is "x path/to/file" (no error prefix).
+      for (const line of s.split('\n')) {
+        if (line.trim()) onLine();
+      }
+    });
+
+    child.on('error', (e) => reject(new Error(`tar spawn failed: ${e.message}`)));
+    child.on('close', (code) => {
+      if (code !== 0) {
+        return reject(new Error(`tar extract failed (exit ${code}): ${stderrBuf.slice(0, 500)}`));
+      }
+      // Verify extract landed where expected
+      const nodeBin = path.join(targetDir, 'node', 'node.exe');
+      if (!fs.existsSync(nodeBin)) {
+        return reject(new Error(`Extract succeeded but vendor/node/node.exe missing at ${nodeBin}. Archive may be damaged.`));
+      }
+      // Write version stamp
+      try {
+        fs.writeFileSync(versionStamp, meta.bundle_version, 'utf8');
+      } catch (e) {
+        console.warn('[vendor-extract] could not write version stamp:', e.message);
+      }
+      const durationMs = Date.now() - startedAt;
+      console.log(`[vendor-extract] done in ${(durationMs / 1000).toFixed(1)}s, ${extractedCount} files`);
+      if (onProgress) onProgress({ percent: 100, message: 'Hoàn tất!' });
+      resolve({ skipped: false, extracted: true, durationMs, fileCount: extractedCount });
+    });
+  });
 }
 function getBundledNodeBin() {
   const v = getBundledVendorDir();
@@ -5745,12 +5939,105 @@ function installEmbedHeaderStripper() {
   }
 }
 
-app.whenReady().then(() => {
+// Windows packaged: show a splash window and extract vendor-bundle.tar → userData/vendor
+// on first launch (or after update). Returns when extraction is done OR immediately
+// on Mac / dev / already-extracted cases.
+let splashWindow = null;
+async function runSplashAndExtractVendor() {
+  if (process.platform !== 'win32' || !app.isPackaged) return;
+
+  // Check upfront if extraction is needed before spawning a splash window
+  try {
+    const resDir = process.resourcesPath;
+    const tarPath = path.join(resDir, 'vendor-bundle.tar');
+    const metaPath = path.join(resDir, 'vendor-meta.json');
+    if (!fs.existsSync(tarPath) || !fs.existsSync(metaPath)) return; // legacy layout
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    const versionStamp = path.join(app.getPath('userData'), 'vendor-version.txt');
+    const vendorNode = path.join(app.getPath('userData'), 'vendor', 'node', 'node.exe');
+    if (fs.existsSync(versionStamp) && fs.existsSync(vendorNode)) {
+      const current = fs.readFileSync(versionStamp, 'utf8').trim();
+      if (current === meta.bundle_version) {
+        console.log('[splash] vendor already extracted — skipping splash');
+        return; // Fast path: already extracted. No splash at all.
+      }
+    }
+  } catch (e) {
+    console.warn('[splash] pre-check failed, continuing to splash + extract:', e.message);
+  }
+
+  // Need to extract → show splash window
+  splashWindow = new BrowserWindow({
+    width: 540,
+    height: 400,
+    frame: false,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    backgroundColor: '#0a0a0c',
+    show: false,
+    skipTaskbar: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+  splashWindow.setMenuBarVisibility(false);
+  await splashWindow.loadFile(path.join(__dirname, 'ui', 'splash.html'));
+  splashWindow.show();
+  splashWindow.focus();
+
+  const sendProgress = (data) => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      try { splashWindow.webContents.send('splash-progress', data); } catch {}
+    }
+  };
+  const sendError = (message) => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      try { splashWindow.webContents.send('splash-error', message); } catch {}
+    }
+  };
+
+  try {
+    await ensureVendorExtracted({ onProgress: sendProgress });
+    // Small grace period so user sees "100% Hoàn tất!"
+    await new Promise(r => setTimeout(r, 500));
+  } catch (e) {
+    console.error('[splash] vendor extract failed:', e);
+    sendError('Lỗi: ' + (e.message || 'không rõ nguyên nhân') + '. Vui lòng cài lại MODOROClaw.');
+    // Keep splash open 5s so user can read the error, then quit
+    await new Promise(r => setTimeout(r, 5000));
+    try { splashWindow.close(); } catch {}
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Lỗi khởi tạo MODOROClaw', 'Không thể giải nén thành phần cần thiết:\n\n' + (e.message || '?') + '\n\nVui lòng gỡ cài đặt và cài lại MODOROClaw.');
+    app.exit(1);
+    return;
+  }
+
+  try { splashWindow.close(); } catch {}
+  splashWindow = null;
+}
+
+app.whenReady().then(async () => {
   // Update userDataDir now that app is ready
   if (app.isPackaged) {
     userDataDir = app.getPath('userData');
     invalidateWorkspaceCache(); // Force getWorkspace() to re-evaluate with new userDataDir
   }
+
+  // Windows packaged FIRST LAUNCH: extract vendor-bundle.tar → userData/vendor
+  // with a progress splash window. No-op on Mac, dev mode, or subsequent launches.
+  // MUST run BEFORE anything that calls getBundledVendorDir() / findOpenClawBin()
+  // because on Windows packaged, those now read from userData/vendor which
+  // doesn't exist yet on first launch.
+  try {
+    await runSplashAndExtractVendor();
+  } catch (e) {
+    console.error('[boot] runSplashAndExtractVendor failed:', e);
+    // Fatal — can't proceed without vendor
+    return;
+  }
+
   // Boot diagnostic: writes <workspace>/logs/boot-diagnostic.txt with everything
   // we need to debug "why didn't cron work?". MUST run after userDataDir update
   // so the file goes to the right workspace.

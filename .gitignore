@@ -4,6 +4,8 @@ dist/
 *.log
 electron/logs/
 electron/vendor/
+electron/vendor-bundle.tar
+electron/vendor-meta.json
 modoro-claw-plugin/dist/
 
 # Runtime state — re-created by seedWorkspace() / wizard on first run

@@ -79,6 +79,38 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 
 ## Current patches (cần auto-restore trên fresh install)
 
+### Vendor tar-and-extract-on-first-launch (Win only) — fix slow install on low-end SSDs
+**Bug:** Ship `vendor/` với **126,644 file nhỏ** qua NSIS = pathological. Mỗi file tốn 3-5 ms (MFT + NTFS journal + Defender real-time scan + inode create). Tổng overhead = **5-10 phút install trên máy khách có SSD trung bình** (Micron 2200V entry-level, older OEM SSDs, laptop văn phòng). CEO không kỹ thuật sẽ thấy installer im lặng 10 phút và tưởng stuck.
+
+**Root cause verified:** User báo "càng về sau càng chậm, chỉ 3 MB/s trên SSD" — classic small-file write bottleneck. SSD random 4K write ceiling (~50-200 MB/s rated) bị kéo xuống 3-5 MB/s vì Windows filesystem stack + Defender scan tranh tài nguyên. Sequential write trên cùng SSD đó = 300-500 MB/s.
+
+**Fix architecture:**
+1. `electron/scripts/prebuild-vendor.js` (Windows only): sau khi npm install, pack vendor/ → **vendor-bundle.tar** (uncompressed) + ghi **vendor-meta.json** với SHA256, file_count, bundle_version. Xóa vendor/ directory. NSIS LZMA sau đó compress tar 1 lần (hiệu quả hơn nén 126k file riêng lẻ).
+2. `electron/package.json`: split `extraResources` per platform. Win ships `vendor-bundle.tar` + `vendor-meta.json` (2 files). Mac vẫn ships `vendor/` directory như cũ (APFS drag-drop nhanh sẵn).
+3. `electron/main.js` `ensureVendorExtracted({ onProgress })`: Windows-only. First launch check `userData/vendor-version.txt` vs meta.bundle_version. Nếu mismatch → SHA256 verify tar → spawn `C:\Windows\System32\tar.exe -xvf` với stdout line-counting để tính progress → write version stamp.
+4. `electron/ui/splash.html`: premium splash window (540×400, frameless, alwaysOnTop) show khi extract. Progress bar + "Đang giải nén... X / 126,644 file". IPC `splash-progress` events.
+5. `electron/main.js` `getBundledVendorDir()` Windows: trả `userData/vendor/` (extracted) thay vì `resources/vendor/` (không còn tồn tại).
+6. `app.whenReady()`: `await runSplashAndExtractVendor()` BEFORE `createWindow()`. Fast path nếu đã extracted (no splash, no extract, skip instantly).
+
+**Kết quả (dự kiến, cần verify trên máy khách):**
+| | Cũ (ship vendor/) | Mới (tar+extract) |
+|---|---|---|
+| EXE size | 436 MB | **369 MB** (-15%) |
+| Install time trên SSD chậm | **5-10 phút im lặng** | **~30-60s với NSIS progress bar** |
+| First launch extract | N/A | +30-60s với **splash progress bar rõ ràng** |
+| Subsequent launches | Chậm load 126k file | **Nhanh hơn** (userData tidy) |
+| Tổng từ click đến bot chạy (máy khách) | 10-15 phút + hoang mang | **~3-4 phút + luôn thấy tiến độ** |
+
+**Mac unchanged:** DMG vẫn ships vendor/ directly vì APFS drag-drop đã nhanh, không có pain point cần fix.
+
+**Auto-apply:** prebuild:vendor chạy mỗi `npm run build:win`, skip silently nếu tar đã có với matching version. First launch extract chạy 1 lần, write version stamp, subsequent launches no-op.
+
+**Verify:**
+- `dist/win-unpacked/resources/vendor-bundle.tar` exists (~1.6 GB)
+- `dist/win-unpacked/resources/vendor-meta.json` exists với `file_count`, `sha256`
+- EXE size ~370 MB (giảm từ 436 MB)
+- Cài EXE trên máy chưa có gì → splash hiện ra lần đầu với progress bar → bot chạy
+
 ### Full-bundled Windows EXE (Node + 4 plugins) — zero install dependency
 **Goal:** User cài MODOROClaw EXE → mở app → chạy ngay, không cần Node.js, npm, hoặc bất kỳ thứ gì cài sẵn. Trước đó, Windows EXE (89 MB) phụ thuộc system Node + npm install các plugin qua wizard. Sếp Mac đã có cách này từ trước (DMG bundles vendor/), giờ Win EXE cũng vậy.
 **Implementation:**
