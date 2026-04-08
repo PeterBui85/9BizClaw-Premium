@@ -2728,23 +2728,50 @@ async function _startOpenClawImpl() {
   // ECONNREFUSED → triggers a 30-60s retry-with-backoff stack inside the plugin
   // → CEO sees "2-3 phút before bot replies".
   let nineRouterReady = false;
+  let nineRouterModelCount = 0;
   for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 1000));
     try {
-      await new Promise((resolve, reject) => {
+      const body = await new Promise((resolve, reject) => {
         const req = require('http').get('http://127.0.0.1:20128/v1/models', { timeout: 2000 }, (res) => {
-          res.resume(); res.statusCode === 200 ? resolve() : reject();
+          if (res.statusCode !== 200) { res.resume(); reject(); return; }
+          let buf = '';
+          res.setEncoding('utf8');
+          res.on('data', (c) => { buf += c; });
+          res.on('end', () => resolve(buf));
         });
         req.on('error', reject);
         req.on('timeout', () => { req.destroy(); reject(); });
       });
+      try {
+        const parsed = JSON.parse(body);
+        nineRouterModelCount = Array.isArray(parsed?.data) ? parsed.data.length : 0;
+      } catch { nineRouterModelCount = 0; }
       nineRouterReady = true;
-      console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${i + 1}s)`);
+      console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${i + 1}s), ${nineRouterModelCount} models`);
       break;
     } catch {}
   }
   if (!nineRouterReady) {
     console.warn(`[boot] T+${Date.now() - t0}ms 9Router DID NOT respond within 60s — gateway will spawn anyway, first reply may be slow`);
+  } else if (nineRouterModelCount === 0) {
+    // LOUD alert: empty combo means EVERY cron fire + EVERY user message will
+    // 404 until the user manually fixes it in the 9Router tab. Fire-and-forget
+    // Telegram notification so CEO sees the problem before demo time.
+    console.error(`[boot] T+${Date.now() - t0}ms 9Router returned 0 models — combo 'main' is empty. Bot replies and cron will FAIL until user configures combo in 9Router tab.`);
+    try {
+      const diagPath = path.join(getWorkspace(), 'logs', 'boot-diagnostic.txt');
+      fs.mkdirSync(path.dirname(diagPath), { recursive: true });
+      fs.appendFileSync(diagPath, `\n[${new Date().toISOString()}] [boot] CRITICAL: 9Router /v1/models returned 0 models. Combo 'main' empty. Bot will 404 on first message.\n`, 'utf-8');
+    } catch {}
+    // Telegram alert: try once, non-blocking. Uses sendTelegram which reads
+    // channels.telegram.botToken + allowFrom directly from openclaw.json.
+    setTimeout(() => {
+      sendTelegram(
+        '*Cảnh báo: 9Router combo rỗng*\n\n' +
+        'Combo AI `main` không có model nào. Bot sẽ KHÔNG phản hồi và cron sẽ FAIL cho tới khi anh vào tab *9Router* trong Dashboard, chọn model cho combo `main` và bấm Save.'
+      ).catch(() => {});
+    }, 2000);
   }
 
   // NO pre-warm completion call. A previous version of this code fired a hardcoded
