@@ -1255,8 +1255,16 @@
       result.classList.remove('wz-hidden');
       if (res.success) {
         document.getElementById('router-api-key').value = res.apiKey;
-        result.className = 'wz-alert warn';
-        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Provider đã thêm.</strong> Sau khi hoàn tất wizard, vào tab <strong>9Router</strong> trong Dashboard để chọn model cho combo <code>main</code>. Bot cần combo có ít nhất 1 model để hoạt động. MODOROClaw không tự hardcode model để tôn trọng cấu hình của anh/chị.</div>`;
+        if (res.selectedModel) {
+          // Auto-detect picked a real model from the connected provider
+          result.className = 'wz-alert success';
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div><strong>Thiết lập thành công.</strong> Đã tự động chọn model <code>${esc(res.selectedModel)}</code> cho combo <code>main</code>. Có thể đổi model trong tab <strong>9Router</strong> của Dashboard sau này nếu muốn.</div>`;
+        } else {
+          // Auto-detect failed (no models returned) — user must configure manually
+          const errDetail = res.autoDetectError ? ' (chi tiết: ' + esc(res.autoDetectError) + ')' : '';
+          result.className = 'wz-alert warn';
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Provider đã thêm nhưng không detect được model.</strong>${errDetail}<br><br>Sau khi hoàn tất wizard, vào tab <strong>9Router</strong> trong Dashboard, login và pick model cho combo <code>main</code>. Bot cần combo có ít nhất 1 model để hoạt động.</div>`;
+        }
       } else {
         result.className = 'wz-alert error';
         result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>Lỗi: ${esc(res.error || 'Không xác định')}</div>`;

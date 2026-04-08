@@ -2932,30 +2932,24 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
       });
     }
 
-    // 2. Combo 'main' handling — DO NOT hardcode any model.
-    //    CEO insight: "9router chắc ko nên đụng sửa custom config nhiều,
-    //    kết nối model nào thì nó tự load model đó, ko phải mặc định là chatgpt"
-    //    Previous behavior forced `ollama/qwen3.5` into combo.models, which
-    //    failed with "404 No active credentials for provider: openai" when
-    //    user's 9router wasn't configured for Ollama (e.g. they use ChatGPT
-    //    Plus OAuth via codex CLI, or Claude, or some other provider).
-    //    New behavior:
-    //    - If combo 'main' exists with models → leave alone (respect user config)
-    //    - If combo doesn't exist → create with EMPTY models array so user
-    //      configures it via 9Router web UI tab in Dashboard
-    //    - Never overwrite models list
+    // 2. Combo 'main' handling — create if missing, leave existing alone.
+    //    We'll auto-populate models below by querying 9router /v1/models AFTER
+    //    restart, so whatever model the connected provider actually exposes
+    //    gets picked. No hardcoding, no guessing model names that might be typos
+    //    or stale (the old 'ollama/qwen3.5' hardcode failed this way).
     let combo = db.combos.find(c => c.name === 'main');
+    let createdCombo = false;
     if (!combo) {
       combo = {
         id: randomUUID(),
         name: 'main',
-        models: [], // Empty — user must pick model in 9Router web UI
+        models: [], // Populated below from /v1/models
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       db.combos.push(combo);
+      createdCombo = true;
     }
-    // Never touch combo.models if combo already exists — user owns their config.
 
     // 3. Create API key
     let apiKey = db.apiKeys.find(k => k.isActive);
@@ -2972,12 +2966,117 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
     fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
     console.log('9Router db.json written:', db.providerConnections.length, 'providers,', db.combos.length, 'combos');
 
-    // Restart 9Router to pick up new config
+    // Restart 9Router to pick up new provider config
     stop9Router();
     await new Promise(r => setTimeout(r, 500));
     start9Router();
 
-    return { success: true, apiKey: apiKey.key };
+    // AUTO-DETECT MODELS: wait for 9Router to be ready, then query /v1/models
+    // with our API key to see what models the connected providers actually
+    // expose. Pick the first one and populate combo 'main' if it's empty.
+    //
+    // Why this instead of hardcoding (e.g. 'ollama/qwen3.5'):
+    // - Hardcoded model names may not exist on the provider (CEO hit this
+    //   with 'ollama/qwen3.5' which was a typo / stale name → 9router
+    //   fallback → 404 openai)
+    // - /v1/models returns the actual connected models, source of truth
+    // - Respects whatever provider the user already has configured —
+    //   if they had ChatGPT Plus OAuth before wizard, that provider's
+    //   models get picked; if they pasted Ollama key now, Ollama models
+    //   get picked. Provider-agnostic.
+    //
+    // If the query or pick fails, combo stays empty and user is directed
+    // to the 9Router web UI to configure manually.
+    let autoSelectedModel = null;
+    let autoDetectError = null;
+    if (createdCombo || !combo.models || combo.models.length === 0) {
+      try {
+        // Wait up to 8s for 9router to respond to /v1/models after restart
+        let modelsList = null;
+        for (let i = 0; i < 8; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          try {
+            modelsList = await new Promise((resolve, reject) => {
+              const req = require('http').request({
+                hostname: '127.0.0.1', port: 20128, path: '/v1/models',
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${apiKey.key}` },
+                timeout: 3000,
+              }, (res) => {
+                let buf = '';
+                res.setEncoding('utf8');
+                res.on('data', (c) => { buf += c; });
+                res.on('end', () => {
+                  if (res.statusCode !== 200) {
+                    reject(new Error(`/v1/models returned ${res.statusCode}: ${buf.slice(0, 200)}`));
+                    return;
+                  }
+                  try { resolve(JSON.parse(buf)); }
+                  catch (e) { reject(new Error('invalid JSON from /v1/models: ' + e.message)); }
+                });
+              });
+              req.on('error', reject);
+              req.on('timeout', () => { req.destroy(new Error('timeout')); });
+              req.end();
+            });
+            break; // got a response
+          } catch (e) {
+            if (i === 7) throw e;
+            // else keep retrying
+          }
+        }
+
+        const modelIds = Array.isArray(modelsList?.data)
+          ? modelsList.data.map(m => m && m.id).filter(Boolean)
+          : [];
+        console.log('[setup-9router-auto] /v1/models returned', modelIds.length, 'models:', modelIds.slice(0, 10));
+
+        if (modelIds.length > 0) {
+          // Prefer the provider we just added (Ollama if key given), else first
+          let picked = null;
+          if (opts.ollamaKey) {
+            picked = modelIds.find(id => id.startsWith('ollama/'));
+          }
+          if (!picked) picked = modelIds[0];
+
+          // Re-read db.json in case 9router rewrote it during restart
+          let currentDb;
+          try { currentDb = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); }
+          catch { currentDb = db; }
+          const currentCombo = currentDb.combos.find(c => c.name === 'main');
+          if (currentCombo) {
+            if (!currentCombo.models || currentCombo.models.length === 0) {
+              currentCombo.models = [picked];
+              currentCombo.updatedAt = new Date().toISOString();
+              fs.writeFileSync(dbPath, JSON.stringify(currentDb, null, 2), 'utf-8');
+              autoSelectedModel = picked;
+              console.log('[setup-9router-auto] auto-populated combo "main" with model:', picked);
+              // Restart 9router one more time so it picks up the new combo
+              stop9Router();
+              await new Promise(r => setTimeout(r, 500));
+              start9Router();
+            } else {
+              autoSelectedModel = currentCombo.models[0];
+              console.log('[setup-9router-auto] combo "main" already has models, leaving alone:', currentCombo.models);
+            }
+          } else {
+            autoDetectError = 'combo "main" not found after restart';
+          }
+        } else {
+          autoDetectError = 'no models returned by /v1/models — provider may have failed to connect';
+        }
+      } catch (e) {
+        autoDetectError = 'auto-detect failed: ' + (e.message || String(e));
+        console.warn('[setup-9router-auto]', autoDetectError);
+      }
+    }
+
+    return {
+      success: true,
+      apiKey: apiKey.key,
+      selectedModel: autoSelectedModel,
+      autoDetectError,
+    };
   } catch (e) {
     return { success: false, error: e.message };
   }
