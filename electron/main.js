@@ -487,10 +487,42 @@ function resolveBinAbsolute(bin) {
   return bin; // give up — keep relative; the caller will still spawn it
 }
 
+// When packaged with bundled vendor, openclaw is the .mjs file inside
+// vendor/node_modules/openclaw/. There is NO .cmd / .exe shim — the gateway
+// is spawned via `<bundled-node> openclaw.mjs`. findOpenClawBin returns the
+// .mjs path for these builds; callers (runOpenClaw, spawnOpenClawSafe) already
+// know to spawn it via getBundledNodeBin() instead of executing directly.
+function findBundledOpenClawMjs() {
+  const v = getBundledVendorDir();
+  if (!v) return null;
+  const mjs = path.join(v, 'node_modules', 'openclaw', 'openclaw.mjs');
+  try { if (fs.existsSync(mjs)) return mjs; } catch {}
+  return null;
+}
+
 async function findOpenClawBin() {
   if (_cachedBin) return _cachedBin;
 
   const isWin = process.platform === 'win32';
+
+  // 0. Bundled vendor (full-bundled Mac DMG + Win EXE) — check FIRST so
+  //    packaged builds never depend on user's system openclaw / system Node.
+  //    Verify the .mjs file is runnable via the bundled Node binary.
+  const bundledMjs = findBundledOpenClawMjs();
+  const bundledNode = getBundledNodeBin();
+  if (bundledMjs && bundledNode) {
+    try {
+      await execFilePromise(bundledNode, [bundledMjs, '--version'], {
+        timeout: 8000, stdio: 'pipe', windowsHide: true,
+      });
+      _cachedBin = bundledMjs; // cache the .mjs path; callers detect .mjs and use bundled node
+      console.log('[findOpenClawBin] using bundled:', bundledMjs);
+      return _cachedBin;
+    } catch (e) {
+      console.warn('[findOpenClawBin] bundled openclaw.mjs failed --version:', String(e.message || e));
+    }
+  }
+
   const candidates = [];
 
   // 1. PATH lookup (covers most setups including system Node)
@@ -530,6 +562,19 @@ function findOpenClawBinSync() {
   const { execFileSync } = require('child_process');
   const isWin = process.platform === 'win32';
 
+  // 0. Bundled vendor — check FIRST (same priority as async version)
+  const bundledMjs = findBundledOpenClawMjs();
+  const bundledNode = getBundledNodeBin();
+  if (bundledMjs && bundledNode) {
+    try {
+      execFileSync(bundledNode, [bundledMjs, '--version'], {
+        timeout: 8000, stdio: 'pipe', windowsHide: true,
+      });
+      _cachedBin = bundledMjs;
+      return _cachedBin;
+    } catch {}
+  }
+
   // Same enumeration as findOpenClawBin so dev-mode and packaged-mode have
   // identical Mac/Linux Node-version-manager coverage.
   const candidates = [];
@@ -560,6 +605,14 @@ async function runOpenClaw(args, timeout = 10000) {
   const bin = await findOpenClawBin();
   if (!bin) throw new Error('OpenClaw not found');
   const opts = { timeout, encoding: 'utf-8', stdio: 'pipe', windowsHide: true };
+  // Bundled vendor: bin is the .mjs file, must be invoked via the bundled Node binary.
+  // (See findOpenClawBin Strategy 0.)
+  if (bin.endsWith('.mjs')) {
+    const nodeBin = getBundledNodeBin() || findNodeBin();
+    if (!nodeBin) throw new Error('No Node binary found to invoke openclaw.mjs');
+    const { stdout } = await execFilePromise(nodeBin, [bin, ...args], opts);
+    return stdout;
+  }
   if (process.platform === 'win32' && bin.endsWith('.cmd')) opts.shell = true;
   const { stdout } = await execFilePromise(bin, args, opts);
   return stdout;
@@ -5390,6 +5443,41 @@ ipcMain.handle('install-openclaw', async (event) => {
   const isMac = process.platform === 'darwin';
 
   const send = (msg) => sender.send('install-progress', msg);
+
+  // SHORT-CIRCUIT: if app is packaged AND vendor/ ships with bundled Node + plugins,
+  // skip npm install entirely. The wizard's "Đang khởi tạo npm..." step is a no-op
+  // for full-bundled builds (Mac DMG + Win EXE 436MB) — everything is already
+  // pre-extracted to resources/vendor/ by prebuild-vendor.js. Verifying the bundled
+  // openclaw + 9router + openzca + @tuyenhx/openzalo all exist is enough.
+  try {
+    const vendorDir = getBundledVendorDir();
+    if (vendorDir) {
+      const openclawCli = path.join(vendorDir, 'node_modules', 'openclaw', 'openclaw.mjs');
+      const ninerouterPkg = path.join(vendorDir, 'node_modules', '9router', 'package.json');
+      const openzcaCli = path.join(vendorDir, 'node_modules', 'openzca', 'dist', 'cli.js');
+      const openzaloPlugin = path.join(vendorDir, 'node_modules', '@tuyenhx', 'openzalo', 'openclaw.plugin.json');
+      const all = [openclawCli, ninerouterPkg, openzcaCli, openzaloPlugin];
+      const allPresent = all.every(p => { try { return fs.existsSync(p); } catch { return false; } });
+      if (allPresent) {
+        send('App đã có sẵn OpenClaw bundled — bỏ qua npm install.');
+        send('Bundled vendor: ' + vendorDir);
+        send('  openclaw: OK');
+        send('  9router: OK');
+        send('  openzca: OK');
+        send('  @tuyenhx/openzalo: OK');
+        send('Hoàn tất.');
+        return { success: true, bundled: true };
+      } else {
+        const missing = all.filter(p => { try { return !fs.existsSync(p); } catch { return true; } });
+        send('Cảnh báo: vendor folder có nhưng thiếu file:');
+        for (const m of missing) send('  - ' + m);
+        send('Sẽ thử npm install để bổ sung...');
+      }
+    }
+  } catch (e) {
+    send('Lỗi khi kiểm tra bundled vendor: ' + String(e.message || e));
+    send('Sẽ fallback sang npm install...');
+  }
 
   // PRE-CHECK 1: Verify Node.js is available + version is recent enough.
   // openzca requires Node >= 22.13.0. If user has older Node, npm install will
