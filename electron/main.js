@@ -2637,31 +2637,14 @@ async function _startOpenClawImpl() {
     console.warn(`[boot] T+${Date.now() - t0}ms 9Router DID NOT respond within 60s — gateway will spawn anyway, first reply may be slow`);
   }
 
-  // PRE-WARM: fire one tiny completion call to force OAuth token refresh +
-  // upstream provider connection NOW, instead of on the first user message.
-  // Saves the 20-30s latency hit that the first real reply would otherwise
-  // pay (ChatGPT Plus OAuth refresh + cold provider handshake).
-  if (nineRouterReady) {
-    try {
-      await new Promise((resolve) => {
-        const data = JSON.stringify({
-          model: 'gpt-5-mini',
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-        });
-        const req = require('http').request({
-          hostname: '127.0.0.1', port: 20128, path: '/v1/chat/completions',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-          timeout: 8000,
-        }, (res) => { res.resume(); res.on('end', resolve); });
-        req.on('error', resolve); // never block boot on warmup failure
-        req.on('timeout', () => { req.destroy(); resolve(); });
-        req.write(data); req.end();
-      });
-      console.log(`[boot] T+${Date.now() - t0}ms 9Router warmup ping done`);
-    } catch {}
-  }
+  // NO pre-warm completion call. A previous version of this code fired a hardcoded
+  // `gpt-5-mini` completion to force OAuth token refresh, but that failed with
+  // "404 No active credentials for provider: openai" whenever the user had
+  // configured 9router with a different provider (Claude, Gemini, Ollama, etc.).
+  // Don't hardcode any provider/model here — let 9router auto-load whatever
+  // the user has set up. The first real user message will do the OAuth refresh
+  // naturally. The boot latency benefit of parallel start9Router + 60s wait loop
+  // above is already large enough without this extra customization.
 
   // Start gateway — cwd = writable workspace so it reads/writes AGENTS.md, schedules.json, etc.
   // Prefer direct node + openclaw.mjs spawn so this works regardless of where
