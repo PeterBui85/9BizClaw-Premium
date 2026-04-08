@@ -2306,7 +2306,17 @@ async function _startOpenClawImpl() {
     return;
   }
 
-  // Ensure config is valid before anything
+  // === BOOT PARALLELIZATION ===
+  // Start 9Router IMMEDIATELY (before patches + memory rebuild) so it has the
+  // maximum wall time to warm up. Node module loading on Windows can take
+  // 15-20s; if 9router is started AFTER patches, it races the gateway spawn.
+  // Root cause of "Telegram + Zalo take 2-3 phút to respond" — 9router was
+  // not actually ready when gateway loaded plugins.
+  const t0 = Date.now();
+  console.log('[boot] T+0ms start9Router (parallel warmup)');
+  start9Router();
+
+  // Ensure config is valid before anything (patches run in parallel with 9router warmup)
   await ensureDefaultConfig();
 
   // Re-apply OpenZalo shell fix in case plugin was reinstalled
@@ -2327,9 +2337,6 @@ async function _startOpenClawImpl() {
     }
   } catch (e) { console.error('Memory DB rebuild failed:', e.message); }
 
-  // Start 9Router
-  start9Router();
-
   // Check if gateway already running — if yes, just adopt it
   const alreadyRunning = await isGatewayAlive();
   if (alreadyRunning) {
@@ -2343,8 +2350,13 @@ async function _startOpenClawImpl() {
   // Cold start: clean up any stale Zalo listener tree before spawning new gateway
   cleanupOrphanZaloListener();
 
-  // Wait for 9Router to be ready
-  for (let i = 0; i < 10; i++) {
+  // Wait for 9Router /v1/models — bumped from 10 to 60 iterations because Node
+  // module loading on Windows can take 15-20s. If we spawn the gateway before
+  // 9router responds, the openzalo plugin's first call to 9router fails with
+  // ECONNREFUSED → triggers a 30-60s retry-with-backoff stack inside the plugin
+  // → CEO sees "2-3 phút before bot replies".
+  let nineRouterReady = false;
+  for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 1000));
     try {
       await new Promise((resolve, reject) => {
@@ -2354,7 +2366,38 @@ async function _startOpenClawImpl() {
         req.on('error', reject);
         req.on('timeout', () => { req.destroy(); reject(); });
       });
+      nineRouterReady = true;
+      console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${i + 1}s)`);
       break;
+    } catch {}
+  }
+  if (!nineRouterReady) {
+    console.warn(`[boot] T+${Date.now() - t0}ms 9Router DID NOT respond within 60s — gateway will spawn anyway, first reply may be slow`);
+  }
+
+  // PRE-WARM: fire one tiny completion call to force OAuth token refresh +
+  // upstream provider connection NOW, instead of on the first user message.
+  // Saves the 20-30s latency hit that the first real reply would otherwise
+  // pay (ChatGPT Plus OAuth refresh + cold provider handshake).
+  if (nineRouterReady) {
+    try {
+      await new Promise((resolve) => {
+        const data = JSON.stringify({
+          model: 'gpt-5-mini',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+        });
+        const req = require('http').request({
+          hostname: '127.0.0.1', port: 20128, path: '/v1/chat/completions',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+          timeout: 8000,
+        }, (res) => { res.resume(); res.on('end', resolve); });
+        req.on('error', resolve); // never block boot on warmup failure
+        req.on('timeout', () => { req.destroy(); resolve(); });
+        req.write(data); req.end();
+      });
+      console.log(`[boot] T+${Date.now() - t0}ms 9Router warmup ping done`);
     } catch {}
   }
 

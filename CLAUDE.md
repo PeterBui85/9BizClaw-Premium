@@ -79,6 +79,27 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 
 ## Current patches (cần auto-restore trên fresh install)
 
+### Boot latency: bot không reply 2-3 phút sau startup (9router cold-start race)
+**Bug:** Sau khi mở MODOROClaw, Telegram + Zalo nhận được tin nhưng KHÔNG reply trong 2-3 phút. Sidebar dot xanh từ giây đầu (sai). Zalo tệ hơn Telegram.
+**Root cause** (verified bằng systematic-debugging Explore agent):
+- `start9Router()` được gọi SAU `ensureDefaultConfig + ensureOpenzaloShellFix + ensureOpenzaloForceOneMessageFix + memory rebuild` (~3-5s tổng) → 9router chỉ có 10s wall time để warm trước khi gateway spawn.
+- Wait loop ([main.js:2347](electron/main.js#L2347) trước fix) lặp **chỉ 10 lần × 1s = 10s max**. Trên Windows, Node module loading của 9router có thể mất 15-20s. Loop hết hạn → fall through → spawn gateway TRƯỚC KHI 9router thật sự ready.
+- Gateway load openzalo plugin → plugin call 9router HTTP API lần đầu → ECONNREFUSED → openzalo retry-with-backoff stack ăn 30-60s.
+- Stacking với openzca cold start (`waitForOpenzcaReady` 30s timeout) + gateway 90s WS wait → tổng **2-3 phút trước reply đầu tiên**.
+- Telegram nhanh hơn Zalo vì chỉ qua native openclaw → 9router (1 tầng), không cần openzca subprocess + websocket replay (2 tầng thêm).
+**Fix** ([main.js:2310-2410](electron/main.js#L2310)):
+1. **Move `start9Router()` lên TRƯỚC patches + memory rebuild** → 9router warm parallel với file patches, gain ~5-10s wall time.
+2. **Bump wait loop từ 10 lên 60 iterations** (60s max) → đủ cho slow Windows Node startup. Log cụ thể `9Router ready after Ns`.
+3. **Pre-warm OAuth ping**: sau khi `/v1/models` OK, fire 1 completion call `model=gpt-5-mini, max_tokens=1, content="ping"` để force ChatGPT Plus OAuth token refresh + upstream provider handshake **trong boot phase**, không phải lần user message đầu tiên. Saves 20-30s latency hit. Timeout 8s, never block boot on failure.
+4. **Detailed timeline logs** `[boot] T+Nms <event>` để future debug có evidence rõ ràng.
+**Auto-apply:** Tất cả thay đổi trong `_startOpenClawImpl()` → chạy mỗi lần `startOpenClaw()` → fresh install + máy đã có app đều hưởng.
+**Verify:** Mở MODOROClaw → console show:
+- `[boot] T+0ms start9Router (parallel warmup)`
+- `[boot] T+~5000ms 9Router /v1/models ready (after 4s)` (số giây thật)
+- `[boot] T+~6000ms 9Router warmup ping done`
+- `[startOpenClaw] gateway WS ready on :18789 after Nms`
+- Tổng từ launch → bot có thể reply: **<30s** (target). Nhắn Telegram → reply trong 5-10s (so với 2-3 phút trước fix).
+
 ### `pdf-parse` downgrade từ 2.4.5 → 1.1.1 (DOMMatrix not defined fix)
 **Bug:** Knowledge tab upload PDF báo `[PDF extract failed: DOMMatrix is not defined]`. CEO không xem được nội dung PDF đã upload.
 **Root cause:** `pdf-parse@2.4.5` là rewrite mới dựa trên pdfjs internals dùng browser-only DOM API (`DOMMatrix`, `Path2D`, ...). Khi gọi từ Electron main process (Node-only context, không có DOM), pdfjs throws ngay lúc init. Đây là known incompatibility — pdf-parse 2.x chỉ chạy trong renderer process hoặc browser, không phải main.
