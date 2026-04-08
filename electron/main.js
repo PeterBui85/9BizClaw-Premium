@@ -4779,6 +4779,51 @@ async function sendTelegramRich(text, options = {}) {
 }
 
 // Custom crons file — bot writes here, Electron picks up automatically
+//
+// HEALING: the bot (running as openclaw agent) sometimes writes entries with
+// minor schema mistakes (missing `enabled`, used `cron` instead of `cronExpr`,
+// forgot `id`, etc.). Rather than skipping these silently (which CEO sees as
+// "bot said done but nothing happens"), we heal them on load. Any healed
+// entries are written back to disk so the next load is idempotent.
+function healCustomCronEntries(arr) {
+  let healed = false;
+  for (const c of arr) {
+    if (!c || typeof c !== 'object') continue;
+    // Alias: some bot prompts use `cron` as the field name
+    if (!c.cronExpr && typeof c.cron === 'string') {
+      c.cronExpr = c.cron;
+      delete c.cron;
+      healed = true;
+    }
+    // Alias: `schedule` also seen in older bot outputs
+    if (!c.cronExpr && typeof c.schedule === 'string') {
+      c.cronExpr = c.schedule;
+      delete c.schedule;
+      healed = true;
+    }
+    // Default enabled=true when bot forgot it — CEO asked for a cron, he wants
+    // it to run, don't require explicit enabled:true
+    if (c.cronExpr && c.prompt && c.enabled === undefined) {
+      c.enabled = true;
+      healed = true;
+    }
+    // Auto-id so dedupe + journal works
+    if (!c.id && c.cronExpr) {
+      c.id = 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      healed = true;
+    }
+    // Auto-label from prompt if missing
+    if (!c.label && c.prompt) {
+      c.label = String(c.prompt).trim().split('\n')[0].slice(0, 60);
+      healed = true;
+    }
+    if (!c.createdAt) {
+      c.createdAt = new Date().toISOString();
+      healed = true;
+    }
+  }
+  return healed;
+}
 function loadCustomCrons() {
   const customCronsPath = getCustomCronsPath();
   try {
@@ -4788,6 +4833,13 @@ function loadCustomCrons() {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) {
           throw new Error('custom-crons.json must be an array, got ' + typeof parsed);
+        }
+        const wasHealed = healCustomCronEntries(parsed);
+        if (wasHealed) {
+          try {
+            fs.writeFileSync(customCronsPath, JSON.stringify(parsed, null, 2), 'utf-8');
+            console.log('[custom-crons] healed entries (alias/defaults) and rewrote file');
+          } catch (e) { console.warn('[custom-crons] heal-writeback failed:', e.message); }
         }
         return parsed;
       } catch (parseErr) {
@@ -4857,14 +4909,48 @@ function watchCustomCrons() {
 
     let debounce1 = null;
     let debounce2 = null;
+    // Track known cron IDs across reloads so we can detect NEW entries
+    // (bot added a cron at CEO's request) and send an independent Telegram
+    // confirmation. Without this the CEO only has the bot's word that the
+    // cron was created — and if the bot lied / hallucinated / failed silently
+    // the CEO has no second source of truth. With this, every new scheduled
+    // cron produces a system-level Telegram message showing the actual
+    // cronExpr + next fire time.
+    if (!global._knownCronIds) {
+      global._knownCronIds = new Set(loadCustomCrons().map(c => c && c.id).filter(Boolean));
+    }
     const reloadCustom = () => {
       clearTimeout(debounce1);
       debounce1 = setTimeout(() => {
         console.log('[cron] custom-crons.json changed, reloading...');
         try { restartCronJobs(); } catch (e) { console.error('[cron] reload error:', e.message); }
+        const current = loadCustomCrons();
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('custom-crons-updated', loadCustomCrons());
+          mainWindow.webContents.send('custom-crons-updated', current);
         }
+        // Detect NEW entries and confirm to CEO
+        try {
+          const prevIds = global._knownCronIds || new Set();
+          const currIds = new Set(current.map(c => c && c.id).filter(Boolean));
+          const added = [];
+          for (const c of current) {
+            if (c && c.id && c.enabled !== false && c.cronExpr && c.prompt && !prevIds.has(c.id)) {
+              added.push(c);
+            }
+          }
+          global._knownCronIds = currIds;
+          for (const c of added) {
+            const validExpr = typeof cron.validate === 'function' ? cron.validate(c.cronExpr) : true;
+            if (!validExpr) continue; // surfaceCronConfigError already alerted
+            const label = c.label || c.id;
+            const msg = `*Cron mới đã được lên lịch*\n\n` +
+                        `Nhãn: \`${label}\`\n` +
+                        `Lịch: \`${c.cronExpr}\` (giờ VN)\n` +
+                        `Prompt: ${String(c.prompt).slice(0, 200)}${c.prompt.length > 200 ? '...' : ''}\n\n` +
+                        `Đây là xác nhận từ hệ thống — nếu bạn không yêu cầu cron này, vào Dashboard → Cron để xóa.`;
+            sendTelegram(msg).catch(() => {});
+          }
+        } catch (e) { console.error('[cron] new-entry confirmation error:', e.message); }
       }, 1000);
     };
     const reloadSchedules = () => {
