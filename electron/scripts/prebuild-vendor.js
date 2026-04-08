@@ -38,21 +38,23 @@ const crypto = require('crypto');
 const { execSync, spawnSync } = require('child_process');
 const os = require('os');
 
-// v22.12.0 minimum required by openclaw 2026.4.5 — v22.11.0 caused "Node.js
-// v22.12+ is required" error on fresh Windows install, gateway never spawned.
-const NODE_VERSION = process.env.NODE_VENDOR_VERSION || 'v22.12.0';
+// openclaw 2026.4.5 requires Node >=22.14.0. We pin to v22.22.2 (latest 22.x
+// LTS as of 2026-04) to give plenty of headroom above openclaw's minimum and
+// avoid another "requires Node >=X.Y.Z" surprise after every openclaw bump.
+// Previous bumps: v22.11.0 → v22.12.0 (insufficient) → v22.22.2.
+const NODE_VERSION = process.env.NODE_VENDOR_VERSION || 'v22.22.2';
 
 // SHA256 checksums from https://nodejs.org/dist/<version>/SHASUMS256.txt
 // Update when bumping NODE_VERSION. HTTPS protects against MITM but not
 // against registry/CDN compromise — checksum verification catches both.
 // To regenerate:
-//   curl -s https://nodejs.org/dist/v22.12.0/SHASUMS256.txt | grep -E "darwin|win"
+//   curl -s https://nodejs.org/dist/v22.22.2/SHASUMS256.txt | grep -E "darwin|win-"
 const NODE_CHECKSUMS = {
-  'v22.12.0': {
-    'darwin-arm64': '293dcc6c2408da21562d135b0412525e381bb6fe150d688edb58fe850d0f3e13',
-    'darwin-x64':   '52bc25dd026db7247c3c00439afdb83e95087248267f02d6c1a7250d1f896173',
-    'win32-x64':    '2b8f2256382f97ad51e29ff71f702961af466c4616393f767455501e6aece9b8',
-    'win32-arm64':  '17401720af48976e3f67c41e8968a135fb49ca1f88103a92e0e8c70605763854',
+  'v22.22.2': {
+    'darwin-arm64': 'db4b275b83736df67533529a18cc55de2549a8329ace6c7bcc68f8d22d3c9000',
+    'darwin-x64':   '12a6abb9c2902cf48a21120da13f87fde1ed1b71a13330712949e8db818708ba',
+    'win32-x64':    '7c93e9d92bf68c07182b471aa187e35ee6cd08ef0f24ab060dfff605fcc1c57c',
+    'win32-arm64':  '380d375cf650c5a7f2ef3ce29ac6ea9a1c9d2ec8ea8e8391e1a34fd543886ab3',
   },
 };
 
