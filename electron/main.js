@@ -701,20 +701,19 @@ async function findOpenClawBin() {
 
   // 0. Bundled vendor (full-bundled Mac DMG + Win EXE) — check FIRST so
   //    packaged builds never depend on user's system openclaw / system Node.
-  //    Verify the .mjs file is runnable via the bundled Node binary.
+  //    Trust file existence: SHA256 verify ran during tar extract. We used
+  //    to spawn `node openclaw.mjs --version` here, but on slow SSDs the
+  //    cold-load of openclaw (500+ deps) exceeded the 8s timeout → detection
+  //    fell through → no-openclaw.html shown → user sees install-code loop.
   const bundledMjs = findBundledOpenClawMjs();
   const bundledNode = getBundledNodeBin();
   if (bundledMjs && bundledNode) {
-    try {
-      await execFilePromise(bundledNode, [bundledMjs, '--version'], {
-        timeout: 8000, stdio: 'pipe', windowsHide: true,
-      });
-      _cachedBin = bundledMjs; // cache the .mjs path; callers detect .mjs and use bundled node
-      console.log('[findOpenClawBin] using bundled:', bundledMjs);
-      return _cachedBin;
-    } catch (e) {
-      console.warn('[findOpenClawBin] bundled openclaw.mjs failed --version:', String(e.message || e));
-    }
+    _cachedBin = bundledMjs; // cache the .mjs path; callers detect .mjs and use bundled node
+    console.log('[findOpenClawBin] using bundled:', bundledMjs);
+    return _cachedBin;
+  }
+  if (app && app.isPackaged) {
+    console.warn('[findOpenClawBin] packaged build but bundled vendor missing. mjs=', bundledMjs, 'node=', bundledNode, 'vendorDir=', getBundledVendorDir());
   }
 
   const candidates = [];
@@ -756,17 +755,17 @@ function findOpenClawBinSync() {
   const { execFileSync } = require('child_process');
   const isWin = process.platform === 'win32';
 
-  // 0. Bundled vendor — check FIRST (same priority as async version)
+  // 0. Bundled vendor — trust file existence, no spawn check.
+  //    See findOpenClawBin above for rationale (cold-load timeout on slow SSDs).
   const bundledMjs = findBundledOpenClawMjs();
   const bundledNode = getBundledNodeBin();
   if (bundledMjs && bundledNode) {
-    try {
-      execFileSync(bundledNode, [bundledMjs, '--version'], {
-        timeout: 8000, stdio: 'pipe', windowsHide: true,
-      });
-      _cachedBin = bundledMjs;
-      return _cachedBin;
-    } catch {}
+    _cachedBin = bundledMjs;
+    console.log('[findOpenClawBinSync] using bundled:', bundledMjs);
+    return _cachedBin;
+  }
+  if (app && app.isPackaged) {
+    console.warn('[findOpenClawBinSync] packaged build but bundled vendor missing. mjs=', bundledMjs, 'node=', bundledNode, 'vendorDir=', getBundledVendorDir());
   }
 
   // Same enumeration as findOpenClawBin so dev-mode and packaged-mode have
@@ -1768,11 +1767,19 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   console.log('[createWindow] openclawBin:', openclawBin);
+  if (app.isPackaged) {
+    console.log('[createWindow] app.isPackaged=true, platform=', process.platform);
+    console.log('[createWindow] userData:', app.getPath('userData'));
+    console.log('[createWindow] resourcesPath:', process.resourcesPath);
+    console.log('[createWindow] getBundledVendorDir():', getBundledVendorDir());
+    console.log('[createWindow] getBundledNodeBin():', getBundledNodeBin());
+    console.log('[createWindow] findBundledOpenClawMjs():', findBundledOpenClawMjs());
+  }
   const configured = openclawBin ? isOpenClawConfigured() : false;
   console.log('[createWindow] configured:', configured);
 
   if (!openclawBin) {
-    console.log('[createWindow] → no-openclaw.html');
+    console.error('[createWindow] → no-openclaw.html (findOpenClawBinSync returned null)');
     mainWindow.loadFile(path.join(__dirname, 'ui', 'no-openclaw.html'));
   } else if (configured) {
     console.log('[createWindow] → dashboard.html');
