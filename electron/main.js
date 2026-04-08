@@ -2560,6 +2560,135 @@ function ensureZaloBlocklistFix() {
   }
 }
 
+// MODOROClaw FRIEND-CHECK PATCH: Zalo has a "stranger" concept — if a user
+// who is NOT a friend of the bot account sends a DM, Zalo shows it in a
+// separate "stranger box" and replies may not deliver reliably. Other Zalo
+// bots (seen in production) handle this by replying once with a "please
+// add friend first" prompt then muting until the friend request is accepted.
+//
+// Implementation: inject a check right after the blocklist patch. Reads
+// openzca's own friend cache at ~/.openzca/profiles/default/cache/friends.json,
+// checks if senderId is present. If NOT a friend AND the cache is populated
+// (fail-safe to "allow" when cache is empty to avoid blocking legit users
+// during first-boot cache sync), sends a single friend-request message and
+// returns. Dedupes per-sender with a 10-min window so a stranger spamming
+// 20 messages only gets 1 reply.
+//
+// Groups are NOT affected. Idempotent via "MODOROClaw FRIEND-CHECK PATCH" marker.
+// Custom message supported via workspace/zalo-friend-request-message.txt.
+function ensureZaloFriendCheckFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = fs.readFileSync(pluginFile, 'utf-8');
+    if (content.includes('MODOROClaw FRIEND-CHECK PATCH')) return; // already patched
+
+    // Anchor: right after the blocklist patch's END marker. Ensures friend
+    // check runs AFTER blocklist (so blocked users don't get the friend
+    // prompt) and BEFORE dmPolicy/agent dispatch. Requires blocklist patch
+    // to have run first.
+    const anchor = '  // === END MODOROClaw BLOCKLIST PATCH ===';
+    if (!content.includes(anchor)) {
+      console.warn('[zalo-friend-check-fix] blocklist anchor missing — blocklist fix must run first');
+      return;
+    }
+
+    const injection = `
+
+  // === MODOROClaw FRIEND-CHECK PATCH ===
+  // For DM messages from non-friends, send a one-time "please add friend"
+  // reply and short-circuit. Reads openzca's friend cache to determine
+  // friend status. Groups skip this check. See main.js ensureZaloFriendCheckFix.
+  if (!message.isGroup) {
+    try {
+      const __fcFs = require("node:fs");
+      const __fcPath = require("node:path");
+      const __fcOs = require("node:os");
+      const __fcSender = String(message.senderId || "").trim();
+      const __fcBotSelf = String(botUserId || "").trim();
+      if (__fcSender && __fcSender !== __fcBotSelf) {
+        const __fcHome = __fcOs.homedir();
+        const __fcCachePath = __fcPath.join(__fcHome, ".openzca", "profiles", "default", "cache", "friends.json");
+        let __fcCacheExists = false;
+        let __fcIsFriend = false;
+        let __fcFriendsCount = 0;
+        try {
+          if (__fcFs.existsSync(__fcCachePath)) {
+            __fcCacheExists = true;
+            const __fcRaw = __fcFs.readFileSync(__fcCachePath, "utf-8");
+            const __fcFriends = JSON.parse(__fcRaw);
+            if (Array.isArray(__fcFriends)) {
+              __fcFriendsCount = __fcFriends.length;
+              __fcIsFriend = __fcFriends.some((__f: any) =>
+                String(__f?.userId || __f?.uid || __f?.id || "").trim() === __fcSender,
+              );
+            }
+          }
+        } catch (__fcReadErr) {
+          runtime.log?.(\`openzalo: friend cache read error: \${String(__fcReadErr)}\`);
+        }
+        // FAIL-SAFE: if cache doesn't exist or is empty, treat as disabled.
+        // Only enforce friend check when cache has been populated by openzca.
+        if (__fcCacheExists && __fcFriendsCount > 0 && !__fcIsFriend) {
+          const __fcGlobal = globalThis as any;
+          if (!__fcGlobal.__modoroFriendReqDedupe) {
+            __fcGlobal.__modoroFriendReqDedupe = new Map();
+          }
+          const __fcMap: Map<string, number> = __fcGlobal.__modoroFriendReqDedupe;
+          const __fcNow = Date.now();
+          const __fcLast = __fcMap.get(__fcSender) || 0;
+          const __fcWindow = 10 * 60 * 1000;
+          if (__fcNow - __fcLast < __fcWindow) {
+            runtime.log?.(\`openzalo: drop non-friend \${__fcSender} (friend-request sent <10min ago)\`);
+            return;
+          }
+          __fcMap.set(__fcSender, __fcNow);
+          for (const [__fcK, __fcTs] of __fcMap.entries()) {
+            if (__fcNow - __fcTs > 60 * 60 * 1000) __fcMap.delete(__fcK);
+          }
+          runtime.log?.(\`openzalo: non-friend \${__fcSender} — sending friend-request prompt\`);
+          let __fcText = 'Chào bạn! Để mình có thể hỗ trợ tốt nhất, bạn vui lòng bấm nút "Kết bạn" phía trên nhé.\\n\\nSau khi kết bạn, gõ lại lệnh mình sẽ trả lời ngay.';
+          try {
+            const __fcCustomPaths = [
+              __fcPath.join(__fcHome, "AppData", "Roaming", "modoro-claw", "zalo-friend-request-message.txt"),
+              __fcPath.join(__fcHome, ".openclaw", "workspace", "zalo-friend-request-message.txt"),
+            ];
+            for (const __fcCp of __fcCustomPaths) {
+              try {
+                if (__fcFs.existsSync(__fcCp)) {
+                  const __fcCustom = __fcFs.readFileSync(__fcCp, "utf-8").trim();
+                  if (__fcCustom) { __fcText = __fcCustom; break; }
+                }
+              } catch {}
+            }
+          } catch {}
+          try {
+            await sendTextOpenzalo({
+              cfg,
+              account,
+              to: targetThreadId,
+              text: __fcText,
+            });
+          } catch (__fcSendErr) {
+            runtime.log?.(\`openzalo: friend-request send error: \${String(__fcSendErr)}\`);
+          }
+          return;
+        }
+      }
+    } catch (__fcErr) {
+      runtime.log?.(\`openzalo: friend check error: \${String(__fcErr)}\`);
+    }
+  }
+  // === END MODOROClaw FRIEND-CHECK PATCH ===`;
+
+    const patched = content.replace(anchor, anchor + injection);
+    fs.writeFileSync(pluginFile, patched, 'utf-8');
+    console.log('[zalo-friend-check-fix] Injected friend-status check into inbound.ts');
+  } catch (e) {
+    console.error('[zalo-friend-check-fix] error:', e.message);
+  }
+}
+
 // MODOROClaw FORCE-ONE-MESSAGE PATCH: openzalo plugin's `dispatchReplyWithBufferedBlockDispatcher`
 // call passes `disableBlockStreaming` ONLY when `account.config.blockStreaming` is an explicit
 // boolean. When openzalo config block is missing fields (which happens because openclaw 2026.4.x
@@ -2752,6 +2881,8 @@ async function _startOpenClawImpl() {
   ensureOpenzaloShellFix();
   // Re-apply blocklist injection (idempotent)
   ensureZaloBlocklistFix();
+  // Friend check: inject stranger-handling logic (depends on blocklist anchor)
+  ensureZaloFriendCheckFix();
   // Force-one-message: hardcode disableBlockStreaming=true in openzalo inbound.ts
   // so "Dạ" word never gets split between messages regardless of config drift.
   ensureOpenzaloForceOneMessageFix();
@@ -3500,6 +3631,7 @@ async function ensureZaloPlugin() {
           // via MODORO_OPENZCA_CLI_JS env var.
           try { ensureOpenzaloShellFix(); } catch (e) { console.warn('[ensureZaloPlugin] shell fix failed:', e?.message); }
           try { ensureZaloBlocklistFix(); } catch (e) { console.warn('[ensureZaloPlugin] blocklist fix failed:', e?.message); }
+          try { ensureZaloFriendCheckFix(); } catch (e) { console.warn('[ensureZaloPlugin] friend check fix failed:', e?.message); }
           _zaloReady = true;
           return;
         } catch (e) {
