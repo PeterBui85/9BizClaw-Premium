@@ -3036,6 +3036,18 @@ async function _startOpenClawImpl() {
   notifyState.telegramReady = false;
   notifyState.zaloReady = false;
   notifyState.bootSessionId = Date.now();
+  // H1 throttle: if a readiness notification was already sent within the
+  // last 10 minutes, suppress re-notify on subsequent gateway restarts (e.g.
+  // mid-demo Stop/Start, heartbeat watchdog fire). CEO shouldn't see the
+  // "Telegram đã sẵn sàng" message twice in the same session. The watchdog
+  // recovery path still works silently — channel is ready, just no duplicate
+  // notification. A fresh boot after >10min gap (app restart next day) still
+  // fires normally.
+  const READY_NOTIFY_THROTTLE_MS = 10 * 60 * 1000;
+  const readyNotifyThrottled = () => {
+    return global._lastReadyNotifyAt &&
+      (Date.now() - global._lastReadyNotifyAt) < READY_NOTIFY_THROTTLE_MS;
+  };
   const readinessBuf = { tg: '', zl: '' };
   const scanForReadiness = (chunk) => {
     try {
@@ -3044,23 +3056,33 @@ async function _startOpenClawImpl() {
       if (!notifyState.telegramReady && /\[telegram\]\s*\[\w+\]\s*starting provider/i.test(text)) {
         notifyState.telegramReady = true;
         console.log('[ready-notify] Telegram channel confirmed ready via gateway marker');
-        sendTelegram(
-          '*Telegram đã sẵn sàng*\n\n' +
-          'Bot đã kết nối + đăng ký channel. Nhắn bất kỳ tin nào ngay bây giờ, sẽ có reply thật.\n\n' +
-          '_(Thông báo này tự bot gửi — nếu anh nhận được = Telegram đã work 100%)_'
-        ).then(ok => console.log('[ready-notify] Telegram notify sent:', ok))
-         .catch(() => {});
+        if (readyNotifyThrottled()) {
+          console.log('[ready-notify] Telegram notify throttled (last sent <10min ago)');
+        } else {
+          global._lastReadyNotifyAt = Date.now();
+          sendTelegram(
+            '*Telegram đã sẵn sàng*\n\n' +
+            'Bot đã kết nối + đăng ký channel. Nhắn bất kỳ tin nào ngay bây giờ, sẽ có reply thật.\n\n' +
+            '_(Thông báo này tự bot gửi — nếu anh nhận được = Telegram đã work 100%)_'
+          ).then(ok => console.log('[ready-notify] Telegram notify sent:', ok))
+           .catch(() => {});
+        }
       }
       // Zalo marker — openzca listener connected = inbound pipeline live
       if (!notifyState.zaloReady && /\[openzalo\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
         notifyState.zaloReady = true;
         console.log('[ready-notify] Zalo channel confirmed ready via gateway marker');
-        sendTelegram(
-          '*Zalo đã sẵn sàng*\n\n' +
-          'Openzca listener đã connect Zalo web, đang đọc tin nhắn. Nhắn bot trên Zalo ngay bây giờ, sẽ có reply thật.\n\n' +
-          '_(Thông báo gửi qua Telegram vì hệ thống không có Zalo ID của anh)_'
-        ).then(ok => console.log('[ready-notify] Zalo notify sent:', ok))
-         .catch(() => {});
+        if (readyNotifyThrottled()) {
+          console.log('[ready-notify] Zalo notify throttled (last sent <10min ago)');
+        } else {
+          global._lastReadyNotifyAt = Date.now();
+          sendTelegram(
+            '*Zalo đã sẵn sàng*\n\n' +
+            'Openzca listener đã connect Zalo web, đang đọc tin nhắn. Nhắn bot trên Zalo ngay bây giờ, sẽ có reply thật.\n\n' +
+            '_(Thông báo gửi qua Telegram vì hệ thống không có Zalo ID của anh)_'
+          ).then(ok => console.log('[ready-notify] Zalo notify sent:', ok))
+           .catch(() => {});
+        }
       }
     } catch (e) { /* never break on observer */ }
   };
