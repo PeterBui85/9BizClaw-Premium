@@ -783,6 +783,9 @@
         <div class="sidebar-menu-item" data-page="openclaw" onclick="switchPage('openclaw')">
           <span class="icon" data-icon="zap"></span><span class="label">OpenClaw</span>
         </div>
+        <div class="sidebar-menu-item" onclick="openLogFolder()" title="Mở thư mục log để xem lỗi / gửi cho support">
+          <span class="icon" data-icon="file-text"></span><span class="label">Xem log</span>
+        </div>
         <div class="sidebar-menu-item" id="theme-toggle-btn" onclick="toggleTheme()">
           <span class="icon" id="theme-toggle-icon" data-icon="moon"></span><span class="label" id="theme-toggle-label">Giao diện sáng</span>
         </div>
@@ -1211,6 +1214,17 @@
     }
 
     // Theme toggle
+    async function openLogFolder() {
+      try {
+        const res = await window.claw.openLogFolder();
+        if (!res || !res.ok) {
+          alert('Không mở được thư mục log' + (res && res.error ? ': ' + res.error : ''));
+        }
+      } catch (e) {
+        alert('Lỗi: ' + (e.message || e));
+      }
+    }
+
     function toggleTheme() {
       const current = document.documentElement.getAttribute('data-theme') || 'dark';
       const next = current === 'dark' ? 'light' : 'dark';

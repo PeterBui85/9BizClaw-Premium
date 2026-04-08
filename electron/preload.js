@@ -86,6 +86,10 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.on('channel-status', (_, data) => callback(data));
   },
 
+  // Diagnostic log export — lets Dashboard grab main.log without DevTools
+  getDiagnosticLog: (opts) => ipcRenderer.invoke('get-diagnostic-log', opts || {}),
+  openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
+
   // Events
   onBotStatus: (callback) => {
     ipcRenderer.removeAllListeners('bot-status');

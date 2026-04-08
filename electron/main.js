@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
@@ -13,6 +13,85 @@ if (!gotTheLock) {
   app.quit();
   process.exit(0);
 }
+
+// ============================================
+//  FILE LOGGER — redirect console.* to main.log
+// ============================================
+// Without this, packaged Electron swallows console.log (they go to a hidden
+// OS log buffer that end users can't reach). CEO must open DevTools with
+// Ctrl+Shift+I to see anything — tệ UX. Solution: tee all console writes to
+// a simple rotating file the user can open via tray menu → "Mở thư mục log".
+//
+// Path: <userData>/logs/main.log  (+ previous session rotated to main.log.1)
+// Rotates on every app start so each launch has a clean log for repro.
+let _logFilePath = null;
+let _logStream = null;
+function initFileLogger() {
+  try {
+    // app.getPath('userData') only works after app.whenReady, but we can use
+    // APPDATA directly here since Electron userData on Windows defaults to
+    // %APPDATA%/<productName>. Product name from package.json = MODOROClaw.
+    const isWin = process.platform === 'win32';
+    const appData = process.env.APPDATA
+      || (isWin ? path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming') : null)
+      || (process.platform === 'darwin'
+          ? path.join(process.env.HOME || '', 'Library', 'Application Support')
+          : path.join(process.env.HOME || '', '.config'));
+    const logsDir = path.join(appData, 'MODOROClaw', 'logs');
+    try { fs.mkdirSync(logsDir, { recursive: true }); } catch {}
+    const logPath = path.join(logsDir, 'main.log');
+    // Rotate previous session's log
+    try {
+      if (fs.existsSync(logPath)) {
+        const oldPath = path.join(logsDir, 'main.log.1');
+        try { if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath); } catch {}
+        try { fs.renameSync(logPath, oldPath); } catch {}
+      }
+    } catch {}
+    _logFilePath = logPath;
+    _logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+    const origLog = console.log.bind(console);
+    const origWarn = console.warn.bind(console);
+    const origError = console.error.bind(console);
+    const ts = () => new Date().toISOString();
+    const writeLine = (level, args) => {
+      try {
+        const line = `[${ts()}] [${level}] ` + args.map(a => {
+          if (a instanceof Error) return a.stack || a.message;
+          if (typeof a === 'object') {
+            try { return JSON.stringify(a); } catch { return String(a); }
+          }
+          return String(a);
+        }).join(' ') + '\n';
+        _logStream.write(line);
+      } catch {}
+    };
+    console.log = (...args) => { origLog(...args); writeLine('INFO', args); };
+    console.warn = (...args) => { origWarn(...args); writeLine('WARN', args); };
+    console.error = (...args) => { origError(...args); writeLine('ERROR', args); };
+
+    // Capture uncaught exceptions + unhandled rejections
+    process.on('uncaughtException', (err) => {
+      writeLine('FATAL', ['uncaughtException:', err && err.stack ? err.stack : err]);
+    });
+    process.on('unhandledRejection', (reason) => {
+      writeLine('FATAL', ['unhandledRejection:', reason && reason.stack ? reason.stack : reason]);
+    });
+
+    console.log('==========================================');
+    console.log('MODOROClaw starting —', new Date().toISOString());
+    console.log('log file:', logPath);
+    console.log('platform:', process.platform, 'arch:', process.arch);
+    console.log('electron:', process.versions.electron, 'node:', process.versions.node);
+    console.log('==========================================');
+  } catch (e) {
+    // If logger init fails, don't break the app — just run without file logging
+    try { console.error('[initFileLogger] failed:', e?.message || e); } catch {}
+  }
+}
+function getLogFilePath() { return _logFilePath; }
+initFileLogger();
 
 // ============================================
 //  STATE
@@ -1859,6 +1938,25 @@ function createTray() {
     { type: 'separator' },
     { label: botRunning ? '● Đang chạy' : '○ Đã dừng', enabled: false },
     { label: botRunning ? 'Dừng' : 'Khởi động', click: () => { if (botRunning) stopOpenClaw(); else startOpenClaw(); createTray(); } },
+    { type: 'separator' },
+    { label: 'Mở thư mục log (chẩn đoán)', click: () => {
+        try {
+          const logPath = getLogFilePath();
+          if (logPath && fs.existsSync(logPath)) {
+            shell.showItemInFolder(logPath);
+          } else if (logPath) {
+            shell.openPath(path.dirname(logPath));
+          }
+        } catch (e) { console.error('[tray] open log folder failed:', e?.message || e); }
+      }
+    },
+    { label: 'Mở file log trong Notepad', click: () => {
+        try {
+          const logPath = getLogFilePath();
+          if (logPath && fs.existsSync(logPath)) shell.openPath(logPath);
+        } catch (e) { console.error('[tray] open log file failed:', e?.message || e); }
+      }
+    },
     { type: 'separator' },
     { label: 'Thoát', click: () => { app.isQuitting = true; stopOpenClaw(); app.quit(); } },
   ]));
@@ -5980,6 +6078,40 @@ ipcMain.handle('install-openclaw', async (event) => {
 ipcMain.handle('relaunch', async () => {
   app.relaunch();
   app.exit(0);
+});
+
+// Diagnostic log IPC — lets Dashboard/wizard grab the main.log contents
+// without the user needing to open DevTools.
+ipcMain.handle('get-diagnostic-log', async (_event, { tailLines = 500 } = {}) => {
+  try {
+    const logPath = getLogFilePath();
+    if (!logPath || !fs.existsSync(logPath)) {
+      return { ok: false, error: 'log file not found', path: logPath || null };
+    }
+    const raw = fs.readFileSync(logPath, 'utf-8');
+    const lines = raw.split('\n');
+    const tail = tailLines > 0 ? lines.slice(-tailLines).join('\n') : raw;
+    return { ok: true, path: logPath, content: tail, totalLines: lines.length };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+});
+
+ipcMain.handle('open-log-folder', async () => {
+  try {
+    const logPath = getLogFilePath();
+    if (logPath && fs.existsSync(logPath)) {
+      shell.showItemInFolder(logPath);
+      return { ok: true };
+    }
+    if (logPath) {
+      shell.openPath(path.dirname(logPath));
+      return { ok: true };
+    }
+    return { ok: false, error: 'no log path' };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
 });
 
 ipcMain.handle('open-external', async (_event, url) => {
