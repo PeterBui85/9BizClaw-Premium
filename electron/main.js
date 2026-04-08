@@ -2913,7 +2913,9 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
     if (!db.mitmAlias) db.mitmAlias = {};
     if (!db.pricing) db.pricing = {};
 
-    // 1. Add Ollama provider
+    // 1. Add Ollama provider — ONLY if user supplied a key. Don't touch
+    //    existing providers the user may have configured directly via 9router
+    //    web UI (ChatGPT Plus OAuth, Claude, Gemini, local Ollama, etc.).
     if (opts.ollamaKey) {
       db.providerConnections = db.providerConnections.filter(p => p.provider !== 'ollama');
       db.providerConnections.push({
@@ -2930,15 +2932,30 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
       });
     }
 
-    // 2. Create combo "main" with default model
+    // 2. Combo 'main' handling — DO NOT hardcode any model.
+    //    CEO insight: "9router chắc ko nên đụng sửa custom config nhiều,
+    //    kết nối model nào thì nó tự load model đó, ko phải mặc định là chatgpt"
+    //    Previous behavior forced `ollama/qwen3.5` into combo.models, which
+    //    failed with "404 No active credentials for provider: openai" when
+    //    user's 9router wasn't configured for Ollama (e.g. they use ChatGPT
+    //    Plus OAuth via codex CLI, or Claude, or some other provider).
+    //    New behavior:
+    //    - If combo 'main' exists with models → leave alone (respect user config)
+    //    - If combo doesn't exist → create with EMPTY models array so user
+    //      configures it via 9Router web UI tab in Dashboard
+    //    - Never overwrite models list
     let combo = db.combos.find(c => c.name === 'main');
     if (!combo) {
-      combo = { id: randomUUID(), name: 'main', models: ['ollama/qwen3.5'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      combo = {
+        id: randomUUID(),
+        name: 'main',
+        models: [], // Empty — user must pick model in 9Router web UI
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
       db.combos.push(combo);
-    } else if (!combo.models || combo.models.length === 0) {
-      combo.models = ['ollama/qwen3.5'];
-      combo.updatedAt = new Date().toISOString();
     }
+    // Never touch combo.models if combo already exists — user owns their config.
 
     // 3. Create API key
     let apiKey = db.apiKeys.find(k => k.isActive);
@@ -5146,10 +5163,26 @@ async function summarizeKnowledgeContent(content, filename) {
     const config = JSON.parse(fs.readFileSync(path.join(HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
     const provider = config?.models?.providers?.ninerouter;
     if (!provider?.baseUrl || !provider?.apiKey) return fallback();
+    // Resolve model name dynamically — NEVER hardcode 'main' or any provider id.
+    // Whatever combo CEO sets up in 9router (Ollama, Anthropic, Groq, OpenAI, ...)
+    // works without code changes. Resolution order:
+    //   1. agents.defaults.model from openclaw.json (set by wizard, e.g. 'ninerouter/auto')
+    //      → strip 'ninerouter/' prefix
+    //   2. First model id in models.providers.ninerouter.models[] (also set by wizard)
+    //   3. Literal 'auto' — 9router treats this as "use first available combo"
+    let modelName = 'auto';
+    try {
+      const def = config?.agents?.defaults?.model;
+      if (typeof def === 'string' && def.length > 0) {
+        modelName = def.replace(/^ninerouter\//, '');
+      } else if (Array.isArray(provider?.models) && provider.models[0]?.id) {
+        modelName = provider.models[0].id;
+      }
+    } catch {}
     const http = require('http');
     const truncated = content.length > 4000 ? content.substring(0, 4000) + '...' : content;
     const body = JSON.stringify({
-      model: 'main',
+      model: modelName,
       messages: [{
         role: 'user',
         content: `Tóm tắt file "${filename}" trong 1-2 câu tiếng Việt ngắn gọn (tối đa 200 ký tự). Chỉ trả về tóm tắt, không thêm giải thích.\n\n---\n${truncated}`,

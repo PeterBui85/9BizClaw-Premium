@@ -1255,8 +1255,8 @@
       result.classList.remove('wz-hidden');
       if (res.success) {
         document.getElementById('router-api-key').value = res.apiKey;
-        result.className = 'wz-alert success';
-        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div>Thiết lập thành công. Ollama đã được kết nối.</div>`;
+        result.className = 'wz-alert warn';
+        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Provider đã thêm.</strong> Sau khi hoàn tất wizard, vào tab <strong>9Router</strong> trong Dashboard để chọn model cho combo <code>main</code>. Bot cần combo có ít nhất 1 model để hoạt động. MODOROClaw không tự hardcode model để tôn trọng cấu hình của anh/chị.</div>`;
       } else {
         result.className = 'wz-alert error';
         result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>Lỗi: ${esc(res.error || 'Không xác định')}</div>`;
