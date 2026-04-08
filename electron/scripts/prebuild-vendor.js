@@ -385,22 +385,28 @@ function packVendorForWindows() {
   const tarPath = path.join(ROOT, 'vendor-bundle.tar');
   const metaPath = path.join(ROOT, 'vendor-meta.json');
 
-  // Count files + total bytes (for first-launch progress bar math)
-  let fileCount = 0;
+  // Count total ENTRIES (files + directories) and raw bytes.
+  // tar verbose output prints one line per entry INCLUDING directories, so
+  // splash progress bar must match this count — previous version counted
+  // only files → extraction showed >100% because tar lines > file count.
+  let entryCount = 0;
   let totalBytes = 0;
   function walk(dir) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        entryCount++; // count the dir itself
         walk(full);
       } else if (entry.isFile()) {
-        fileCount++;
+        entryCount++;
         try { totalBytes += fs.statSync(full).size; } catch {}
       }
     }
   }
+  // Also count the top-level 'vendor' dir tar adds as an entry
+  entryCount++;
   walk(VENDOR);
-  log(`  ${fileCount} files, ${(totalBytes / 1024 / 1024).toFixed(1)} MB raw`);
+  log(`  ${entryCount} tar entries (files + dirs), ${(totalBytes / 1024 / 1024).toFixed(1)} MB raw`);
 
   // Remove stale archive from previous builds
   if (fs.existsSync(tarPath)) fs.unlinkSync(tarPath);
@@ -430,7 +436,8 @@ function packVendorForWindows() {
   const meta = {
     version: 1,
     filename: 'vendor-bundle.tar',
-    file_count: fileCount,
+    file_count: entryCount, // kept for backwards-compat but now = entry_count
+    entry_count: entryCount, // total tar entries (files + dirs)
     unpacked_bytes: totalBytes,
     archive_bytes: tarSize,
     bundle_version: bundleVersion,

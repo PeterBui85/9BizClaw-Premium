@@ -1170,6 +1170,7 @@
       }
       if (currentStep === 2) {
         if (!document.getElementById('router-api-key').value.trim()) return showError('Chưa thiết lập AI. Nhấn "Thiết lập AI" ở trên trước.');
+        if (!window._aiModelReady) return showError('Combo AI "main" chưa có model. Nhấn "Thiết lập AI" lại, hoặc vào tab 9Router (sau khi xong wizard) để cấu hình thủ công trước khi demo.');
       }
       if (currentStep === 3) {
         const t = document.getElementById('tg-token').value.trim();
@@ -1257,15 +1258,20 @@
         document.getElementById('router-api-key').value = res.apiKey;
         if (res.selectedModel) {
           // Auto-detect picked a real model from the connected provider
+          window._aiModelReady = true;
           result.className = 'wz-alert success';
           result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div><strong>Thiết lập thành công.</strong> Đã tự động chọn model <code>${esc(res.selectedModel)}</code> cho combo <code>main</code>. Có thể đổi model trong tab <strong>9Router</strong> của Dashboard sau này nếu muốn.</div>`;
         } else {
-          // Auto-detect failed (no models returned) — user must configure manually
+          // Auto-detect failed (no models returned) — HARD BLOCK: wizard will not
+          // allow proceeding until combo has a model. Bot will 404 on first
+          // message otherwise. Zero-risk demo rule.
+          window._aiModelReady = false;
           const errDetail = res.autoDetectError ? ' (chi tiết: ' + esc(res.autoDetectError) + ')' : '';
-          result.className = 'wz-alert warn';
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Provider đã thêm nhưng không detect được model.</strong>${errDetail}<br><br>Sau khi hoàn tất wizard, vào tab <strong>9Router</strong> trong Dashboard, login và pick model cho combo <code>main</code>. Bot cần combo có ít nhất 1 model để hoạt động.</div>`;
+          result.className = 'wz-alert error';
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>KHÔNG detect được model</strong>${errDetail}<br><br>Kiểm tra: (1) Ollama API key còn hiệu lực không? (2) Có kết nối internet không? Nhấn <strong>"Thiết lập AI"</strong> lại để thử. Wizard sẽ không cho qua bước này đến khi combo AI có ít nhất 1 model — để tránh bot 404 lúc demo.</div>`;
         }
       } else {
+        window._aiModelReady = false;
         result.className = 'wz-alert error';
         result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>Lỗi: ${esc(res.error || 'Không xác định')}</div>`;
       }

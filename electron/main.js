@@ -345,15 +345,27 @@ async function ensureVendorExtracted({ onProgress } = {}) {
     let lastPercentReported = 5;
     let stderrBuf = '';
 
+    // Total entries (files + directories) tar will emit. Prefer entry_count;
+    // fall back to file_count for backwards-compat with older meta.json.
+    const totalEntries = meta.entry_count || meta.file_count || 0;
+
     // tar -v writes one line per entry to stderr (BSD) or stdout (GNU). Listen on both.
     const onLine = () => {
       extractedCount++;
-      if (meta.file_count && onProgress) {
-        // Reserve 5-95% for extraction (5% verify, 95-100% cleanup/verify)
-        const percent = 5 + Math.floor((extractedCount / meta.file_count) * 90);
+      if (totalEntries > 0 && onProgress) {
+        // Reserve 5-95% for extraction. HARD CLAMP at 95 so percent never
+        // exceeds 95 during extract phase — the final 95→100 happens after
+        // extract finishes + version stamp is written. Previous bug: count
+        // exceeded totalEntries (dirs vs files mismatch) → percent > 100%.
+        let percent = 5 + Math.floor((extractedCount / totalEntries) * 90);
+        if (percent > 95) percent = 95;
+        if (percent < 5) percent = 5;
         if (percent > lastPercentReported) {
           lastPercentReported = percent;
-          onProgress({ percent, message: `Đang giải nén... ${extractedCount.toLocaleString('vi-VN')} / ${meta.file_count.toLocaleString('vi-VN')} file` });
+          // Show percent only. Hide file counter entirely to avoid confusing
+          // mismatches (tar entries vs user expectation of "files"). CEO rule:
+          // "nếu không biết thì bỏ, số cũng ko đc vượt quá 100% lúc giải nén".
+          onProgress({ percent, message: 'Đang giải nén...' });
         }
       }
     };
@@ -2892,20 +2904,11 @@ async function _startOpenClawImpl() {
   // Register Telegram slash commands (fire-and-forget)
   registerTelegramCommands().catch(e => console.error('[telegram] registerCommands failed:', e.message));
 
-  // Boot ping — confirms sendTelegram works end-to-end. Throttled to once per
-  // 10 minutes per process so heartbeat-driven restarts don't spam the CEO.
-  if (!global._lastBootPingAt || (Date.now() - global._lastBootPingAt) > 10 * 60 * 1000) {
-    global._lastBootPingAt = Date.now();
-    setTimeout(() => {
-      sendTelegram(
-        '*MODOROClaw đã sẵn sàng*\n\n' +
-        'Gateway, 9Router, Telegram đều OK. Cron tự động đang chạy.\n\n' +
-        'Thử nhắn *"báo cáo"* hoặc */menu* để bắt đầu.'
-      ).then(ok => console.log('[boot] Telegram ping:', ok ? 'OK' : 'FAILED'));
-    }, 3000);
-  } else {
-    console.log('[boot] Telegram ping skipped (throttled — last sent <10min ago)');
-  }
+  // Boot ping removed — it was a FAKE readiness signal. Gateway WS responding
+  // to GET / (the probe above) does NOT prove Telegram can actually receive
+  // and reply to a real message. Real readiness is shown via the sidebar
+  // dot (probeTelegramReady = getMe) and the end-to-end "Gửi tin test" button
+  // in Dashboard. Don't spam CEO with notifications that don't mean anything.
 
   const logsDir = path.join(userDataDir, 'logs');
   if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
@@ -3089,9 +3092,12 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
     let autoDetectError = null;
     if (createdCombo || !combo.models || combo.models.length === 0) {
       try {
-        // Wait up to 8s for 9router to respond to /v1/models after restart
+        // Wait up to 15s for 9router to respond to /v1/models after restart.
+        // Windows cold-start of 9router can take 10-12s on slower machines;
+        // 8s was cutting it close and occasionally returned timeout → empty
+        // combo → bot 404 on first real message.
         let modelsList = null;
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 15; i++) {
           await new Promise(r => setTimeout(r, 1000));
           try {
             modelsList = await new Promise((resolve, reject) => {
@@ -3119,7 +3125,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
             });
             break; // got a response
           } catch (e) {
-            if (i === 7) throw e;
+            if (i === 14) throw e;
             // else keep retrying
           }
         }
@@ -3147,12 +3153,27 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
               currentCombo.models = [picked];
               currentCombo.updatedAt = new Date().toISOString();
               fs.writeFileSync(dbPath, JSON.stringify(currentDb, null, 2), 'utf-8');
-              autoSelectedModel = picked;
-              console.log('[setup-9router-auto] auto-populated combo "main" with model:', picked);
-              // Restart 9router one more time so it picks up the new combo
-              stop9Router();
-              await new Promise(r => setTimeout(r, 500));
-              start9Router();
+              // VERIFY: re-read db.json to confirm the write really persisted.
+              // Zero-risk guarantee: if the file got rewritten by a racing
+              // 9router process without our combo update, we want to know now,
+              // not at first user message.
+              let verified = false;
+              try {
+                const reRead = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+                const reCombo = reRead.combos?.find(c => c.name === 'main');
+                verified = Array.isArray(reCombo?.models) && reCombo.models.includes(picked);
+              } catch {}
+              if (!verified) {
+                autoDetectError = 'combo write verification failed — 9router may have overwritten our update';
+                console.error('[setup-9router-auto]', autoDetectError);
+              } else {
+                autoSelectedModel = picked;
+                console.log('[setup-9router-auto] auto-populated combo "main" with model:', picked, '(verified)');
+                // Restart 9router one more time so it picks up the new combo
+                stop9Router();
+                await new Promise(r => setTimeout(r, 500));
+                start9Router();
+              }
             } else {
               autoSelectedModel = currentCombo.models[0];
               console.log('[setup-9router-auto] combo "main" already has models, leaving alone:', currentCombo.models);

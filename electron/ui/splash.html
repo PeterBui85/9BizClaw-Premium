@@ -151,7 +151,6 @@
       <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
       <div class="progress-meta">
         <span id="percent">0%</span>
-        <span id="files"></span>
       </div>
     </div>
     <div class="status-line"><span class="spinner"></span><span id="status">Khởi tạo...</span></div>
@@ -163,18 +162,16 @@
   const fill = document.getElementById('fill');
   const percent = document.getElementById('percent');
   const status = document.getElementById('status');
-  const files = document.getElementById('files');
   ipcRenderer.on('splash-progress', (_e, data) => {
     if (!data) return;
     if (typeof data.percent === 'number') {
-      fill.style.width = Math.max(0, Math.min(100, data.percent)) + '%';
-      percent.textContent = Math.floor(data.percent) + '%';
+      // Hard clamp 0-100 — safety net even if main process sends wrong number
+      const clamped = Math.max(0, Math.min(100, data.percent));
+      fill.style.width = clamped + '%';
+      percent.textContent = Math.floor(clamped) + '%';
     }
     if (typeof data.message === 'string') {
       status.textContent = data.message;
-    }
-    if (data.fileCount && data.totalFiles) {
-      files.textContent = data.fileCount.toLocaleString('vi-VN') + ' / ' + data.totalFiles.toLocaleString('vi-VN');
     }
   });
   ipcRenderer.on('splash-error', (_e, message) => {
