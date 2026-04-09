@@ -137,14 +137,20 @@ function getWorkspace() {
       _workspaceCached = userDataDir;
     } else {
       // app.whenReady hasn't fired yet — compute manually so early seedWorkspace
-      // calls (e.g. from bootDiagRunFullCheck) get the right path
+      // calls (e.g. from bootDiagRunFullCheck) get the right path.
+      // CRITICAL: dir name must match Electron's app.getName() which reads
+      // the package.json `name` field ("modoro-claw", lowercase). NOT
+      // build.productName ("MODOROClaw") — that's electron-builder installer
+      // metadata, not Electron runtime. Mismatch creates a phantom capital
+      // dir that some code paths write to while real workspace is lowercase.
       const HOMETMP = process.env.USERPROFILE || process.env.HOME || '';
+      const APP_DIR = 'modoro-claw';
       if (process.platform === 'win32') {
-        _workspaceCached = path.join(process.env.APPDATA || path.join(HOMETMP, 'AppData', 'Roaming'), 'MODOROClaw');
+        _workspaceCached = path.join(process.env.APPDATA || path.join(HOMETMP, 'AppData', 'Roaming'), APP_DIR);
       } else if (process.platform === 'darwin') {
-        _workspaceCached = path.join(HOMETMP, 'Library', 'Application Support', 'MODOROClaw');
+        _workspaceCached = path.join(HOMETMP, 'Library', 'Application Support', APP_DIR);
       } else {
-        _workspaceCached = path.join(process.env.XDG_CONFIG_HOME || path.join(HOMETMP, '.config'), 'MODOROClaw');
+        _workspaceCached = path.join(process.env.XDG_CONFIG_HOME || path.join(HOMETMP, '.config'), APP_DIR);
       }
     }
     try { fs.mkdirSync(_workspaceCached, { recursive: true }); } catch {}
@@ -2728,23 +2734,36 @@ function ensureZaloOwnerFix() {
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
 
-    // Migration: strip old (broken on Mac) versions of this patch. Old patch
-    // hardcoded "AppData/Roaming/modoro-claw" which is Windows-only AND wrong
-    // case. Detect old patch by content fingerprint and strip before re-injecting.
-    if (content.includes('MODOROCLAW ZALO-OWNER PATCH')) {
-      const isOldBroken = content.includes('"AppData", "Roaming", "modoro-claw"')
-        || !content.includes('MODORO_WORKSPACE');
-      if (!isOldBroken) return; // already on current version
-      const stripStart = content.indexOf('\n\n  // === MODOROCLAW ZALO-OWNER PATCH ===');
-      const stripEnd = content.indexOf('// === END MODOROCLAW ZALO-OWNER PATCH ===');
-      if (stripStart >= 0 && stripEnd > stripStart) {
-        const endLine = content.indexOf('\n', stripEnd);
-        content = content.slice(0, stripStart) + content.slice(endLine >= 0 ? endLine : stripEnd + 50);
-        console.log('[zalo-owner-fix] stripped old broken patch — re-injecting current version');
-      } else {
-        console.warn('[zalo-owner-fix] old marker present but could not locate boundaries — skipping');
+    // Migration: strip OLD versions of this patch on upgrade. Detect by
+    // checking the patch BLOCK ONLY (between markers) for the version-pin
+    // string we embed in current versions. If the version-pin is missing,
+    // the patch is from an older build with broken Mac paths and must be
+    // re-injected. We can NOT scan whole-file fingerprints (they false-positive
+    // on text from other patches like the friend-request patch).
+    const PATCH_VERSION_PIN = 'ZALO-OWNER-PATCH-V2';
+    const startMarker = '// === MODOROCLAW ZALO-OWNER PATCH ===';
+    const endMarker = '// === END MODOROCLAW ZALO-OWNER PATCH ===';
+    if (content.includes(startMarker)) {
+      const blockStart = content.indexOf(startMarker);
+      const blockEnd = content.indexOf(endMarker, blockStart);
+      if (blockStart < 0 || blockEnd < 0) {
+        console.warn('[zalo-owner-fix] markers present but malformed — leaving as-is');
         return;
       }
+      const block = content.slice(blockStart, blockEnd);
+      if (block.includes(PATCH_VERSION_PIN)) return; // already current
+      // Old version present — strip it. Find the leading whitespace so we
+      // remove the leading "\n\n  " that was prepended at injection time.
+      let stripStart = blockStart;
+      while (stripStart > 0 && (content[stripStart - 1] === ' ' || content[stripStart - 1] === '\n')) {
+        stripStart--;
+        // Stop when we've consumed up to (but not past) the trailing newline
+        // of the friend-check anchor line.
+        if (content.slice(stripStart, stripStart + 2) === '\n\n') break;
+      }
+      const stripEndPos = blockEnd + endMarker.length;
+      content = content.slice(0, stripStart) + content.slice(stripEndPos);
+      console.log('[zalo-owner-fix] stripped old patch (no version pin) — re-injecting current');
     }
 
     // Anchor: end of friend-check patch. Owner check must run AFTER friend
@@ -2759,6 +2778,7 @@ function ensureZaloOwnerFix() {
     const injection = `
 
   // === MODOROCLAW ZALO-OWNER PATCH ===
+  // ZALO-OWNER-PATCH-V2 — version pin (used by main.js for upgrade detection)
   // Mark messages from CEO's personal Zalo with [ZALO_CHU_NHAN] prefix.
   // AGENTS.md tells bot to switch to CEO mode when it sees this marker.
   // See electron/main.js ensureZaloOwnerFix.
@@ -2769,25 +2789,26 @@ function ensureZaloOwnerFix() {
       const __zoOs = require("node:os");
       const __zoSender = String(message.senderId || "").trim();
       if (__zoSender) {
-        // Path resolution mirrors getWorkspace() in electron/main.js so the
-        // patch finds zalo-owner.json wherever main.js wrote it. We accept
-        // every plausible location across dev + packaged on all 3 platforms
-        // and let fs.existsSync pick the first hit.
+        // Path resolution mirrors getWorkspace() in electron/main.js. The
+        // canonical answer comes from MODORO_WORKSPACE env (set at gateway
+        // spawn). Platform branches are fallbacks for the unlikely case the
+        // env var is missing. CRITICAL: app dir name is "modoro-claw"
+        // (lowercase) — matches Electron's app.getName() reading package.json
+        // \`name\` field. NOT "MODOROClaw" (build.productName is installer
+        // metadata only, not used for runtime userData).
         const __zoOwnerPaths = [];
-        // HIGHEST PRIORITY: env var injected by main.js gateway spawn (covers
-        // dev mode where workspace = source tree, AND any future workspace move).
         if (process.env.MODORO_WORKSPACE) {
           __zoOwnerPaths.push(__zoPath.join(process.env.MODORO_WORKSPACE, "zalo-owner.json"));
         }
-        // Packaged-app userData (matches getWorkspace() in main.js)
+        const __zoAppDir = "modoro-claw";
         if (process.platform === "darwin") {
-          __zoOwnerPaths.push(__zoPath.join(__zoOs.homedir(), "Library", "Application Support", "MODOROClaw", "zalo-owner.json"));
+          __zoOwnerPaths.push(__zoPath.join(__zoOs.homedir(), "Library", "Application Support", __zoAppDir, "zalo-owner.json"));
         } else if (process.platform === "win32") {
           const __zoAppData = process.env.APPDATA || __zoPath.join(__zoOs.homedir(), "AppData", "Roaming");
-          __zoOwnerPaths.push(__zoPath.join(__zoAppData, "MODOROClaw", "zalo-owner.json"));
+          __zoOwnerPaths.push(__zoPath.join(__zoAppData, __zoAppDir, "zalo-owner.json"));
         } else {
           const __zoConfig = process.env.XDG_CONFIG_HOME || __zoPath.join(__zoOs.homedir(), ".config");
-          __zoOwnerPaths.push(__zoPath.join(__zoConfig, "MODOROClaw", "zalo-owner.json"));
+          __zoOwnerPaths.push(__zoPath.join(__zoConfig, __zoAppDir, "zalo-owner.json"));
         }
         // Legacy fallback (older builds wrote here)
         __zoOwnerPaths.push(__zoPath.join(__zoOs.homedir(), ".openclaw", "workspace", "zalo-owner.json"));
@@ -3050,7 +3071,24 @@ function ensureZaloOutputFilterFix() {
       // logs/ dir so CEO can audit incidents.
       try {
         const __ofHome = __ofOs.homedir();
-        const __ofLogDir = __ofPath.join(__ofHome, "AppData", "Roaming", "modoro-claw", "logs");
+        // Resolve workspace logs dir cross-platform. Prefer MODORO_WORKSPACE
+        // env (set by main.js at gateway spawn). Fallback to platform-specific
+        // userData dir matching Electron's app.getPath('userData') which uses
+        // the lowercase package.json \`name\` field "modoro-claw".
+        const __ofAppDir = "modoro-claw";
+        let __ofWsLogDir;
+        if (process.env.MODORO_WORKSPACE) {
+          __ofWsLogDir = __ofPath.join(process.env.MODORO_WORKSPACE, "logs");
+        } else if (process.platform === "darwin") {
+          __ofWsLogDir = __ofPath.join(__ofHome, "Library", "Application Support", __ofAppDir, "logs");
+        } else if (process.platform === "win32") {
+          const __ofAppData = process.env.APPDATA || __ofPath.join(__ofHome, "AppData", "Roaming");
+          __ofWsLogDir = __ofPath.join(__ofAppData, __ofAppDir, "logs");
+        } else {
+          const __ofConfig = process.env.XDG_CONFIG_HOME || __ofPath.join(__ofHome, ".config");
+          __ofWsLogDir = __ofPath.join(__ofConfig, __ofAppDir, "logs");
+        }
+        const __ofLogDir = __ofWsLogDir;
         __ofFs.mkdirSync(__ofLogDir, { recursive: true });
         const __ofAuditFile = __ofPath.join(__ofLogDir, "security-output-filter.jsonl");
         __ofFs.appendFileSync(
