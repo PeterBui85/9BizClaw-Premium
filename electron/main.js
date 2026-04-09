@@ -3644,10 +3644,18 @@ async function _startOpenClawImpl() {
   // Expose workspace path so plugin patches (e.g. ensureZaloOwnerFix) can find
   // workspace files regardless of dev vs packaged. main.js getWorkspace()
   // already resolved the correct location at this point.
+  // SECURITY: explicitly delete any pre-existing MODORO_WORKSPACE from the
+  // user's shell env BEFORE setting our own value. Without this, if the user
+  // launches Electron from a shell with `MODORO_WORKSPACE=/tmp` set (or any
+  // other poisoned value), and getWorkspace() throws for any reason, the
+  // gateway would inherit the poisoned value and patches would write to /tmp.
+  delete enrichedEnv.MODORO_WORKSPACE;
   try {
     const __ws = getWorkspace();
     if (__ws) enrichedEnv.MODORO_WORKSPACE = __ws;
-  } catch {}
+  } catch (e) {
+    console.warn('[gateway] could not resolve MODORO_WORKSPACE:', e?.message);
+  }
   try {
     const npmBinDirs = [];
     if (process.platform === 'win32') {
@@ -4152,6 +4160,13 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
 // Setup Zalo via OpenZalo (openzca CLI for QR login)
 // Pre-install openzalo plugin + patch (runs once in background at startup)
 let _zaloReady = false;
+// In-flight promise guard: ensureZaloPlugin can be invoked concurrently
+// (boot path awaits it, but a fire-and-forget call also exists at app.whenReady
+// tail). Without this guard, two callers race past `if (_zaloReady) return`
+// (since _zaloReady is only set after the patches at end of function), both
+// run the patch injection logic concurrently, and last-writer-wins on
+// inbound.ts could leave a corrupted/half-patched file.
+let _zaloPluginInFlight = null;
 // Idempotent heal: ensure <plugin>/node_modules exists and points at
 // vendor/node_modules. Runs on EVERY boot, independent of whether the plugin
 // was freshly copied or already present. Without this, users who installed
@@ -4200,6 +4215,22 @@ function ensureOpenzaloNodeModulesLink() {
 }
 
 async function ensureZaloPlugin() {
+  if (_zaloReady) return;
+  // If a previous call is already running, attach to its promise instead of
+  // re-entering the body. This makes the function safe under concurrent
+  // invocation (boot path + fire-and-forget tail call + plugin manager UI).
+  if (_zaloPluginInFlight) return _zaloPluginInFlight;
+  _zaloPluginInFlight = (async () => {
+    try {
+      return await _ensureZaloPluginImpl();
+    } finally {
+      _zaloPluginInFlight = null;
+    }
+  })();
+  return _zaloPluginInFlight;
+}
+
+async function _ensureZaloPluginImpl() {
   if (_zaloReady) return;
   try {
     // FRESH-INSTALL FAST PATH: copy bundled openzalo plugin from vendor into
