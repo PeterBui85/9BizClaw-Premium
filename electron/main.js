@@ -178,6 +178,10 @@ const DEFAULT_SCHEDULES_JSON = [
   { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true, icon: '', description: 'Kết quả ngày, vấn đề tồn đọng' },
   { id: 'heartbeat', label: 'Kiểm tra tự động', time: 'Mỗi 30 phút', enabled: true, icon: '', description: 'Gateway, kênh liên lạc' },
   { id: 'meditation', label: 'Tối ưu ban đêm', time: '01:00', enabled: true, icon: '', description: 'Bot tự review bài học, tối ưu bộ nhớ' },
+  { id: 'weekly', label: 'Báo cáo tuần', time: '08:00', enabled: true, icon: '', description: 'Tổng kết tuần, khách mới, ưu tiên tuần tới' },
+  { id: 'monthly', label: 'Báo cáo tháng', time: '08:30', enabled: true, icon: '', description: 'Tổng kết tháng, trend, kế hoạch tháng tới' },
+  { id: 'zalo-followup', label: 'Follow-up khách Zalo', time: '09:30', enabled: true, icon: '', description: 'Nhắc CEO khách mới chưa tương tác, khách hỏi chưa reply' },
+  { id: 'memory-cleanup', label: 'Dọn dẹp memory', time: '02:00', enabled: false, icon: '', description: 'Tổng hợp journal cũ, dọn dẹp memory rời rạc' },
 ];
 
 // Seed templates from read-only bundle → writable workspace (packaged install)
@@ -549,7 +553,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 7;
+const CURRENT_AGENTS_MD_VERSION = 8;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -6401,6 +6405,75 @@ function buildEveningSummaryPrompt(timeStr) {
   );
 }
 
+function buildWeeklyReportPrompt() {
+  const sinceMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const history = extractConversationHistory({ sinceMs, maxMessages: 100 });
+  const historyBlock = history
+    ? `\n\n--- LỊCH SỬ TIN NHẮN 7 NGÀY QUA ---\n${history}\n--- HẾT LỊCH SỬ ---\n\n`
+    : `\n\n_(Không có tin nhắn nào trong 7 ngày qua.)_\n\n`;
+  return (
+    `Hôm nay là thứ 2. Hãy gửi BÁO CÁO TUẦN cho CEO qua Telegram.` +
+    historyBlock +
+    `Dựa trên lịch sử tin nhắn + memory/ + knowledge + audit log, tổng hợp:\n` +
+    `1. Tổng kết tuần qua: việc đã xong, deal đã chốt, khách mới qua Zalo/Telegram\n` +
+    `2. Vấn đề tồn đọng / chưa giải quyết\n` +
+    `3. Số liệu: tổng tin nhắn xử lý, cron đã chạy, khách Zalo mới kết bạn\n` +
+    `4. Ưu tiên tuần tới\n` +
+    `5. Đề xuất cải thiện (nếu có)\n\n` +
+    `Trả lời bằng tiếng Việt, dùng tiêu đề **BÁO CÁO TUẦN** in đậm + bullet points. ` +
+    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. Nếu data ít thì tóm ngắn, KHÔNG kêu CEO setup thêm gì.`
+  );
+}
+
+function buildMonthlyReportPrompt() {
+  const sinceMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const history = extractConversationHistory({ sinceMs, maxMessages: 200 });
+  const historyBlock = history
+    ? `\n\n--- LỊCH SỬ TIN NHẮN 30 NGÀY QUA (tóm tắt) ---\n${history}\n--- HẾT LỊCH SỬ ---\n\n`
+    : `\n\n_(Không có tin nhắn trong 30 ngày qua.)_\n\n`;
+  return (
+    `Ngày 1 tháng mới. Hãy gửi BÁO CÁO THÁNG cho CEO qua Telegram.` +
+    historyBlock +
+    `Dựa trên lịch sử + memory/ + knowledge, tổng hợp:\n` +
+    `1. Tổng kết tháng: kết quả nổi bật, milestone đạt được\n` +
+    `2. Khách hàng: khách mới, khách quay lại, khách mất (nếu có data)\n` +
+    `3. Hoạt động bot: tổng tin xử lý, cron runs, errors (nếu có)\n` +
+    `4. So sánh với tháng trước (nếu có data memory)\n` +
+    `5. Kế hoạch + ưu tiên tháng tới\n\n` +
+    `Trả lời bằng tiếng Việt, dùng tiêu đề **BÁO CÁO THÁNG** in đậm + bullet points. ` +
+    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. Nếu data ít thì tóm ngắn.`
+  );
+}
+
+function buildZaloFollowUpPrompt() {
+  return (
+    `Kiểm tra khách hàng Zalo mới cần follow-up. Đọc tất cả file trong memory/zalo-users/*.md.\n\n` +
+    `Với mỗi khách:\n` +
+    `- Nếu kết bạn > 24h mà CHƯA có cuộc trò chuyện nào (file chỉ có header, không có note) → liệt kê\n` +
+    `- Nếu khách hỏi giá/đặt lịch > 48h mà không reply tiếp → liệt kê\n\n` +
+    `Gửi danh sách cho CEO qua Telegram với format:\n` +
+    `**FOLLOW-UP KHÁCH ZALO**\n` +
+    `- [Tên khách] — kết bạn [ngày], chưa tương tác\n` +
+    `- [Tên khách] — hỏi [nội dung] ngày [ngày], chưa phản hồi\n\n` +
+    `Nếu không có khách nào cần follow-up → nói "Không có khách cần follow-up hôm nay" (1 câu). ` +
+    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO.`
+  );
+}
+
+function buildMemoryCleanupPrompt() {
+  return (
+    `Dọn dẹp memory. Đọc tất cả file trong memory/ (trừ zalo-users/).\n\n` +
+    `1. Tìm các journal entries cũ > 7 ngày, tổng hợp những insight quan trọng\n` +
+    `2. Ghi tổng hợp tuần vào memory/weekly-digest.md (append, không xóa cũ)\n` +
+    `3. Xác định thông tin trùng lặp hoặc outdated trong memory files\n\n` +
+    `Gửi CEO báo cáo ngắn qua Telegram:\n` +
+    `**DỌN DẸP MEMORY**\n` +
+    `- Đã tổng hợp N journal entries\n` +
+    `- Insight chính: [1-3 bullet]\n\n` +
+    `KHÔNG xóa file gốc, chỉ tổng hợp. KHÔNG dùng emoji. KHÔNG hỏi lại CEO.`
+  );
+}
+
 // Manually trigger a cron handler (for "Test ngay" button in Dashboard).
 // CRITICAL: test fires MUST be byte-identical to scheduled cron fires so the
 // customer's test preview matches what they'll receive in production. No
@@ -6426,6 +6499,22 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
       } else if (id === 'meditation') {
         const sent = await sendTelegram(`*Tối ưu ban đêm*\n\nCron thật sẽ ghi queue lúc ${s.time}.`);
         return { success: sent === true, sent };
+      } else if (id === 'weekly') {
+        const prompt = buildWeeklyReportPrompt();
+        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — weekly-report' });
+        return { success: ok, sent: ok };
+      } else if (id === 'monthly') {
+        const prompt = buildMonthlyReportPrompt();
+        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — monthly-report' });
+        return { success: ok, sent: ok };
+      } else if (id === 'zalo-followup') {
+        const prompt = buildZaloFollowUpPrompt();
+        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — zalo-followup' });
+        return { success: ok, sent: ok };
+      } else if (id === 'memory-cleanup') {
+        const prompt = buildMemoryCleanupPrompt();
+        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — memory-cleanup' });
+        return { success: ok, sent: ok };
       }
       return { success: false, error: 'Unknown schedule id' };
     } else if (type === 'custom') {
@@ -7378,6 +7467,81 @@ function startCronJobs() {
             const stamp = new Date().toISOString();
             fs.appendFileSync(queueFile, `\n## Pending meditation ${stamp}\n\nRun night reflection: read .learnings/LEARNINGS.md, review patterns, promote repeating ones to AGENTS.md.\n`, 'utf-8');
           } catch (e) { console.error('[cron] meditation queue write error:', e.message); }
+        };
+        break;
+      }
+      case 'weekly': {
+        // Monday 8:00 AM
+        const [h, m] = (s.time || '08:00').split(':');
+        cronExpr = `${m || 0} ${h || 8} * * 1`;
+        handler = async () => {
+          console.log('[cron] Weekly report triggered at', new Date().toISOString());
+          if (global._cronInFlight?.get('weekly')) return;
+          global._cronInFlight?.set('weekly', true);
+          try {
+            const prompt = buildWeeklyReportPrompt();
+            await runCronAgentPrompt(prompt, { label: 'weekly-report' });
+            try { auditLog('cron_fired', { id: 'weekly', label: s.label || 'Báo cáo tuần' }); } catch {}
+          } catch (e) {
+            console.error('[cron] Weekly handler threw:', e?.message || e);
+            try { auditLog('cron_failed', { id: 'weekly', label: 'Báo cáo tuần', error: String(e?.message || e).slice(0, 200) }); } catch {}
+          } finally { global._cronInFlight?.delete('weekly'); }
+        };
+        break;
+      }
+      case 'monthly': {
+        // 1st of month 8:30 AM
+        const [h, m] = (s.time || '08:30').split(':');
+        cronExpr = `${m || 30} ${h || 8} 1 * *`;
+        handler = async () => {
+          console.log('[cron] Monthly report triggered at', new Date().toISOString());
+          if (global._cronInFlight?.get('monthly')) return;
+          global._cronInFlight?.set('monthly', true);
+          try {
+            const prompt = buildMonthlyReportPrompt();
+            await runCronAgentPrompt(prompt, { label: 'monthly-report' });
+            try { auditLog('cron_fired', { id: 'monthly', label: s.label || 'Báo cáo tháng' }); } catch {}
+          } catch (e) {
+            console.error('[cron] Monthly handler threw:', e?.message || e);
+            try { auditLog('cron_failed', { id: 'monthly', label: 'Báo cáo tháng', error: String(e?.message || e).slice(0, 200) }); } catch {}
+          } finally { global._cronInFlight?.delete('monthly'); }
+        };
+        break;
+      }
+      case 'zalo-followup': {
+        // Daily 9:30 AM — check Zalo customers needing follow-up
+        const [h, m] = (s.time || '09:30').split(':');
+        cronExpr = `${m || 30} ${h || 9} * * *`;
+        handler = async () => {
+          console.log('[cron] Zalo follow-up triggered at', new Date().toISOString());
+          if (global._cronInFlight?.get('zalo-followup')) return;
+          global._cronInFlight?.set('zalo-followup', true);
+          try {
+            const prompt = buildZaloFollowUpPrompt();
+            await runCronAgentPrompt(prompt, { label: 'zalo-followup' });
+            try { auditLog('cron_fired', { id: 'zalo-followup', label: 'Follow-up khách Zalo' }); } catch {}
+          } catch (e) {
+            console.error('[cron] Zalo follow-up threw:', e?.message || e);
+            try { auditLog('cron_failed', { id: 'zalo-followup', label: 'Follow-up khách Zalo', error: String(e?.message || e).slice(0, 200) }); } catch {}
+          } finally { global._cronInFlight?.delete('zalo-followup'); }
+        };
+        break;
+      }
+      case 'memory-cleanup': {
+        // Sunday 2:00 AM
+        cronExpr = '0 2 * * 0';
+        handler = async () => {
+          console.log('[cron] Memory cleanup triggered at', new Date().toISOString());
+          if (global._cronInFlight?.get('memory-cleanup')) return;
+          global._cronInFlight?.set('memory-cleanup', true);
+          try {
+            const prompt = buildMemoryCleanupPrompt();
+            await runCronAgentPrompt(prompt, { label: 'memory-cleanup' });
+            try { auditLog('cron_fired', { id: 'memory-cleanup', label: 'Dọn dẹp memory' }); } catch {}
+          } catch (e) {
+            console.error('[cron] Memory cleanup threw:', e?.message || e);
+            try { auditLog('cron_failed', { id: 'memory-cleanup', label: 'Dọn dẹp memory', error: String(e?.message || e).slice(0, 200) }); } catch {}
+          } finally { global._cronInFlight?.delete('memory-cleanup'); }
         };
         break;
       }
