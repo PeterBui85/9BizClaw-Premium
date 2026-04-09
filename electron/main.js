@@ -8005,7 +8005,19 @@ app.on('second-instance', () => {
 });
 
 // Strip frame-blocking headers for trusted local web UIs (9Router + OpenClaw gateway)
-// so we can embed them in <iframe> inside the dashboard.
+// so we can embed them in <webview> inside the dashboard.
+//
+// CRITICAL: dashboard.html uses <webview partition="persist:embed-openclaw"> and
+// <webview partition="persist:embed-9router">. Each `partition` value creates
+// its OWN session in Electron — `session.defaultSession.webRequest` listeners
+// do NOT fire for partition sessions. We must install the stripper on EACH
+// partition session separately, plus defaultSession (for any future iframes
+// in the main BrowserWindow).
+//
+// Symptom of forgetting: openclaw web UI shows blank/blocked inside the app
+// (X-Frame-Options: DENY + CSP frame-ancestors 'none' enforced) while 9Router
+// embed works fine (it doesn't send those headers). User report v2.0.0:
+// "không view được openclaw trong app, bật web thì bt, view 9router bt".
 function installEmbedHeaderStripper() {
   try {
     const { session } = require('electron');
@@ -8013,29 +8025,42 @@ function installEmbedHeaderStripper() {
       'http://127.0.0.1:18789', 'http://localhost:18789',
       'http://127.0.0.1:20128', 'http://localhost:20128',
     ];
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-      const url = details.url || '';
-      if (!TRUSTED_LOCAL.some(o => url.startsWith(o))) {
-        return callback({ responseHeaders: details.responseHeaders });
+    function attach(sess, label) {
+      try {
+        sess.webRequest.onHeadersReceived((details, callback) => {
+          const url = details.url || '';
+          if (!TRUSTED_LOCAL.some(o => url.startsWith(o))) {
+            return callback({ responseHeaders: details.responseHeaders });
+          }
+          const headers = {};
+          for (const [k, v] of Object.entries(details.responseHeaders || {})) {
+            const lower = k.toLowerCase();
+            if (lower === 'x-frame-options') continue; // strip XFO entirely
+            if (lower === 'content-security-policy') {
+              // Remove only frame-ancestors directive (keeps other CSP intact)
+              headers[k] = (Array.isArray(v) ? v : [v]).map(line =>
+                String(line).split(';')
+                  .filter(d => !d.trim().toLowerCase().startsWith('frame-ancestors'))
+                  .join(';')
+              );
+              continue;
+            }
+            headers[k] = v;
+          }
+          callback({ responseHeaders: headers });
+        });
+        console.log('[embed] Header stripper attached to session:', label);
+      } catch (e) {
+        console.warn('[embed] Could not attach to', label, ':', e?.message);
       }
-      const headers = {};
-      for (const [k, v] of Object.entries(details.responseHeaders || {})) {
-        const lower = k.toLowerCase();
-        if (lower === 'x-frame-options') continue; // strip
-        if (lower === 'content-security-policy') {
-          // Remove only frame-ancestors directive (keeps other security)
-          headers[k] = (Array.isArray(v) ? v : [v]).map(line =>
-            String(line).split(';')
-              .filter(d => !d.trim().toLowerCase().startsWith('frame-ancestors'))
-              .join(';')
-          );
-          continue;
-        }
-        headers[k] = v;
-      }
-      callback({ responseHeaders: headers });
-    });
-    console.log('[embed] Header stripper installed for trusted local origins');
+    }
+    // Apply to default session (covers iframes inside the main BrowserWindow)
+    attach(session.defaultSession, 'defaultSession');
+    // CRITICAL: also apply to partition sessions used by <webview> tags in
+    // dashboard.html. Without these, openclaw webview never loads because the
+    // partition session doesn't go through defaultSession's webRequest hooks.
+    attach(session.fromPartition('persist:embed-openclaw'), 'persist:embed-openclaw');
+    attach(session.fromPartition('persist:embed-9router'), 'persist:embed-9router');
   } catch (e) {
     console.error('[embed] Failed to install header stripper:', e.message);
   }
