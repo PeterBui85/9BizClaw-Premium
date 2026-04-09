@@ -2568,21 +2568,35 @@
         `;
         list.appendChild(row);
       });
-      // Custom crons (created by bot)
+      // Custom crons (from MODOROClaw custom-crons.json + OpenClaw cron/jobs.json)
       customCrons.forEach((c) => {
+        const isOC = c.source === 'openclaw';
+        const timeDisplay = isOC
+          ? esc(c.displayTime || c.cronExpr || '')
+          : esc(cronToTime(c.cronExpr) || '');
+        // OpenClaw crons show next run + status badge
+        let extraInfo = '';
+        if (isOC && c.nextRunAt) {
+          try {
+            const d = new Date(c.nextRunAt);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            extraInfo = ' · tiếp: ' + hh + ':' + mm;
+          } catch {}
+        }
+        if (isOC && c.lastStatus) {
+          extraInfo += ' · ' + (c.lastStatus === 'ok' ? 'chạy OK' : c.lastStatus);
+        }
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;border-top:1px solid var(--border);';
         row.innerHTML = `
-          <span class="schedule-icon-wrap">${icon('bot', 18)}</span>
+          <span class="schedule-icon-wrap">${icon(isOC ? 'zap' : 'bot', 18)}</span>
           <div style="flex:1;min-width:0" onclick="showCronDetail('custom','${esc(c.id)}')">
-            <div style="font-size:13px;font-weight:600">${esc(c.label || 'Custom cron')}</div>
-            <div style="font-size:11px;color:var(--text-muted)">${esc(c.prompt ? c.prompt.substring(0, 60) + (c.prompt.length > 60 ? '...' : '') : '')}</div>
+            <div style="font-size:13px;font-weight:600">${esc(c.label || 'Custom cron')}${isOC ? ' <span style=\"font-size:10px;color:var(--accent);font-weight:400;margin-left:6px\">(bot tạo)</span>' : ''}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${esc(c.prompt ? c.prompt.substring(0, 60) + (c.prompt.length > 60 ? '...' : '') : '')}${extraInfo ? '<span style=\"color:var(--accent);margin-left:6px\">' + esc(extraInfo) + '</span>' : ''}</div>
           </div>
-          <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;margin-right:4px">${esc(cronToTime(c.cronExpr) || '')}</div>
-          <label class="toggle-switch">
-            <input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCustomCron('${esc(c.id)}',this.checked)">
-            <span class="toggle-slider"></span>
-          </label>
+          <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;margin-right:4px">${timeDisplay}${isOC && c.deleteAfterRun ? ' (1 lần)' : ''}</div>
+          ${isOC ? '<span style="font-size:10px;color:var(--text-muted);padding:2px 6px;border:1px solid var(--border);border-radius:4px">OpenClaw</span>' : `<label class="toggle-switch"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCustomCron('${esc(c.id)}',this.checked)"><span class="toggle-slider"></span></label>`}
         `;
         list.appendChild(row);
       });

@@ -6146,7 +6146,52 @@ ipcMain.handle('get-schedules', async () => {
 });
 
 ipcMain.handle('get-custom-crons', async () => {
-  return loadCustomCrons();
+  // Merge MODOROClaw custom-crons.json + OpenClaw built-in cron/jobs.json.
+  // The bot creates crons via OpenClaw's `cron` tool (saved to
+  // ~/.openclaw/cron/jobs.json), NOT to custom-crons.json. The Dashboard
+  // previously only read custom-crons.json, so bot-created crons were
+  // invisible to the CEO. Fix: read both, merge, dedupe by ID, label
+  // OpenClaw crons with source:'openclaw' so Dashboard can distinguish.
+  const modoroEntries = loadCustomCrons().map(c => ({ ...c, source: 'modoro' }));
+  let openclawEntries = [];
+  try {
+    const ocJobsPath = path.join(HOME, '.openclaw', 'cron', 'jobs.json');
+    if (fs.existsSync(ocJobsPath)) {
+      const raw = JSON.parse(fs.readFileSync(ocJobsPath, 'utf-8'));
+      const jobs = Array.isArray(raw?.jobs) ? raw.jobs : [];
+      for (const j of jobs) {
+        if (!j || !j.id) continue;
+        // Map OpenClaw cron format → MODOROClaw display format
+        const schedExpr = j.schedule?.expr || j.schedule?.at || '';
+        const kind = j.schedule?.kind || 'cron';
+        let displayTime = schedExpr;
+        if (kind === 'at') {
+          try {
+            const d = new Date(j.schedule.at);
+            displayTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} (một lần)`;
+          } catch {}
+        }
+        openclawEntries.push({
+          id: 'oc_' + j.id,
+          label: j.name || 'OpenClaw cron',
+          cronExpr: schedExpr,
+          displayTime,
+          prompt: j.payload?.text || j.payload?.message || '(hệ thống)',
+          enabled: j.enabled !== false,
+          createdAt: j.createdAtMs ? new Date(j.createdAtMs).toISOString() : '',
+          source: 'openclaw',
+          // Extra metadata for display
+          lastStatus: j.state?.lastRunStatus || null,
+          nextRunAt: j.state?.nextRunAtMs ? new Date(j.state.nextRunAtMs).toISOString() : null,
+          deleteAfterRun: j.deleteAfterRun || false,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[get-custom-crons] failed to read OpenClaw cron/jobs.json:', e?.message);
+  }
+  // Merge: OpenClaw entries first (they're the ones bot created), then MODOROClaw
+  return [...openclawEntries, ...modoroEntries];
 });
 
 ipcMain.handle('save-custom-crons', async (_event, crons) => {
