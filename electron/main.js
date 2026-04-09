@@ -2896,34 +2896,50 @@ function ensureOpenzcaFriendEventFix() {
   }
 }
 
-// MODOROClaw OUTPUT-FILTER PATCH — Security Layer 2
-// Deterministic scan of outbound Zalo text for sensitive patterns that the
-// AI might leak despite AGENTS.md rules. Model compliance is not guaranteed
-// — a jailbreak payload may trick the bot into citing file paths, dumping
-// memory, or echoing API keys. This filter runs AFTER the model generates,
-// BEFORE the message hits sendTextOpenzalo's CLI spawn. If any blocked
-// pattern matches, the body is replaced with a safe canned message and the
-// incident is logged (but sending continues — don't leave customer hanging).
+// MODOROClaw OUTPUT-FILTER PATCH v2 — Security Layer 2
+// Deterministic scan of outbound Zalo text for sensitive patterns + AI
+// failure modes that AGENTS.md rules cannot prevent. Model compliance is
+// not guaranteed — a jailbreak payload, a context window edge case, or
+// just a bad sampling step can cause the bot to:
+//   1. cite file paths / API keys / config internals (security leak)
+//   2. dump its English chain-of-thought as the user-facing reply
+//   3. narrate file/tool operations ("em vừa edit file memory.md")
+//   4. send a message with zero Vietnamese diacritics (= not Vietnamese)
+//   5. claim to have stored facts in memory without actually doing it
 //
-// Patterns blocked:
-// - File paths: memory/, .learnings/, SOUL.md, USER.md, MEMORY.md, AGENTS.md,
-//   openclaw.json, ~/.openclaw, C:\Users\, absolute Unix-style /Users/
-// - Line refs: #L<digits>
-// - API keys: sk-<20+ chars>, Bearer <token>, Authorization header content
-// - Config internals: botToken, apiKey field name references
-// - Long digit IDs (>= 15 digits) that look like Zalo userIds
+// This filter runs AFTER the model generates, BEFORE the message hits
+// sendTextOpenzalo's CLI spawn. If any blocked pattern matches, the body
+// is replaced with a safe canned message and the incident is logged
+// (sending continues — don't leave customer hanging).
 //
-// Idempotent via "MODOROClaw OUTPUT-FILTER PATCH" marker. Injects at the top
-// of sendTextOpenzalo in send.ts, right after body trim.
+// IMPORTANT: this function FORCE-REPLACES any prior version of the patch
+// (v1 or v2) on each app start. That way pattern updates ship immediately
+// without requiring users to delete extensions/openzalo/src/send.ts. The
+// strip is bounded by the unique markers `MODOROClaw OUTPUT-FILTER PATCH`
+// (start) and `END MODOROClaw OUTPUT-FILTER PATCH` (end).
 function ensureZaloOutputFilterFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'send.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (content.includes('MODOROClaw OUTPUT-FILTER PATCH')) return; // already patched
+
+    const CURRENT_VERSION = 'MODOROClaw OUTPUT-FILTER PATCH v2';
+
+    // Fast path: file is already on the current version, nothing to do.
+    if (content.includes(CURRENT_VERSION)) return;
+
+    // Strip any prior version of the patch (v1 had marker without "v2").
+    // The injection block always begins with `// === MODOROClaw OUTPUT-FILTER PATCH`
+    // and ends with `// === END MODOROClaw OUTPUT-FILTER PATCH ===`. Strip
+    // the entire region (including any leading whitespace) so we can re-inject
+    // cleanly. If no prior block exists this is a no-op.
+    const stripRe = /\n\n\s*\/\/ === MODOROClaw OUTPUT-FILTER PATCH[\s\S]*?\/\/ === END MODOROClaw OUTPUT-FILTER PATCH ===/g;
+    if (stripRe.test(content)) {
+      content = content.replace(stripRe, '');
+    }
 
     // Anchor: right after `const body = text.trim();` and the empty-body check,
-    // before the args construction. Both are stable in upstream 2026.3.31.
+    // before the args construction. Stable in upstream 2026.3.31+.
     const anchor = '  if (!body) {\n    return { messageId: "empty", kind: "text" };\n  }';
     if (!content.includes(anchor)) {
       console.warn('[zalo-output-filter-fix] anchor not found — upstream send.ts changed');
@@ -2932,16 +2948,18 @@ function ensureZaloOutputFilterFix() {
 
     const injection = `
 
-  // === MODOROClaw OUTPUT-FILTER PATCH ===
-  // Scan outbound Zalo text for sensitive patterns the AI might leak
-  // despite AGENTS.md rules. See main.js ensureZaloOutputFilterFix.
+  // === MODOROClaw OUTPUT-FILTER PATCH v2 ===
+  // Scan outbound Zalo text for sensitive patterns + AI failure modes that
+  // AGENTS.md rules cannot fully prevent. See main.js ensureZaloOutputFilterFix.
   try {
     const __ofFs = require("node:fs");
     const __ofPath = require("node:path");
     const __ofOs = require("node:os");
     // Patterns that MUST NEVER appear in a customer-facing Zalo reply.
-    // Case-insensitive, matching any occurrence.
+    // Case-insensitive, matching any occurrence. Order matters: more
+    // specific patterns first so audit log shows the most informative match.
     const __ofBlockPatterns: { name: string; re: RegExp }[] = [
+      // --- Layer A: file paths + secrets (original v1 patterns) ---
       { name: "file-path-memory", re: /\\bmemory\\/[\\w\\-./]*\\.md\\b/i },
       { name: "file-path-learnings", re: /\\.learnings\\/[\\w\\-./]*/i },
       { name: "file-path-core", re: /\\b(?:SOUL|USER|MEMORY|AGENTS|IDENTITY|COMPANY|PRODUCTS|BOOTSTRAP|HEARTBEAT|TOOLS)\\.md\\b/i },
@@ -2953,6 +2971,35 @@ function ensureZaloOutputFilterFix() {
       { name: "bearer-token", re: /\\bBearer\\s+[a-zA-Z0-9_\\-.]{20,}/i },
       { name: "botToken-field", re: /\\bbotToken\\b/i },
       { name: "apiKey-field", re: /\\bapiKey\\b/i },
+      // --- Layer B: English chain-of-thought leakage (v2) ---
+      // High-signal English phrases that ALMOST never appear in legit
+      // Vietnamese customer support but DO appear when the model dumps
+      // its planning text. False-positive risk: very low.
+      { name: "cot-en-the-actor", re: /\\bthe (user|assistant|bot|model|customer)\\b/i },
+      { name: "cot-en-we-modal", re: /\\b(we need to|we have to|we should|we can|let me|let's|i'll|i will|i need to|i should)\\b/i },
+      { name: "cot-en-meta", re: /\\b(internal reasoning|chain of thought|system prompt|instructions|prompt injection|tool call)\\b/i },
+      { name: "cot-en-narration", re: /\\b(based on (the|our)|according to (the|my)|as (you|i) (can|mentioned)|in (the|this) conversation)\\b/i },
+      { name: "cot-en-reasoning-verbs", re: /\\b(let me think|hmm,? let|first,? (i|let|we)|okay,? (so|let|i)|alright,? (so|let|i))\\b/i },
+      // --- Layer C: meta-commentary about file/tool operations (v2) ---
+      // Even in Vietnamese, the bot must NEVER narrate that it edited a
+      // file, called a tool, or updated memory. These all leak internals.
+      { name: "meta-vi-file-ops", re: /\\b(edit file|ghi (vào )?file|lưu (vào )?file|update file|append file|read file|đọc file|cập nhật file|sửa file|tạo file|xóa file)\\b/i },
+      { name: "meta-vi-tool-name", re: /\\b(tool (Edit|Write|Read|Bash|Grep|Glob)|use the (Edit|Write|Read) tool|công cụ (Edit|Write|Read|Bash))\\b/i },
+      { name: "meta-vi-memory-claim", re: /\\b(đã (lưu|ghi|cập nhật|update) (vào |trong )?(bộ nhớ|memory|hồ sơ|file|database)|stored (in|to) memory|saved to (file|memory))\\b/i },
+      { name: "meta-vi-tool-action", re: /\\b(em (vừa|đã) (edit|write|read|chạy|gọi) (file|tool|công cụ)|em (vừa|đã) (cập nhật|sửa|đọc) (file|memory|database))\\b/i },
+      // Hallucinated fact-claim: bot says "em đã ghi nhận RẰNG X" or
+      // "em đã cập nhật SỞ THÍCH" — these are the bot pretending to be a
+      // database when it isn't. The RẰNG / sở thích / preference markers
+      // distinguish lying-about-memory from legit "em đã ghi nhận yêu cầu".
+      { name: "meta-vi-fact-claim", re: /\\b(em đã (cập nhật|ghi (nhận|chú)|lưu( lại)?) (rằng|là|thêm rằng|thêm là|sở thích|preference|là anh|là chị|là mình)|đã (cập nhật|ghi nhận|lưu) (thêm )?(rằng|là))\\b/i },
+      // --- Layer D: all-Latin / no-Vietnamese-diacritic message (v2) ---
+      // Vietnamese always contains at least one diacritic char in any
+      // non-trivial message ("dạ", "anh", "em", "chị" all have them).
+      // A long message with ZERO diacritics is almost certainly English
+      // CoT or hallucinated content the bot meant to internalize.
+      // Skip if message is short (< 40 chars) — could be a phone number,
+      // ID, link, or single-word reply.
+      { name: "no-vietnamese-diacritic", re: /^(?=[\\s\\S]{40,})(?!.*[àáảãạâấầẩẫậăắằẳẵặèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]).+/s },
     ];
     let __ofBlocked: string | null = null;
     for (const __ofP of __ofBlockPatterns) {
@@ -2991,10 +3038,15 @@ function ensureZaloOutputFilterFix() {
       });
       // Replace body with a safe canned message. Don't throw — we still
       // want the customer to get a reply, just not the leaked content.
-      const __ofSafeMsg = "Dạ em xin lỗi, em không thể chia sẻ thông tin này. Em có thể hỗ trợ mình việc khác không ạ?";
+      // Pick a context-appropriate fallback so it doesn't always look the
+      // same (which would be a tell that the filter fired).
+      const __ofSafeMsgs = [
+        "Dạ em xin lỗi, cho em một phút em rà lại thông tin rồi báo lại mình ạ.",
+        "Dạ em ghi nhận rồi ạ. Em sẽ kiểm tra và phản hồi lại mình ngay.",
+        "Dạ em đang xác nhận lại thông tin, mình chờ em xíu nha.",
+      ];
+      const __ofSafeMsg = __ofSafeMsgs[Math.floor(Math.random() * __ofSafeMsgs.length)] || __ofSafeMsgs[0];
       (options as any).text = __ofSafeMsg;
-      // Rebind body for downstream code — TypeScript const shadowing via \`let\`
-      // not possible here. Instead, override the body inline via closure below.
       return await (async () => {
         const __ofSafeBody = __ofSafeMsg;
         const __ofArgs = ["msg", "send", target.threadId, __ofSafeBody];
@@ -3028,7 +3080,7 @@ function ensureZaloOutputFilterFix() {
 
     const patched = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, patched, 'utf-8');
-    console.log('[zalo-output-filter-fix] Injected output filter into send.ts');
+    console.log('[zalo-output-filter-fix] Injected output filter v2 into send.ts');
   } catch (e) {
     console.error('[zalo-output-filter-fix] error:', e.message);
   }
