@@ -2701,6 +2701,93 @@ function ensureZaloFriendCheckFix() {
   }
 }
 
+// MODOROCLAW ZALO-OWNER PATCH: when a Zalo DM arrives from the CEO's personal
+// Zalo account (NOT the bot account that openzca logs in to), prepend a
+// special marker to the message body so the agent can switch to CEO mode.
+// AGENTS.md instructs the bot: when seeing `[ZALO_CHU_NHAN]` prefix, treat
+// the message as if it came from CEO on Telegram (full persona, accept debug
+// commands like /reset /status, skip output filter trust gate).
+//
+// Reads owner from workspace/zalo-owner.json (written by wizard step 4
+// or Dashboard Zalo tab). Bypasses if file missing or sender doesn't match.
+// Idempotent via marker. Anchor: end of friend-check patch.
+function ensureZaloOwnerFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = fs.readFileSync(pluginFile, 'utf-8');
+    if (content.includes('MODOROCLAW ZALO-OWNER PATCH')) return; // already patched
+
+    // Anchor: end of friend-check patch. Owner check must run AFTER friend
+    // check (non-friends already short-circuited) and BEFORE agent dispatch
+    // so the marker is in the body the agent sees.
+    const anchor = '  // === END MODOROClaw FRIEND-CHECK PATCH ===';
+    if (!content.includes(anchor)) {
+      console.warn('[zalo-owner-fix] friend-check anchor missing — friend-check fix must run first');
+      return;
+    }
+
+    const injection = `
+
+  // === MODOROCLAW ZALO-OWNER PATCH ===
+  // Mark messages from CEO's personal Zalo with [ZALO_CHU_NHAN] prefix.
+  // AGENTS.md tells bot to switch to CEO mode when it sees this marker.
+  // See electron/main.js ensureZaloOwnerFix.
+  if (!message.isGroup) {
+    try {
+      const __zoFs = require("node:fs");
+      const __zoPath = require("node:path");
+      const __zoOs = require("node:os");
+      const __zoSender = String(message.senderId || "").trim();
+      if (__zoSender) {
+        const __zoOwnerPaths = [
+          __zoPath.join(__zoOs.homedir(), "AppData", "Roaming", "modoro-claw", "zalo-owner.json"),
+          __zoPath.join(__zoOs.homedir(), ".openclaw", "workspace", "zalo-owner.json"),
+        ];
+        for (const __zoOp of __zoOwnerPaths) {
+          try {
+            if (!__zoFs.existsSync(__zoOp)) continue;
+            const __zoData = JSON.parse(__zoFs.readFileSync(__zoOp, "utf-8"));
+            const __zoOwner = String(__zoData?.ownerUserId || "").trim();
+            if (!__zoOwner) break;
+            if (__zoSender === __zoOwner) {
+              const __zoName = String(__zoData?.ownerName || "").trim();
+              const __zoTag = __zoName
+                ? \`[ZALO_CHU_NHAN tên="\${__zoName.replace(/"/g, '')}"]\`
+                : "[ZALO_CHU_NHAN]";
+              // Prepend marker into the actual content the agent will read.
+              // We mutate the runtime message text + structured content so
+              // both code paths (text-only + media+caption) see the marker.
+              if (typeof message.text === "string" && message.text) {
+                (message as any).text = __zoTag + "\\n" + message.text;
+              } else if (typeof message.text === "string") {
+                (message as any).text = __zoTag;
+              }
+              if ((message as any).body && typeof (message as any).body === "string") {
+                (message as any).body = __zoTag + "\\n" + (message as any).body;
+              }
+              runtime.log?.(\`openzalo: ZALO_CHU_NHAN marker injected for sender \${__zoSender}\`);
+            }
+            break; // first existing owner file wins
+          } catch (__zoReadErr) {
+            runtime.log?.(\`openzalo: zalo-owner read error: \${String(__zoReadErr)}\`);
+          }
+        }
+      }
+    } catch (__zoErr) {
+      runtime.log?.(\`openzalo: zalo-owner check error: \${String(__zoErr)}\`);
+    }
+  }
+  // === END MODOROCLAW ZALO-OWNER PATCH ===`;
+
+    const patched = content.replace(anchor, anchor + injection);
+    fs.writeFileSync(pluginFile, patched, 'utf-8');
+    console.log('[zalo-owner-fix] Injected owner-marker patch into inbound.ts');
+  } catch (e) {
+    console.error('[zalo-owner-fix] error:', e?.message);
+  }
+}
+
 // MODOROCLAW FRIEND-EVENT PATCH: openzca daemon's `listen` command only subscribes
 // to message/connected/error/closed events from zca-js — it does NOT listen for
 // `friend_event`. zca-js DOES emit friend_event on type=ADD/REMOVE/REQUEST etc.
@@ -3276,6 +3363,9 @@ async function _startOpenClawImpl() {
   ensureZaloBlocklistFix();
   // Friend check: inject stranger-handling logic (depends on blocklist anchor)
   ensureZaloFriendCheckFix();
+  // Owner marker: tag DMs from CEO's personal Zalo so bot switches to CEO mode
+  // (depends on friend-check anchor — must run AFTER it)
+  ensureZaloOwnerFix();
   // Patch openzca daemon to listen for friend_event + auto-accept friend requests
   // + refresh cache instantly. This is what makes the friend-check feel "instant"
   // — without it, friends.json only updates on login or manual cache-refresh, so
@@ -4034,6 +4124,7 @@ async function ensureZaloPlugin() {
           try { ensureOpenzaloShellFix(); } catch (e) { console.warn('[ensureZaloPlugin] shell fix failed:', e?.message); }
           try { ensureZaloBlocklistFix(); } catch (e) { console.warn('[ensureZaloPlugin] blocklist fix failed:', e?.message); }
           try { ensureZaloFriendCheckFix(); } catch (e) { console.warn('[ensureZaloPlugin] friend check fix failed:', e?.message); }
+          try { ensureZaloOwnerFix(); } catch (e) { console.warn('[ensureZaloPlugin] zalo owner fix failed:', e?.message); }
           try { ensureZaloOutputFilterFix(); } catch (e) { console.warn('[ensureZaloPlugin] output filter fix failed:', e?.message); }
           _zaloReady = true;
           return;
@@ -4477,6 +4568,52 @@ ipcMain.handle('append-zalo-user-note', async (_event, { senderId, note }) => {
     return { success: true };
   } catch (e) {
     console.error('[zalo-user-memory] append note error:', e?.message);
+    return { success: false, error: e.message };
+  }
+});
+
+// === Zalo owner identification ===
+// CEO has 2 Zalo accounts: (1) the bot account that openzca logs in to,
+// (2) their personal Zalo that talks to the bot. We need to recognize (2)
+// so the bot treats those messages as CEO commands instead of customer
+// service replies. Saved as { ownerUserId, ownerName, savedAt } in
+// workspace/zalo-owner.json. Read by ensureZaloOwnerFix patch in
+// inbound.ts at message dispatch time.
+
+function getZaloOwnerPath() {
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, 'zalo-owner.json');
+}
+
+function readZaloOwner() {
+  try {
+    const p = getZaloOwnerPath();
+    if (!p || !fs.existsSync(p)) return null;
+    const raw = fs.readFileSync(p, 'utf-8');
+    const data = JSON.parse(raw);
+    if (!data || typeof data.ownerUserId !== 'string' || !data.ownerUserId) return null;
+    return data;
+  } catch { return null; }
+}
+
+ipcMain.handle('get-zalo-owner', async () => {
+  return readZaloOwner() || { ownerUserId: '', ownerName: '' };
+});
+
+ipcMain.handle('save-zalo-owner', async (_event, payload) => {
+  try {
+    const ws = getWorkspace();
+    if (!ws) return { success: false, error: 'workspace không tồn tại' };
+    const userId = String((payload && payload.ownerUserId) || '').trim().replace(/[^0-9-]/g, '').slice(0, 32);
+    const name = String((payload && payload.ownerName) || '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 100);
+    if (!userId) return { success: false, error: 'userId rỗng hoặc không hợp lệ' };
+    const data = { ownerUserId: userId, ownerName: name, savedAt: new Date().toISOString() };
+    fs.writeFileSync(getZaloOwnerPath(), JSON.stringify(data, null, 2), 'utf-8');
+    try { auditLog('zalo_owner_set', { ownerUserId: userId, ownerName: name }); } catch {}
+    return { success: true };
+  } catch (e) {
+    console.error('[zalo-owner] save error:', e?.message);
     return { success: false, error: e.message };
   }
 });

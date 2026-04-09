@@ -946,6 +946,15 @@
               <div style="font-size:11px;color:var(--text-muted);margin-top:14px;padding:10px;background:var(--bg);border-radius:8px;line-height:1.5">
                 <strong>Lưu ý:</strong> Trong nhóm, bot chỉ trả lời khi được <strong>@mention</strong>.
               </div>
+
+              <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Tài khoản Zalo cá nhân của chủ nhân</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">Bot nhận diện tài khoản này là chủ doanh nghiệp (như Telegram), trả lời theo persona CEO và nhận lệnh quản trị.</div>
+                <select id="zalo-owner-dashboard-select" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px">
+                  <option value="">— Chưa chọn —</option>
+                </select>
+                <div id="zalo-owner-dashboard-status" style="display:none;font-size:11px;margin-top:6px"></div>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
               <button class="btn btn-secondary btn-small" onclick="refreshZaloCache()" style="display:inline-flex;align-items:center;gap:6px;justify-content:center"><span data-icon="refresh-cw" data-icon-size="14"></span>Đồng bộ từ Zalo</button>
@@ -2383,6 +2392,62 @@
         if (el && v) el.textContent = 'v' + v;
       } catch {}
     })();
+
+    // === Zalo owner picker on Dashboard ===
+    async function loadDashboardZaloOwner() {
+      const sel = document.getElementById('zalo-owner-dashboard-select');
+      const status = document.getElementById('zalo-owner-dashboard-status');
+      if (!sel) return;
+      try {
+        const friends = await window.claw.listZaloFriends();
+        if (!Array.isArray(friends) || friends.length === 0) {
+          sel.innerHTML = '<option value="">Chưa có bạn bè (đăng nhập Zalo trước)</option>';
+          return;
+        }
+        friends.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'vi'));
+        let savedOwner = '';
+        try {
+          const existing = await window.claw.getZaloOwner();
+          savedOwner = (existing && existing.ownerUserId) || '';
+        } catch {}
+        const opts = ['<option value="">— Chưa chọn —</option>'];
+        for (const f of friends) {
+          const id = String(f.userId || '');
+          const name = String(f.displayName || '(không tên)').replace(/</g, '&lt;');
+          const phone = f.phoneNumber ? ' · ' + f.phoneNumber : '';
+          const isSelected = id === savedOwner ? ' selected' : '';
+          opts.push('<option value="' + id + '" data-name="' + name + '"' + isSelected + '>' + name + phone + '</option>');
+        }
+        sel.innerHTML = opts.join('');
+        sel.onchange = async (ev) => {
+          const userId = ev.target.value;
+          if (!userId) return;
+          const opt = ev.target.options[ev.target.selectedIndex];
+          const name = opt.getAttribute('data-name') || '';
+          status.style.display = 'block';
+          status.textContent = 'Đang lưu...';
+          status.style.color = 'var(--text-muted)';
+          try {
+            const res = await window.claw.saveZaloOwner({ ownerUserId: userId, ownerName: name });
+            if (res && res.success) {
+              status.textContent = '✓ Đã lưu — bot sẽ nhận diện ' + name + ' là chủ doanh nghiệp.';
+              status.style.color = 'var(--success,#16a34a)';
+              addActivity('Đã đặt chủ nhân Zalo: ' + name);
+            } else {
+              status.textContent = 'Lỗi: ' + (res?.error || 'không xác định');
+              status.style.color = 'var(--danger,#e74c3c)';
+            }
+          } catch (e) {
+            status.textContent = 'Lỗi: ' + e.message;
+            status.style.color = 'var(--danger,#e74c3c)';
+          }
+        };
+      } catch (e) {
+        console.warn('loadDashboardZaloOwner error:', e);
+      }
+    }
+    // Load when Zalo tab opens (call from switchPage if zalo) — also load once at boot
+    setTimeout(() => loadDashboardZaloOwner(), 2000);
     checkChannels();
     setTimeout(checkChannels, 5000);
     setInterval(refreshDashboard, 30000);

@@ -969,6 +969,15 @@
             </div>
 
             <div class="wz-field" style="margin-top:24px">
+              <label class="wz-label">Tài khoản Zalo cá nhân của anh/chị (chủ nhân)</label>
+              <p class="wz-help" style="margin-top:-2px;margin-bottom:10px">Chọn tài khoản Zalo riêng anh/chị dùng để chat với bot. Bot sẽ nhận diện đó là chủ doanh nghiệp (giống Telegram), trả lời theo cách xưng hô đã chọn ở bước 3, và nhận lệnh quản trị. Các bạn bè khác = khách hàng.</p>
+              <select id="zalo-owner-select" class="wz-select" disabled>
+                <option value="">— Đăng nhập Zalo trước rồi danh sách bạn bè sẽ hiện ra ở đây —</option>
+              </select>
+              <div id="zalo-owner-status" class="wz-hidden" style="margin-top:8px;font-size:12px;color:var(--text-tertiary)"></div>
+            </div>
+
+            <div class="wz-field" style="margin-top:24px">
               <label class="wz-label">Chế độ Zalo</label>
               <div class="wz-grid cols-3">
                 <label class="wz-choice is-checked" data-radio="zalo-mode">
@@ -1362,10 +1371,88 @@
               document.getElementById('zalo-step-body').style.display = 'none';
               document.getElementById('zalo-btn').style.display = 'none';
               document.getElementById('zalo-login-success').classList.remove('wz-hidden');
+              // Populate owner picker after Zalo login (friends.json now exists)
+              populateZaloOwnerPicker().catch(e => console.warn('owner picker populate error:', e));
             }
           }
           if (attempts > 120) clearInterval(poll);
         }, 1000);
+      }
+    }
+
+    // ===== Zalo owner picker =====
+    async function populateZaloOwnerPicker() {
+      const sel = document.getElementById('zalo-owner-select');
+      const status = document.getElementById('zalo-owner-status');
+      if (!sel) return;
+      sel.disabled = true;
+      sel.innerHTML = '<option value="">Đang tải danh sách bạn bè...</option>';
+      status.classList.add('wz-hidden');
+      try {
+        let friends = [];
+        // Retry up to 5 times — friends.json may take a few sec to populate after login
+        for (let i = 0; i < 5; i++) {
+          friends = await window.claw.listZaloFriends();
+          if (Array.isArray(friends) && friends.length > 0) break;
+          await new Promise(r => setTimeout(r, 1500));
+        }
+        if (!Array.isArray(friends) || friends.length === 0) {
+          sel.innerHTML = '<option value="">Chưa có bạn bè trong Zalo — anh/chị có thể bỏ qua, thiết lập sau ở Dashboard</option>';
+          sel.disabled = false;
+          return;
+        }
+        // Sort alphabetically by display name
+        friends.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'vi'));
+        // Pre-load existing owner selection (in case user re-runs wizard)
+        let savedOwner = '';
+        try {
+          const existing = await window.claw.getZaloOwner();
+          savedOwner = (existing && existing.ownerUserId) || '';
+        } catch {}
+        const opts = ['<option value="">— Chọn tài khoản Zalo cá nhân của anh/chị —</option>'];
+        for (const f of friends) {
+          const id = String(f.userId || '');
+          const name = String(f.displayName || '(không tên)').replace(/</g, '&lt;');
+          const phone = f.phoneNumber ? ' · ' + f.phoneNumber : '';
+          const sel = id === savedOwner ? ' selected' : '';
+          opts.push('<option value="' + id + '" data-name="' + name + '"' + sel + '>' + name + phone + '</option>');
+        }
+        sel.innerHTML = opts.join('');
+        sel.disabled = false;
+        sel.onchange = onZaloOwnerChange;
+        if (savedOwner) {
+          status.textContent = 'Đã lưu trước đó. Anh/chị có thể đổi nếu cần.';
+          status.classList.remove('wz-hidden');
+        }
+      } catch (e) {
+        console.error('populateZaloOwnerPicker error:', e);
+        sel.innerHTML = '<option value="">Lỗi tải bạn bè — thiết lập sau ở Dashboard</option>';
+        sel.disabled = false;
+      }
+    }
+
+    async function onZaloOwnerChange(ev) {
+      const sel = ev.target;
+      const status = document.getElementById('zalo-owner-status');
+      const userId = sel.value;
+      if (!userId) return;
+      const opt = sel.options[sel.selectedIndex];
+      const name = opt.getAttribute('data-name') || '';
+      try {
+        const res = await window.claw.saveZaloOwner({ ownerUserId: userId, ownerName: name });
+        if (res && res.success) {
+          status.textContent = '✓ Đã lưu — bot sẽ nhận diện tài khoản này là chủ doanh nghiệp.';
+          status.style.color = 'var(--success)';
+          status.classList.remove('wz-hidden');
+        } else {
+          status.textContent = 'Lỗi: ' + (res?.error || 'không xác định');
+          status.style.color = 'var(--danger,#e74c3c)';
+          status.classList.remove('wz-hidden');
+        }
+      } catch (e) {
+        status.textContent = 'Lỗi: ' + e.message;
+        status.style.color = 'var(--danger,#e74c3c)';
+        status.classList.remove('wz-hidden');
       }
     }
 

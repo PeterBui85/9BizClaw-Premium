@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('claw', {
   // App version
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
+  // Zalo owner identification
+  getZaloOwner: () => ipcRenderer.invoke('get-zalo-owner'),
+  saveZaloOwner: (payload) => ipcRenderer.invoke('save-zalo-owner', payload),
+
   // Zalo per-user memory
   listZaloUserMemories: () => ipcRenderer.invoke('list-zalo-user-memories'),
   readZaloUserMemory: (senderId) => ipcRenderer.invoke('read-zalo-user-memory', { senderId }),
