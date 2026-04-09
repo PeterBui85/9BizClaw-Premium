@@ -7274,6 +7274,10 @@ ipcMain.handle('get-gateway-token', async () => {
 
 ipcMain.handle('get-bot-status', async () => ({ running: botRunning }));
 
+ipcMain.handle('get-app-version', async () => {
+  try { return app.getVersion(); } catch { return ''; }
+});
+
 ipcMain.handle('toggle-bot', async () => {
   if (botRunning) stopOpenClaw(); else startOpenClaw();
   await new Promise((r) => setTimeout(r, 500));
