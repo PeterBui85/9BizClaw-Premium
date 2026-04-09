@@ -71,6 +71,13 @@ contextBridge.exposeInMainWorld('claw', {
   getZaloOwner: () => ipcRenderer.invoke('get-zalo-owner'),
   saveZaloOwner: (payload) => ipcRenderer.invoke('save-zalo-owner', payload),
 
+  // Dashboard PIN (Security Layer 4)
+  getPinStatus: () => ipcRenderer.invoke('get-pin-status'),
+  setupPin: (pin) => ipcRenderer.invoke('setup-pin', { pin }),
+  verifyPin: (pin) => ipcRenderer.invoke('verify-pin', { pin }),
+  resetPin: (telegramUserId, newPin) => ipcRenderer.invoke('reset-pin', { telegramUserId, newPin }),
+  changePin: (oldPin, newPin) => ipcRenderer.invoke('change-pin', { oldPin, newPin }),
+
   // Zalo per-user memory
   listZaloUserMemories: () => ipcRenderer.invoke('list-zalo-user-memories'),
   readZaloUserMemory: (senderId) => ipcRenderer.invoke('read-zalo-user-memory', { senderId }),

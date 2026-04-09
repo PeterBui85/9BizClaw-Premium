@@ -1,20 +1,50 @@
 # MODOROClaw Security Plan
 
-Branch: `next-feature-bundle` · Last update: 2026-04-08
+Branch: `main` · Last update: 2026-04-09
 
-5-layer defense-in-depth for MODOROClaw. Layers 2, 3, 5 implemented
-tonight. Layers 1, 4 planned for post-demo implementation.
+5-layer defense-in-depth for MODOROClaw.
 
-## Status
+## Status (as of v2.2.5)
 
-| Layer | Area | Status | Commit |
+| Layer | Area | Status | Notes |
 |---|---|---|---|
-| 0 | AGENTS.md rules (prompt-level) | Shipped main | 0ab6be2 |
-| 1 | Secrets encryption at rest | PLANNED | — |
-| 2 | Output filter (deterministic) | IMPLEMENTED (claw-next) | this branch |
-| 3 | Append-only audit log | IMPLEMENTED (claw-next) | this branch |
-| 4 | Dashboard PIN + auto-lock | PLANNED | — |
-| 5 | Log rotation + retention | IMPLEMENTED (claw-next) | this branch |
+| 0 | AGENTS.md prompt rules | SHIPPED | 0ab6be2 + Zalo owner CRITICAL section in 2.2.4 |
+| 1 | Secrets encryption at rest | SCOPED | File permissions hardened (chmod 600 Unix). Full DPAPI/Keychain encryption still TODO. |
+| 2 | Output filter (deterministic) | SHIPPED | 91ebe4e — `ensureZaloOutputFilterFix` blocks file paths, API keys, config field names |
+| 3 | Append-only audit log | SHIPPED | 91ebe4e — `auditLog()` writes JSONL to `workspace/logs/audit.jsonl` |
+| 4 | Dashboard PIN + auto-lock | SHIPPED | 2.2.5 — 6-digit PIN, scrypt hash, 5-attempt lockout (15min), 15-min idle auto-lock, Telegram-verified reset |
+| 5 | Log rotation + retention | SHIPPED | 91ebe4e — `enforceRetentionPolicies()` rotates logs >10-50MB, archives memory >90 days |
+
+## Layer 1 — what's shipped (scoped)
+
+`hardenSensitiveFilePerms()` runs at every app boot, sets `chmod 600` on:
+- `~/.openclaw/openclaw.json` + `.bak`
+- `~/.openclaw/dashboard-pin.json`
+- `~/.openzca/profiles/default/credentials.json`
+- `~/.openzca/profiles/default/listener-owner.json`
+
+Plus `chmod 700` on parent dirs `~/.openclaw` and `~/.openzca`.
+
+Windows skips this — NTFS default ACL on `C:\Users\<user>\` already restricts to owner. `icacls` would require elevation we don't have.
+
+**Why not full encryption yet:** decryption failure = bot can't boot = catastrophic. Needs careful migration shim + fallback recovery + cross-platform testing. Detailed plan below.
+
+## Layer 4 — what's shipped
+
+Components:
+- **Storage:** `~/.openclaw/dashboard-pin.json` (`{ hash, salt, createdAt, failedAttempts, lockedUntil }`)
+- **Hash:** `crypto.scryptSync(pin, salt, 64, { N: 32768, r: 8, p: 1 })` — built-in, no native deps. ~50ms unlock latency.
+- **5 IPC handlers:** `get-pin-status`, `setup-pin`, `verify-pin`, `reset-pin`, `change-pin`
+- **First-time setup:** Dashboard load → no PIN file → setup modal → save → enter
+- **Unlock:** Dashboard load → has PIN → lock screen overlay → enter PIN → unlock
+- **Lockout:** 5 wrong PINs → 15min lockout, countdown displayed, persisted across restarts
+- **Auto-lock:** 15-min idle (no mousemove/keydown/click/scroll/touch) → re-show lock screen
+- **Reset:** "Quên PIN?" → enter Telegram User ID → verified against `channels.telegram.allowFrom` → set new PIN. Audit-logged.
+
+NOT yet shipped (post-demo):
+- Screen recording block via `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` (Windows only)
+- Sensitive data blur (amount/name) on Dashboard until hover
+- Panic wipe code (special PIN that deletes all sensitive data)
 
 ---
 

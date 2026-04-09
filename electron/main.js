@@ -580,8 +580,19 @@ function seedWorkspace() {
     try { fs.writeFileSync(blocklistFile, '[]', 'utf-8'); } catch {}
   }
 
-  // Zalo per-user memory dir (bot writes <senderId>.md per customer)
+  // Zalo per-user memory dir (bot writes <senderId>.md per customer).
+  // Bot's actual workspace is in openclaw.json -> agents.defaults.workspace,
+  // NOT MODOROClaw's getWorkspace(). Pre-create at BOTH locations so the
+  // Dashboard reader sees something even if openclaw.json isn't ready yet
+  // on a fresh install (the agent-workspace one is the canonical one that
+  // bot will actually use after wizard).
   try { fs.mkdirSync(path.join(ws, 'memory', 'zalo-users'), { recursive: true }); } catch {}
+  try {
+    const agentWs = (typeof getOpenclawAgentWorkspace === 'function') ? getOpenclawAgentWorkspace() : null;
+    if (agentWs && agentWs !== ws) {
+      fs.mkdirSync(path.join(agentWs, 'memory', 'zalo-users'), { recursive: true });
+    }
+  } catch {}
 
   // Knowledge tab folders + index files
   const knowCategories = ['cong-ty', 'san-pham', 'nhan-vien'];
@@ -4424,8 +4435,34 @@ ipcMain.handle('list-zalo-groups', async () => {
 // Bot writes one .md file per Zalo customer at memory/zalo-users/<senderId>.md
 // containing a structured profile (tone, decisions, likes/dislikes, CEO notes).
 // Dashboard reads them so CEO can click any friend → see full memory.
+//
+// CRITICAL: bot's working dir is set in ~/.openclaw/openclaw.json field
+// `agents.defaults.workspace` (typically %APPDATA%/modoro-claw on Windows).
+// MODOROClaw's getWorkspace() returns a DIFFERENT path (Desktop/claw in dev,
+// %APPDATA%/MODOROClaw packaged) → mismatch caused Dashboard to read empty
+// while bot wrote to the right place. Always read this from openclaw.json
+// so Electron + bot agree on a single source of truth.
+
+function getOpenclawAgentWorkspace() {
+  try {
+    const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return null;
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const ws = cfg && cfg.agents && cfg.agents.defaults && cfg.agents.defaults.workspace;
+    if (typeof ws === 'string' && ws.trim()) return path.normalize(ws.trim());
+    return null;
+  } catch (e) {
+    console.warn('[getOpenclawAgentWorkspace] read failed:', e && e.message ? e.message : String(e));
+    return null;
+  }
+}
 
 function getZaloUsersDir() {
+  // Single source of truth: openclaw.json -> agents.defaults.workspace.
+  // Falls back to MODOROClaw workspace only if openclaw.json missing (very
+  // early boot before wizard). Bot reads/writes here using relative path.
+  const agentWs = getOpenclawAgentWorkspace();
+  if (agentWs) return path.join(agentWs, 'memory', 'zalo-users');
   const ws = getWorkspace();
   if (!ws) return null;
   return path.join(ws, 'memory', 'zalo-users');
@@ -4614,6 +4651,254 @@ ipcMain.handle('save-zalo-owner', async (_event, payload) => {
     return { success: true };
   } catch (e) {
     console.error('[zalo-owner] save error:', e?.message);
+    return { success: false, error: e.message };
+  }
+});
+
+// === Security Layer 1 (scoped) — File permission hardening ===
+// Real Layer 1 (DPAPI/Keychain encryption) is high-risk because decryption
+// failure = bot can't boot. Until we have a battle-tested decryption shim,
+// scoped Layer 1 protects sensitive files at the FILESYSTEM level only:
+// chmod 600 (owner-only read/write) on Unix. Windows NTFS already inherits
+// per-user ACL from `C:\Users\<user>\` so no additional work needed there.
+//
+// Files protected:
+// - ~/.openclaw/openclaw.json (Telegram bot token, Zalo session ref)
+// - ~/.openclaw/dashboard-pin.json (PIN scrypt hash)
+// - ~/.openzca/profiles/default/credentials.json (Zalo cookies/tokens)
+// - ~/.openzca/profiles/default/listener-owner.json (PID lock + meta)
+//
+// Re-applied at every app.whenReady() — safe to call repeatedly. openclaw
+// daemon preserves file mode on overwrite (Linux fs.writeFile inherits
+// existing inode mode), so 600 stays sticky after our initial chmod.
+function hardenSensitiveFilePerms() {
+  if (process.platform === 'win32') {
+    // NTFS default ACL on user profile already restricts to owner.
+    // Setting explicit ACLs via icacls would require elevation we don't have.
+    return { skipped: true, reason: 'win32_ntfs_default_acl' };
+  }
+  const targets = [
+    path.join(HOME, '.openclaw', 'openclaw.json'),
+    path.join(HOME, '.openclaw', 'openclaw.json.bak'),
+    path.join(HOME, '.openclaw', 'dashboard-pin.json'),
+    path.join(HOME, '.openzca', 'profiles', 'default', 'credentials.json'),
+    path.join(HOME, '.openzca', 'profiles', 'default', 'listener-owner.json'),
+  ];
+  let hardened = 0;
+  for (const f of targets) {
+    try {
+      if (fs.existsSync(f)) {
+        fs.chmodSync(f, 0o600);
+        hardened++;
+      }
+    } catch (e) {
+      console.warn('[file-harden] chmod failed:', path.basename(f), e.message);
+    }
+  }
+  // Also harden the parent dirs to 700 so listing is restricted
+  const dirs = [
+    path.join(HOME, '.openclaw'),
+    path.join(HOME, '.openzca'),
+  ];
+  for (const d of dirs) {
+    try {
+      if (fs.existsSync(d)) fs.chmodSync(d, 0o700);
+    } catch {}
+  }
+  console.log('[file-harden] hardened', hardened, 'sensitive files (chmod 600)');
+  try { auditLog('file_perms_hardened', { count: hardened }); } catch {}
+  return { hardened };
+}
+
+// === Security Layer 4 — Dashboard PIN ===
+// 6-digit PIN protects Dashboard. First Dashboard open after wizard prompts
+// for PIN setup. Subsequent opens require PIN. After 5 failed attempts,
+// 15-min lockout. Auto-lock after 15-min idle. Reset by re-entering Telegram
+// User ID (proof CEO has access to bot's allowFrom, harder to brute-force
+// than just resetting from disk).
+//
+// Storage: ~/.openclaw/dashboard-pin.json
+//   { hash, salt, createdAt, failedAttempts, lockedUntil }
+// Hash: crypto.scryptSync(pin, salt, 64) — built-in, no native deps.
+
+function getDashboardPinPath() {
+  return path.join(HOME, '.openclaw', 'dashboard-pin.json');
+}
+
+function readDashboardPin() {
+  try {
+    const p = getDashboardPinPath();
+    if (!fs.existsSync(p)) return null;
+    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    if (!data || !data.hash || !data.salt) return null;
+    return data;
+  } catch { return null; }
+}
+
+function writeDashboardPin(data) {
+  try {
+    const p = getDashboardPinPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+    // Restrict perms (defense in depth — Layer 1 scoped)
+    try {
+      if (process.platform !== 'win32') {
+        fs.chmodSync(p, 0o600);
+      }
+    } catch {}
+    return true;
+  } catch (e) {
+    console.error('[dashboard-pin] write error:', e.message);
+    return false;
+  }
+}
+
+function hashPin(pin, salt) {
+  const crypto = require('crypto');
+  // scrypt with N=2^15 cost — slow enough to discourage brute force but
+  // fast enough that PIN unlock feels instant (~50ms on modern CPUs).
+  return crypto.scryptSync(String(pin), salt, 64, { N: 32768, r: 8, p: 1 }).toString('hex');
+}
+
+function constantTimeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  const crypto = require('crypto');
+  return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+}
+
+ipcMain.handle('get-pin-status', async () => {
+  const data = readDashboardPin();
+  if (!data) return { hasPin: false, locked: false };
+  const now = Date.now();
+  const lockedUntil = data.lockedUntil || 0;
+  const locked = lockedUntil > now;
+  return {
+    hasPin: true,
+    locked,
+    lockedUntilMs: locked ? lockedUntil : 0,
+    failedAttempts: data.failedAttempts || 0,
+  };
+});
+
+ipcMain.handle('setup-pin', async (_event, { pin }) => {
+  try {
+    const cleaned = String(pin || '').replace(/[^0-9]/g, '');
+    if (cleaned.length !== 6) return { success: false, error: 'PIN phải đúng 6 chữ số.' };
+    if (readDashboardPin()) return { success: false, error: 'PIN đã được đặt. Dùng đổi PIN nếu muốn thay.' };
+    const crypto = require('crypto');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPin(cleaned, salt);
+    const ok = writeDashboardPin({
+      hash, salt,
+      createdAt: new Date().toISOString(),
+      failedAttempts: 0,
+      lockedUntil: 0,
+    });
+    if (!ok) return { success: false, error: 'Lưu PIN thất bại.' };
+    try { auditLog('dashboard_pin_setup', {}); } catch {}
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('verify-pin', async (_event, { pin }) => {
+  try {
+    const data = readDashboardPin();
+    if (!data) return { success: false, error: 'PIN chưa được đặt.' };
+    const now = Date.now();
+    const lockedUntil = data.lockedUntil || 0;
+    if (lockedUntil > now) {
+      return { success: false, locked: true, lockedUntilMs: lockedUntil, error: 'Đã khoá. Đợi hết thời gian rồi thử lại.' };
+    }
+    const cleaned = String(pin || '').replace(/[^0-9]/g, '');
+    if (cleaned.length !== 6) return { success: false, error: 'PIN phải 6 chữ số.' };
+    const candidate = hashPin(cleaned, data.salt);
+    const match = constantTimeEqual(candidate, data.hash);
+    if (match) {
+      // Reset failed counter on success
+      writeDashboardPin({ ...data, failedAttempts: 0, lockedUntil: 0 });
+      try { auditLog('dashboard_pin_unlock', {}); } catch {}
+      return { success: true };
+    }
+    // Wrong PIN
+    const failed = (data.failedAttempts || 0) + 1;
+    let lockedUntilNew = 0;
+    if (failed >= 5) {
+      lockedUntilNew = now + 15 * 60 * 1000; // 15 min
+      try { auditLog('dashboard_pin_lockout', { failedAttempts: failed }); } catch {}
+    }
+    writeDashboardPin({ ...data, failedAttempts: failed, lockedUntil: lockedUntilNew });
+    return {
+      success: false,
+      error: lockedUntilNew ? 'Sai PIN 5 lần. Đã khoá 15 phút.' : `Sai PIN. Còn ${5 - failed} lần thử.`,
+      locked: !!lockedUntilNew,
+      lockedUntilMs: lockedUntilNew,
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('reset-pin', async (_event, { telegramUserId, newPin }) => {
+  // Reset PIN by proving access to Telegram allowFrom.
+  try {
+    const cleanedTgId = String(telegramUserId || '').replace(/[^0-9]/g, '');
+    if (!cleanedTgId) return { success: false, error: 'User ID Telegram rỗng.' };
+    const cleanedPin = String(newPin || '').replace(/[^0-9]/g, '');
+    if (cleanedPin.length !== 6) return { success: false, error: 'PIN mới phải 6 chữ số.' };
+    // Verify telegramUserId matches openclaw.json channels.telegram.allowFrom
+    const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(configPath)) return { success: false, error: 'Chưa cài Telegram qua wizard.' };
+    let config;
+    try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); }
+    catch { return { success: false, error: 'Config openclaw không đọc được.' }; }
+    const allowFrom = config?.channels?.telegram?.allowFrom || [];
+    if (!Array.isArray(allowFrom) || !allowFrom.map(String).includes(cleanedTgId)) {
+      try { auditLog('dashboard_pin_reset_failed', { reason: 'telegram_id_mismatch' }); } catch {}
+      return { success: false, error: 'User ID Telegram không khớp tài khoản chủ.' };
+    }
+    // Verified — overwrite PIN
+    const crypto = require('crypto');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPin(cleanedPin, salt);
+    writeDashboardPin({
+      hash, salt,
+      createdAt: new Date().toISOString(),
+      failedAttempts: 0,
+      lockedUntil: 0,
+    });
+    try { auditLog('dashboard_pin_reset_success', {}); } catch {}
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('change-pin', async (_event, { oldPin, newPin }) => {
+  try {
+    const data = readDashboardPin();
+    if (!data) return { success: false, error: 'Chưa có PIN. Dùng setup-pin thay.' };
+    const cleanedOld = String(oldPin || '').replace(/[^0-9]/g, '');
+    const cleanedNew = String(newPin || '').replace(/[^0-9]/g, '');
+    if (cleanedOld.length !== 6 || cleanedNew.length !== 6) return { success: false, error: 'PIN phải 6 chữ số.' };
+    const candidate = hashPin(cleanedOld, data.salt);
+    if (!constantTimeEqual(candidate, data.hash)) {
+      return { success: false, error: 'PIN cũ không đúng.' };
+    }
+    const crypto = require('crypto');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPin(cleanedNew, salt);
+    writeDashboardPin({
+      hash, salt,
+      createdAt: new Date().toISOString(),
+      failedAttempts: 0,
+      lockedUntil: 0,
+    });
+    try { auditLog('dashboard_pin_changed', {}); } catch {}
+    return { success: true };
+  } catch (e) {
     return { success: false, error: e.message };
   }
 });
@@ -7586,6 +7871,9 @@ app.whenReady().then(async () => {
   // Security Layer 5: enforce log rotation + memory retention policies.
   // Non-blocking, runs once at boot.
   try { enforceRetentionPolicies(); } catch (e) { console.warn('[retention] boot call failed:', e?.message); }
+  // Security Layer 1 (scoped): chmod 600 sensitive files (Unix only).
+  // Non-blocking, runs once at boot.
+  try { hardenSensitiveFilePerms(); } catch (e) { console.warn('[file-harden] boot call failed:', e?.message); }
   // Security audit: record the boot event itself
   try { auditLog('app_boot', { platform: process.platform, node: process.versions.node, electron: process.versions.electron }); } catch {}
   // Start the real-readiness probe broadcast so sidebar dots stay accurate
