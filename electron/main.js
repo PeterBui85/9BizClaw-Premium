@@ -4410,10 +4410,28 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           };
         }
 
-        // Prefer ollama/* model names; fall back to first
-        let picked = modelIds.find(id => /^ollama\//.test(id)) || modelIds[0];
+        // Smart model selection: pick the best model for demo/daily use.
+        // Priority: large capable models first, avoid tiny/quantized variants.
+        const PREFERRED_MODELS = [
+          'qwen3.5:397b', 'qwen3.5', 'deepseek-v3.2', 'deepseek-v3.1:671b',
+          'glm-5.1', 'glm-5', 'mistral-large-3:675b', 'kimi-k2.5', 'kimi-k2:1t',
+          'minimax-m2.7', 'minimax-m2.5', 'minimax-m2.1', 'minimax-m2',
+          'gemma4:31b', 'gemma3:27b', 'gemma3:12b',
+          'qwen3-coder:480b', 'qwen3-coder-next', 'cogito-2.1:671b',
+          'nemotron-3-super', 'devstral-2:123b',
+        ];
+        // Strip ollama/ prefix for matching, then re-add
+        const bareIds = modelIds.map(id => id.replace(/^ollama\//, ''));
+        let pickedBare = null;
+        for (const pref of PREFERRED_MODELS) {
+          const match = bareIds.find(id => id === pref || id.startsWith(pref + ':'));
+          if (match) { pickedBare = match; break; }
+        }
+        if (!pickedBare) pickedBare = bareIds[0]; // fallback to first
+        let picked = modelIds.find(id => id.endsWith(pickedBare)) || modelIds[0];
         // 9router model IDs may not have ollama/ prefix in the response; add it
         if (!picked.startsWith('ollama/')) picked = 'ollama/' + picked;
+        console.log('[setup-9router-auto] smart pick:', picked, '(from', modelIds.length, 'models)');
 
         // 6. Get or create combo 'main'
         const combosRes = await nineRouterApi('GET', '/api/combos');
@@ -4610,11 +4628,19 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         console.log('[setup-9router-auto] /v1/models returned', modelIds.length, 'models:', modelIds.slice(0, 10));
 
         if (modelIds.length > 0) {
-          // Prefer the provider we just added (Ollama if key given), else first
+          // Smart model selection (same priority list as API path above)
+          const PREFERRED_MODELS_FB = [
+            'qwen3.5:397b', 'qwen3.5', 'deepseek-v3.2', 'deepseek-v3.1:671b',
+            'glm-5.1', 'glm-5', 'mistral-large-3:675b', 'kimi-k2.5', 'kimi-k2:1t',
+            'minimax-m2.7', 'minimax-m2.5', 'minimax-m2.1', 'minimax-m2',
+            'gemma4:31b', 'gemma3:27b', 'gemma3:12b',
+          ];
           let picked = null;
-          if (opts.ollamaKey) {
-            picked = modelIds.find(id => id.startsWith('ollama/'));
+          for (const pref of PREFERRED_MODELS_FB) {
+            picked = modelIds.find(id => id === pref || id.endsWith('/' + pref) || id.startsWith(pref));
+            if (picked) break;
           }
+          if (!picked && opts.ollamaKey) picked = modelIds.find(id => id.startsWith('ollama/'));
           if (!picked) picked = modelIds[0];
 
           // Re-read db.json in case 9router rewrote it during restart
