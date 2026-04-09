@@ -4159,26 +4159,46 @@ async function validateOllamaKeyDirect(apiKey) {
 
 ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
   try {
-    // STEP 0: Direct-validate Ollama key BEFORE touching db.json or restarting
-    // 9router. Fail-fast with a clear error if the key is invalid — saves the
-    // user a 15-second restart cycle just to learn "no models returned".
+    // STEP 0: SOFT pre-check Ollama key. We attempted a direct call to
+    // ollama.com /api/ps as an auth probe but learned the hard way that real
+    // valid keys can ALSO get 401 from /api/ps depending on the key type
+    // (cloud-personal vs api-token vs cli-session). Until we know the exact
+    // endpoint that auth-validates EVERY key shape, this check is ADVISORY:
+    //   - HARD block ONLY on obvious failures: network down, SSL/captive
+    //     portal, 5xx outage, timeout, or key < 20 chars (nonsense).
+    //   - SOFT warn on 4xx (401/403): some valid keys also return 4xx from
+    //     /api/ps. Continue to write db.json + restart 9router and let the
+    //     9router /v1/models check be the source of truth.
     if (opts.ollamaKey) {
       const trimmedKey = String(opts.ollamaKey).trim();
       if (trimmedKey.length < 20) {
         return { success: false, error: 'Ollama API key quá ngắn — kiểm tra lại đã paste đủ chưa.' };
       }
-      console.log('[setup-9router-auto] validating Ollama key directly...');
-      const validation = await validateOllamaKeyDirect(trimmedKey);
-      if (!validation.valid) {
-        console.warn('[setup-9router-auto] Ollama key validation failed:', validation.error);
-        return {
-          success: false,
-          error: validation.error,
-          validationFailed: true,
-          httpStatus: validation.statusCode,
-        };
+      console.log('[setup-9router-auto] soft pre-check Ollama key...');
+      const preCheck = await validateOllamaKeyDirect(trimmedKey);
+      if (!preCheck.valid) {
+        const code = preCheck.statusCode;
+        // Hard fail: anything that means "the request couldn't even reach
+        // Ollama" or "Ollama itself is broken" — bot will never work in
+        // these states regardless of key validity.
+        const isNetworkOrServerError = code == null || code >= 500;
+        if (isNetworkOrServerError) {
+          console.warn('[setup-9router-auto] hard network/server failure:', preCheck.error);
+          return {
+            success: false,
+            error: preCheck.error,
+            validationFailed: true,
+            httpStatus: code,
+          };
+        }
+        // Soft fail (4xx) — could be a false positive on /api/ps. WARN and
+        // continue. The 9router /v1/models check 30 seconds later is the
+        // real validator: if 9router returns models, the key works regardless
+        // of what /api/ps said.
+        console.warn('[setup-9router-auto] direct probe returned HTTP ' + code + ' — continuing anyway, 9router will be the judge');
+      } else {
+        console.log('[setup-9router-auto] direct probe OK');
       }
-      console.log('[setup-9router-auto] Ollama key validated OK (HTTP 200)');
     }
 
     const { randomUUID, randomBytes } = require('crypto');
