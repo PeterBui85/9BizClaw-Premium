@@ -2739,8 +2739,23 @@ function ensureZaloFriendCheckFix() {
           for (const [__fcK, __fcTs] of __fcMap.entries()) {
             if (__fcNow - __fcTs > 60 * 60 * 1000) __fcMap.delete(__fcK);
           }
-          runtime.log?.(\`openzalo: non-friend \${__fcSender} — sending friend-request prompt\`);
-          let __fcText = 'Chào bạn! Để mình có thể hỗ trợ tốt nhất, bạn vui lòng bấm nút "Kết bạn" phía trên nhé.\\n\\nSau khi kết bạn, gõ lại lệnh mình sẽ trả lời ngay.';
+          runtime.log?.(\`openzalo: non-friend \${__fcSender} — sending friend request proactively\`);
+          // PROACTIVE: bot sends a friend request TO the stranger (not just
+          // a text message asking them to add). The stranger only needs to
+          // tap "Accept" in Zalo — much easier than finding the "Add friend"
+          // button. Uses openzca's api.sendFriendRequest(message, userId).
+          try {
+            const __fcApi = (globalThis as any).__openzcaApi || null;
+            if (__fcApi && typeof __fcApi.sendFriendRequest === "function") {
+              await __fcApi.sendFriendRequest("Xin chao, minh la tro ly AI. Ket ban de minh ho tro ban nhe!", __fcSender);
+              runtime.log?.(\`openzalo: proactive friend request sent to \${__fcSender}\`);
+            } else {
+              runtime.log?.("openzalo: api.sendFriendRequest not available — falling back to text-only prompt");
+            }
+          } catch (__fcFrErr) {
+            runtime.log?.(\`openzalo: proactive friend request failed: \${String(__fcFrErr)} — falling back to text prompt\`);
+          }
+          let __fcText = 'Xin chào! Mình vừa gửi lời mời kết bạn cho bạn. Vui lòng bấm "Đồng ý" để mình có thể hỗ trợ bạn nhé.\\n\\nSau khi kết bạn, mình sẽ chào bạn ngay.';
           try {
             const __fcAppDir = "modoro-claw";
             const __fcCustomPaths = [];
@@ -3011,6 +3026,72 @@ function ensureOpenzcaFriendEventFix() {
                 console.log("[friend_event] cache refreshed for " + profile);
               } catch (refreshErr) {
                 console.error("[friend_event] cache refresh failed:", refreshErr && refreshErr.message ? refreshErr.message : String(refreshErr));
+              }
+            }
+            // WELCOME FLOW: when friend is ADDED (type=0), send a proactive
+            // welcome message. This handles the case where a stranger was
+            // told to "accept friend request" — once they do, the bot greets
+            // them immediately without waiting for their next message.
+            // Uses api.sendMessage for direct Zalo message delivery.
+            if (event.type === 0) {
+              try {
+                const newFriendUid = event.data && (event.data.fromUid || event.threadId);
+                if (newFriendUid) {
+                  // Look up the friend's display name from the refreshed cache
+                  let friendName = "";
+                  try {
+                    const __welFs = require("fs");
+                    const __welPath = require("path");
+                    const __welOs = require("os");
+                    const cachePath = __welPath.join(__welOs.homedir(), ".openzca", "profiles", "default", "cache", "friends.json");
+                    if (__welFs.existsSync(cachePath)) {
+                      const friends = JSON.parse(__welFs.readFileSync(cachePath, "utf-8"));
+                      if (Array.isArray(friends)) {
+                        const match = friends.find(f => String(f.userId || f.uid || f.id || "").trim() === String(newFriendUid).trim());
+                        if (match) friendName = String(match.displayName || match.name || match.zaloName || "").trim();
+                      }
+                    }
+                  } catch {}
+                  // Determine greeting pronoun from name (basic Vietnamese heuristic)
+                  let pronoun = "ban";
+                  if (friendName) {
+                    const lastName = friendName.split(/\\s+/).pop() || "";
+                    const maleNames = ["huy","minh","duc","hung","dung","tuan","thanh","long","quan","khanh","bao","hai","son","tu","duy","dat","kien","cuong","hoang","tri","nam","phuc","vinh"];
+                    const femaleNames = ["huong","linh","trang","lan","mai","nga","ngoc","thao","vy","uyen","yen","hang","dung","thu","ha","nhung","hanh","chau","anh","quynh","my","nhi"];
+                    const lnLower = lastName.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+                    if (maleNames.includes(lnLower)) pronoun = "anh " + friendName;
+                    else if (femaleNames.includes(lnLower)) pronoun = "chi " + friendName;
+                    else pronoun = "anh/chi " + friendName;
+                  }
+                  // Read IDENTITY.md for bot intro (workspace path via env)
+                  let botIntro = "tro ly AI cua doanh nghiep";
+                  try {
+                    const __welFs2 = require("fs");
+                    const __welPath2 = require("path");
+                    const ws = process.env.MODORO_WORKSPACE || "";
+                    if (ws) {
+                      const companyPath = __welPath2.join(ws, "COMPANY.md");
+                      if (__welFs2.existsSync(companyPath)) {
+                        const companyContent = __welFs2.readFileSync(companyPath, "utf-8");
+                        const nameMatch = companyContent.match(/Ten cong ty[^:]*:\\s*(.+)/i) || companyContent.match(/^#\\s+(.+)/m);
+                        if (nameMatch) botIntro = "tro ly AI cua " + nameMatch[1].trim();
+                      }
+                    }
+                  } catch {}
+                  // Build welcome message with numbered options
+                  const welcomeMsg = "Chao " + pronoun + "! Cam on " + (pronoun.startsWith("anh") || pronoun.startsWith("chi") ? pronoun.split(" ")[0] : "ban") + " da ket ban.\\n\\n"
+                    + "Minh la " + botIntro + ". Minh co the ho tro " + (pronoun.startsWith("anh") || pronoun.startsWith("chi") ? pronoun.split(" ")[0] : "ban") + ":\\n\\n"
+                    + "1. Xem san pham / dich vu\\n"
+                    + "2. Tim hieu gia ca\\n"
+                    + "3. Dat lich hen / tu van\\n"
+                    + "4. Hoi cau hoi khac\\n\\n"
+                    + (pronoun.startsWith("anh") || pronoun.startsWith("chi") ? pronoun.split(" ")[0].charAt(0).toUpperCase() + pronoun.split(" ")[0].slice(1) : "Ban") + " chi can tra loi so (1-4) de minh ho tro ngay!";
+                  // Send via zca-js api.sendMessage — threadType=0 for DM
+                  await api.sendMessage({ body: welcomeMsg }, newFriendUid, 0);
+                  console.log("[friend_event] welcome message sent to new friend " + newFriendUid + " (" + friendName + ")");
+                }
+              } catch (welcomeErr) {
+                console.error("[friend_event] welcome send failed:", welcomeErr && welcomeErr.message ? welcomeErr.message : String(welcomeErr));
               }
             }
           } catch (handlerErr) {
@@ -5214,6 +5295,26 @@ ipcMain.handle('append-zalo-user-note', async (_event, { senderId, note }) => {
     return { success: true };
   } catch (e) {
     console.error('[zalo-user-memory] append note error:', e?.message);
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('delete-zalo-user-note', async (_event, { senderId, noteTimestamp }) => {
+  try {
+    if (!senderId || !noteTimestamp) return { success: false, error: 'missing params' };
+    const ws = getWorkspace();
+    const filePath = path.join(ws, 'memory', 'zalo-users', senderId + '.md');
+    if (!fs.existsSync(filePath)) return { success: false, error: 'file not found' };
+    let content = fs.readFileSync(filePath, 'utf-8');
+    // CEO notes are lines like: - **2026-04-09 13:45** — note text
+    // Match the line containing the exact timestamp and remove it
+    const escapedTs = noteTimestamp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const lineRegex = new RegExp('^- \\*\\*' + escapedTs + '\\*\\*.*$\\n?', 'm');
+    const newContent = content.replace(lineRegex, '');
+    if (newContent === content) return { success: false, error: 'note not found' };
+    fs.writeFileSync(filePath, newContent, 'utf-8');
+    return { success: true };
+  } catch (e) {
     return { success: false, error: e.message };
   }
 });

@@ -1128,7 +1128,7 @@
             <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-zalo" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-zalo-text">Đang kiểm tra kết nối...</span></span></div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
-            <button class="btn btn-secondary btn-small" onclick="recheckZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Kiểm tra</button>
+            <button class="btn btn-secondary btn-small" onclick="recheckZaloFull()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
             <button class="btn btn-secondary btn-small" id="reconnect-zalo-btn" onclick="reconnectZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
           </div>
         </div>
@@ -2330,6 +2330,13 @@
         || zaloMgrConfig.groupPolicy === 'open';
     }
 
+    // Merged "Kiểm tra" + "Đồng bộ" into one button. CEO shouldn't need to
+    // figure out which of 2 refresh buttons to press.
+    async function recheckZaloFull() {
+      addActivity('Đang kiểm tra + đồng bộ Zalo...');
+      try { await recheckZalo(); } catch {}
+      try { await refreshZaloCache(); } catch {}
+    }
     async function refreshZaloCache() {
       addActivity('Đang đồng bộ nhóm/bạn bè từ Zalo...');
       try {
@@ -3130,7 +3137,17 @@
         // Strip frontmatter for display
         const contentStripped = (res.content || '').replace(/^---\n[\s\S]*?\n---\n?/, '');
         // Render markdown minimally: headings, bullets, bold
-        const html = renderSimpleMarkdown(contentStripped);
+        let html = renderSimpleMarkdown(contentStripped);
+        // Inject X delete button next to each CEO note line
+        // CEO notes format: - **2026-04-09 13:45** — note text
+        html = html.replace(
+          /(<li>)<strong>(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})<\/strong>\s*—\s*/g,
+          (match, liTag, timestamp) => {
+            const tsEsc = esc(timestamp);
+            return liTag + '<span style="display:inline-flex;align-items:center;gap:6px"><strong>' + tsEsc + '</strong>'
+              + '<button onclick="deleteZumNote(\'' + tsEsc + '\')" title="Xóa ghi chú này" style="background:none;border:none;color:var(--danger,#e74c3c);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;opacity:0.6" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.6">x</button></span> — ';
+          }
+        );
         bodyEl.innerHTML = '<div class="zum-content">' + html + '</div>';
       } catch (e) {
         bodyEl.innerHTML = '<div class="zum-empty"><div class="zum-empty-title">Lỗi đọc file</div><div class="zum-empty-desc">' + esc(e.message || String(e)) + '</div></div>';
@@ -3164,6 +3181,19 @@
       }
     }
 
+    async function deleteZumNote(timestamp) {
+      if (!zumCurrentSenderId) return;
+      try {
+        const res = await window.claw.deleteZaloUserNote(zumCurrentSenderId, timestamp);
+        if (res && res.success) {
+          await openZaloUserMemory(zumCurrentSenderId, zumCurrentName); // reload
+        } else {
+          alert('Lỗi xóa: ' + (res?.error || 'unknown'));
+        }
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
+    }
     async function resetZumMemory() {
       if (!zumCurrentSenderId) return;
       if (!confirm('Xóa hồ sơ khách "' + (zumCurrentName || zumCurrentSenderId) + '"?\n\nFile sẽ được archive (không xóa hẳn).')) return;
