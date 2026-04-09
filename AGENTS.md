@@ -1,3 +1,4 @@
+<!-- modoroclaw-agents-version: 4 -->
 # AGENTS.md — Workspace Của Bạn
 
 Thư mục này là nhà. Hãy đối xử như vậy.
