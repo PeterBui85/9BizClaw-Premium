@@ -1259,10 +1259,10 @@
       const result = document.getElementById('router-auto-result');
       btn.disabled = true; btn.classList.add('loading');
       result.classList.remove('wz-hidden');
-      // Show checking state — soft pre-check Ollama (network sanity) then
-      // 9router restart + model detect (the actual validator)
+      // Fast path uses 9router HTTP API (POST /api/providers + test endpoint)
+      // — usually completes in 3-5 seconds
       result.className = 'wz-alert';
-      result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang thiết lập AI...</strong><br>Bước 1: kiểm tra kết nối ollama.com (vài giây).<br>Bước 2: cấu hình + restart 9Router + verify model (≤30 giây).</div>`;
+      result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang kiểm tra Ollama API key qua 9Router...</strong><br>(thường mất 3-5 giây)</div>`;
       const res = await window.claw.setup9RouterAuto({ ollamaKey });
       btn.disabled = false; btn.classList.remove('loading');
       if (res.success) {

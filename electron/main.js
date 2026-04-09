@@ -4157,49 +4157,222 @@ async function validateOllamaKeyDirect(apiKey) {
   });
 }
 
+// Generic 9router HTTP API caller. Localhost-only, no auth needed (9router
+// /api/* is bound to 127.0.0.1 and doesn't require auth — only /v1/* needs
+// the Bearer API key). Returns { success, data, error, statusCode }.
+function nineRouterApi(method, path, body = null, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const http = require('http');
+    const headers = { 'Content-Type': 'application/json' };
+    let bodyStr = null;
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      bodyStr = JSON.stringify(body);
+      headers['Content-Length'] = Buffer.byteLength(bodyStr);
+    }
+    const req = http.request({
+      hostname: '127.0.0.1', port: 20128, path, method, headers, timeout: timeoutMs,
+    }, (res) => {
+      let buf = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { buf += c; });
+      res.on('end', () => {
+        let parsed = null;
+        try { parsed = buf ? JSON.parse(buf) : {}; }
+        catch { parsed = { _raw: buf.slice(0, 200) }; }
+        if (res.statusCode >= 400 || (parsed && parsed.error)) {
+          resolve({
+            success: false,
+            statusCode: res.statusCode,
+            error: parsed?.error || `HTTP ${res.statusCode}`,
+            data: parsed,
+          });
+        } else {
+          resolve({ success: true, statusCode: res.statusCode, data: parsed });
+        }
+      });
+    });
+    req.on('error', (e) => resolve({ success: false, error: 'Network: ' + e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'Timeout (>' + timeoutMs + 'ms)' }); });
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+// Wait for 9router to be reachable. Polls /api/settings (lightweight,
+// always present) every 500ms up to maxMs. Returns true if responsive.
+async function waitFor9RouterReady(maxMs = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    const r = await nineRouterApi('GET', '/api/settings', null, 1500);
+    if (r.success || (r.statusCode && r.statusCode < 500)) return true;
+    await new Promise(res => setTimeout(res, 500));
+  }
+  return false;
+}
+
 ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
   try {
-    // STEP 0: SOFT pre-check Ollama key. We attempted a direct call to
-    // ollama.com /api/ps as an auth probe but learned the hard way that real
-    // valid keys can ALSO get 401 from /api/ps depending on the key type
-    // (cloud-personal vs api-token vs cli-session). Until we know the exact
-    // endpoint that auth-validates EVERY key shape, this check is ADVISORY:
-    //   - HARD block ONLY on obvious failures: network down, SSL/captive
-    //     portal, 5xx outage, timeout, or key < 20 chars (nonsense).
-    //   - SOFT warn on 4xx (401/403): some valid keys also return 4xx from
-    //     /api/ps. Continue to write db.json + restart 9router and let the
-    //     9router /v1/models check be the source of truth.
     if (opts.ollamaKey) {
       const trimmedKey = String(opts.ollamaKey).trim();
       if (trimmedKey.length < 20) {
         return { success: false, error: 'Ollama API key quá ngắn — kiểm tra lại đã paste đủ chưa.' };
       }
-      console.log('[setup-9router-auto] soft pre-check Ollama key...');
-      const preCheck = await validateOllamaKeyDirect(trimmedKey);
-      if (!preCheck.valid) {
-        const code = preCheck.statusCode;
-        // Hard fail: anything that means "the request couldn't even reach
-        // Ollama" or "Ollama itself is broken" — bot will never work in
-        // these states regardless of key validity.
-        const isNetworkOrServerError = code == null || code >= 500;
-        if (isNetworkOrServerError) {
-          console.warn('[setup-9router-auto] hard network/server failure:', preCheck.error);
+    }
+
+    // FAST PATH: use 9router HTTP API for create+test+models. ~3-5 seconds
+    // total instead of the old write-file-and-restart approach (~30s).
+    //
+    // Steps:
+    //   1. Ensure 9router is running + reachable
+    //   2. POST /api/providers (create Ollama connection)
+    //   3. POST /api/providers/{id}/test (instant validate)
+    //   4. If invalid: DELETE the connection + return clear error
+    //   5. If valid: GET /api/providers/{id}/models, pick first
+    //   6. Update or create combo "main" with picked model via /api/combos
+    //   7. Ensure an API key exists (GET/POST /api/keys)
+    //
+    // No restart, no db.json writes — 9router persists everything itself.
+    // If the API is unreachable (vendor broken, 9router won't start), fall
+    // back to the legacy file-based approach below.
+    if (opts.ollamaKey) {
+      try {
+        // 1. Make sure 9router is running
+        if (!routerProcess) {
+          console.log('[setup-9router-auto] 9router not running — starting');
+          start9Router();
+        }
+        const ready = await waitFor9RouterReady(10000);
+        if (!ready) {
+          throw new Error('9router không khởi động được trong 10 giây — fallback file mode');
+        }
+        console.log('[setup-9router-auto] 9router API reachable');
+
+        // 2. Look for existing Ollama provider — if exists, delete it first
+        //    so we don't accumulate dupes when user re-runs wizard
+        const listRes = await nineRouterApi('GET', '/api/providers');
+        if (listRes.success) {
+          const existing = (listRes.data?.connections || []).filter(c => c.provider === 'ollama');
+          for (const old of existing) {
+            await nineRouterApi('DELETE', `/api/providers/${old.id}`);
+            console.log('[setup-9router-auto] removed old Ollama provider', old.id);
+          }
+        }
+
+        // 3. Create new Ollama provider
+        const createRes = await nineRouterApi('POST', '/api/providers', {
+          provider: 'ollama',
+          name: 'Ollama',
+          apiKey: opts.ollamaKey.trim(),
+        });
+        if (!createRes.success) {
+          throw new Error('Không tạo được provider: ' + (createRes.error || 'unknown'));
+        }
+        const providerId = createRes.data?.id || createRes.data?.connection?.id;
+        if (!providerId) {
+          throw new Error('9router không trả về provider ID');
+        }
+        console.log('[setup-9router-auto] created Ollama provider', providerId);
+
+        // 4. Test it (THIS is the fast validator — usually 1-3 seconds)
+        const testRes = await nineRouterApi('POST', `/api/providers/${providerId}/test`, null, 8000);
+        const testValid = testRes.success && (testRes.data?.valid !== false);
+        if (!testValid) {
+          // Delete the bad provider so it doesn't pollute db.json
+          await nineRouterApi('DELETE', `/api/providers/${providerId}`);
+          const errMsg = testRes.data?.error || testRes.error || 'Ollama key không hợp lệ';
+          console.warn('[setup-9router-auto] provider test failed:', errMsg);
+          // Map common 9router errors to Vietnamese
+          let viError = errMsg;
+          if (/401|unauthor/i.test(errMsg)) {
+            viError = 'Ollama API key sai hoặc đã hết hạn. Vào ollama.com/settings/keys → tạo key mới → paste lại.';
+          } else if (/timeout|ETIMEDOUT/i.test(errMsg)) {
+            viError = 'Timeout khi gọi Ollama. Kiểm tra kết nối Internet.';
+          } else if (/ENOTFOUND|DNS/i.test(errMsg)) {
+            viError = 'Không kết nối được ollama.com. Kiểm tra Internet.';
+          } else if (/429|rate/i.test(errMsg)) {
+            viError = 'Ollama trả về 429 (rate limit). Đợi 1 phút rồi thử lại.';
+          }
           return {
             success: false,
-            error: preCheck.error,
+            error: viError,
             validationFailed: true,
-            httpStatus: code,
           };
         }
-        // Soft fail (4xx) — could be a false positive on /api/ps. WARN and
-        // continue. The 9router /v1/models check 30 seconds later is the
-        // real validator: if 9router returns models, the key works regardless
-        // of what /api/ps said.
-        console.warn('[setup-9router-auto] direct probe returned HTTP ' + code + ' — continuing anyway, 9router will be the judge');
-      } else {
-        console.log('[setup-9router-auto] direct probe OK');
+        console.log('[setup-9router-auto] provider test PASSED');
+
+        // 5. Get models for this provider
+        const modelsRes = await nineRouterApi('GET', `/api/providers/${providerId}/models`);
+        const modelIds = Array.isArray(modelsRes.data?.models)
+          ? modelsRes.data.models.map(m => typeof m === 'string' ? m : (m?.id || m?.name)).filter(Boolean)
+          : [];
+        console.log('[setup-9router-auto] models:', modelIds.slice(0, 5));
+        if (modelIds.length === 0) {
+          await nineRouterApi('DELETE', `/api/providers/${providerId}`);
+          return {
+            success: false,
+            error: 'Ollama key hợp lệ nhưng không có model nào. Tài khoản Ollama của anh có thể chưa subscribe gói nào.',
+            validationFailed: true,
+          };
+        }
+
+        // Prefer ollama/* model names; fall back to first
+        let picked = modelIds.find(id => /^ollama\//.test(id)) || modelIds[0];
+        // 9router model IDs may not have ollama/ prefix in the response; add it
+        if (!picked.startsWith('ollama/')) picked = 'ollama/' + picked;
+
+        // 6. Get or create combo 'main'
+        const combosRes = await nineRouterApi('GET', '/api/combos');
+        const combos = combosRes.data?.combos || combosRes.data || [];
+        let mainCombo = (Array.isArray(combos) ? combos : []).find(c => c.name === 'main');
+        if (mainCombo) {
+          // Update existing
+          const upRes = await nineRouterApi('PUT', `/api/combos/${mainCombo.id}`, {
+            name: 'main',
+            models: [picked],
+          });
+          if (!upRes.success) console.warn('[setup-9router-auto] combo update failed:', upRes.error);
+        } else {
+          // Create new
+          const createCombo = await nineRouterApi('POST', '/api/combos', {
+            name: 'main',
+            models: [picked],
+          });
+          if (!createCombo.success) console.warn('[setup-9router-auto] combo create failed:', createCombo.error);
+        }
+        console.log('[setup-9router-auto] combo "main" set to model:', picked);
+
+        // 7. Get or create API key
+        const keysRes = await nineRouterApi('GET', '/api/keys');
+        const keys = keysRes.data?.keys || keysRes.data || [];
+        let apiKeyValue = null;
+        const activeKey = (Array.isArray(keys) ? keys : []).find(k => k.isActive !== false && k.key);
+        if (activeKey) {
+          apiKeyValue = activeKey.key;
+        } else {
+          const createKey = await nineRouterApi('POST', '/api/keys', { name: 'MODOROClaw' });
+          apiKeyValue = createKey.data?.key?.key || createKey.data?.key || null;
+        }
+
+        if (!apiKeyValue) {
+          // Last resort: read from db.json directly
+          try {
+            const dbCheck = JSON.parse(fs.readFileSync(path.join(appDataDir(), '9router', 'db.json'), 'utf-8'));
+            const k = (dbCheck.apiKeys || []).find(k => k.isActive);
+            if (k) apiKeyValue = k.key;
+          } catch {}
+        }
+
+        return {
+          success: true,
+          apiKey: apiKeyValue || '(see 9router web UI)',
+          selectedModel: picked,
+        };
+      } catch (apiErr) {
+        // Fall through to legacy file-based approach if API path fails
+        console.warn('[setup-9router-auto] API path failed, falling back to file mode:', apiErr.message);
       }
     }
+    // (legacy file-based approach continues below as fallback)
 
     const { randomUUID, randomBytes } = require('crypto');
     const dbPath = path.join(appDataDir(), '9router', 'db.json');
