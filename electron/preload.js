@@ -64,6 +64,12 @@ contextBridge.exposeInMainWorld('claw', {
   onSchedulesUpdated: (cb) => ipcRenderer.on('schedules-updated', (_e, data) => cb(data)),
   testCron: (type, id) => ipcRenderer.invoke('test-cron', { type, id }),
 
+  // Zalo per-user memory
+  listZaloUserMemories: () => ipcRenderer.invoke('list-zalo-user-memories'),
+  readZaloUserMemory: (senderId) => ipcRenderer.invoke('read-zalo-user-memory', { senderId }),
+  resetZaloUserMemory: (senderId) => ipcRenderer.invoke('reset-zalo-user-memory', { senderId }),
+  appendZaloUserNote: (senderId, note) => ipcRenderer.invoke('append-zalo-user-note', { senderId, note }),
+
   // Knowledge tab
   uploadKnowledgeFile: (category, filepath, originalName) => ipcRenderer.invoke('upload-knowledge-file', { category, filepath, originalName }),
   listKnowledgeFiles: (category) => ipcRenderer.invoke('list-knowledge-files', { category }),

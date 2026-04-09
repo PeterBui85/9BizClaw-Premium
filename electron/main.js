@@ -580,6 +580,9 @@ function seedWorkspace() {
     try { fs.writeFileSync(blocklistFile, '[]', 'utf-8'); } catch {}
   }
 
+  // Zalo per-user memory dir (bot writes <senderId>.md per customer)
+  try { fs.mkdirSync(path.join(ws, 'memory', 'zalo-users'), { recursive: true }); } catch {}
+
   // Knowledge tab folders + index files
   const knowCategories = ['cong-ty', 'san-pham', 'nhan-vien'];
   const knowLabels = { 'cong-ty': 'Công ty', 'san-pham': 'Sản phẩm', 'nhan-vien': 'Nhân viên' };
@@ -2689,6 +2692,103 @@ function ensureZaloFriendCheckFix() {
   }
 }
 
+// MODOROCLAW FRIEND-EVENT PATCH: openzca daemon's `listen` command only subscribes
+// to message/connected/error/closed events from zca-js — it does NOT listen for
+// `friend_event`. zca-js DOES emit friend_event on type=ADD/REMOVE/REQUEST etc.
+// Without subscribing, friends.json (the cache the friend-check patch reads) only
+// updates on initial login or manual `auth cache-refresh`. Result: when a stranger
+// adds bot as friend in real time, bot still treats them as stranger for 10+ min
+// until next periodic refresh.
+//
+// This patch injects a `friend_event` listener directly into openzca cli.js that:
+// 1. On REQUEST (type=2): auto-accept friend request via api.acceptFriendRequest
+// 2. On ADD (type=0): refresh cache via refreshCacheForProfile so friends.json
+//    gets updated within milliseconds — friend-check patch reads it on next msg
+//
+// Effect: stranger DMs → bot says "please add friend" → stranger taps Kết bạn →
+// openzca auto-accepts → cache refresh → stranger sends 2nd msg → bot replies
+// instantly. Total wait: ~2-3 sec for accept round-trip, no 10-min lag.
+//
+// Idempotent via marker. Anchor `api.listener.on("message"` is unique in cli.js.
+function ensureOpenzcaFriendEventFix() {
+  try {
+    const vendorDir = getBundledVendorDir();
+    if (!vendorDir) {
+      console.log('[openzca-friend-event] no bundled vendor — skipping (dev mode or system openzca)');
+      return;
+    }
+    const cliPath = path.join(vendorDir, 'node_modules', 'openzca', 'dist', 'cli.js');
+    if (!fs.existsSync(cliPath)) {
+      console.warn('[openzca-friend-event] cli.js not found at', cliPath);
+      return;
+    }
+    let content = fs.readFileSync(cliPath, 'utf-8');
+    if (content.includes('MODOROCLAW FRIEND-EVENT PATCH')) {
+      console.log('[openzca-friend-event] already patched');
+      return;
+    }
+
+    const anchor = 'api.listener.on("message", async (message) => {';
+    const anchorIdx = content.indexOf(anchor);
+    if (anchorIdx === -1) {
+      console.error('[openzca-friend-event] CRITICAL: anchor not found — openzca cli.js structure changed');
+      try {
+        const diagPath = path.join(getWorkspace() || resourceDir, 'logs', 'boot-diagnostic.txt');
+        fs.mkdirSync(path.dirname(diagPath), { recursive: true });
+        fs.appendFileSync(diagPath,
+          `\n[${new Date().toISOString()}] [openzca-friend-event] anchor regex failed — ` +
+          `openzca cli.js source changed; instant friend recognition disabled. Check ${cliPath}\n`,
+          'utf-8');
+      } catch {}
+      return;
+    }
+
+    // Inject right BEFORE the message listener so both handlers are siblings.
+    // Uses `profile`, `api`, `refreshCacheForProfile` — all in scope inside the
+    // listen action handler (verified at cli.js anchor location).
+    const injection = `// === MODOROCLAW FRIEND-EVENT PATCH ===
+        // Auto-handle friend events so friend-check cache stays fresh in real time.
+        // type=0 ADD, type=2 REQUEST. See electron/main.js ensureOpenzcaFriendEventFix.
+        api.listener.on("friend_event", async (event) => {
+          try {
+            if (!event || typeof event.type !== "number") return;
+            console.log("[friend_event] type=" + event.type + " threadId=" + (event.threadId || ""));
+            // REQUEST: auto-accept incoming friend request
+            if (event.type === 2) {
+              const fromUid = event.data && event.data.fromUid;
+              if (fromUid) {
+                try {
+                  await api.acceptFriendRequest(fromUid);
+                  console.log("[friend_event] auto-accepted friend request from " + fromUid);
+                } catch (acceptErr) {
+                  console.error("[friend_event] auto-accept failed:", acceptErr && acceptErr.message ? acceptErr.message : String(acceptErr));
+                }
+              }
+            }
+            // ADD or post-REQUEST: refresh cache so friends.json reflects new friend
+            if (event.type === 0 || event.type === 2 || event.type === 7) {
+              try {
+                await refreshCacheForProfile(profile, api);
+                console.log("[friend_event] cache refreshed for " + profile);
+              } catch (refreshErr) {
+                console.error("[friend_event] cache refresh failed:", refreshErr && refreshErr.message ? refreshErr.message : String(refreshErr));
+              }
+            }
+          } catch (handlerErr) {
+            console.error("[friend_event] handler error:", handlerErr && handlerErr.message ? handlerErr.message : String(handlerErr));
+          }
+        });
+        // === END MODOROCLAW FRIEND-EVENT PATCH ===
+        `;
+
+    const patched = content.slice(0, anchorIdx) + injection + content.slice(anchorIdx);
+    fs.writeFileSync(cliPath, patched, 'utf-8');
+    console.log('[openzca-friend-event] Injected friend_event listener into openzca cli.js');
+  } catch (e) {
+    console.error('[openzca-friend-event] error:', e && e.message ? e.message : String(e));
+  }
+}
+
 // MODOROClaw FORCE-ONE-MESSAGE PATCH: openzalo plugin's `dispatchReplyWithBufferedBlockDispatcher`
 // call passes `disableBlockStreaming` ONLY when `account.config.blockStreaming` is an explicit
 // boolean. When openzalo config block is missing fields (which happens because openclaw 2026.4.x
@@ -2883,6 +2983,11 @@ async function _startOpenClawImpl() {
   ensureZaloBlocklistFix();
   // Friend check: inject stranger-handling logic (depends on blocklist anchor)
   ensureZaloFriendCheckFix();
+  // Patch openzca daemon to listen for friend_event + auto-accept friend requests
+  // + refresh cache instantly. This is what makes the friend-check feel "instant"
+  // — without it, friends.json only updates on login or manual cache-refresh, so
+  // a brand-new friend would have to wait 5-10 minutes before bot recognized them.
+  ensureOpenzcaFriendEventFix();
   // Force-one-message: hardcode disableBlockStreaming=true in openzalo inbound.ts
   // so "Dạ" word never gets split between messages regardless of config drift.
   ensureOpenzaloForceOneMessageFix();
@@ -3926,6 +4031,158 @@ ipcMain.handle('list-zalo-groups', async () => {
   }
 });
 
+// === Zalo per-user memory ===
+// Bot writes one .md file per Zalo customer at memory/zalo-users/<senderId>.md
+// containing a structured profile (tone, decisions, likes/dislikes, CEO notes).
+// Dashboard reads them so CEO can click any friend → see full memory.
+
+function getZaloUsersDir() {
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, 'memory', 'zalo-users');
+}
+
+function ensureZaloUsersDir() {
+  const dir = getZaloUsersDir();
+  if (!dir) return null;
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  return dir;
+}
+
+function sanitizeZaloUserId(id) {
+  // Zalo IDs are numeric strings. Allow only digits + dashes (some are negative-prefixed).
+  return String(id || '').trim().replace(/[^0-9-]/g, '').slice(0, 32);
+}
+
+function parseZaloUserMemoryMeta(content) {
+  // Parse front-matter-style header. Format expected:
+  //   ---
+  //   name: ...
+  //   lastSeen: 2026-04-09T10:30:00Z
+  //   msgCount: 12
+  //   gender: male|female|unknown
+  //   ---
+  const meta = { name: '', lastSeen: '', msgCount: 0, gender: '', summary: '' };
+  if (!content) return meta;
+  const fm = content.match(/^---\n([\s\S]*?)\n---/);
+  if (fm) {
+    for (const line of fm[1].split('\n')) {
+      const m = line.match(/^(\w+):\s*(.+)$/);
+      if (!m) continue;
+      const k = m[1].trim();
+      const v = m[2].trim();
+      if (k === 'name') meta.name = v;
+      else if (k === 'lastSeen') meta.lastSeen = v;
+      else if (k === 'msgCount') meta.msgCount = parseInt(v, 10) || 0;
+      else if (k === 'gender') meta.gender = v;
+    }
+  }
+  // Extract summary: first line after "## Tóm tắt" header
+  const sumMatch = content.match(/## Tóm tắt\s*\n+([^\n#]+)/);
+  if (sumMatch) meta.summary = sumMatch[1].trim().slice(0, 140);
+  return meta;
+}
+
+ipcMain.handle('list-zalo-user-memories', async () => {
+  try {
+    const dir = getZaloUsersDir();
+    if (!dir || !fs.existsSync(dir)) return [];
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md') && !f.startsWith('.'));
+    const out = [];
+    for (const f of files) {
+      try {
+        const senderId = f.replace(/\.md$/, '');
+        const filePath = path.join(dir, f);
+        const stat = fs.statSync(filePath);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const meta = parseZaloUserMemoryMeta(content);
+        out.push({
+          senderId,
+          name: meta.name,
+          lastSeen: meta.lastSeen || stat.mtime.toISOString(),
+          msgCount: meta.msgCount,
+          gender: meta.gender,
+          summary: meta.summary,
+          mtimeMs: stat.mtimeMs,
+        });
+      } catch {}
+    }
+    out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return out;
+  } catch (e) {
+    console.error('[zalo-user-memory] list error:', e?.message);
+    return [];
+  }
+});
+
+ipcMain.handle('read-zalo-user-memory', async (_event, { senderId }) => {
+  try {
+    const id = sanitizeZaloUserId(senderId);
+    if (!id) return { exists: false, content: '' };
+    const dir = getZaloUsersDir();
+    if (!dir) return { exists: false, content: '' };
+    const filePath = path.join(dir, id + '.md');
+    if (!fs.existsSync(filePath)) return { exists: false, content: '' };
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const meta = parseZaloUserMemoryMeta(content);
+    return { exists: true, content, meta };
+  } catch (e) {
+    console.error('[zalo-user-memory] read error:', e?.message);
+    return { exists: false, content: '', error: e.message };
+  }
+});
+
+ipcMain.handle('reset-zalo-user-memory', async (_event, { senderId }) => {
+  try {
+    const id = sanitizeZaloUserId(senderId);
+    if (!id) return { success: false, error: 'invalid id' };
+    const dir = getZaloUsersDir();
+    if (!dir) return { success: false, error: 'no workspace' };
+    const filePath = path.join(dir, id + '.md');
+    if (!fs.existsSync(filePath)) return { success: true };
+    // Move to .archive/<id>-<ts>.md instead of deleting (audit trail)
+    const archDir = path.join(dir, '.archive');
+    fs.mkdirSync(archDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const archPath = path.join(archDir, id + '-' + ts + '.md');
+    fs.renameSync(filePath, archPath);
+    return { success: true };
+  } catch (e) {
+    console.error('[zalo-user-memory] reset error:', e?.message);
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('append-zalo-user-note', async (_event, { senderId, note }) => {
+  try {
+    const id = sanitizeZaloUserId(senderId);
+    if (!id) return { success: false, error: 'invalid id' };
+    const cleanNote = String(note || '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 2000);
+    if (!cleanNote) return { success: false, error: 'empty note' };
+    const dir = ensureZaloUsersDir();
+    if (!dir) return { success: false, error: 'no workspace' };
+    const filePath = path.join(dir, id + '.md');
+    let content = '';
+    if (fs.existsSync(filePath)) {
+      content = fs.readFileSync(filePath, 'utf-8');
+    } else {
+      // Create skeleton if missing
+      content = `---\nname: \nlastSeen: ${new Date().toISOString()}\nmsgCount: 0\ngender: unknown\n---\n# Khách Zalo ${id}\n\n## Tóm tắt\n(Chưa có dữ liệu)\n\n## CEO notes\n`;
+    }
+    // Ensure "## CEO notes" section exists; append timestamped entry
+    if (!content.includes('## CEO notes')) {
+      content = content.replace(/$/, '\n\n## CEO notes\n');
+    }
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    content = content.replace(/(## CEO notes\s*\n)/, `$1- **${stamp}** — ${cleanNote}\n`);
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (e) {
+    console.error('[zalo-user-memory] append note error:', e?.message);
+    return { success: false, error: e.message };
+  }
+});
+
 function getZaloBlocklistPath() { return path.join(getWorkspace(), 'zalo-blocklist.json'); }
 
 ipcMain.handle('get-zalo-manager-config', async () => {
@@ -4269,7 +4526,94 @@ ipcMain.handle('save-business-profile', async (_event, payload) => {
           '$1\n' + teamLine
         );
       }
+      // Inject "## Em đang làm việc tại" block at top so bot ALWAYS sees company
+      // context — bot reads IDENTITY.md first per AGENTS.md bootstrap chain. This
+      // is critical: COMPANY.md is technically loaded but bot may skip reads on
+      // short messages ("ping"). IDENTITY.md is small + highest-priority → never
+      // skipped. Idempotent via marker.
+      const bizMarkerStart = '<!-- WIZARD-BUSINESS-PROFILE -->';
+      const bizMarkerEnd = '<!-- /WIZARD-BUSINESS-PROFILE -->';
+      const bizLines = [bizMarkerStart, '## Em đang làm việc tại'];
+      if (cName) bizLines.push('- **Công ty:** ' + cName);
+      if (cDesc) bizLines.push('- **Mô tả:** ' + cDesc);
+      bizLines.push(bizMarkerEnd, '');
+      const bizBlock = bizLines.join('\n');
+      if (cName || cDesc) {
+        if (content.includes(bizMarkerStart)) {
+          content = content.replace(
+            new RegExp(bizMarkerStart + '[\\s\\S]*?' + bizMarkerEnd + '\\n?'),
+            bizBlock
+          );
+        } else {
+          // Insert AFTER the H1 title (# IDENTITY.md — Tôi Là Ai?) so it's the
+          // first content block bot sees after the heading.
+          const lines = content.split('\n');
+          const h1Idx = lines.findIndex(l => l.startsWith('# '));
+          const insertAt = h1Idx >= 0 ? h1Idx + 1 : 0;
+          // Skip blank lines after H1
+          let insertPos = insertAt;
+          while (insertPos < lines.length && lines[insertPos].trim() === '') insertPos++;
+          lines.splice(insertPos, 0, '', bizBlock);
+          content = lines.join('\n');
+        }
+      }
       fs.writeFileSync(identityPath, content, 'utf-8');
+    }
+
+    // 5. Write business profile to memory/projects/business-profile.md so it
+    // shows up in MEMORY.md projects index + bot can search/recall it via
+    // memory_search("bán gì") etc. Stable file name → idempotent overwrite.
+    try {
+      const projDir = path.join(ws, 'memory', 'projects');
+      fs.mkdirSync(projDir, { recursive: true });
+      const profPath = path.join(projDir, 'business-profile.md');
+      const profLines = [
+        '# Hồ sơ doanh nghiệp',
+        '',
+        '> File này do wizard onboarding tự ghi. Bot dùng để biết "công ty làm gì, bán gì, bán cho ai".',
+        '> Cập nhật bằng cách chạy lại wizard hoặc sửa tay file này.',
+        '',
+        '## Tổng quan',
+        '',
+      ];
+      if (cName) profLines.push('- **Tên công ty:** ' + cName);
+      if (ceoN) profLines.push('- **Người đại diện:** ' + ceoN);
+      const teamSizeLabel2 = {
+        solo: 'Solo founder (1 người)',
+        small: '2-10 người',
+        medium: '11-50 người',
+        large: '51+ người',
+      }[tSize];
+      profLines.push('- **Quy mô:** ' + teamSizeLabel2);
+      profLines.push('- **Giờ làm việc:** ' + wStart + ' - ' + wEnd);
+      if (cDesc) {
+        profLines.push('');
+        profLines.push('## Mô tả');
+        profLines.push('');
+        profLines.push(cDesc);
+      }
+      if (gList.length > 0) {
+        profLines.push('');
+        profLines.push('## Trợ lý dùng để');
+        profLines.push('');
+        const goalLabels = {
+          'zalo-auto-reply': 'Trả tin Zalo tự động',
+          'daily-reports': 'Báo cáo hàng ngày',
+          'schedule-mgmt': 'Quản lý lịch họp',
+          'staff-reminders': 'Nhắc nhân viên',
+          'customer-followup': 'Follow-up khách',
+          'competitor-watch': 'Theo dõi đối thủ',
+        };
+        for (const g of gList) profLines.push('- ' + (goalLabels[g] || g));
+      }
+      profLines.push('');
+      profLines.push('---');
+      profLines.push('Cập nhật lần cuối: ' + new Date().toISOString().slice(0, 10));
+      profLines.push('');
+      fs.writeFileSync(profPath, profLines.join('\n'), 'utf-8');
+      console.log('[save-business-profile] memory/projects/business-profile.md written');
+    } catch (e) {
+      console.warn('[save-business-profile] business-profile.md write failed:', e?.message);
     }
 
     return { success: true };
