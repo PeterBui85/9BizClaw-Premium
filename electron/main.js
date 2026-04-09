@@ -29,15 +29,19 @@ let _logStream = null;
 function initFileLogger() {
   try {
     // app.getPath('userData') only works after app.whenReady, but we can use
-    // APPDATA directly here since Electron userData on Windows defaults to
-    // %APPDATA%/<productName>. Product name from package.json = MODOROClaw.
+    // APPDATA directly here since Electron userData defaults to
+    // <appData>/<app.getName()>. CRITICAL: app.getName() reads package.json
+    // top-level `name` field which is "modoro-claw" (LOWERCASE). It does NOT
+    // read build.productName ("MODOROClaw") — that's electron-builder installer
+    // metadata only. Hardcoding capital "MODOROClaw" creates a phantom dir
+    // separate from Electron's real userData, splitting logs across two paths.
     const isWin = process.platform === 'win32';
     const appData = process.env.APPDATA
       || (isWin ? path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming') : null)
       || (process.platform === 'darwin'
           ? path.join(process.env.HOME || '', 'Library', 'Application Support')
           : path.join(process.env.HOME || '', '.config'));
-    const logsDir = path.join(appData, 'MODOROClaw', 'logs');
+    const logsDir = path.join(appData, 'modoro-claw', 'logs');
     try { fs.mkdirSync(logsDir, { recursive: true }); } catch {}
     const logPath = path.join(logsDir, 'main.log');
     // Rotate previous session's log
