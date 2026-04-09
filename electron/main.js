@@ -8270,7 +8270,7 @@ ipcMain.handle('get-overview-data', async () => {
     const dayName = dayNames[now.getDay()];
     const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
     const hour = now.getHours();
-    const greeting = hour < 11 ? 'Chào sáng' : hour < 14 ? 'Chào trưa' : hour < 18 ? 'Chào chiều' : 'Chào tối';
+    const greeting = hour < 12 ? 'Chào buổi sáng' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
 
     // 2. RECENT ACTIVITY — last 50 audit entries, mapped to display labels
     const auditFile = ws ? path.join(ws, 'logs', 'audit.jsonl') : null;
