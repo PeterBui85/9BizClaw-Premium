@@ -4,7 +4,7 @@
 
 Ứng dụng desktop bundle sẵn mọi thứ — Telegram bot, Zalo bot (qua plugin OpenZalo), AI router (9Router), engine OpenClaw. CEO chỉ cần tải file cài, chạy wizard 4 bước, là có ngay 1 trợ lý 24/7 trên Telegram + Zalo. Không cần biết Node, Python, Docker, terminal.
 
-Phiên bản hiện tại: **v2.2.9** · Hỗ trợ **Windows 10+** và **macOS 11+** (arm64 + Intel).
+Phiên bản hiện tại: **v2.2.17** · Hỗ trợ **Windows 10+** và **macOS 11+** (arm64 + Intel).
 
 ---
 
@@ -25,7 +25,12 @@ Phiên bản hiện tại: **v2.2.9** · Hỗ trợ **Windows 10+** và **macOS 
 
 DMG cũng bundle Node + plugins. Không cần cài Homebrew/Node/Xcode.
 
-### Reset hoàn toàn (mô phỏng máy mới)
+### Gỡ cài đặt
+Uninstaller hiện 2 câu hỏi:
+1. **"Xóa Node.js và plugin đã giải nén?"** — frees ~1.8 GB extracted vendor. Nếu cài lại, tự giải nén lại.
+2. **"Xóa SẠCH mọi dữ liệu?"** — xóa workspace, config, Zalo session, 9Router, memory. Không thể khôi phục.
+
+### Reset hoàn toàn (dev)
 - Windows: chạy `RESET.bat` (xóa `~/.openclaw`, `~/.openzca`, runtime files) rồi chạy lại app.
 - Mac: xóa `~/Library/Application Support/modoro-claw` + `~/.openclaw` + `~/.openzca` rồi mở lại app.
 
@@ -35,7 +40,7 @@ DMG cũng bundle Node + plugins. Không cần cài Homebrew/Node/Xcode.
 
 | Bước | Nội dung |
 |------|----------|
-| 1 | Tên CEO, công ty, ngành (8 ngành: F&B, BĐS, thương mại, dịch vụ, giáo dục, công nghệ, sản xuất, tổng quát), phong cách (chuyên nghiệp / thân thiện / ngắn gọn), xưng hô (em / tôi / mình) |
+| 1 | Tên CEO (chủ doanh nghiệp), tên trợ lý ảo (optional), công ty, ngành (8 ngành), phong cách (chuyên nghiệp / thân thiện / ngắn gọn), xưng hô (em / tôi / mình) |
 | 2 | Đăng nhập Ollama Cloud, lấy API key, tự setup 9Router |
 | 3 | Tạo Telegram Bot (BotFather), nhập token + user ID, test kết nối |
 | 4 | Quét QR Zalo, chọn tài khoản Zalo cá nhân của CEO (để bot nhận diện chủ), chọn chế độ trả lời (auto / read / daily) |
@@ -80,6 +85,29 @@ Embed inline tab quản lý 9Router (login mật khẩu mặc định `123456`, 
 Embed inline tab gateway OpenClaw để debug session, xem log conversation real-time.
 
 ---
+
+## Zalo: flow chăm sóc khách mới (v2.2.16+)
+
+Khi khách Zalo mới (chưa kết bạn) nhắn tin:
+
+```
+1. Khách nhắn → Bot CHỦ ĐỘNG gửi lời mời kết bạn (api.sendFriendRequest)
+              → Bot nhắn "Mình vừa gửi lời mời, vui lòng bấm Đồng ý"
+2. Khách accept → friend_event type=0 fire → Bot CHÀO NGAY:
+   "Chào anh Huy! Cảm ơn anh đã kết bạn.
+    Mình là trợ lý AI của [Tên công ty]. Mình có thể hỗ trợ anh:
+    1. Xem sản phẩm / dịch vụ
+    2. Tìm hiểu giá cả
+    3. Đặt lịch hẹn / tư vấn
+    4. Hỏi câu hỏi khác
+    Anh chỉ cần trả lời số (1-4)!"
+3. Khách reply "1" → Bot xử lý bình thường
+```
+
+- Bot tự đoán anh/chị từ tên Việt (50+ tên nam/nữ phổ biến)
+- Nếu không đoán được → dùng "anh/chị" trung tính
+- Tên công ty đọc từ COMPANY.md (wizard tự điền)
+- Dedup 10 phút: khách spam 20 tin chỉ nhận 1 lời mời
 
 ## Bot tự nhận diện chủ Zalo (ZALO_CHU_NHAN — v2.2.4+)
 
