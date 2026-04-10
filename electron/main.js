@@ -4492,14 +4492,15 @@ async function _startOpenClawImpl() {
     openclawProcess = null;
     console.log('Gateway exited with code', code, 'lastError:', lastError?.substring(0, 100));
 
+    // Don't auto-restart if app is quitting
+    if (app.isQuitting) return;
+
     const isRestart = lastError?.includes('restart') || lastError?.includes('SIGUSR1');
 
     if (isRestart) {
-      // /restart command — notify user, restart immediately
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bot-status', { running: false, error: 'Đang khởi động lại... vui lòng đợi 30 giây.' });
       }
-      // Start fresh immediately — no need to wait for self-restart (doesn't work on Windows)
       setTimeout(() => startOpenClaw(), 2000);
       return;
     }
@@ -8124,6 +8125,7 @@ function watchCustomCrons() {
 // Checked every 60s. After fire → mark firedAt. Entries older than 24h → purge.
 
 let _followUpInterval = null;
+let _followUpQueueLock = false; // prevent concurrent read-modify-write
 
 function getFollowUpQueuePath() {
   return path.join(getWorkspace(), 'follow-up-queue.json');
@@ -8140,6 +8142,8 @@ function writeFollowUpQueue(queue) {
 }
 
 async function processFollowUpQueue() {
+  if (_followUpQueueLock) return; // skip if already processing
+  _followUpQueueLock = true;
   try {
     let queue = readFollowUpQueue();
     if (queue.length === 0) return;
@@ -8151,9 +8155,6 @@ async function processFollowUpQueue() {
       // Fire!
       console.log('[follow-up] Firing:', item.id, 'for', item.recipientName || item.recipientId);
       try {
-        // Follow-up = nhắc CEO qua Telegram, KHÔNG nhắn khách trực tiếp.
-        // Bot không có context để "quay lại" khách có ý nghĩa — nói "đã kiểm tra"
-        // khi chưa biết gì = nói dối. Chỉ nhắc CEO xử lý.
         const prompt = item.prompt || `Nhắc CEO qua Telegram: Khách ${item.recipientName || item.recipientId} (${item.channel || 'Zalo'}) hỏi ${item.question || 'một câu hỏi'} cách đây 15 phút và chưa được phản hồi. Gửi tin nhắn nhắc CEO kiểm tra. KHÔNG gửi tin cho khách. KHÔNG nói "đã kiểm tra".`;
         await runCronAgentPrompt(prompt, { label: 'follow-up-' + (item.recipientName || item.recipientId) });
         item.firedAt = new Date().toISOString();
@@ -8172,6 +8173,8 @@ async function processFollowUpQueue() {
     if (changed) writeFollowUpQueue(queue);
   } catch (e) {
     console.error('[follow-up] processQueue error:', e.message);
+  } finally {
+    _followUpQueueLock = false;
   }
 }
 
@@ -8181,7 +8184,9 @@ function startFollowUpChecker() {
   _followUpInterval.unref?.();
 }
 
-// IPC: bot or dashboard can queue a follow-up
+// IPC: bot or dashboard can queue a follow-up.
+// Uses readFollowUpQueue+push+writeFollowUpQueue atomically (single-threaded Node,
+// no await between read and write, so processFollowUpQueue can't interleave).
 ipcMain.handle('queue-follow-up', async (_event, { channel, recipientId, recipientName, question, prompt, delayMinutes }) => {
   try {
     const queue = readFollowUpQueue();
@@ -10323,11 +10328,17 @@ app.on('window-all-closed', () => {});
 app.on('activate', () => {
   if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
 });
-app.on('before-quit', () => {
+app.on('before-quit', (e) => {
   app.isQuitting = true;
+  // Clear cron/follow-up intervals to prevent fire during shutdown
+  if (_followUpInterval) { clearInterval(_followUpInterval); _followUpInterval = null; }
   stopOpenClaw();
-  // Cleanup Zalo listener tree so next startup is clean (no orphans)
   try { cleanupOrphanZaloListener(); } catch {}
-  // Stop 9Router too
   try { stop9Router(); } catch {}
+  // On Windows, taskkill is async — give it a moment to finish.
+  // Without this, the app may exit before child processes are killed.
+  if (process.platform === 'win32') {
+    e.preventDefault();
+    setTimeout(() => app.exit(0), 500);
+  }
 });
