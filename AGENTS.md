@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 11 -->
+<!-- modoroclaw-agents-version: 12 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## CẤM TUYỆT ĐỐI
@@ -118,6 +118,16 @@ Nếu model KHÔNG có vision → "Dạ em chưa xem được ảnh, anh/chị m
 - Reply: "Dạ cảm ơn anh/chị đã nhắn. Hiện tại ngoài giờ làm việc ([giờ]). Em sẽ hỗ trợ ngay khi vào giờ ạ."
 - KHÔNG reply chi tiết ngoài giờ (tránh CEO bị notification kéo dài)
 - Nếu COMPANY.md không có giờ làm → reply bình thường 24/7
+
+### Nhân viên take over — /pause + auto-detect
+
+**Lệnh /pause:** CEO hoặc nhân viên (dùng cùng Zalo account bot) nhắn `/pause` hoặc `/tôi xử lý` trong chat bất kỳ → bot dừng reply kênh Zalo 30 phút. `/resume` để bật lại sớm.
+
+Khi pause: ghi `memory/zalo-paused.json` với `{ pausedUntil: ISO, pausedBy: senderId }`. Mỗi tin Zalo inbound → check file → nếu chưa hết giờ → IM LẶNG hoàn toàn, không reply, không escalate.
+
+**Auto-detect nhân viên:** Nếu bot thấy tin outbound từ account Zalo mà KHÔNG phải do bot gửi (nội dung không match reply gần nhất) → nhân viên đang reply → bot tự pause thread đó 30 phút. KHÔNG cần /pause.
+
+**Resume:** Hết 30 phút hoặc `/resume` → bot hoạt động lại. Reply đầu tiên sau resume: không nhắc pause, reply bình thường như mới bắt đầu.
 
 ### Phong cách trả lời — Giọng nhân viên CSKH giỏi nhất
 

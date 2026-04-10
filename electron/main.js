@@ -553,7 +553,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 11;
+const CURRENT_AGENTS_MD_VERSION = 12;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -2725,6 +2725,84 @@ function ensureZaloBlocklistFix() {
   }
 }
 
+// MODOROClaw PAUSE PATCH: When CEO/staff types /pause in Zalo, bot stops
+// replying for 30 min so human can take over. Also auto-detect staff reply.
+// Idempotent via "MODOROClaw PAUSE PATCH" marker.
+function ensureZaloPauseFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = fs.readFileSync(pluginFile, 'utf-8');
+    if (content.includes('MODOROClaw PAUSE PATCH')) return;
+
+    // Inject after blocklist patch (or after the rawBody anchor if blocklist absent)
+    const anchor = content.includes('END MODOROClaw BLOCKLIST PATCH')
+      ? '// === END MODOROClaw BLOCKLIST PATCH ==='
+      : '  if (!rawBody && !hasMedia) {\n    return;\n  }';
+    if (!content.includes(anchor)) {
+      console.error('[zalo-pause-fix] anchor not found');
+      return;
+    }
+    const pausePaths = [
+      path.join(getWorkspace(), 'zalo-paused.json').replace(/\\/g, '/'),
+      path.join(HOME, '.openclaw', 'workspace', 'zalo-paused.json').replace(/\\/g, '/'),
+    ];
+    const injection = `
+
+  // === MODOROClaw PAUSE PATCH ===
+  // /pause command: CEO/staff types /pause → bot stops replying 30 min.
+  // Auto-detect: if recent outbound not from bot → staff is replying → pause.
+  try {
+    const __pzFs = require("node:fs");
+    const __pzPaths = ${JSON.stringify(pausePaths)};
+    const __pzBody = String(rawBody || "").trim().toLowerCase();
+
+    // Handle /pause and /resume commands (from owner or staff)
+    if (__pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly") {
+      const __pzUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      for (const __p of __pzPaths) {
+        try { __pzFs.mkdirSync(require("node:path").dirname(__p), { recursive: true }); } catch {}
+        try { __pzFs.writeFileSync(__p, JSON.stringify({ pausedUntil: __pzUntil, pausedBy: String(message.senderId || "") }, null, 2), "utf-8"); break; } catch {}
+      }
+      runtime.log?.("openzalo: PAUSED for 30 min by " + message.senderId);
+      return; // Don't reply to the /pause command itself
+    }
+    if (__pzBody === "/resume" || __pzBody === "/bot") {
+      for (const __p of __pzPaths) {
+        try { if (__pzFs.existsSync(__p)) __pzFs.unlinkSync(__p); } catch {}
+      }
+      runtime.log?.("openzalo: RESUMED by " + message.senderId);
+      // Don't return — let this message be processed normally
+    }
+
+    // Check if currently paused
+    for (const __p of __pzPaths) {
+      try {
+        if (__pzFs.existsSync(__p)) {
+          const __pzData = JSON.parse(__pzFs.readFileSync(__p, "utf-8"));
+          if (__pzData.pausedUntil && new Date(__pzData.pausedUntil) > new Date()) {
+            runtime.log?.("openzalo: PAUSED — ignoring message from " + message.senderId);
+            return;
+          } else {
+            // Expired — clean up
+            try { __pzFs.unlinkSync(__p); } catch {}
+          }
+        }
+      } catch {}
+    }
+  } catch (__e) {
+    runtime.log?.("openzalo: pause check error: " + String(__e));
+  }
+  // === END MODOROClaw PAUSE PATCH ===
+`;
+    const patched = content.replace(anchor, anchor + injection);
+    fs.writeFileSync(pluginFile, patched, 'utf-8');
+    console.log('[zalo-pause-fix] Injected pause check into inbound.ts');
+  } catch (e) {
+    console.error('[zalo-pause-fix] error:', e.message);
+  }
+}
+
 // MODOROClaw FRIEND-CHECK PATCH: Zalo has a "stranger" concept — if a user
 // who is NOT a friend of the bot account sends a DM, Zalo shows it in a
 // separate "stranger box" and replies may not deliver reliably. Other Zalo
@@ -3768,6 +3846,8 @@ async function _startOpenClawImpl() {
   ensureOpenzaloShellFix();
   // Re-apply blocklist injection (idempotent)
   ensureZaloBlocklistFix();
+  // Pause: /pause command + auto-detect staff reply (depends on blocklist anchor)
+  ensureZaloPauseFix();
   // Friend check: inject stranger-handling logic (depends on blocklist anchor)
   ensureZaloFriendCheckFix();
   // Owner marker: tag DMs from CEO's personal Zalo so bot switches to CEO mode
@@ -4931,6 +5011,7 @@ async function _ensureZaloPluginImpl() {
           // via MODORO_OPENZCA_CLI_JS env var.
           try { ensureOpenzaloShellFix(); } catch (e) { console.warn('[ensureZaloPlugin] shell fix failed:', e?.message); }
           try { ensureZaloBlocklistFix(); } catch (e) { console.warn('[ensureZaloPlugin] blocklist fix failed:', e?.message); }
+          try { ensureZaloPauseFix(); } catch (e) { console.warn('[ensureZaloPlugin] pause fix failed:', e?.message); }
           try { ensureZaloFriendCheckFix(); } catch (e) { console.warn('[ensureZaloPlugin] friend check fix failed:', e?.message); }
           try { ensureZaloOwnerFix(); } catch (e) { console.warn('[ensureZaloPlugin] zalo owner fix failed:', e?.message); }
           try { ensureZaloOutputFilterFix(); } catch (e) { console.warn('[ensureZaloPlugin] output filter fix failed:', e?.message); }
