@@ -2544,6 +2544,16 @@ async function ensureDefaultConfig() {
       config.agents.defaults.blockStreamingDefault = 'off';
       changed = true;
     }
+    // Inbound message batching: wait 3s for rapid messages from same sender,
+    // then process all together as 1 turn. Prevents bot replying 3 times when
+    // customer sends "anh ơi" + "giá bao nhiêu" + "có ship không" in 3 seconds.
+    // OpenClaw default is 700ms. CEO experience is better at 3000ms.
+    if (!config.messages) config.messages = {};
+    if (!config.messages.inbound) config.messages.inbound = {};
+    if (!config.messages.inbound.debounceMs || config.messages.inbound.debounceMs < 2500) {
+      config.messages.inbound.debounceMs = 3000;
+      changed = true;
+    }
     // Suppress compaction notices to customers. OpenClaw sends "🧹 Compacting context..."
     // and "⚠️ Context limit exceeded" to the chat — CEO/khách should never see these.
     if (!config.agents.defaults.compaction) config.agents.defaults.compaction = {};

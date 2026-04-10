@@ -75,6 +75,25 @@ IM LẶNG — KHÔNG nhắc file/memory. Reply KHÔNG claim state ("đã lưu/gh
 
 Format: frontmatter (name, lastSeen, msgCount, gender, **tags**: []) + Tóm tắt + Tính cách + Sở thích + Quyết định + CEO notes. File <2KB. KHÔNG ghi CCCD/tài khoản/mật khẩu.
 
+### Hồ sơ nhóm `memory/zalo-groups/<groupId>.md`
+
+Mỗi nhóm Zalo bot tham gia → tạo/cập nhật file. Format:
+```
+---
+name: <tên nhóm>
+lastActivity: <ISO>
+memberCount: <số>
+---
+# Nhóm <groupId>
+## Chủ đề thường thảo luận
+- ...
+## Thành viên key
+- ...
+## Quyết định/thông báo gần đây
+- YYYY-MM-DD: ...
+```
+Update khi bot reply trong group. File <1KB. Dùng context này khi @mention trong group → reply phù hợp ngữ cảnh nhóm.
+
 **Tags khách hàng** (ghi trong frontmatter `tags`):
 - `vip` — khách mua nhiều/quan trọng (CEO tag qua Dashboard hoặc lệnh)
 - `lead` — hỏi giá/quan tâm SP nhưng chưa mua
