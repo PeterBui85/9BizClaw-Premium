@@ -1916,11 +1916,22 @@ function npmGlobalModules() {
 // in %APPDATA%\npm\node_modules). Searching all lib dirs is the only correct
 // way to find a specific package across mixed Node-manager setups.
 function findGlobalPackageFile(packageName, relativeFile) {
-  // Packaged Mac .app: prefer bundled vendor copy.
+  // Packaged: prefer bundled vendor copy.
   const v = getBundledVendorDir();
   if (v) {
     const bundled = path.join(v, 'node_modules', packageName, relativeFile);
     try { if (fs.existsSync(bundled)) return bundled; } catch {}
+  }
+  // Dev mode fallback: check userData/vendor (from previous packaged install tar extract)
+  // This covers the case where dev runs RUN.bat but vendor/ was deleted by prebuild-vendor.
+  if (!v) {
+    try {
+      const userDataVendor = path.join(
+        process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'),
+        'modoro-claw', 'vendor', 'node_modules', packageName, relativeFile
+      );
+      if (fs.existsSync(userDataVendor)) return userDataVendor;
+    } catch {}
   }
   for (const lib of enumerateNodeManagerLibDirs()) {
     if (!fs.existsSync(lib)) continue;
