@@ -2883,9 +2883,10 @@ function ensureZaloFriendCheckFix() {
           const __fcLast = __fcMap.get(__fcSender) || 0;
           const __fcWindow = 10 * 60 * 1000;
           if (__fcNow - __fcLast < __fcWindow) {
-            runtime.log?.(\`openzalo: drop non-friend \${__fcSender} (friend-request sent <10min ago)\`);
-            return;
-          }
+            runtime.log?.(\`openzalo: non-friend \${__fcSender} (friend-request already sent <10min ago — skip re-send, continue to AI)\`);
+            // Don't return — still process message through AI pipeline.
+            // Only skip the friend request re-send.
+          } else {
           __fcMap.set(__fcSender, __fcNow);
           for (const [__fcK, __fcTs] of __fcMap.entries()) {
             if (__fcNow - __fcTs > 60 * 60 * 1000) __fcMap.delete(__fcK);
@@ -2959,7 +2960,11 @@ function ensureZaloFriendCheckFix() {
           } catch (__fcSendErr) {
             runtime.log?.(\`openzalo: friend-request send error: \${String(__fcSendErr)}\`);
           }
-          return;
+          } // end else (dedup check)
+          // DON'T return — let the message continue to AI pipeline.
+          // Zalo allows reply in thread that customer initiated (even to strangers).
+          // Bot sends friend request + replies the actual question in same turn.
+          runtime.log?.(\`openzalo: non-friend \${__fcSender} — continuing to AI pipeline (customer initiated)\`);
         }
       }
     } catch (__fcErr) {
