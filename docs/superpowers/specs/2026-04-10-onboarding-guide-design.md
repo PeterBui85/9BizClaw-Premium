@@ -1,224 +1,229 @@
-# In-App Onboarding Guide — Design Spec
+# In-App Onboarding — Redesign Spec
 
-## Mục tiêu
+## Nguyên tắc
 
-CEO xong wizard → mở Dashboard → biết ngay phải làm gì. Không cần đọc README, không cần Google, không cần gọi support.
+**App tự giải thích. CEO không cần học.**
 
-## 3 tầng hướng dẫn
+Hai loại user:
+- **Gói 100tr:** MODORO pre-configure mọi thứ. CEO mở → đã hoạt động. Onboarding = safety net.
+- **Free/tự cài:** Empty state thông minh dẫn dắt. Không popup tour. Không manual dài.
 
-### Tầng 1: Getting Started Checklist (Overview page)
+## 1. Smart Empty States (thay checklist + tour)
 
-Hiện ngay trên trang Tổng quan, phía trên stats. Biến mất khi CEO hoàn thành tất cả bước.
+Khi data rỗng, mỗi section TỰ BIẾN THÀNH hướng dẫn. Khi có data → hướng dẫn biến mất, hiện data thật.
+
+### Overview page — fresh install
 
 ```
-┌──────────────────────────────────────────────────┐
-│ Bắt đầu sử dụng MODOROClaw                      │
+┌─────────────────────────────────────────────────┐
+│ Chào buổi sáng anh Quốc              ● Đang chạy│
+├─────────────────────────────────────────────────┤
 │                                                  │
-│ [x] Cài đặt xong                    ✓           │
-│ [ ] Gửi tin test Telegram            → Thử ngay  │
-│ [ ] Upload 1 tài liệu Knowledge     → Mở        │
-│ [ ] Kiểm tra Zalo kết nối           → Kiểm tra  │
-│ [ ] Ra lệnh bot đầu tiên            → Hướng dẫn │
+│         Bắt đầu dùng MODOROClaw                 │
 │                                                  │
-│ 1/5 hoàn thành              [Bỏ qua checklist]  │
-└──────────────────────────────────────────────────┘
+│   Mở Telegram, nhắn thử cho bot 1 câu bất kỳ.  │
+│   Bot sẽ trả lời trong vài giây.                │
+│                                                  │
+│         [ Mở Telegram → ]                        │
+│                                                  │
+│   Chưa có Telegram? Hướng dẫn 30 giây ↗        │
+│                                                  │
+├─────────────────────────────────────────────────┤
+│ Khách Zalo gần đây          Lịch hôm nay        │
+│ Chưa có khách nào.          07:30 Báo cáo sáng  │
+│ Khi khách nhắn Zalo,        17:00 Tóm tắt tối   │
+│ bot tự trả lời và           Lịch tự động chạy   │
+│ hiện tên ở đây.             mỗi ngày.           │
+└─────────────────────────────────────────────────┘
 ```
 
-**5 bước:**
+**Sau khi CEO nhắn thử → stat cards hiện số thật → CTA biến mất → Overview bình thường.**
 
-| # | Bước | Auto-detect hoàn thành | CTA |
-|---|------|----------------------|-----|
-| 1 | Cài đặt xong | Luôn true (đã qua wizard) | — |
-| 2 | Gửi tin test Telegram | Detect: audit.jsonl có `telegram_test_sent` event | Bấm → chuyển tab Telegram → highlight nút "Gửi tin test" |
-| 3 | Upload 1 tài liệu Knowledge | Detect: bất kỳ file nào trong `knowledge/*/files/` | Bấm → chuyển tab Knowledge |
-| 4 | Kiểm tra Zalo kết nối | Detect: Zalo ready probe = true | Bấm → chuyển tab Zalo |
-| 5 | Ra lệnh bot đầu tiên | Detect: audit.jsonl có `gateway_ready` + ít nhất 1 conversation reply | Bấm → mở help popup với danh sách lệnh |
+### Knowledge tab — empty
 
-**Persist:** `localStorage.setItem('onboarding-checklist-dismissed', 'true')`. Nút "Bỏ qua" dismiss vĩnh viễn.
-
-**Auto-check:** mỗi lần `loadOverview()` → check 5 conditions → update checklist. Tất cả 5 done → card tự biến mất.
-
-### Tầng 2: Tab First-Visit Tour (popup guided)
-
-Mỗi tab có 1 tour chạy LẦN ĐẦU mở tab. Popup nhỏ cạnh element, có mũi tên chỉ.
-
-**Cách hoạt động:**
-- User click tab → `switchPage('zalo')` → check `localStorage.getItem('tour-zalo-done')`
-- Chưa done → start tour: hiện popup sequence (1 → 2 → 3 → Done)
-- Mỗi popup: highlight element + text giải thích + nút "Tiếp" / "Bỏ qua"
-- Xong → `localStorage.setItem('tour-zalo-done', 'true')`
-
-**Tour content per tab:**
-
-#### Tab Tổng quan (2 steps)
-1. Chỉ vào stat cards: "Đây là tổng quan hoạt động hôm nay — khách mới, sự kiện, cron đã chạy"
-2. Chỉ vào "Cần xử lý": "Những việc cần anh/chị xử lý sẽ hiện ở đây"
-
-#### Tab Lịch tự động (2 steps)
-1. Chỉ vào schedule list: "Bot tự động chạy các tác vụ này theo lịch. Bấm vào để xem chi tiết."
-2. Chỉ vào toggle: "Bật/tắt từng lịch tại đây. Bot cũng tạo lịch mới khi anh/chị yêu cầu qua Telegram."
-
-#### Tab Telegram (3 steps)
-1. Chỉ vào connection status: "Trạng thái kết nối Telegram. Xanh = sẵn sàng nhận tin."
-2. Chỉ vào "Gửi tin test": "Bấm để bot gửi 1 tin thử vào Telegram của anh/chị."
-3. Chỉ vào lệnh list: "12 lệnh có sẵn. Gõ /menu trong Telegram để xem."
-
-#### Tab Zalo (3 steps)
-1. Chỉ vào connection status: "Trạng thái Zalo. Xanh = bot đang nhận tin từ khách."
-2. Chỉ vào "Chọn chủ Zalo": "Chọn tài khoản Zalo cá nhân để bot nhận diện anh/chị là chủ."
-3. Chỉ vào nhóm list: "Tick nhóm nào bot được phép trả lời khi @mention."
-
-#### Tab Knowledge (2 steps)
-1. Chỉ vào folder list: "Upload tài liệu vào đây — SOP, bảng giá, catalog. Bot tự đọc và dùng khi khách hỏi."
-2. Chỉ vào upload zone: "Kéo thả file hoặc bấm để chọn. Hỗ trợ PDF, Word, Excel, TXT."
-
-#### Tab 9Router (1 step)
-1. "Quản lý AI provider và model. Mật khẩu mặc định: 123456. Thường không cần thay đổi gì."
-
-#### Tab OpenClaw (1 step)
-1. "Xem log bot real-time. Dùng để debug khi bot trả lời sai."
-
-### Tầng 3: Built-in Help Page (help.html)
-
-Mỗi tab có nút "?" hoặc "Hướng dẫn" ở header → mở help page tương ứng.
-
-**File:** `electron/ui/help.html` — single HTML page với sidebar navigation.
-
-**Sections:**
-
-1. **Bắt đầu**
-   - MODOROClaw là gì
-   - Kiến trúc tổng quan (đơn giản, không technical)
-   - Cách bot hoạt động
-
-2. **Telegram**
-   - 12 lệnh và ý nghĩa
-   - Cách ra lệnh bot (ví dụ thực tế)
-   - Escalation từ Zalo hiện như thế nào
-   - Báo cáo sáng/tối đọc ra sao
-
-3. **Zalo**
-   - Bot trả lời khách như thế nào
-   - Chọn chủ Zalo
-   - Quản lý nhóm (allowlist)
-   - Blocklist
-   - /pause khi nhân viên take over
-   - 3 chế độ: auto / read / daily
-
-4. **Knowledge**
-   - Upload file gì
-   - Bot dùng knowledge ra sao
-   - Tạo folder mới
-   - Tips: upload FAQ, bảng giá, SOP → bot thông minh hơn
-
-5. **Lịch tự động**
-   - 8 lịch mặc định
-   - Cách tạo lịch mới qua Telegram
-   - Đổi giờ
-   - Test lịch
-
-6. **Bảo mật**
-   - Dashboard PIN
-   - Output filter
-   - Ai có quyền gì
-
-7. **Xử lý sự cố**
-   - Bot không trả lời → check gì
-   - Zalo disconnect → quét QR lại
-   - Telegram test fail → check token
-   - Gateway restart → đợi 30s
-
-**Mỗi section:** tiếng Việt, ngắn gọn, có ảnh/screenshot nếu cần, ví dụ thực tế.
-
-**Mở help:** `mainWindow.loadFile('ui/help.html')` trong new BrowserWindow hoặc tab mới.
-
-## UI Components
-
-### Checklist Card (Overview)
-```css
-.onboarding-checklist {
-  background: linear-gradient(135deg, var(--surface) 0%, var(--bg) 100%);
-  border: 1px solid var(--accent);
-  border-radius: 14px;
-  padding: 20px;
-  margin-bottom: 16px;
-}
-.onboarding-step {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid var(--border);
-}
-.onboarding-step.done { opacity: 0.5; text-decoration: line-through; }
-.onboarding-cta { margin-left: auto; font-size: 12px; cursor: pointer; color: var(--accent); }
+```
+┌─────────────────────────────────────────────────┐
+│ Tài liệu doanh nghiệp                          │
+│                                                  │
+│   Bot trả lời thông minh hơn khi có tài liệu.  │
+│                                                  │
+│   Thêm bảng giá, SOP, FAQ, catalog —            │
+│   bot tự đọc và dùng khi khách hỏi.             │
+│                                                  │
+│   [ Thêm tài liệu đầu tiên ]                   │
+│                                                  │
+│   Hỗ trợ: PDF, Word, Excel, TXT, ảnh           │
+└─────────────────────────────────────────────────┘
 ```
 
-### Tour Popup
-```css
-.tour-popup {
-  position: fixed;
-  background: var(--surface);
-  border: 1px solid var(--accent);
-  border-radius: 12px;
-  padding: 16px;
-  max-width: 300px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-  z-index: 1000;
-}
-.tour-popup::after { /* arrow pointing to element */ }
-.tour-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 999;
-}
-.tour-highlight {
-  position: relative; z-index: 1001;
-  box-shadow: 0 0 0 4px var(--accent);
-  border-radius: 8px;
-}
+### Zalo tab — chưa kết nối
+
+```
+Zalo chưa kết nối.
+Quét mã QR để bot nhận tin từ khách Zalo.
+[ Quét QR → ]
 ```
 
-### Help Button (per-tab header)
+### Zalo tab — đã kết nối, chưa có khách
+
+```
+Zalo đã kết nối. Đang chờ khách nhắn tin.
+Khi khách nhắn, bot tự trả lời và hiện ở đây.
+```
+
+### Lịch tự động — empty custom crons
+
+```
+8 lịch mặc định đang chạy (báo cáo sáng, tóm tắt tối, ...).
+Muốn thêm lịch mới? Nhắn bot trên Telegram:
+"Nhắc anh uống nước mỗi 2 tiếng"
+Bot sẽ tự tạo lịch.
+```
+
+## 2. Contextual Tooltips (thay tour popups)
+
+Nút "?" nhỏ cạnh element phức tạp. Hover/click → tooltip 1 câu. Hiện mọi lúc, không chỉ lần đầu.
+
+| Element | Tooltip |
+|---|---|
+| Stat "khách mới" | "Số khách Zalo mới nhắn tin hôm nay" |
+| Stat "sự kiện" | "Tổng hoạt động bot ghi nhận hôm nay" |
+| Nút "Dừng/Chạy" | "Tắt/bật bot. Khi dừng, bot không trả lời khách" |
+| Dropdown "Chọn chủ Zalo" | "Bot nhận diện tài khoản này là chủ, trả lời khác với khách" |
+| Toggle nhóm Zalo | "Tick nhóm nào bot được trả lời khi @mention" |
+| "Lịch tự động" | "Bot chạy tự động theo giờ. Bấm vào để xem chi tiết" |
+| Strategy dropdown (9Router) | "Cách bot chọn AI: lần lượt hoặc ưu tiên cái đầu tiên" |
+
+**Implement:** CSS tooltip on `[data-tooltip]` attribute. No JS tour library needed.
+
 ```html
-<button class="btn btn-secondary btn-small" onclick="openHelp('telegram')">
-  <span data-icon="help-circle" data-icon-size="14"></span> Hướng dẫn
-</button>
+<span class="tooltip-trigger" data-tooltip="Số khách Zalo mới nhắn tin hôm nay">?</span>
 ```
+
+```css
+.tooltip-trigger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--border); color: var(--text-muted);
+  font-size: 10px; cursor: help; flex-shrink: 0;
+}
+.tooltip-trigger:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px;
+  color: var(--text); white-space: nowrap; max-width: 250px;
+  white-space: normal; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 100;
+}
+```
+
+## 3. Nút "Hỗ trợ" (thay help.html)
+
+Không build help page lớn. Thay bằng:
+
+### Nút cố định góc dưới phải
+
+```
+[ ? Hỗ trợ ]
+```
+
+Click → dropdown 3 options:
+1. **Xem video hướng dẫn** → link YouTube/Loom (3 phút walkthrough)
+2. **Liên hệ MODORO** → mở Zalo OA hoặc Telegram MODORO support
+3. **Xem lại hướng dẫn** → reset empty states (clear localStorage → hiện lại CTA)
+
+### Nút "Hướng dẫn" per-tab header
+
+Mỗi tab header có nút nhỏ "Hướng dẫn" → mở 1 modal đơn giản với:
+- 3-5 bullet points: tab này làm gì, cách dùng cơ bản
+- 1 ảnh minh họa (screenshot)
+- Nút "Đóng"
+
+**Không phải help.html full page. Chỉ 1 modal nhỏ per tab.**
+
+Content mỗi modal:
+
+**Tổng quan:**
+- Đây là trang chính, hiện hoạt động bot hôm nay
+- Số khách mới, sự kiện, lịch sắp chạy
+- Mục "Cần xử lý" hiện việc cần anh/chị xem
+
+**Telegram:**
+- Kênh chỉ huy — anh/chị ra lệnh, nhận báo cáo ở đây
+- Gõ /menu trong Telegram để xem danh sách lệnh
+- Bấm "Gửi tin test" để kiểm tra kết nối
+
+**Zalo:**
+- Bot tự trả lời khách nhắn Zalo
+- Chọn "Chủ Zalo" để bot nhận diện anh/chị
+- Tick nhóm nào bot được phép trả lời
+- Nhân viên nhắn /pause khi muốn tự xử lý
+
+**Tài liệu (Knowledge):**
+- Thêm bảng giá, SOP, FAQ → bot thông minh hơn
+- Bấm "Thêm" để tạo folder mới
+- Bot tự đọc và dùng khi khách hỏi
+
+**Lịch tự động:**
+- 8 lịch mặc định đang chạy
+- Nhắn bot trên Telegram để tạo lịch mới
+- Bấm vào lịch để xem chi tiết hoặc test
+
+## 4. Rename jargon
+
+| Cũ (developer) | Mới (CEO) |
+|---|---|
+| Knowledge | Tài liệu |
+| Upload | Thêm |
+| Cron | Lịch tự động |
+| Debug | Kiểm tra |
+| Log | Hoạt động |
+| Provider | Nhà cung cấp AI |
+| Combo | Cấu hình AI |
+| Gateway | Hệ thống |
+
+**Áp dụng trong:** sidebar labels, page headers, button text, tooltips, empty states.
+
+## 5. Post-onboarding nudges (tuần đầu)
+
+Hiện banner nhẹ trên Overview khi detect CEO chưa dùng feature:
+
+| Ngày | Condition | Nudge |
+|---|---|---|
+| 2 | Knowledge rỗng | "Bot sẽ trả lời tốt hơn nếu có tài liệu. Thêm bảng giá?" |
+| 4 | Chưa tạo custom cron | "Muốn bot nhắc việc tự động? Nhắn Telegram: nhắc anh uống nước mỗi 2h" |
+| 7 | Chưa chọn chủ Zalo | "Chọn tài khoản Zalo cá nhân để bot nhận diện anh là chủ" |
+
+**Dismiss:** bấm "x" → không hiện lại nudge đó. Max 1 nudge/ngày.
+
+**Detect "ngày":** đếm số ngày distinct có audit event (proxy cho "CEO đã dùng app N ngày").
 
 ## Implementation
 
 ### Files:
 ```
 electron/ui/
-├── dashboard.html    ← Add: checklist, tour JS, help button per tab
-├── help.html         ← NEW: full help page with sidebar nav
-└── styles.css        ← Add: checklist + tour CSS
+├── dashboard.html   ← Smart empty states, tooltips, help modals, nudges
+└── styles.css       ← Tooltip CSS, empty state CSS
+electron/main.js     ← get-onboarding-status IPC, nudge logic
 ```
 
-### Backend (main.js):
-```javascript
-// IPC: check onboarding progress
-ipcMain.handle('get-onboarding-status', async () => {
-  return {
-    wizardDone: true,
-    telegramTested: checkAuditEvent('telegram_test_sent'),
-    knowledgeUploaded: checkKnowledgeHasFiles(),
-    zaloConnected: await probeZaloReady(),
-    firstReply: checkAuditEvent('gateway_ready'),
-  };
-});
-```
+### Phase 1 (ship first, 3h):
+- Smart empty states cho Overview, Knowledge, Zalo, Lịch tự động
+- Tooltip CSS component + 10 tooltips trên elements quan trọng
+- Nút "Hỗ trợ" góc dưới phải (3 options)
 
-### Phases:
-| Phase | What | Effort |
-|---|---|---|
-| 1 | Checklist on Overview + auto-detect | 2h |
-| 2 | Tour popups for 7 tabs | 3h |
-| 3 | help.html full documentation | 3h |
+### Phase 2 (2h):
+- Per-tab "Hướng dẫn" modal (7 modals, mỗi cái 5 bullets)
+- Post-onboarding nudges (3 nudges, tuần đầu)
 
-Total: ~8h (1 full session)
+### Phase 3 (1h):
+- Rename jargon across toàn app (sidebar, headers, buttons)
+- Video walkthrough link (quay khi app ổn định)
 
-## Success Criteria
-
-- CEO xong wizard → thấy checklist → biết phải test Telegram, upload Knowledge, check Zalo
-- CEO mở tab mới → tour 2-3 bước → hiểu tab làm gì
-- CEO bấm "Hướng dẫn" bất kỳ tab → help page mở đúng section
-- CEO không bao giờ phải Google "MODOROClaw cách dùng"
+## Không làm
+- ~~help.html full page~~ → modal nhỏ per tab
+- ~~Tour popups 14 bước~~ → tooltips + empty states
+- ~~Checklist 5 bước~~ → smart empty states tự biến mất
