@@ -81,6 +81,131 @@
     .tip-card { background:rgba(76,175,80,0.03); border:1px solid rgba(76,175,80,0.2); border-radius:12px; padding:14px 16px; }
     .tip-card p { font-size:13px; margin:0; color:var(--text); }
 
+    /* === Tooltip system (CSS-only) === */
+    [data-tooltip] {
+      position: relative;
+      cursor: help;
+    }
+    [data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text);
+      white-space: normal;
+      max-width: 220px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      z-index: 200;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      font-weight: 400;
+      line-height: 1.4;
+      text-align: center;
+    }
+    [data-tooltip]:hover::after {
+      opacity: 1;
+    }
+    .tip {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--border); color: var(--text-muted);
+      font-size: 10px; cursor: help; flex-shrink: 0;
+      margin-left: 4px; vertical-align: middle;
+    }
+
+    /* === Onboarding hero (Overview empty state) === */
+    .onboard-hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px 24px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .onboard-hero-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .onboard-hero-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      max-width: 400px;
+      margin: 0 auto 18px;
+    }
+    .onboard-hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    /* === Knowledge empty state === */
+    .know-empty-guide {
+      padding: 32px 20px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .know-empty-guide-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .know-empty-guide-sub {
+      font-size: 12.5px;
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+
+    /* === Schedule hint === */
+    .schedule-hint {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .schedule-hint strong {
+      color: var(--text);
+    }
+
+    /* === Support FAB === */
+    .support-fab {
+      position: fixed; bottom: 24px; right: 24px;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--accent, #4ea1ff); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 50; transition: transform 0.15s;
+      border: none;
+    }
+    .support-fab:hover { transform: scale(1.1); }
+    .support-menu {
+      position: fixed; bottom: 76px; right: 24px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 8px 0;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      z-index: 50; flex-direction: column; min-width: 200px;
+    }
+    .support-menu-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; cursor: pointer; font-size: 13px;
+      color: var(--text); transition: background 0.1s;
+    }
+    .support-menu-item:hover { background: var(--bg); }
+
     /* Responsive */
     @media (max-width:1100px) {
       .activity-panel { display:none; }
@@ -1041,12 +1166,12 @@
       </div>
       <div class="sidebar-version" id="sidebar-version">v—</div>
 
-      <div class="sidebar-status">
+      <div class="sidebar-status" data-tooltip="Bot đang nhận và trả lời tin nhắn">
         <span class="status-dot stopped" id="status-dot"></span>
         <span id="status-text">Đang kiểm tra...</span>
       </div>
 
-      <button class="btn btn-primary btn-small sidebar-btn" id="toggle-btn" onclick="toggleBot()">Khởi động</button>
+      <button class="btn btn-primary btn-small sidebar-btn" id="toggle-btn" onclick="toggleBot()" data-tooltip="Tạm dừng bot. Bot sẽ không trả lời khách cho đến khi bật lại">Khởi động</button>
       <button class="btn btn-secondary btn-small sidebar-btn" onclick="checkChannels()" id="check-btn">Kiểm tra kênh</button>
 
       <div class="sidebar-menu">
@@ -1108,6 +1233,15 @@
 
       <!-- PAGE: Overview -->
       <div class="page active" id="page-overview">
+        <!-- Onboarding hero (shown when fresh install, hidden when real data exists) -->
+        <div class="onboard-hero" id="onboard-hero" style="display:none">
+          <div class="onboard-hero-title">Nhắn thử cho bot trên Telegram</div>
+          <div class="onboard-hero-sub">Bot sẽ trả lời trong vài giây. Thử nhắn: "Chào bot" hoặc "Giới thiệu công ty"</div>
+          <div class="onboard-hero-actions">
+            <button class="btn btn-primary" onclick="switchPage('telegram')">Mở Telegram</button>
+          </div>
+        </div>
+
         <!-- Greeting hero card -->
         <div class="ov-hero">
           <div class="ov-hero-text">
@@ -1124,15 +1258,15 @@
         <div class="ov-stats" id="ov-stats">
           <div class="ov-stat">
             <div class="ov-stat-num" id="ov-stat-customers">--</div>
-            <div class="ov-stat-label">Khách mới Zalo hôm nay</div>
+            <div class="ov-stat-label">Khách mới Zalo hôm nay <span class="tip" data-tooltip="Số khách Zalo mới nhắn tin hôm nay">?</span></div>
           </div>
           <div class="ov-stat">
             <div class="ov-stat-num" id="ov-stat-events">--</div>
-            <div class="ov-stat-label">Sự kiện hôm nay</div>
+            <div class="ov-stat-label">Sự kiện hôm nay <span class="tip" data-tooltip="Tổng hoạt động bot ghi nhận hôm nay">?</span></div>
           </div>
           <div class="ov-stat">
             <div class="ov-stat-num" id="ov-stat-cron">--</div>
-            <div class="ov-stat-label">Cron OK hôm nay</div>
+            <div class="ov-stat-label">Cron OK hôm nay <span class="tip" data-tooltip="Số lịch tự động đã chạy thành công hôm nay">?</span></div>
           </div>
         </div>
 
@@ -1141,7 +1275,7 @@
           <!-- Alerts (above fold) -->
           <div class="ov-card" id="ov-actions-card">
             <div class="ov-card-head">
-              <h3>Cần xử lý</h3>
+              <h3>Cần xử lý <span class="tip" data-tooltip="Việc cần anh/chị xem hoặc xử lý">?</span></h3>
             </div>
             <div class="ov-actions" id="ov-actions">
               <div class="ov-list-empty">Mọi thứ đều ổn</div>
@@ -1178,7 +1312,7 @@
       <div class="page" id="page-schedules">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
-          <div><h2>Lịch tự động</h2><div class="page-sub">Cron jobs tự động chạy hàng ngày</div></div>
+          <div><h2>Lịch tự động <span class="tip" data-tooltip="Bot chạy tự động theo lịch này">?</span></h2><div class="page-sub">Cron jobs tự động chạy hàng ngày</div></div>
           <button class="btn btn-secondary btn-small" onclick="loadSchedules()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
         </div>
         <div class="main-card">
@@ -1263,7 +1397,7 @@
               </div>
 
               <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Tài khoản Zalo cá nhân của chủ nhân</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Tài khoản Zalo cá nhân của chủ nhân <span class="tip" data-tooltip="Bot nhận diện tài khoản này là chủ, trả lời khác với khách">?</span></div>
                 <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">Bot nhận diện tài khoản này là chủ doanh nghiệp (như Telegram), trả lời theo persona CEO và nhận lệnh quản trị.</div>
                 <div style="display:flex;gap:8px;align-items:center">
                   <select id="zalo-owner-dashboard-select" style="flex:1;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px">
@@ -1283,7 +1417,7 @@
           <!-- Column 2: Groups -->
           <div class="zalo-col">
             <div class="zalo-col-header">
-              <h4>Nhóm Zalo <span class="zalo-mgr-badge" id="zalo-mgr-group-count">0</span></h4>
+              <h4>Nhóm Zalo <span class="tip" data-tooltip="Tick nhóm nào bot được trả lời khi @mention">?</span> <span class="zalo-mgr-badge" id="zalo-mgr-group-count">0</span></h4>
               <div style="display:flex;gap:4px">
                 <button class="btn btn-secondary btn-small" style="padding:3px 8px;font-size:11px" onclick="toggleAllGroups(true)">Tất cả</button>
                 <button class="btn btn-secondary btn-small" style="padding:3px 8px;font-size:11px" onclick="toggleAllGroups(false)">Bỏ</button>
@@ -1355,7 +1489,7 @@
 
           <div class="know-col">
             <h4>Thêm tài liệu</h4>
-            <div class="know-drop-zone" id="know-drop-zone" onclick="pickKnowledgeFiles()">
+            <div class="know-drop-zone" id="know-drop-zone" onclick="pickKnowledgeFiles()" data-tooltip="Kéo thả hoặc bấm để thêm file. PDF, Word, Excel, TXT">
               <div class="upload-icon" data-icon="upload" data-icon-size="36"></div>
               <strong>Click để chọn file</strong>
               <div>hoặc kéo thả vào đây</div>
@@ -1421,6 +1555,25 @@
     <span data-icon="activity" data-icon-size="22"></span>
     <span class="fab-badge" id="activity-fab-badge" style="display:none">0</span>
   </button>
+
+  <!-- Support FAB + menu -->
+  <button class="support-fab" id="support-fab" onclick="toggleSupportMenu()">
+    <span data-icon="help-circle" data-icon-size="20"></span>
+  </button>
+  <div class="support-menu" id="support-menu" style="display:none">
+    <div class="support-menu-item" onclick="window.claw.openExternal('https://youtube.com/@modoro')">
+      <span data-icon="eye" data-icon-size="16"></span>
+      Xem video hướng dẫn
+    </div>
+    <div class="support-menu-item" onclick="window.claw.openExternal('https://zalo.me/modoro')">
+      <span data-icon="message-circle" data-icon-size="16"></span>
+      Liên hệ MODORO
+    </div>
+    <div class="support-menu-item" onclick="resetOnboarding()">
+      <span data-icon="refresh-cw" data-icon-size="16"></span>
+      Xem lại hướng dẫn
+    </div>
+  </div>
 
   <!-- Activity drawer (slides from right) -->
   <div class="activity-drawer-backdrop" id="activity-drawer-backdrop" onclick="toggleActivityDrawer()"></div>
@@ -1566,6 +1719,7 @@
       'user-plus': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
       'file-text': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/>',
       upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+      'help-circle': '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
     };
 
     function icon(name, size = 18) {
@@ -2125,6 +2279,17 @@
         document.getElementById('ov-stat-events').textContent = String(st.eventsToday || 0);
         document.getElementById('ov-stat-cron').textContent = String(st.cronOkToday || 0);
 
+        // === ONBOARD HERO (fresh install empty state) ===
+        const heroEl = document.getElementById('onboard-hero');
+        const dismissed = localStorage.getItem('onboard-dismissed');
+        const isEmpty = (st.eventsToday || 0) === 0
+          && (!data.recentCustomers || data.recentCustomers.length === 0);
+        if (isEmpty && !dismissed) {
+          heroEl.style.display = '';
+        } else {
+          heroEl.style.display = 'none';
+        }
+
         // === ACTIONS (above fold) ===
         const acEl = document.getElementById('ov-actions');
         if (!data.actions || data.actions.length === 0) {
@@ -2381,10 +2546,11 @@
         const files = await window.claw.listKnowledgeFiles(currentKnowledgeCategory);
         if (!files || files.length === 0) {
           list.innerHTML = `
-            <div class="know-empty">
-              <div class="big-icon" data-icon="file-text" data-icon-size="48"></div>
-              <div><strong>Chưa có tài liệu nào</strong></div>
-              <div style="margin-top:6px">Upload file qua cột bên phải</div>
+            <div class="know-empty-guide">
+              <div class="big-icon" data-icon="book-open" data-icon-size="40" style="color:var(--accent);margin-bottom:12px"></div>
+              <div class="know-empty-guide-title">Bot trả lời thông minh hơn khi có tài liệu</div>
+              <div class="know-empty-guide-sub">Thêm bảng giá, SOP, FAQ, catalog.</div>
+              <button class="btn btn-primary btn-small" onclick="pickKnowledgeFiles()">Thêm tài liệu đầu tiên</button>
             </div>`;
           mountIcons();
           return;
@@ -2781,6 +2947,16 @@
       });
       if (currentSchedules.length === 0 && customCrons.length === 0) {
         list.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Chưa có lịch nào</div>';
+      }
+      // Add hint when no custom crons exist
+      const existingHint = document.getElementById('schedule-custom-hint');
+      if (existingHint) existingHint.remove();
+      if (customCrons.length === 0 && currentSchedules.length > 0) {
+        const hint = document.createElement('div');
+        hint.id = 'schedule-custom-hint';
+        hint.className = 'schedule-hint';
+        hint.innerHTML = 'Muốn thêm lịch mới? Nhắn bot trên Telegram: <strong>"Nhắc anh uống nước mỗi 2 tiếng"</strong>';
+        list.parentNode.appendChild(hint);
       }
     }
     async function toggleSchedule(id, enabled) {
@@ -3426,6 +3602,34 @@
     }
     function escHtml(s) {
       return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // ============================================
+    //  SUPPORT FAB + MENU
+    // ============================================
+    function toggleSupportMenu() {
+      const menu = document.getElementById('support-menu');
+      menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+    }
+    function resetOnboarding() {
+      localStorage.removeItem('onboard-dismissed');
+      loadOverview();
+      toggleSupportMenu();
+    }
+    // Close support menu when clicking elsewhere
+    document.addEventListener('click', function(e) {
+      const fab = document.getElementById('support-fab');
+      const menu = document.getElementById('support-menu');
+      if (menu && menu.style.display !== 'none' && !fab.contains(e.target) && !menu.contains(e.target)) {
+        menu.style.display = 'none';
+      }
+    });
+
+    // ============================================
+    //  TOOLTIP HELPER
+    // ============================================
+    function tip(text) {
+      return '<span class="tip" data-tooltip="' + _esc(text) + '">?</span>';
     }
   </script>
 </body>
