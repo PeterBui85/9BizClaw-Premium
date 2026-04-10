@@ -2037,6 +2037,7 @@ function createWindow() {
       try { await ensureZaloPlugin(); } catch (e) { console.error('[boot] ensureZaloPlugin error:', e?.message || e); }
       try { await startOpenClaw(); } catch (e) { console.error('[boot] startOpenClaw error:', e?.message || e); }
       startCronJobs();
+      startFollowUpChecker();
       watchCustomCrons();
       startZaloCacheAutoRefresh();
     })();
@@ -7540,6 +7541,84 @@ function watchCustomCrons() {
     _watchPollerInterval.unref?.();
   } catch (e) { console.error('[cron] watch error:', e.message); }
 }
+
+// ============================================
+//  FOLLOW-UP QUEUE — one-shot delayed messages
+// ============================================
+// Bot escalates CEO + queues a follow-up: "15 min later, message customer X
+// to check if they've been helped." File: <workspace>/follow-up-queue.json
+// Format: [{ id, channel, recipientId, recipientName, prompt, fireAt, firedAt? }]
+// Checked every 60s. After fire → mark firedAt. Entries older than 24h → purge.
+
+let _followUpInterval = null;
+
+function getFollowUpQueuePath() {
+  return path.join(getWorkspace(), 'follow-up-queue.json');
+}
+
+function readFollowUpQueue() {
+  const p = getFollowUpQueuePath();
+  if (!fs.existsSync(p)) return [];
+  try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return []; }
+}
+
+function writeFollowUpQueue(queue) {
+  fs.writeFileSync(getFollowUpQueuePath(), JSON.stringify(queue, null, 2), 'utf-8');
+}
+
+async function processFollowUpQueue() {
+  try {
+    let queue = readFollowUpQueue();
+    if (queue.length === 0) return;
+    const now = Date.now();
+    let changed = false;
+    for (const item of queue) {
+      if (item.firedAt) continue; // already processed
+      if (new Date(item.fireAt).getTime() > now) continue; // not yet
+      // Fire!
+      console.log('[follow-up] Firing:', item.id, 'for', item.recipientName || item.recipientId);
+      try {
+        const prompt = item.prompt || `Follow up khách ${item.recipientName || item.recipientId}. Đọc memory/zalo-users/${item.recipientId}.md. Nếu khách đã được CEO/nhân viên phản hồi → không cần làm gì. Nếu chưa → gửi tin Zalo: "Dạ ${item.recipientName ? ('anh/chị ' + item.recipientName) : 'anh/chị'}, bên em đã kiểm tra và phản hồi lại ạ. Anh/chị cần em hỗ trợ thêm gì không ạ?" Dùng exec: openzca msg send ${item.recipientId} "<nội dung>"`;
+        await runCronAgentPrompt(prompt, { label: 'follow-up-' + (item.recipientName || item.recipientId) });
+        item.firedAt = new Date().toISOString();
+        try { auditLog('follow_up_fired', { id: item.id, recipient: item.recipientId }); } catch {}
+      } catch (e) {
+        console.error('[follow-up] Fire error:', e.message);
+        item.firedAt = 'error:' + e.message;
+      }
+      changed = true;
+    }
+    // Purge entries older than 24h
+    const cutoff = now - 24 * 60 * 60 * 1000;
+    const before = queue.length;
+    queue = queue.filter(q => new Date(q.fireAt).getTime() > cutoff);
+    if (queue.length !== before) changed = true;
+    if (changed) writeFollowUpQueue(queue);
+  } catch (e) {
+    console.error('[follow-up] processQueue error:', e.message);
+  }
+}
+
+function startFollowUpChecker() {
+  if (_followUpInterval) clearInterval(_followUpInterval);
+  _followUpInterval = setInterval(processFollowUpQueue, 60 * 1000); // check every 60s
+  _followUpInterval.unref?.();
+}
+
+// IPC: bot or dashboard can queue a follow-up
+ipcMain.handle('queue-follow-up', async (_event, { channel, recipientId, recipientName, prompt, delayMinutes }) => {
+  try {
+    const queue = readFollowUpQueue();
+    const id = 'fu_' + Date.now();
+    const fireAt = new Date(Date.now() + (delayMinutes || 15) * 60 * 1000).toISOString();
+    queue.push({ id, channel: channel || 'zalo', recipientId, recipientName, prompt, fireAt });
+    writeFollowUpQueue(queue);
+    console.log('[follow-up] Queued:', id, 'fire at', fireAt);
+    return { success: true, id, fireAt };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
 
 function startCronJobs() {
   stopCronJobs();
