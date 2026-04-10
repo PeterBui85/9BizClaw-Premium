@@ -2244,10 +2244,50 @@ function ensure9RouterDefaultPassword() {
   } catch (e) { console.error('[9router] ensure default password error:', e.message); }
 }
 
+// 9Router GET /api/providers strips apiKey from response (security design).
+// Problem: 9Router UI reads from API → shows empty apiKey field → CEO saves → key wiped.
+// Fix: save provider keys in our own file, re-inject into 9Router db.json on every startup.
+const PROVIDER_KEYS_PATH = () => path.join(appDataDir(), 'modoroclaw-provider-keys.json');
+
+function saveProviderKey(provider, apiKey) {
+  try {
+    const p = PROVIDER_KEYS_PATH();
+    let keys = {};
+    if (fs.existsSync(p)) keys = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    keys[provider] = apiKey;
+    fs.writeFileSync(p, JSON.stringify(keys, null, 2), 'utf-8');
+  } catch (e) { console.warn('[provider-keys] save error:', e.message); }
+}
+
+function ensure9RouterProviderKeys() {
+  try {
+    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    const keysPath = PROVIDER_KEYS_PATH();
+    if (!fs.existsSync(dbPath) || !fs.existsSync(keysPath)) return;
+    const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+    const savedKeys = JSON.parse(fs.readFileSync(keysPath, 'utf-8'));
+    const providers = db.providers || db.providerConnections || [];
+    let changed = false;
+    for (const p of providers) {
+      const savedKey = savedKeys[p.provider];
+      if (savedKey && (!p.apiKey || p.apiKey.length < 10)) {
+        console.log('[9router] Re-injecting apiKey for provider:', p.name);
+        p.apiKey = savedKey;
+        changed = true;
+      }
+    }
+    if (changed) {
+      fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+      console.log('[9router] Provider keys re-injected into db.json');
+    }
+  } catch (e) { console.error('[9router] ensure provider keys error:', e.message); }
+}
+
 function start9Router() {
   if (routerProcess) return;
   try {
     ensure9RouterDefaultPassword();
+    ensure9RouterProviderKeys();
     const logsDir = path.join(userDataDir, 'logs');
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     _routerLogFd = fs.openSync(path.join(logsDir, '9router.log'), 'a');
@@ -4367,6 +4407,8 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           throw new Error('9router không trả về provider ID');
         }
         console.log('[setup-9router-auto] created Ollama provider', providerId);
+        // Save key in our own file so we can re-inject if 9Router UI wipes it
+        saveProviderKey('ollama', opts.ollamaKey.trim());
 
         // 4. Test it (THIS is the fast validator — usually 1-3 seconds)
         const testRes = await nineRouterApi('POST', `/api/providers/${providerId}/test`, null, 8000);
@@ -4523,6 +4565,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
+      saveProviderKey('ollama', opts.ollamaKey.trim());
     }
 
     // 2. Combo 'main' handling — create if missing, leave existing alone.
