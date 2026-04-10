@@ -2929,9 +2929,9 @@ function ensureZaloFriendCheckFix() {
           } catch (__fcFrErr) {
             runtime.log?.(\`openzalo: friend request CLI failed: \${String(__fcFrErr)}\`);
           }
-          let __fcText = __fcFriendReqSent
-            ? 'Xin chào! Mình vừa gửi lời mời kết bạn. Bạn bấm "Đồng ý" để mình hỗ trợ nhé!\\n\\nSau khi kết bạn, mình sẽ chào bạn ngay.'
-            : 'Xin chào! Bạn thêm mình làm bạn bè để mình có thể hỗ trợ nhé.\\n\\nSau khi kết bạn, mình sẽ chào bạn ngay.';
+          // Always tell customer to send friend request — don't depend on bot's
+          // request succeeding. Bot tries silently but text always says customer should add.
+          let __fcText = 'Dạ em chào anh/chị! Anh/chị bấm "Thêm bạn" để em hỗ trợ tốt hơn nhé.\\n\\nTrong lúc đó em vẫn trả lời được ạ.';
           try {
             const __fcAppDir = "modoro-claw";
             const __fcCustomPaths = [];
