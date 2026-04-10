@@ -2258,7 +2258,16 @@ function createWindow() {
     mainWindow.maximize();
   }
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    let startMinimized = false;
+    try { startMinimized = !!loadAppPrefs().startMinimized; } catch {}
+    if (startMinimized) {
+      console.log('[createWindow] startMinimized=true → hiding window (tray only)');
+      try { mainWindow.hide(); } catch {}
+    } else {
+      mainWindow.show();
+    }
+  });
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) { e.preventDefault(); mainWindow.hide(); }
@@ -2279,6 +2288,47 @@ function isOpenClawConfigured() {
 }
 
 // ============================================
+//  APP PREFS (start minimized, etc.)
+// ============================================
+
+function getAppPrefsPath() {
+  try {
+    const dir = app.getPath('userData');
+    return path.join(dir, 'app-prefs.json');
+  } catch {
+    return path.join(HOME, '.modoro-claw-app-prefs.json');
+  }
+}
+
+function loadAppPrefs() {
+  const defaults = { startMinimized: false };
+  try {
+    const p = getAppPrefsPath();
+    if (!fs.existsSync(p)) {
+      try { fs.writeFileSync(p, JSON.stringify(defaults, null, 2) + '\n'); } catch {}
+      return { ...defaults };
+    }
+    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    return { ...defaults, ...(raw && typeof raw === 'object' ? raw : {}) };
+  } catch (e) {
+    console.warn('[app-prefs] load failed:', e?.message || e);
+    return { ...defaults };
+  }
+}
+
+function saveAppPrefs(partial) {
+  try {
+    const cur = loadAppPrefs();
+    const next = { ...cur, ...(partial && typeof partial === 'object' ? partial : {}) };
+    fs.writeFileSync(getAppPrefsPath(), JSON.stringify(next, null, 2) + '\n');
+    return next;
+  } catch (e) {
+    console.warn('[app-prefs] save failed:', e?.message || e);
+    return null;
+  }
+}
+
+// ============================================
 //  TRAY
 // ============================================
 
@@ -2296,7 +2346,8 @@ function createTray() {
   }
 
   tray = new Tray(icon);
-  tray.setToolTip('MODOROClaw');
+  tray.setToolTip('MODOROClaw — Trợ lý AI cho CEO');
+  try { global.__tray = tray; } catch {}
 
   const show = () => {
     if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
@@ -2309,10 +2360,19 @@ function createTray() {
     : 'Mở file log trong trình soạn thảo';
 
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Mở MODOROClaw', click: show },
+    { label: 'Mở Dashboard', click: show },
     { type: 'separator' },
-    { label: botRunning ? 'Đang chạy' : 'Đã dừng', enabled: false },
-    { label: botRunning ? 'Dừng' : 'Khởi động', click: () => { if (botRunning) stopOpenClaw(); else startOpenClaw(); createTray(); } },
+    { label: botRunning ? 'Bot đang chạy' : 'Bot đã dừng', enabled: false },
+    { label: botRunning ? 'Dừng bot' : 'Khởi động bot', click: () => { if (botRunning) stopOpenClaw(); else startOpenClaw(); createTray(); } },
+    { type: 'separator' },
+    { label: 'Tạm dừng Zalo 30 phút', click: async () => {
+        try { await pauseChannel('zalo', 30); } catch (e) { console.error('[tray] pause zalo failed:', e?.message || e); }
+      }
+    },
+    { label: 'Tạm dừng Telegram 30 phút', click: async () => {
+        try { await pauseChannel('telegram', 30); } catch (e) { console.error('[tray] pause telegram failed:', e?.message || e); }
+      }
+    },
     { type: 'separator' },
     { label: 'Mở thư mục log (chẩn đoán)', click: () => {
         try {
@@ -2333,9 +2393,16 @@ function createTray() {
       }
     },
     { type: 'separator' },
-    { label: 'Thoát', click: () => { app.isQuitting = true; stopOpenClaw(); app.quit(); } },
+    { label: 'Thoát MODOROClaw', click: () => { app.isQuitting = true; stopOpenClaw(); app.quit(); } },
   ]));
-  tray.on('click', show);
+  // Single-click toggles window visibility (Windows). On Mac, click shows the
+  // context menu natively — this handler still runs and is harmless.
+  tray.on('click', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isVisible()) mainWindow.hide();
+      else { mainWindow.show(); mainWindow.focus(); }
+    }
+  });
 }
 
 // ============================================
@@ -7737,6 +7804,15 @@ ipcMain.handle('resume-zalo', async () => {
 });
 ipcMain.handle('get-zalo-pause-status', async () => {
   return getChannelPauseStatus('zalo');
+});
+
+// App prefs (start minimized, etc.) — persisted in <userData>/app-prefs.json
+ipcMain.handle('get-app-prefs', async () => {
+  return loadAppPrefs();
+});
+ipcMain.handle('set-app-prefs', async (_e, partial) => {
+  const next = saveAppPrefs(partial || {});
+  return next || loadAppPrefs();
 });
 
 // Periodic broadcast of channel readiness to the renderer so the sidebar dots

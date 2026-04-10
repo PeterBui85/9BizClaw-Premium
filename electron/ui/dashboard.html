@@ -1243,6 +1243,10 @@
         <div class="sidebar-menu-item" id="theme-toggle-btn" onclick="toggleTheme()">
           <span class="icon" id="theme-toggle-icon" data-icon="moon"></span><span class="label" id="theme-toggle-label">Giao diện sáng</span>
         </div>
+        <label class="pref-toggle" style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;margin-top:4px;font-size:12px;color:var(--text-muted);cursor:pointer;line-height:1.4">
+          <input type="checkbox" id="pref-start-minimized" style="margin-top:2px;flex-shrink:0;cursor:pointer">
+          <span>Mở ẩn khi khởi động (chạy nền qua taskbar tray)</span>
+        </label>
       </div>
       <div id="gateway-token-box" style="display:none;margin-top:10px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:11px">
         <div style="display:flex;align-items:center;justify-content:space-between;color:var(--text-muted);margin-bottom:6px">
@@ -2518,7 +2522,22 @@
     document.addEventListener('DOMContentLoaded', () => {
       loadOverview();
       startOverviewAutoRefresh();
+      initAppPrefsToggle();
     });
+
+    async function initAppPrefsToggle() {
+      try {
+        const el = document.getElementById('pref-start-minimized');
+        if (!el || !window.claw || !window.claw.getAppPrefs) return;
+        const prefs = await window.claw.getAppPrefs();
+        el.checked = !!(prefs && prefs.startMinimized);
+        el.addEventListener('change', async (e) => {
+          try { await window.claw.setAppPrefs({ startMinimized: !!e.target.checked }); } catch (err) { console.error('setAppPrefs failed:', err); }
+        });
+      } catch (err) {
+        console.error('initAppPrefsToggle error:', err);
+      }
+    }
 
     // ============================================
     //  EMBEDDED WEB UI (9Router + OpenClaw)

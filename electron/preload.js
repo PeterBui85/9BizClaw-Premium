@@ -131,6 +131,10 @@ contextBridge.exposeInMainWorld('claw', {
   resumeZalo: () => ipcRenderer.invoke('resume-zalo'),
   getZaloPauseStatus: () => ipcRenderer.invoke('get-zalo-pause-status'),
 
+  // App preferences (start minimized, etc.)
+  getAppPrefs: () => ipcRenderer.invoke('get-app-prefs'),
+  setAppPrefs: (partial) => ipcRenderer.invoke('set-app-prefs', partial),
+
   // Diagnostic log export — lets Dashboard grab main.log without DevTools
   getDiagnosticLog: (opts) => ipcRenderer.invoke('get-diagnostic-log', opts || {}),
   openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
