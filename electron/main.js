@@ -553,7 +553,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 12;
+const CURRENT_AGENTS_MD_VERSION = 13;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -1788,9 +1788,22 @@ function writeDailyMemoryJournal({ date = new Date() } = {}) {
   }
 }
 
+// Send an alert to CEO on ALL available channels (Telegram + Zalo). Best-effort:
+// if one channel is paused or unconfigured, the other still delivers.
+async function sendCeoAlert(text) {
+  // System alerts bypass output filter + pause check — these are OUR messages
+  // (cron failures, boot errors), not AI-generated. Blocking them = silent failure.
+  const opts = { skipFilter: true, skipPauseCheck: true };
+  const results = await Promise.allSettled([
+    sendTelegram(text, opts),
+    sendZalo(text, opts),
+  ]);
+  return results.some(r => r.status === 'fulfilled' && r.value === true);
+}
+
 // Run an agent turn from a cron handler and deliver the reply to the CEO via Telegram.
 // Sends the OUTPUT, not the prompt text. Retries on transient failures, journals every
-// fire, and never fails silently — total failure always yields a Telegram notice.
+// fire, and never fails silently — total failure always yields a notice on ALL channels.
 async function runCronAgentPrompt(prompt, { label, timeoutMs = 600000 } = {}) {
   const niceLabel = label || 'cron';
 
@@ -1866,7 +1879,7 @@ async function runCronAgentPrompt(prompt, { label, timeoutMs = 600000 } = {}) {
       } else {
         userMsg = `*Cron "${niceLabel}" KHÔNG chạy được — lỗi không retry được*\n\nExit ${res.code}\n\`\`\`\n${lastErr.slice(0, 400)}\n\`\`\``;
       }
-      try { await sendTelegram(userMsg); } catch {}
+      try { await sendCeoAlert(userMsg); } catch {}
       journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, reason: 'fatal-no-retry', err: lastErr.slice(0, 300) });
       return false;
     }
@@ -1889,7 +1902,7 @@ async function runCronAgentPrompt(prompt, { label, timeoutMs = 600000 } = {}) {
 
   journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, err: lastErr.slice(0, 400) });
   try {
-    await sendTelegram(`*Cron "${niceLabel}" thất bại sau 3 lần*\n\nExit code: \`${lastCode}\`\n\`\`\`\n${lastErr.slice(0, 500)}\n\`\`\``);
+    await sendCeoAlert(`*Cron "${niceLabel}" thất bại sau 3 lần*\n\nExit code: \`${lastCode}\`\n\`\`\`\n${lastErr.slice(0, 500)}\n\`\`\``);
   } catch {}
   return false;
 }
@@ -2748,31 +2761,55 @@ function ensureZaloPauseFix() {
       path.join(getWorkspace(), 'zalo-paused.json').replace(/\\/g, '/'),
       path.join(HOME, '.openclaw', 'workspace', 'zalo-paused.json').replace(/\\/g, '/'),
     ];
+    // Build owner paths for pause auth check (same paths as owner marker patch)
+    const ownerPaths = [];
+    const _ws = getWorkspace();
+    if (_ws) ownerPaths.push(path.join(_ws, 'zalo-owner.json').replace(/\\/g, '/'));
+    ownerPaths.push(path.join(HOME, '.openclaw', 'workspace', 'zalo-owner.json').replace(/\\/g, '/'));
+
     const injection = `
 
   // === MODOROClaw PAUSE PATCH ===
-  // /pause command: CEO/staff types /pause → bot stops replying 30 min.
-  // Auto-detect: if recent outbound not from bot → staff is replying → pause.
+  // /pause and /resume: ONLY accepted from the Zalo account the bot is logged
+  // into (ownerUserId in zalo-owner.json). This is the CEO/staff using the
+  // same Zalo account as the bot. Customers typing /pause are ignored.
   try {
     const __pzFs = require("node:fs");
+    const __pzPath = require("node:path");
     const __pzPaths = ${JSON.stringify(pausePaths)};
     const __pzBody = String(rawBody || "").trim().toLowerCase();
+    const __pzSender = String(message.senderId || "").trim();
 
-    // Handle /pause and /resume commands (from owner or staff)
-    if (__pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly") {
+    // Resolve owner senderId from zalo-owner.json
+    let __pzOwner = "";
+    const __pzOwnerPaths = ${JSON.stringify(ownerPaths)};
+    for (const __op of __pzOwnerPaths) {
+      try {
+        if (__pzFs.existsSync(__op)) {
+          const __od = JSON.parse(__pzFs.readFileSync(__op, "utf-8"));
+          __pzOwner = String(__od?.ownerUserId || "").trim();
+          if (__pzOwner) break;
+        }
+      } catch {}
+    }
+
+    const __pzIsOwner = __pzOwner && __pzSender === __pzOwner;
+
+    // Handle /pause and /resume commands — ONLY from bot's own Zalo account
+    if (__pzIsOwner && (__pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly")) {
       const __pzUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       for (const __p of __pzPaths) {
-        try { __pzFs.mkdirSync(require("node:path").dirname(__p), { recursive: true }); } catch {}
-        try { __pzFs.writeFileSync(__p, JSON.stringify({ pausedUntil: __pzUntil, pausedBy: String(message.senderId || "") }, null, 2), "utf-8"); break; } catch {}
+        try { __pzFs.mkdirSync(__pzPath.dirname(__p), { recursive: true }); } catch {}
+        try { __pzFs.writeFileSync(__p, JSON.stringify({ pausedUntil: __pzUntil, pausedBy: __pzSender }, null, 2), "utf-8"); break; } catch {}
       }
-      runtime.log?.("openzalo: PAUSED for 30 min by " + message.senderId);
+      runtime.log?.("openzalo: PAUSED for 30 min by owner " + __pzSender);
       return; // Don't reply to the /pause command itself
     }
-    if (__pzBody === "/resume" || __pzBody === "/bot") {
+    if (__pzIsOwner && (__pzBody === "/resume" || __pzBody === "/bot")) {
       for (const __p of __pzPaths) {
         try { if (__pzFs.existsSync(__p)) __pzFs.unlinkSync(__p); } catch {}
       }
-      runtime.log?.("openzalo: RESUMED by " + message.senderId);
+      runtime.log?.("openzalo: RESUMED by owner " + __pzSender);
       // Don't return — let this message be processed normally
     }
 
@@ -6442,7 +6479,7 @@ function loadSchedules() {
           fs.appendFileSync(errFile, `\n## ${new Date().toISOString()} — schedules.json corrupt\n\nError: ${parseErr.message}\nBackup: ${backupPath}\nFell back to defaults so morning/evening still fire.\n`, 'utf-8');
         } catch {}
         try {
-          sendTelegram(`🚨 *schedules.json bị lỗi JSON*\n\n\`${parseErr.message}\`\n\nĐã backup về \`${path.basename(backupPath)}\` và fall back về default schedules. Vào Dashboard → Lịch để xem.`);
+          sendCeoAlert(`🚨 *schedules.json bị lỗi JSON*\n\n\`${parseErr.message}\`\n\nĐã backup về \`${path.basename(backupPath)}\` và fall back về default schedules. Vào Dashboard → Lịch để xem.`);
         } catch {}
         return DEFAULT_SCHEDULES_JSON;
       }
@@ -6910,7 +6947,136 @@ async function getTelegramConfigWithRecovery() {
   return sync;
 }
 
-async function sendTelegram(text) {
+// ============================================
+//  SHARED OUTPUT FILTER — same patterns for Telegram + Zalo
+// ============================================
+// Mirrors the 19 block patterns from ensureZaloOutputFilterFix() so BOTH
+// channels get the same defense-in-depth. Zalo's transport-layer filter in
+// send.ts is the primary defense for Zalo; this function covers Telegram
+// sends from main.js (cron delivery, alerts) and sendZalo() direct sends.
+const _outputFilterPatterns = [
+  // Layer A: file paths + secrets
+  { name: 'file-path-memory', re: /\bmemory\/[\w\-./]*\.md\b/i },
+  { name: 'file-path-learnings', re: /\.learnings\/[\w\-./]*/i },
+  { name: 'file-path-core', re: /\b(?:SOUL|USER|MEMORY|AGENTS|IDENTITY|COMPANY|PRODUCTS|BOOTSTRAP|HEARTBEAT|TOOLS)\.md\b/i },
+  { name: 'file-path-config', re: /\bopenclaw\.json\b/i },
+  { name: 'line-ref', re: /#L\d+/i },
+  { name: 'unix-home', re: /~\/\.openclaw|~\/\.openzca/i },
+  { name: 'win-user-path', re: /[A-Z]:[/\\]Users[/\\]/i },
+  { name: 'api-key-sk', re: /\bsk-[a-zA-Z0-9_\-]{16,}/i },
+  { name: 'bearer-token', re: /\bBearer\s+[a-zA-Z0-9_\-.]{20,}/i },
+  { name: 'botToken-field', re: /\bbotToken\b/i },
+  { name: 'apiKey-field', re: /\bapiKey\b/i },
+  // Layer A2: compaction/context reset
+  { name: 'compaction-notice', re: /(?:Auto-compaction|Compacting context|Context limit exceeded|reset our conversation)/i },
+  { name: 'compaction-emoji', re: /🧹/ },
+  // Layer B: English chain-of-thought leakage
+  { name: 'cot-en-the-actor', re: /\bthe (user|assistant|bot|model|customer)\b/i },
+  { name: 'cot-en-we-modal', re: /\b(we need to|we have to|we should|we can|let me|let's|i'll|i will|i need to|i should)\b/i },
+  { name: 'cot-en-meta', re: /\b(internal reasoning|chain of thought|system prompt|instructions|prompt injection|tool call)\b/i },
+  // Layer C: meta-commentary about file/tool operations
+  { name: 'meta-vi-file-ops', re: /(?<![a-zA-Z0-9_])(edit file|ghi (?:vào )?file|lưu (?:vào )?file|update file|đọc file|cập nhật file|sửa file|tạo file|xóa file)(?![a-zA-Z0-9_])/i },
+  { name: 'meta-vi-tool-name', re: /\b(tool (?:Edit|Write|Read|Bash|Grep|Glob)|use the (?:Edit|Write|Read) tool)\b/i },
+  { name: 'meta-vi-memory-claim', re: /(?<![a-zA-Z0-9_])(đã (?:lưu|ghi|cập nhật|update) (?:vào |trong )?(?:bộ nhớ|memory|hồ sơ|file|database)|stored (?:in|to) memory|saved to (?:file|memory))(?![a-zA-Z0-9_])/i },
+  // Layer D: all-Latin / no-Vietnamese-diacritic (>40 chars, no URL)
+  { name: 'no-vietnamese-diacritic', re: /^(?!.*https?:\/\/)(?=[\s\S]{40,})(?!.*[àáảãạâấầẩẫậăắằẳẵặèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]).+/s },
+];
+
+const _outputFilterSafeMsgs = [
+  'Dạ em xin lỗi, cho em một phút em rà lại thông tin rồi báo lại mình ạ.',
+  'Dạ em ghi nhận rồi ạ. Em sẽ kiểm tra và phản hồi lại mình ngay.',
+  'Dạ em đang xác nhận lại thông tin, mình chờ em xíu nha.',
+];
+
+function filterSensitiveOutput(text) {
+  if (!text || typeof text !== 'string') return { blocked: false, text };
+  for (const p of _outputFilterPatterns) {
+    if (p.re.test(text)) {
+      const safeMsg = _outputFilterSafeMsgs[Math.floor(Math.random() * _outputFilterSafeMsgs.length)];
+      try {
+        const logDir = path.join(getWorkspace(), 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
+          JSON.stringify({ t: new Date().toISOString(), event: 'output_blocked', pattern: p.name, channel: 'main-process', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+      } catch {}
+      return { blocked: true, pattern: p.name, text: safeMsg };
+    }
+  }
+  return { blocked: false, text };
+}
+
+// ============================================
+//  CHANNEL PAUSE — file-based pause for Telegram + Zalo (Dashboard control)
+// ============================================
+function _getPausePath(channel) {
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, `${channel}-paused.json`);
+}
+
+function isChannelPaused(channel) {
+  const p = _getPausePath(channel);
+  if (!p) return false;
+  try {
+    if (!fs.existsSync(p)) return false;
+    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    if (data.pausedUntil && new Date(data.pausedUntil) > new Date()) return true;
+    // Expired — clean up
+    try { fs.unlinkSync(p); } catch {}
+    return false;
+  } catch { return false; }
+}
+
+function pauseChannel(channel, durationMin = 30) {
+  const p = _getPausePath(channel);
+  if (!p) return false;
+  const until = new Date(Date.now() + durationMin * 60 * 1000).toISOString();
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify({ pausedUntil: until, pausedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    console.log(`[pause] ${channel} paused until ${until}`);
+    return true;
+  } catch (e) { console.error(`[pause] ${channel} error:`, e.message); return false; }
+}
+
+function resumeChannel(channel) {
+  const p = _getPausePath(channel);
+  if (!p) return false;
+  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+  console.log(`[pause] ${channel} resumed`);
+  return true;
+}
+
+function getChannelPauseStatus(channel) {
+  const p = _getPausePath(channel);
+  if (!p) return { paused: false };
+  try {
+    if (!fs.existsSync(p)) return { paused: false };
+    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    if (data.pausedUntil && new Date(data.pausedUntil) > new Date()) {
+      return { paused: true, until: data.pausedUntil };
+    }
+    try { fs.unlinkSync(p); } catch {}
+    return { paused: false };
+  } catch { return { paused: false }; }
+}
+
+// skipFilter: bypass output filter for system alerts (cron errors, boot pings)
+// that are OUR messages, not AI-generated. Blocking these would cause silent failures.
+async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false } = {}) {
+  // Check pause state — skip send if Telegram is paused
+  if (!skipPauseCheck && isChannelPaused('telegram')) {
+    console.log('[sendTelegram] channel paused — skipping');
+    return null;
+  }
+  // Output filter — same patterns as Zalo transport filter
+  if (!skipFilter) {
+    const filtered = filterSensitiveOutput(text);
+    if (filtered.blocked) {
+      console.warn(`[sendTelegram] output filter blocked (${filtered.pattern})`);
+      text = filtered.text;
+    }
+  }
   const { token, chatId } = getTelegramConfig();
   if (!token || !chatId) {
     console.error('[sendTelegram] missing token or chatId');
@@ -6937,6 +7103,63 @@ async function sendTelegram(text) {
     req.on('error', (e) => { console.error('[sendTelegram] network error:', e.message); resolve(null); });
     req.write(payload);
     req.end();
+  });
+}
+
+// Send a direct Zalo message to the CEO's personal Zalo account via openzca CLI.
+// Mirrors sendTelegram() for parity. Used by cron alerts and fallback delivery.
+async function sendZalo(text, { skipFilter = false, skipPauseCheck = false } = {}) {
+  // Check pause state
+  if (!skipPauseCheck && isChannelPaused('zalo')) {
+    console.log('[sendZalo] channel paused — skipping');
+    return null;
+  }
+  // Output filter
+  if (!skipFilter) {
+    const filtered = filterSensitiveOutput(text);
+    if (filtered.blocked) {
+      console.warn(`[sendZalo] output filter blocked (${filtered.pattern})`);
+      text = filtered.text;
+    }
+  }
+  const owner = readZaloOwner();
+  if (!owner || !owner.ownerUserId) {
+    console.error('[sendZalo] no Zalo owner configured — cannot send');
+    return null;
+  }
+  const zcaBin = findGlobalPackageFile('openzca', 'dist/cli.js');
+  if (!zcaBin) {
+    console.error('[sendZalo] openzca CLI not found');
+    return null;
+  }
+  const nodeBin = findNodeBin() || 'node';
+  return new Promise((resolve) => {
+    try {
+      const child = require('child_process').spawn(
+        nodeBin,
+        [zcaBin, 'msg', 'send', owner.ownerUserId, text],
+        { shell: false, timeout: 20000, env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      let stdout = '', stderr = '';
+      child.stdout.on('data', (d) => { stdout += d; });
+      child.stderr.on('data', (d) => { stderr += d; });
+      child.on('close', (code) => {
+        if (code === 0) {
+          console.log('[sendZalo] sent OK');
+          resolve(true);
+        } else {
+          console.error(`[sendZalo] exit ${code}: ${stderr.slice(0, 200)}`);
+          resolve(null);
+        }
+      });
+      child.on('error', (e) => {
+        console.error('[sendZalo] spawn error:', e.message);
+        resolve(null);
+      });
+    } catch (e) {
+      console.error('[sendZalo] error:', e.message);
+      resolve(null);
+    }
   });
 }
 
@@ -7187,11 +7410,33 @@ ipcMain.handle('check-zalo-ready', async () => probeZaloReady());
 // Manual smoke test: send a real Telegram message to the CEO. The strongest
 // possible proof — if this succeeds the channel is end-to-end working.
 ipcMain.handle('telegram-self-test', async () => {
+  // Self-test bypasses pause + filter — CEO explicitly clicked "Gửi tin test"
   const ok = await sendTelegram(
     '🧪 *Test kết nối*\n\nĐây là tin nhắn test từ Dashboard. Nếu anh thấy tin này, ' +
-    'channel Telegram đã sẵn sàng nhận lệnh.'
+    'channel Telegram đã sẵn sàng nhận lệnh.',
+    { skipFilter: true, skipPauseCheck: true }
   );
   return { success: ok === true };
+});
+
+// --- Channel pause/resume (symmetric for both Telegram + Zalo) ---
+ipcMain.handle('pause-telegram', async (_e, { minutes } = {}) => {
+  return { success: pauseChannel('telegram', minutes || 30) };
+});
+ipcMain.handle('resume-telegram', async () => {
+  return { success: resumeChannel('telegram') };
+});
+ipcMain.handle('get-telegram-pause-status', async () => {
+  return getChannelPauseStatus('telegram');
+});
+ipcMain.handle('pause-zalo', async (_e, { minutes } = {}) => {
+  return { success: pauseChannel('zalo', minutes || 30) };
+});
+ipcMain.handle('resume-zalo', async () => {
+  return { success: resumeChannel('zalo') };
+});
+ipcMain.handle('get-zalo-pause-status', async () => {
+  return getChannelPauseStatus('zalo');
 });
 
 // Periodic broadcast of channel readiness to the renderer so the sidebar dots
@@ -7211,8 +7456,8 @@ function startChannelStatusBroadcast() {
     try {
       const [tg, zl] = await Promise.all([probeTelegramReady(), probeZaloReady()]);
       mainWindow.webContents.send('channel-status', {
-        telegram: tg,
-        zalo: zl,
+        telegram: { ...tg, paused: isChannelPaused('telegram') },
+        zalo: { ...zl, paused: isChannelPaused('zalo') },
         checkedAt: new Date().toISOString(),
       });
     } catch (e) { console.error('[channel-status] broadcast error:', e.message); }
@@ -7403,7 +7648,7 @@ function loadCustomCrons() {
         } catch {}
         try {
           // Best-effort Telegram alert (sendTelegram is sync-callable)
-          sendTelegram(`🚨 *custom-crons.json bị lỗi JSON*\n\n\`${parseErr.message}\`\n\nFile gốc đã backup về: \`${path.basename(backupPath)}\`. Tất cả custom cron sẽ KHÔNG chạy cho tới khi sửa file. Vào Dashboard → Cron để recreate hoặc khôi phục từ backup.`);
+          sendCeoAlert(`🚨 *custom-crons.json bị lỗi JSON*\n\n\`${parseErr.message}\`\n\nFile gốc đã backup về: \`${path.basename(backupPath)}\`. Tất cả custom cron sẽ KHÔNG chạy cho tới khi sửa file. Vào Dashboard → Cron để recreate hoặc khôi phục từ backup.`);
         } catch {}
         return [];
       }
@@ -7495,7 +7740,7 @@ function watchCustomCrons() {
                         `Lịch: \`${c.cronExpr}\` (giờ VN)\n` +
                         `Prompt: ${String(c.prompt).slice(0, 200)}${c.prompt.length > 200 ? '...' : ''}\n\n` +
                         `Đây là xác nhận từ hệ thống — nếu bạn không yêu cầu cron này, vào Dashboard → Cron để xóa.`;
-            sendTelegram(msg).catch(() => {});
+            sendCeoAlert(msg).catch(() => {});
           }
         } catch (e) { console.error('[cron] new-entry confirmation error:', e.message); }
       }, 1000);
@@ -7894,7 +8139,7 @@ function startCronJobs() {
           console.error(`[cron] Custom ${c.id} handler threw (suppressed):`, e?.message || e);
           journalCronRun({ phase: 'fail', label: c.label || c.id, reason: 'handler-threw', err: String(e?.message || e).slice(0, 300) });
           try { auditLog('cron_failed', { id: c.id, label: c.label || c.id, kind: 'custom', error: String(e?.message || e).slice(0, 200) }); } catch {}
-          try { await sendTelegram(`*Cron "${c.label || c.id}" lỗi nội bộ*\n\n\`${String(e?.message || e).slice(0, 300)}\``); } catch {}
+          try { await sendCeoAlert(`*Cron "${c.label || c.id}" lỗi nội bộ*\n\n\`${String(e?.message || e).slice(0, 300)}\``); } catch {}
         } finally {
           global._cronInFlight.delete(niceId);
         }
@@ -7917,7 +8162,7 @@ function surfaceCronConfigError(c, reason) {
     fs.appendFileSync(errFile, `\n## ${new Date().toISOString()} — custom-cron config error\n\nCron: \`${c?.label || c?.id || '?'}\` (id: \`${c?.id || '?'}\`)\nReason: ${reason}\nExpr: \`${c?.cronExpr || '?'}\`\nPrompt (first 100 chars): ${(c?.prompt || '').slice(0, 100)}\n`, 'utf-8');
   } catch (e) { console.error('[surfaceCronConfigError] write error:', e.message); }
   try {
-    sendTelegram(`*Cron "${c?.label || c?.id || '?'}" cấu hình sai*\n\n${reason}\n\nCron sẽ KHÔNG chạy cho tới khi sửa. Vào Dashboard → Cron để fix.`);
+    sendCeoAlert(`*Cron "${c?.label || c?.id || '?'}" cấu hình sai*\n\n${reason}\n\nCron sẽ KHÔNG chạy cho tới khi sửa. Vào Dashboard → Cron để fix.`);
   } catch {}
 }
 
@@ -8180,24 +8425,18 @@ function resolveUniqueFilename(dir, filename) {
   return candidate;
 }
 
-// AI summarize via 9Router (fallback to filename + first 200 chars)
-async function summarizeKnowledgeContent(content, filename) {
-  const fallback = () => {
-    const stripped = (content || '').replace(/\s+/g, ' ').trim();
-    return stripped.substring(0, 200) || `(không đọc được nội dung ${filename})`;
-  };
-  if (!content || content.length < 30) return fallback();
+// Shared 9Router LLM call helper. Returns response text or null on failure.
+// Reuses CEO's configured 9Router provider from openclaw.json.
+// timeoutMs: per-call timeout (default 8s). maxTokens: response cap.
+// Model resolution order (NEVER hardcode):
+//   1. agents.defaults.model from openclaw.json (e.g. 'ninerouter/auto') → strip prefix
+//   2. First model id in models.providers.ninerouter.models[]
+//   3. Literal 'auto' — 9router treats this as "use first available combo"
+async function call9Router(prompt, { maxTokens = 200, temperature = 0.3, timeoutMs = 8000 } = {}) {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
     const provider = config?.models?.providers?.ninerouter;
-    if (!provider?.baseUrl || !provider?.apiKey) return fallback();
-    // Resolve model name dynamically — NEVER hardcode 'main' or any provider id.
-    // Whatever combo CEO sets up in 9router (Ollama, Anthropic, Groq, OpenAI, ...)
-    // works without code changes. Resolution order:
-    //   1. agents.defaults.model from openclaw.json (set by wizard, e.g. 'ninerouter/auto')
-    //      → strip 'ninerouter/' prefix
-    //   2. First model id in models.providers.ninerouter.models[] (also set by wizard)
-    //   3. Literal 'auto' — 9router treats this as "use first available combo"
+    if (!provider?.baseUrl || !provider?.apiKey) return null;
     let modelName = 'auto';
     try {
       const def = config?.agents?.defaults?.model;
@@ -8208,15 +8447,11 @@ async function summarizeKnowledgeContent(content, filename) {
       }
     } catch {}
     const http = require('http');
-    const truncated = content.length > 4000 ? content.substring(0, 4000) + '...' : content;
     const body = JSON.stringify({
       model: modelName,
-      messages: [{
-        role: 'user',
-        content: `Tóm tắt file "${filename}" trong 1-2 câu tiếng Việt ngắn gọn (tối đa 200 ký tự). Chỉ trả về tóm tắt, không thêm giải thích.\n\n---\n${truncated}`,
-      }],
-      max_tokens: 120,
-      temperature: 0.3,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+      temperature,
     });
     const url = new URL(provider.baseUrl + '/chat/completions');
     return await new Promise((resolve) => {
@@ -8225,7 +8460,7 @@ async function summarizeKnowledgeContent(content, filename) {
         port: url.port || 80,
         path: url.pathname,
         method: 'POST',
-        timeout: 15000,
+        timeout: timeoutMs,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${provider.apiKey}`,
@@ -8238,17 +8473,31 @@ async function summarizeKnowledgeContent(content, filename) {
           try {
             const parsed = JSON.parse(data);
             const text = parsed?.choices?.[0]?.message?.content?.trim();
-            if (text) resolve(text.substring(0, 300));
-            else resolve(fallback());
-          } catch { resolve(fallback()); }
+            resolve(text || null);
+          } catch { resolve(null); }
         });
       });
-      req.on('error', () => resolve(fallback()));
-      req.on('timeout', () => { req.destroy(); resolve(fallback()); });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
       req.write(body);
       req.end();
     });
-  } catch { return fallback(); }
+  } catch { return null; }
+}
+
+// AI summarize via 9Router (fallback to filename + first 200 chars)
+async function summarizeKnowledgeContent(content, filename) {
+  const fallback = () => {
+    const stripped = (content || '').replace(/\s+/g, ' ').trim();
+    return stripped.substring(0, 200) || `(không đọc được nội dung ${filename})`;
+  };
+  if (!content || content.length < 30) return fallback();
+  const truncated = content.length > 4000 ? content.substring(0, 4000) + '...' : content;
+  const result = await call9Router(
+    `Tóm tắt file "${filename}" trong 1-2 câu tiếng Việt ngắn gọn (tối đa 200 ký tự). Chỉ trả về tóm tắt, không thêm giải thích.\n\n---\n${truncated}`,
+    { maxTokens: 120, temperature: 0.3, timeoutMs: 15000 }
+  );
+  return result ? result.substring(0, 300) : fallback();
 }
 
 function rewriteKnowledgeIndex(category) {
