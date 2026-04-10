@@ -1220,10 +1220,10 @@
           <span class="icon" data-icon="calendar"></span><span class="label">Lịch tự động</span>
         </div>
         <div class="sidebar-menu-item" data-page="knowledge" onclick="switchPage('knowledge')">
-          <span class="icon" data-icon="book-open"></span><span class="label">Knowledge</span>
+          <span class="icon" data-icon="book-open"></span><span class="label">Tài liệu</span>
         </div>
 
-        <div class="sidebar-menu-header">Kênh giao tiếp</div>
+        <div class="sidebar-menu-header">Kênh</div>
         <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
           <span class="icon" data-icon="send"></span><span class="label">Telegram</span>
           <span class="ready-dot" id="ready-dot-telegram" data-state="checking" title="Đang kiểm tra..."></span>
@@ -1232,22 +1232,10 @@
           <span class="icon" data-icon="message-circle"></span><span class="label">Zalo</span>
           <span class="ready-dot" id="ready-dot-zalo" data-state="checking" title="Đang kiểm tra..."></span>
         </div>
-        <div class="sidebar-menu-item disabled" title="Sắp ra mắt">
-          <span class="icon" data-icon="messenger"></span><span class="label">Messenger</span><span class="badge">soon</span>
-        </div>
-        <div class="sidebar-menu-item disabled" title="Sắp ra mắt">
-          <span class="icon" data-icon="megaphone"></span><span class="label">Fanpage</span><span class="badge">soon</span>
-        </div>
 
-        <div class="sidebar-menu-header">Công cụ</div>
-        <div class="sidebar-menu-item" data-page="9router" onclick="switchPage('9router')">
-          <span class="icon" data-icon="cpu"></span><span class="label">9Router</span>
-        </div>
-        <div class="sidebar-menu-item" data-page="openclaw" onclick="switchPage('openclaw')">
-          <span class="icon" data-icon="zap"></span><span class="label">OpenClaw</span>
-        </div>
-        <div class="sidebar-menu-item" onclick="openLogFolder()" title="Mở thư mục log để xem lỗi / gửi cho support">
-          <span class="icon" data-icon="file-text"></span><span class="label">Xem log</span>
+        <div class="sidebar-menu-header">Cài đặt</div>
+        <div class="sidebar-menu-item" data-page="models" onclick="switchPage('models')">
+          <span class="icon" data-icon="cpu"></span><span class="label">AI Models</span>
         </div>
         <div class="sidebar-menu-item" id="theme-toggle-btn" onclick="toggleTheme()">
           <span class="icon" id="theme-toggle-icon" data-icon="moon"></span><span class="label" id="theme-toggle-label">Giao diện sáng</span>
@@ -1349,7 +1337,7 @@
       <div class="page" id="page-schedules">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
-          <div><h2>Lịch tự động <span class="tip" data-tooltip="Bot chạy tự động theo lịch này">?</span></h2><div class="page-sub">Cron jobs tự động chạy hàng ngày</div></div>
+          <div><h2>Lịch tự động <span class="tip" data-tooltip="Bot chạy tự động theo lịch này">?</span></h2><div class="page-sub">Lịch bot chạy hàng ngày</div></div>
           <button class="btn btn-secondary btn-small" onclick="loadSchedules()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
         </div>
         <div class="main-card">
@@ -1489,7 +1477,7 @@
       <div class="page" id="page-knowledge">
         <div class="page-header">
           <span class="page-icon" data-icon="book-open" data-icon-size="26"></span>
-          <div><h2>Knowledge doanh nghiệp</h2><div class="page-sub">Upload tài liệu để bot tự nhớ và dùng khi cần</div></div>
+          <div><h2>Tài liệu doanh nghiệp</h2><div class="page-sub">Thêm tài liệu để bot tự đọc và dùng khi khách hỏi</div></div>
         </div>
 
         <div class="know-columns">
@@ -1609,6 +1597,15 @@
     <div class="support-menu-item" onclick="resetOnboarding()">
       <span data-icon="refresh-cw" data-icon-size="16"></span>
       Xem lại hướng dẫn
+    </div>
+    <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+    <div class="support-menu-item" onclick="switchPage('openclaw');toggleSupportMenu()">
+      <span data-icon="zap" data-icon-size="16"></span>
+      Xem gateway (nâng cao)
+    </div>
+    <div class="support-menu-item" onclick="openLogFolder();toggleSupportMenu()">
+      <span data-icon="file-text" data-icon-size="16"></span>
+      Mở thư mục log
     </div>
   </div>
 
