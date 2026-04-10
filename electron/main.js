@@ -2825,7 +2825,14 @@ function ensureZaloFriendCheckFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (content.includes('MODOROClaw FRIEND-CHECK PATCH')) return; // already patched
+    // Version pin: V2 = don't block stranger messages (reply + friend request together)
+    const FRIEND_CHECK_VERSION = 'FRIEND-CHECK-V2';
+    if (content.includes(FRIEND_CHECK_VERSION)) return; // already patched with latest version
+    // Strip old patch if exists (V1 had return; that blocked messages)
+    if (content.includes('MODOROClaw FRIEND-CHECK PATCH')) {
+      content = content.replace(/\n\s*\/\/ === MODOROClaw FRIEND-CHECK PATCH ===[\s\S]*?\/\/ === END MODOROClaw FRIEND-CHECK PATCH ===/g, '');
+      console.log('[zalo-friend-check] stripped old V1 patch — re-injecting V2');
+    }
 
     // Anchor: right after the blocklist patch's END marker. Ensures friend
     // check runs AFTER blocklist (so blocked users don't get the friend
@@ -2839,7 +2846,7 @@ function ensureZaloFriendCheckFix() {
 
     const injection = `
 
-  // === MODOROClaw FRIEND-CHECK PATCH ===
+  // === MODOROClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V2
   // For DM messages from non-friends, send a one-time "please add friend"
   // reply and short-circuit. Reads openzca's friend cache to determine
   // friend status. Groups skip this check. See main.js ensureZaloFriendCheckFix.
