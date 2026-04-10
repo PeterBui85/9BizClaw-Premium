@@ -2891,22 +2891,39 @@ function ensureZaloFriendCheckFix() {
             if (__fcNow - __fcTs > 60 * 60 * 1000) __fcMap.delete(__fcK);
           }
           runtime.log?.(\`openzalo: non-friend \${__fcSender} — sending friend request proactively\`);
-          // PROACTIVE: bot sends a friend request TO the stranger (not just
-          // a text message asking them to add). The stranger only needs to
-          // tap "Accept" in Zalo — much easier than finding the "Add friend"
-          // button. Uses openzca's api.sendFriendRequest(message, userId).
+          // PROACTIVE: send friend request via openzca CLI spawn.
+          // The old approach used globalThis.__openzcaApi which was never set.
+          // CLI spawn is reliable and matches the cross-channel send pattern.
+          let __fcFriendReqSent = false;
           try {
-            const __fcApi = (globalThis as any).__openzcaApi || null;
-            if (__fcApi && typeof __fcApi.sendFriendRequest === "function") {
-              await __fcApi.sendFriendRequest("Xin chao, minh la tro ly AI. Ket ban de minh ho tro ban nhe!", __fcSender);
-              runtime.log?.(\`openzalo: proactive friend request sent to \${__fcSender}\`);
+            const __fcExec = require("node:child_process").execFileSync;
+            const __fcHome2 = require("node:os").homedir();
+            // Find openzca CLI — check bundled vendor first, then PATH
+            const __fcAppDir = "modoro-claw";
+            const __fcAppData = process.env.APPDATA || __fcPath.join(__fcHome2, "AppData", "Roaming");
+            const __fcVendorCli = __fcPath.join(__fcAppData, __fcAppDir, "vendor", "node_modules", "openzca", "dist", "cli.js");
+            const __fcNodeBin = __fcPath.join(__fcAppData, __fcAppDir, "vendor", "node", process.platform === "win32" ? "node.exe" : "bin/node");
+            if (__fcFs.existsSync(__fcVendorCli) && __fcFs.existsSync(__fcNodeBin)) {
+              __fcExec(__fcNodeBin, [__fcVendorCli, "friend", "request", __fcSender, "--message", "Xin chao, minh la tro ly AI. Ket ban de minh ho tro ban nhe!"], { timeout: 10000, windowsHide: true, stdio: "ignore" });
+              runtime.log?.(\`openzalo: friend request sent via CLI to \${__fcSender}\`);
+              __fcFriendReqSent = true;
             } else {
-              runtime.log?.("openzalo: api.sendFriendRequest not available — falling back to text-only prompt");
+              // Fallback: try openzca from PATH
+              try {
+                const __fcCmd = process.platform === "win32" ? "openzca.cmd" : "openzca";
+                __fcExec(__fcCmd, ["friend", "request", __fcSender, "--message", "Xin chao, minh la tro ly AI. Ket ban de minh ho tro ban nhe!"], { timeout: 10000, windowsHide: true, stdio: "ignore", shell: process.platform === "win32" });
+                runtime.log?.(\`openzalo: friend request sent via PATH to \${__fcSender}\`);
+                __fcFriendReqSent = true;
+              } catch (__fcPathErr) {
+                runtime.log?.(\`openzalo: openzca CLI not found — cannot send friend request: \${String(__fcPathErr)}\`);
+              }
             }
           } catch (__fcFrErr) {
-            runtime.log?.(\`openzalo: proactive friend request failed: \${String(__fcFrErr)} — falling back to text prompt\`);
+            runtime.log?.(\`openzalo: friend request CLI failed: \${String(__fcFrErr)}\`);
           }
-          let __fcText = 'Xin chào! Mình vừa gửi lời mời kết bạn cho bạn. Vui lòng bấm "Đồng ý" để mình có thể hỗ trợ bạn nhé.\\n\\nSau khi kết bạn, mình sẽ chào bạn ngay.';
+          let __fcText = __fcFriendReqSent
+            ? 'Xin chào! Mình vừa gửi lời mời kết bạn. Bạn bấm "Đồng ý" để mình hỗ trợ nhé!\\n\\nSau khi kết bạn, mình sẽ chào bạn ngay.'
+            : 'Xin chào! Bạn thêm mình làm bạn bè để mình có thể hỗ trợ nhé.\\n\\nSau khi kết bạn, mình sẽ chào bạn ngay.';
           try {
             const __fcAppDir = "modoro-claw";
             const __fcCustomPaths = [];
