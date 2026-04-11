@@ -4095,8 +4095,11 @@ function ensureOpenzaloForceOneMessageFix() {
     //   surface in gateway logs instead of silently disappearing.
     if (!content.includes('MODOROClaw DELIVER-COALESCE PATCH v4')) {
       const coalesceAnchor = '  const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({';
-      // v2/v3 installs: buffer vars already injected — skip Part 1, only upgrade deliver callback
-      const hasV2Buffer = content.includes('MODOROClaw DELIVER-COALESCE PATCH v2');
+      // v2/v3 installs: buffer vars already injected — skip Part 1, only upgrade deliver callback.
+      // Must check BOTH v2 AND v3 markers — installs that received 4f4f01a as their first
+      // coalesce patch have the v3 marker, not v2.
+      const hasV2Buffer = content.includes('MODOROClaw DELIVER-COALESCE PATCH v2') ||
+                          content.includes('MODOROClaw DELIVER-COALESCE PATCH v3');
       if (!content.includes(coalesceAnchor)) {
         console.warn('[zalo-force-one-msg] Part 3 anchor missing — dispatchReply not found');
       } else {
