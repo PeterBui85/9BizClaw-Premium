@@ -1305,6 +1305,7 @@ function spawnOpenClawSafe(args, { timeoutMs = 600000, cwd, allowCmdShellFallbac
 
 let _agentFlagProfile = null;   // 'full' | 'medium' | 'minimal'
 let _agentCliHealthy = false;
+let _agentCliVersionOk = false; // true only when --version call succeeds (real health signal)
 let _selfTestPromise = null;
 
 function cronJournalPath() {
@@ -1509,6 +1510,7 @@ async function selfTestOpenClawAgent() {
     const versionStr = versionMatch ? versionMatch[1] : null;
 
     if (res.code === 0 && versionStr) {
+      _agentCliVersionOk = true;
       console.log(`[cron-agent self-test] OK — openclaw ${versionStr} (directNode=${usingDirectNode}, profile=full)`);
       journalCronRun({
         phase: 'self-test',
@@ -3048,6 +3050,60 @@ function cleanupOrphanZaloListener() {
   } catch (e) { console.error('[zalo-cleanup] error:', e.message); }
 }
 
+// MODOROClaw PATCH: Drop Zalo group system event notifications (member join/leave,
+// rename, avatar change, etc.) before they reach the AI. Without this filter the bot
+// occasionally replies to "X đã thêm Y vào nhóm" in customer groups — very embarrassing.
+// Code-level gate is more reliable than AGENTS.md LLM rule alone.
+// Idempotent via "MODOROClaw SYSTEM-MSG PATCH" marker.
+// Injection anchor: RIGHT AFTER blocklist END marker, so it runs FIRST among the post-blocklist
+// early-exit checks (ensureZaloSystemMsgFix must be called AFTER other ensure* calls so it
+// appears physically FIRST in the file — `replace(anchor, anchor+code)` inserts at top each time).
+function ensureZaloSystemMsgFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = fs.readFileSync(pluginFile, 'utf-8');
+    if (content.includes('MODOROClaw SYSTEM-MSG PATCH')) return; // already patched
+
+    const anchor = '  // === END MODOROClaw BLOCKLIST PATCH ===';
+    if (!content.includes(anchor)) {
+      console.warn('[zalo-system-msg-fix] blocklist anchor missing — blocklist fix must run first');
+      return;
+    }
+
+    const injection = `
+  // === MODOROClaw SYSTEM-MSG PATCH ===
+  // Drop Zalo group system event notifications before they reach the AI.
+  // These are automated event strings ("X đã thêm Y vào nhóm", etc.), not real messages.
+  // Replying to them looks broken to the entire customer group.
+  if (message.isGroup) {
+    const __sysMsgText = (rawBody || '').trim();
+    const __sysMsgPatterns = [
+      /đã thêm .+ vào nhóm/,
+      /đã rời nhóm/,
+      /đã bị xóa khỏi nhóm/,
+      /đổi tên (?:nhóm|cuộc trò chuyện) thành/,
+      /thay (?:ảnh|avatar) nhóm/,
+      /đã tạo nhóm/,
+      /đã giải tán nhóm/,
+      /đã đặt tên cho nhóm/,
+      /đã xóa lịch sử trò chuyện/,
+    ];
+    if (__sysMsgText && __sysMsgPatterns.some(p => p.test(__sysMsgText))) {
+      runtime.log?.(\`openzalo: drop group system event in \${message.threadId}: \${__sysMsgText.slice(0, 80)}\`);
+      return;
+    }
+  }
+  // === END MODOROClaw SYSTEM-MSG PATCH ===
+`;
+    content = content.replace(anchor, anchor + injection);
+    fs.writeFileSync(pluginFile, content, 'utf-8');
+    console.log('[zalo-system-msg-fix] Injected system message filter into inbound.ts');
+  } catch (e) {
+    console.error('[zalo-system-msg-fix] error:', e?.message || e);
+  }
+}
+
 // MODOROClaw PATCH: OpenZalo plugin doesn't natively honor Modoro's user blocklist
 // (zalo-blocklist.json) — only its own allowFrom whitelist. We inject a small check
 // at the top of handleOpenzaloInbound that drops messages from blocklisted senders.
@@ -4039,6 +4095,8 @@ function ensureOpenzaloForceOneMessageFix() {
     //   surface in gateway logs instead of silently disappearing.
     if (!content.includes('MODOROClaw DELIVER-COALESCE PATCH v4')) {
       const coalesceAnchor = '  const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({';
+      // v2/v3 installs: buffer vars already injected — skip Part 1, only upgrade deliver callback
+      const hasV2Buffer = content.includes('MODOROClaw DELIVER-COALESCE PATCH v2');
       if (!content.includes(coalesceAnchor)) {
         console.warn('[zalo-force-one-msg] Part 3 anchor missing — dispatchReply not found');
       } else {
@@ -4072,64 +4130,96 @@ function ensureOpenzaloForceOneMessageFix() {
           '    await __mcDoDeliver(merged);\n' +
           '  };\n\n' +
           coalesceAnchor;
-        content = content.replace(coalesceAnchor, coalesceInjection);
 
-        // Replace the original deliver callback with coalescing logic.
-        // Use REGEX instead of exact string — survives minor openzalo whitespace/var changes.
-        // Matches: deliver: async (payload) => { \n  await deliverAndRememberOpenzaloReply({...}); \n },
-        const deliverCallbackRegex = /([ \t]+deliver:\s*async\s*\(payload\)\s*=>\s*\{\n[ \t]+await deliverAndRememberOpenzaloReply\(\{[\s\S]*?\}\);\n[ \t]+\},)/;
-        const newDeliver =
-          '      deliver: async (payload) => {\n' +
-          '        // MODOROClaw DELIVER-COALESCE v4: route through buffer so consecutive text chunks\n' +
-          '        // (model emits [text:"D", thinking:"", text:"ạ..."]) get merged before send.\n' +
-          '        const hasMedia = (payload?.mediaUrl || (payload?.mediaUrls?.length ?? 0) > 0 || (payload?.mediaPaths?.length ?? 0) > 0);\n' +
-          '        const text = String(payload?.text || "").trim();\n' +
-          '        if (hasMedia || !text) {\n' +
-          '          await __mcFlush();\n' +
-          '          await __mcDoDeliver(payload);\n' +
-          '          return;\n' +
-          '        }\n' +
-          '        if (__mcBuffer.text) {\n' +
-          '          __mcBuffer.text += (/[.!?…]$/.test(__mcBuffer.text) ? " " : "") + text;\n' +
-          '        } else {\n' +
-          '          __mcBuffer.text = text;\n' +
-          '          __mcBuffer.firstPayload = payload;\n' +
-          '        }\n' +
-          '        if (__mcBuffer.timer) clearTimeout(__mcBuffer.timer);\n' +
-          // v4 fix: log errors instead of silently catching — group send failures
-          // (Zalo API errors, bot not in group, rate-limit) now surface in gateway logs.
-          '        __mcBuffer.timer = setTimeout(() => { __mcFlush().catch((e) => { try { runtime.error?.("[deliver-coalesce] flush error: " + String(e)); } catch {} }); }, __mcFlushDelay);\n' +
-          '      },';
-        const deliverMatch = content.match(deliverCallbackRegex);
-        if (deliverMatch) {
-          content = content.replace(deliverMatch[1], newDeliver);
-          console.log('[zalo-force-one-msg] Part 3 deliver callback replaced with coalescing version (v4)');
+        // Part 1: inject buffer setup ONLY if not already present from a prior v2/v3 patch.
+        if (!hasV2Buffer) {
+          content = content.replace(coalesceAnchor, coalesceInjection);
+        }
+
+        // Part 3: upgrade deliver callback.
+        // Strategy A — v3→v4 upgrade path (existing installs): find the silent .catch(() => {})
+        // timer line and replace it with the v4 error-logging version. Also bump v3 comment → v4.
+        // Strategy B — fresh inject (unpatched install): match original deliver callback via regex.
+        let deliverReplaced = false;
+        const v3TimerSuffix = '__mcFlush().catch(() => {});';
+        const v4TimerSuffix = '__mcFlush().catch((e) => { try { runtime.error?.("[deliver-coalesce] flush error: " + String(e)); } catch {} });';
+
+        if (content.includes(v3TimerSuffix)) {
+          // v3 → v4: upgrade silent catch → error-logging catch; bump comment version
+          content = content.replace(v3TimerSuffix, v4TimerSuffix);
+          content = content.replace(
+            '// MODOROClaw DELIVER-COALESCE v3:',
+            '// MODOROClaw DELIVER-COALESCE v4:'
+          );
+          deliverReplaced = true;
+          console.log('[zalo-force-one-msg] Part 3 deliver callback upgraded v3→v4 (error logging added to timer)');
         } else {
-          // Callback not found — revert partial injection so next startup retries cleanly.
-          // Do NOT write the v4 marker; the patching will re-attempt on next Electron start.
-          console.warn('[zalo-force-one-msg] Part 3 deliver callback not found (regex miss) — reverting partial injection, will retry on next startup');
-          content = content.replace(coalesceInjection, coalesceAnchor);
-          fs.writeFileSync(pluginFile, content, 'utf-8');
+          // Fresh install: replace original unpatched deliver callback (contains deliverAndRememberOpenzaloReply directly)
+          const deliverCallbackRegex = /([ \t]+deliver:\s*async\s*\(payload\)\s*=>\s*\{\n[ \t]+await deliverAndRememberOpenzaloReply\(\{[\s\S]*?\}\);\n[ \t]+\},)/;
+          const newDeliver =
+            '      deliver: async (payload) => {\n' +
+            '        // MODOROClaw DELIVER-COALESCE v4: route through buffer so consecutive text chunks\n' +
+            '        // (model emits [text:"D", thinking:"", text:"ạ..."]) get merged before send.\n' +
+            '        const hasMedia = (payload?.mediaUrl || (payload?.mediaUrls?.length ?? 0) > 0 || (payload?.mediaPaths?.length ?? 0) > 0);\n' +
+            '        const text = String(payload?.text || "").trim();\n' +
+            '        if (hasMedia || !text) {\n' +
+            '          await __mcFlush();\n' +
+            '          await __mcDoDeliver(payload);\n' +
+            '          return;\n' +
+            '        }\n' +
+            '        if (__mcBuffer.text) {\n' +
+            '          __mcBuffer.text += (/[.!?…]$/.test(__mcBuffer.text) ? " " : "") + text;\n' +
+            '        } else {\n' +
+            '          __mcBuffer.text = text;\n' +
+            '          __mcBuffer.firstPayload = payload;\n' +
+            '        }\n' +
+            '        if (__mcBuffer.timer) clearTimeout(__mcBuffer.timer);\n' +
+            '        __mcBuffer.timer = setTimeout(() => { ' + v4TimerSuffix + ' }, __mcFlushDelay);\n' +
+            '      },';
+          const deliverMatch = content.match(deliverCallbackRegex);
+          if (deliverMatch) {
+            content = content.replace(deliverMatch[1], newDeliver);
+            deliverReplaced = true;
+            console.log('[zalo-force-one-msg] Part 3 deliver callback replaced with coalescing version (v4)');
+          }
+        }
+
+        if (!deliverReplaced) {
+          // Callback not found — revert Part 1 injection if we did it so next startup retries cleanly.
+          if (!hasV2Buffer) {
+            content = content.replace(coalesceInjection, coalesceAnchor);
+            fs.writeFileSync(pluginFile, content, 'utf-8');
+          }
+          console.warn('[zalo-force-one-msg] Part 3 deliver callback not found — will retry on next startup');
           return; // skip marker write
         }
 
-        // Inject final flush after the dispatchReplyWithBufferedBlockDispatcher call closes.
-        // Uses flexible regex to find the closing }); of the call.
-        const dispatchCallEnd = /(\s+},\s*\n\s*replyOptions:\s*\{[\s\S]*?\n\s*\}\s*,?\s*\n\s*\}\);)/;
-        const m = content.match(dispatchCallEnd);
-        if (m) {
-          const injectAfter = '\n  await __mcFlush(); // MODOROClaw DELIVER-COALESCE flush';
-          content = content.replace(m[1], m[1] + injectAfter);
-        } else {
-          // Timer-based flush still fires after 400ms — not critical, but log for visibility.
-          console.warn('[zalo-force-one-msg] Part 3 dispatch end not found — final flush will rely on 400ms timer only');
+        // Part 2: inject final flush if not already present (v2/v3 already has it)
+        if (!content.includes('await __mcFlush(); // MODOROClaw DELIVER-COALESCE flush')) {
+          const dispatchCallEnd = /(\s+},\s*\n\s*replyOptions:\s*\{[\s\S]*?\n\s*\}\s*,?\s*\n\s*\}\);)/;
+          const m = content.match(dispatchCallEnd);
+          if (m) {
+            const injectAfter = '\n  await __mcFlush(); // MODOROClaw DELIVER-COALESCE flush';
+            content = content.replace(m[1], m[1] + injectAfter);
+          } else {
+            console.warn('[zalo-force-one-msg] Part 3 dispatch end not found — final flush will rely on 400ms timer only');
+          }
         }
 
-        // Add v4 marker ONLY when patch is fully applied (buffer setup + callback + flush).
-        content = content.replace(
-          '  // MODOROClaw DELIVER-COALESCE PATCH v4:',
-          '  // MODOROClaw DELIVER-COALESCE PATCH v4 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v4:'
-        );
+        // Update/add v4 marker ONLY when patch is fully applied.
+        if (hasV2Buffer) {
+          // Upgrade existing v2 marker → v4 (2-line marker block)
+          content = content.replace(
+            '// MODOROClaw DELIVER-COALESCE PATCH v2 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v2:',
+            '// MODOROClaw DELIVER-COALESCE PATCH v4 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v4:'
+          );
+        } else {
+          // Fresh inject: find the v4 comment block we injected and add marker suffix
+          content = content.replace(
+            '  // MODOROClaw DELIVER-COALESCE PATCH v4:',
+            '  // MODOROClaw DELIVER-COALESCE PATCH v4 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v4:'
+          );
+        }
         fs.writeFileSync(pluginFile, content, 'utf-8');
         console.log('[zalo-force-one-msg] Part 3 deliver-coalesce patch v4 applied');
       }
@@ -4546,6 +4636,9 @@ async function _startOpenClawImpl() {
   ensureOpenzcaFriendEventFix();
   // Output filter: scan outbound Zalo text for sensitive patterns (Security Layer 2)
   ensureZaloOutputFilterFix();
+  // System-msg filter: drop Zalo group event notifications (join/leave/rename/avatar)
+  // before they reach the AI. Called LAST so it inserts FIRST (closest to blocklist end anchor).
+  ensureZaloSystemMsgFix();
   // Force-one-message: hardcode disableBlockStreaming=true in openzalo inbound.ts
   // so "Dạ" word never gets split between messages regardless of config drift.
   ensureOpenzaloForceOneMessageFix();
@@ -8256,7 +8349,15 @@ function isChannelPaused(channel) {
   if (!p) return false;
   try {
     if (!fs.existsSync(p)) return false;
-    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    } catch {
+      // Corrupt pause file — fail closed: treat as paused to honor CEO's intent.
+      // Better to block 1 message than to ignore a deliberate pause request.
+      console.error(`[pause] ${channel} pause file corrupt — treating as paused (fail closed)`);
+      return true;
+    }
     if (data.pausedUntil && new Date(data.pausedUntil) > new Date()) return true;
     // Expired — clean up
     try { fs.unlinkSync(p); } catch {}
@@ -9919,7 +10020,18 @@ function startCronJobs() {
   // Kick off the openclaw-agent CLI self-test (non-blocking). Sets _agentFlagProfile
   // / _agentCliHealthy so that when a cron fires it already knows which flags to use.
   // Re-runs are no-ops because _selfTestPromise is cached for the process lifetime.
-  selfTestOpenClawAgent().catch((e) => console.error('[cron-agent self-test] threw:', e?.message || e));
+  // PROACTIVE ALERT: if the CLI is broken at startup, alert CEO now instead of waiting
+  // for the first cron to fail (which could be hours away, e.g. morning report at 7:30am).
+  selfTestOpenClawAgent()
+    .then(() => {
+      if (!_agentCliVersionOk) {
+        const msg = '[Cảnh báo cron] Không chạy được openclaw CLI khi khởi động. ' +
+          'Cron job sáng/tối có thể không chạy được. Kiểm tra Dashboard → console để biết chi tiết.';
+        sendCeoAlert(msg).catch(() => {});
+        console.warn('[startCronJobs] CLI health check failed — CEO alerted');
+      }
+    })
+    .catch((e) => console.error('[cron-agent self-test] threw:', e?.message || e));
   const schedules = loadSchedules();
 
   // --- Fixed schedules (managed by Dashboard) ---

@@ -417,3 +417,38 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 **Auto-apply:** Gọi 1 lần trong `app.whenReady()` trước `createWindow()`
 **Pages mới:** `page-9router` + `page-openclaw` với iframe lazy-load. Sidebar 2 menu item "9Router" + "OpenClaw" thay button cũ.
 **Verify:** Click vào page → web UI load trong iframe, không bị frame-blocked. Click "Copy token" → token copy vào clipboard + paste vào OpenClaw login.
+
+### DELIVER-COALESCE v4 upgrade path + v2/v3 → v4 migration
+**Bug:** v4 patch trong `ensureOpenzaloForceOneMessageFix()` failed silently every boot on existing v2/v3 installs. Root causes: (1) Part 1 buffer injection re-attempted even when v2 buffer already present → `coalesceInjection.replace(coalesceAnchor)` was a no-op since anchor was inside the injection string. (2) Part 3 regex looked for ORIGINAL `await deliverAndRememberOpenzaloReply` callback but inbound.ts had v3 version (already patched) → regex miss → partial revert → no v4 marker written → re-attempted on every boot. Net effect: v3 timer `.catch(() => {})` persisted (group send errors swallowed silently).
+**Fix:** 3-path strategy in Part 3:
+- Detect `hasV2Buffer` via marker string → skip Part 1 re-injection
+- Strategy A (v3→v4 upgrade): find `__mcFlush().catch(() => {})` string → replace with error-logging version; bump `// DELIVER-COALESCE v3:` → v4
+- Strategy B (fresh install): original regex match for unpatched callback
+- Marker upgrade: if `hasV2Buffer` → replace v2 marker → v4 marker; else → fresh v4 marker insert
+- Part 2 (flush injection): guarded by `content.includes('await __mcFlush(); // DELIVER-COALESCE flush')` — skipped if already present
+**Auto-apply:** `ensureOpenzaloForceOneMessageFix()` in `main.js` — runs every `startOpenClaw()`. On first boot after deploy: upgrades v3 timer, bumps v2 marker to v4. On subsequent boots: v4 marker found → full skip.
+**Verify:** Console shows `[zalo-force-one-msg] Part 3 deliver callback upgraded v3→v4 (error logging added to timer)` on first boot, then nothing on subsequent boots. `grep "DELIVER-COALESCE PATCH" ~/.openclaw/extensions/openzalo/src/inbound.ts` → shows v4 marker.
+
+### Zalo group system message code-level filter (`ensureZaloSystemMsgFix`)
+**Bug:** Without code-level filter, bot occasionally replies to Zalo group system notifications ("X đã thêm Y vào nhóm", "X đã rời nhóm", etc.). The AGENTS.md LLM rule alone is insufficient — LLM can misread ambiguous text or miss the rule under high-context load. Reply to a system event in a customer group is severely embarrassing.
+**Fix:** `ensureZaloSystemMsgFix()` in `main.js` — injects TypeScript filter block into inbound.ts (after `// === END MODOROClaw BLOCKLIST PATCH ===` anchor). Filter: if `message.isGroup` AND rawBody matches any of 9 Vietnamese system event regex patterns → `return` early before AI dispatch. Logs the drop for debugging.
+**Calling order:** Called LAST in `_startOpenClawImpl()` — because each ensure function prepends code right after the anchor, calling last means the system-msg filter appears FIRST in the file (closest to the anchor), ensuring earliest possible exit.
+**Idempotent:** via `// === MODOROClaw SYSTEM-MSG PATCH ===` marker.
+**Verify:** Add bot to Zalo group → get added notification → console shows `openzalo: drop group system event in <threadId>: X đã thêm...` — bot does NOT reply.
+
+### Bot-vs-bot detection in AGENTS.md (v23)
+**Risk:** "phát hiện qua pattern reply tự động" in AGENTS.md was vague — LLM had no concrete criteria for detecting bots, risking bot-vs-bot loops that flood customer groups.
+**Fix:** AGENTS.md rule replaced with 6 explicit detection signals: (1) specific Vietnamese bot prefixes, (2) template-pattern repetition, (3) no personal pronouns, (4) ≤2s send interval, (5) structured data dump format `Key: Value | Key: Value`, (6) FAQ template without real question mark. Rule includes explicit fail-safe: "thà im lặng nhầm 1 người thật còn hơn để bot kéo bot vào vòng lặp flood cả group".
+
+### First-greeting idempotency hardening in AGENTS.md (v23)
+**Risk:** First-greeting rule said "ghi `firstGreeting: true` vào file nhóm" but didn't specify WHEN to write relative to sending — if write fails after send, bot re-greets on every restart.
+**Fix:** Rule updated to: (1) ghi `firstGreeting: true` BEFORE sending (write-then-send = safe order), (2) explicit "file tồn tại nhưng không đọc được → coi như firstGreeting: true, IM LẶNG" — fail-safe prevents spam when file is corrupt or locked.
+
+### Cron self-test proactive CEO alert (RISK-4)
+**Risk:** `selfTestOpenClawAgent()` ran at startup but never alerted CEO on failure — CEO discovered broken cron only when first scheduled job was missed (potentially hours later).
+**Fix:** Added `_agentCliVersionOk` flag (true only when `--version` call exits 0 with version string). `startCronJobs()` now awaits self-test and calls `sendCeoAlert()` (dual Telegram+Zalo) if `_agentCliVersionOk === false` after the test. Non-blocking — cron jobs still start regardless.
+**Verify:** Delete/corrupt openclaw binary → restart Electron → within 15s CEO receives "[Cảnh báo cron] Không chạy được openclaw CLI..." on both Telegram + Zalo.
+
+### Corrupt pause file fails closed (RISK-5)
+**Risk:** `isChannelPaused()` catch block returned `false` on JSON parse error — corrupt `{channel}-paused.json` silently unpaused the channel, ignoring CEO's pause intent.
+**Fix:** Inner `try/catch` around JSON.parse specifically: on parse error → log `[pause] ${channel} pause file corrupt — treating as paused (fail closed)` → return `true`. Outer catch still returns `false` (handles file-system errors where file may not actually be paused).
