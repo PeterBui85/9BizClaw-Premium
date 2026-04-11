@@ -70,14 +70,18 @@
     .how-item { display:flex; align-items:center; gap:8px; font-size:13px; padding:6px 0; }
     .how-item strong { min-width:90px; }
 
-    /* Toggle switch */
-    .toggle-switch { position:relative; display:inline-block; width:36px; height:20px; flex-shrink:0; }
-    .toggle-switch input { opacity:0; width:0; height:0; }
-    .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; border-radius:20px; transition:.2s; }
-    .toggle-slider:before { content:''; position:absolute; height:16px; width:16px; left:2px; bottom:2px; background:white; border-radius:50%; transition:.2s; }
+    /* Toggle switch — Linear/iOS-level quality */
+    .toggle-switch { position:relative; display:inline-flex; width:44px; height:24px; flex-shrink:0; vertical-align:middle; }
+    /* High-specificity to beat .zalo-mgr-row input[type="checkbox"] styles */
+    label.toggle-switch input, .toggle-switch input { opacity:0 !important; width:0 !important; height:0 !important; position:absolute; }
+    .toggle-slider { position:absolute; cursor:pointer; inset:0; border-radius:24px; transition:.18s; }
+    .toggle-slider::before { content:''; position:absolute; height:20px; width:20px; left:2px; bottom:2px; background:#fff; border-radius:50%; transition:.18s; box-shadow:0 1px 4px rgba(0,0,0,0.22); }
     .toggle-switch input:checked + .toggle-slider { background:var(--success); }
-    .toggle-switch input:not(:checked) + .toggle-slider { background:var(--border); }
-    .toggle-switch input:checked + .toggle-slider:before { transform:translateX(16px); }
+    .toggle-switch input:not(:checked) + .toggle-slider { background:var(--border-strong); }
+    .toggle-switch input:checked + .toggle-slider::before { transform:translateX(20px); }
+
+    /* Switch row — heading/label left, toggle right */
+    .switch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 
     /* Tip card */
     .tip-card { background:rgba(76,175,80,0.03); border:1px solid rgba(76,175,80,0.2); border-radius:12px; padding:14px 16px; }
@@ -1759,11 +1763,14 @@
         <div class="sidebar-menu-item" id="theme-toggle-btn" onclick="toggleTheme()">
           <span class="icon" id="theme-toggle-icon" data-icon="moon"></span><span class="label" id="theme-toggle-label">Giao diện sáng</span>
         </div>
-        <label class="sidebar-menu-item" style="cursor:pointer;margin-top:2px" for="pref-start-minimized">
+        <div class="sidebar-menu-item" style="margin-top:2px">
           <span class="icon" data-icon="download"></span>
           <span class="label" style="color:var(--text-muted);font-size:12px">Ẩn xuống tray khi mở</span>
-          <input type="checkbox" id="pref-start-minimized" style="flex-shrink:0;cursor:pointer;margin:0">
-        </label>
+          <label class="toggle-switch" style="margin-left:auto">
+            <input type="checkbox" id="pref-start-minimized">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
       </div>
       <div id="gateway-token-box" style="display:none;margin-top:10px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:11px">
         <div style="display:flex;align-items:center;justify-content:space-between;color:var(--text-muted);margin-bottom:6px">
@@ -1925,13 +1932,16 @@
           <div class="zalo-col">
             <h4>Cài đặt</h4>
             <div style="overflow-y:auto;overflow-x:hidden;flex:1;min-height:0">
-              <label class="zalo-checkbox-row" style="margin-bottom:10px">
-                <input type="checkbox" id="zalo-mgr-enabled">
+              <div class="switch-row" style="padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:10px">
                 <div>
-                  <div style="font-weight:600">Bật Zalo</div>
+                  <div style="font-weight:600;font-size:13px">Bật Zalo</div>
                   <div style="font-size:11px;color:var(--text-muted)">Bot nhận và trả lời tin nhắn</div>
                 </div>
-              </label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="zalo-mgr-enabled">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
               <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Chế độ trả lời:</div>
               <select id="zalo-mode-select" onchange="changeZaloMode(this.value)" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px">
                 <option value="auto">Tự động trả lời</option>
@@ -2165,11 +2175,13 @@
         </div>
 
         <div class="state-section">
-          <h3>Ship chậm</h3>
-          <label class="pref-toggle">
-            <input type="checkbox" id="state-shipping-delay-active">
-            <span>Ship hôm nay đang chậm</span>
-          </label>
+          <div class="switch-row" style="margin-bottom:14px">
+            <h3 style="margin:0">Ship chậm</h3>
+            <label class="toggle-switch">
+              <input type="checkbox" id="state-shipping-delay-active">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
           <input type="text" id="state-shipping-reason" placeholder="Lý do (VD: mưa bão miền Bắc)">
           <input type="number" id="state-shipping-hours" placeholder="Chậm khoảng bao nhiêu giờ" min="0" max="48">
         </div>
@@ -2181,11 +2193,13 @@
         </div>
 
         <div class="state-section">
-          <h3>Đóng cửa sớm</h3>
-          <label class="pref-toggle">
-            <input type="checkbox" id="state-early-closing-active">
-            <span>Hôm nay đóng cửa sớm</span>
-          </label>
+          <div class="switch-row" style="margin-bottom:14px">
+            <h3 style="margin:0">Đóng cửa sớm</h3>
+            <label class="toggle-switch">
+              <input type="checkbox" id="state-early-closing-active">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
           <input type="time" id="state-early-closing-time">
         </div>
 
@@ -3873,14 +3887,14 @@
           ? `<div class="avatar-wrap"><img class="avatar-img" src="${esc(g.avatar)}" referrerpolicy="no-referrer" onerror="this.parentElement.classList.add('failed')"><div class="avatar-fallback">${icon('users', 18)}</div></div>`
           : `<div class="avatar-fallback">${icon('users', 18)}</div>`;
         return `
-          <label class="zalo-mgr-row">
-            <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleGroupAllow('${esc(g.groupId)}', this.checked)">
+          <div class="zalo-mgr-row">
             ${avatarHtml}
             <div class="info">
               <div class="name">${esc(g.name)}</div>
               <div class="sub">${g.memberCount} thành viên · ID: ${esc(g.groupId)}</div>
             </div>
-          </label>
+            <label class="toggle-switch" style="margin-left:auto"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleGroupAllow('${esc(g.groupId)}', this.checked)"><span class="toggle-slider"></span></label>
+          </div>
         `;
       }).join('');
     }
@@ -3934,15 +3948,15 @@
           ? `<span style="display:inline-flex;align-items:center;gap:3px">${icon('phone-call', 11)} ${esc(f.phoneNumber)}</span> · `
           : '';
         return `
-          <label class="zalo-mgr-row">
-            <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${esc(f.userId)}', this.checked)">
+          <div class="zalo-mgr-row">
             ${avatarHtml}
             <div class="info">
               <div class="name">${esc(f.displayName)}${mutedBadge}</div>
               <div class="sub">${phoneIcon}ID: ${esc(f.userId)}</div>
             </div>
-            <button type="button" class="zum-open-btn" onclick="event.preventDefault();event.stopPropagation();openZaloUserMemory('${esc(f.userId)}', '${esc(f.displayName)}')" title="Xem hồ sơ khách">${icon('file-text', 14)}</button>
-          </label>
+            <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${esc(f.userId)}', '${esc(f.displayName)}')" title="Xem hồ sơ khách">${icon('file-text', 14)}</button>
+            <label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${esc(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
+          </div>
         `;
       }).join('');
       if (filtered.length > 500) {
