@@ -1032,7 +1032,7 @@
                 <summary>Tùy chỉnh nâng cao (không bắt buộc)</summary>
                 <div style="padding-top:12px">
                   <div class="wz-mix-label" style="margin-top:4px">Câu chào riêng</div>
-                  <input type="text" id="mix-greeting" class="wz-input" placeholder="VD: Dạ em Mai bên MODORO xin chào anh/chị ạ">
+                  <input type="text" id="mix-greeting" class="wz-input" placeholder="VD: Dạ em [tên trợ lý] bên [tên công ty] xin chào anh/chị ạ">
                   <div class="wz-mix-label" style="margin-top:12px">Câu kết riêng</div>
                   <input type="text" id="mix-closing" class="wz-input" placeholder="VD: Anh/chị cần gì thêm cứ nhắn em nha">
                   <div class="wz-mix-label" style="margin-top:12px">Cụm từ đặc trưng (mỗi cụm 1 dòng)</div>
@@ -1544,7 +1544,24 @@
       if (slider) slider.value = personaMix.formality;
     }
 
+    function updateGreetingPlaceholder() {
+      const el = document.getElementById('mix-greeting');
+      if (!el) return;
+      const botName = (document.getElementById('bot-name')?.value || '').trim();
+      const company = (document.getElementById('company')?.value || '').trim();
+      const namePart = botName || '[tên trợ lý]';
+      const companyPart = company ? `bên ${company} ` : '';
+      el.placeholder = `VD: Dạ em ${namePart} ${companyPart}xin chào anh/chị ạ`;
+    }
+
     function bindMixChips() {
+      // Update greeting placeholder when company/bot-name change (those fields are on step 1)
+      ['bot-name', 'company'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateGreetingPlaceholder);
+      });
+      updateGreetingPlaceholder();
+
       document.querySelectorAll('.wz-mix-chip').forEach(chip => {
         chip.addEventListener('click', () => {
           const group = chip.getAttribute('data-mix');
