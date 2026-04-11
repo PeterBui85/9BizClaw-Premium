@@ -4030,13 +4030,13 @@ function ensureOpenzaloForceOneMessageFix() {
     // Openclaw creates 2 separate payloads from 2 text parts. disableBlockStreaming
     // only kills streaming, not this post-split. Fix: wrap the deliver callback
     // to buffer text-only payloads by 400ms and merge them into one send.
-    if (!content.includes('MODOROClaw DELIVER-COALESCE PATCH')) {
+    if (!content.includes('MODOROClaw DELIVER-COALESCE PATCH v3')) {
       const coalesceAnchor = '  const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({';
       if (!content.includes(coalesceAnchor)) {
         console.warn('[zalo-force-one-msg] Part 3 anchor missing — dispatchReply not found');
       } else {
         const coalesceInjection =
-          '  // MODOROClaw DELIVER-COALESCE PATCH v2:\n' +
+          '  // MODOROClaw DELIVER-COALESCE PATCH v3:\n' +
           '  // Root cause of "Dạ" → "D" + "ạ..." split: model (reasoning-enabled) emits\n' +
           '  // interleaved content array like [text:"D", thinking:"", text:"ạ..."].\n' +
           '  // Openclaw turns each text part into a separate final payload. disableBlockStreaming\n' +
@@ -4067,28 +4067,32 @@ function ensureOpenzaloForceOneMessageFix() {
           coalesceAnchor;
         content = content.replace(coalesceAnchor, coalesceInjection);
 
-        // Now replace the original deliver callback body with coalescing logic
-        const oldDeliver = 'deliver: async (payload) => {\n      await deliverAndRememberOpenzaloReply({\n        payload,\n        target: outboundTarget,\n        sessionKey: route.sessionKey,\n        account,\n        cfg,\n        runtime,\n        statusSink,\n      });\n    },';
+        // Now replace the original deliver callback body with coalescing logic.
+        // Indentation: deliver is at 6 spaces (inside dispatcherOptions), body at 8/10.
+        const oldDeliver = '      deliver: async (payload) => {\n        await deliverAndRememberOpenzaloReply({\n          payload,\n          target: outboundTarget,\n          sessionKey: route.sessionKey,\n          account,\n          cfg,\n          runtime,\n          statusSink,\n        });\n      },';
         const newDeliver =
-          'deliver: async (payload) => {\n' +
-          '      const hasMedia = (payload?.mediaUrl || (payload?.mediaUrls?.length ?? 0) > 0 || (payload?.mediaPaths?.length ?? 0) > 0);\n' +
-          '      const text = String(payload?.text || "").trim();\n' +
-          '      if (hasMedia || !text) {\n' +
-          '        await __mcFlush();\n' +
-          '        await __mcDoDeliver(payload);\n' +
-          '        return;\n' +
-          '      }\n' +
-          '      if (__mcBuffer.text) {\n' +
-          '        __mcBuffer.text += (/[.!?…]$/.test(__mcBuffer.text) ? " " : "") + text;\n' +
-          '      } else {\n' +
-          '        __mcBuffer.text = text;\n' +
-          '        __mcBuffer.firstPayload = payload;\n' +
-          '      }\n' +
-          '      if (__mcBuffer.timer) clearTimeout(__mcBuffer.timer);\n' +
-          '      __mcBuffer.timer = setTimeout(() => { __mcFlush().catch(() => {}); }, __mcFlushDelay);\n' +
-          '    },';
+          '      deliver: async (payload) => {\n' +
+          '        // MODOROClaw DELIVER-COALESCE v3: route through buffer so consecutive text chunks\n' +
+          '        // (model emits [text:"D", thinking:"", text:"ạ..."]) get merged before send.\n' +
+          '        const hasMedia = (payload?.mediaUrl || (payload?.mediaUrls?.length ?? 0) > 0 || (payload?.mediaPaths?.length ?? 0) > 0);\n' +
+          '        const text = String(payload?.text || "").trim();\n' +
+          '        if (hasMedia || !text) {\n' +
+          '          await __mcFlush();\n' +
+          '          await __mcDoDeliver(payload);\n' +
+          '          return;\n' +
+          '        }\n' +
+          '        if (__mcBuffer.text) {\n' +
+          '          __mcBuffer.text += (/[.!?…]$/.test(__mcBuffer.text) ? " " : "") + text;\n' +
+          '        } else {\n' +
+          '          __mcBuffer.text = text;\n' +
+          '          __mcBuffer.firstPayload = payload;\n' +
+          '        }\n' +
+          '        if (__mcBuffer.timer) clearTimeout(__mcBuffer.timer);\n' +
+          '        __mcBuffer.timer = setTimeout(() => { __mcFlush().catch(() => {}); }, __mcFlushDelay);\n' +
+          '      },';
         if (content.includes(oldDeliver)) {
           content = content.replace(oldDeliver, newDeliver);
+          console.log('[zalo-force-one-msg] Part 3 deliver callback replaced with coalescing version');
         } else {
           console.warn('[zalo-force-one-msg] Part 3 deliver body not found — coalesce setup injected but callback not replaced');
         }
@@ -4103,10 +4107,10 @@ function ensureOpenzaloForceOneMessageFix() {
           content = content.replace(m[1], m[1] + injectAfter);
         }
 
-        // Add marker at top so we don't re-patch
+        // Add v3 marker so we don't re-patch
         content = content.replace(
-          '  // MODOROClaw DELIVER-COALESCE PATCH v2:',
-          '  // MODOROClaw DELIVER-COALESCE PATCH v2 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v2:'
+          '  // MODOROClaw DELIVER-COALESCE PATCH v3:',
+          '  // MODOROClaw DELIVER-COALESCE PATCH v3 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v3:'
         );
         fs.writeFileSync(pluginFile, content, 'utf-8');
         console.log('[zalo-force-one-msg] Part 3 deliver-coalesce patch applied');
@@ -5204,6 +5208,8 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
             viError = 'Không kết nối được ollama.com. Kiểm tra Internet.';
           } else if (/429|rate/i.test(errMsg)) {
             viError = 'Ollama trả về 429 (rate limit). Đợi 1 phút rồi thử lại.';
+          } else if (/\b5\d{2}\b|internal.server.error/i.test(errMsg)) {
+            viError = 'Ollama đang gặp sự cố tạm thời (HTTP 5xx). Thử lại sau vài phút hoặc kiểm tra status.ollama.com.';
           }
           return {
             success: false,

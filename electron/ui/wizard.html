@@ -475,6 +475,12 @@
       color: var(--warning);
     }
 
+    /* Field error highlight — red border + glow, auto-cleared after 4s */
+    .wz-input.wz-error, .wz-textarea.wz-error, .wz-select.wz-error {
+      border-color: var(--danger) !important;
+      box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2) !important;
+    }
+
     /* ===== QR display ===== */
     .wz-qr-frame {
       display: inline-block;
@@ -1421,16 +1427,17 @@
       // Validation per step
       if (currentStep === 1) {
         const name = document.getElementById('ceo-name').value.trim();
-        if (!name) return showError('Vui lòng nhập họ tên của anh/chị.');
+        if (!name) { markFieldError('ceo-name'); return showError('Vui lòng nhập họ tên của anh/chị.'); }
       }
       if (currentStep === '1c') {
         const start = document.getElementById('work-start').value;
         const end = document.getElementById('work-end').value;
-        if (!start || !end) return showError('Vui lòng chọn giờ bắt đầu và kết thúc làm việc.');
+        if (!start) { markFieldError('work-start'); return showError('Vui lòng chọn giờ bắt đầu làm việc.'); }
+        if (!end) { markFieldError('work-end'); return showError('Vui lòng chọn giờ kết thúc làm việc.'); }
       }
       if (currentStep === '1b') {
-        if (!document.getElementById('industry').value) return showError('Vui lòng chọn lĩnh vực kinh doanh.');
-        if (!document.getElementById('ceo-title').value.trim()) return showError('Vui lòng nhập cách trợ lý gọi anh/chị.');
+        if (!document.getElementById('industry').value) { markFieldError('industry'); return showError('Vui lòng chọn lĩnh vực kinh doanh.'); }
+        if (!document.getElementById('ceo-title').value.trim()) { markFieldError('ceo-title'); return showError('Vui lòng nhập cách trợ lý gọi anh/chị.'); }
       }
       if (currentStep === 2) {
         if (!document.getElementById('router-api-key').value.trim()) return showError('Chưa thiết lập AI. Nhấn "Thiết lập AI" ở trên trước.');
@@ -1439,9 +1446,9 @@
       if (currentStep === 3) {
         const t = document.getElementById('tg-token').value.trim();
         const u = document.getElementById('tg-user-id').value.trim();
-        if (!t) return showError('Chưa có Bot Token. Làm theo hướng dẫn 1 ở trên.');
-        if (!u) return showError('Chưa có User ID. Làm theo hướng dẫn 2 ở trên.');
-        if (!/^\d{5,15}$/.test(u)) return showError('User ID chỉ gồm chữ số (ví dụ: 123456789).');
+        if (!t) { markFieldError('tg-token'); return showError('Chưa có Bot Token. Làm theo hướng dẫn 1 ở trên.'); }
+        if (!u) { markFieldError('tg-user-id'); return showError('Chưa có User ID. Làm theo hướng dẫn 2 ở trên.'); }
+        if (!/^\d{5,15}$/.test(u)) { markFieldError('tg-user-id'); return showError('User ID chỉ gồm chữ số (ví dụ: 123456789).'); }
       }
       if (currentStep === 4) {
         // Last step before finish — call finishSetup
@@ -1458,7 +1465,7 @@
       if (prev) showStep(prev);
     }
 
-    // Inline error toast
+    // Inline error toast — scrolls into view so user always sees it
     function showError(msg) {
       const old = document.querySelector('.wz-alert.error.toast');
       if (old) old.remove();
@@ -1467,7 +1474,18 @@
       el.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb', 18)}</span><div>${esc(msg)}</div>`;
       const step = document.getElementById('step-' + currentStep);
       if (step) step.insertBefore(el, step.firstChild);
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setTimeout(() => el.remove(), 8000);
+    }
+
+    // Highlight a specific field red + focus it — clears automatically after 4s
+    function markFieldError(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.add('wz-error');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (!el.disabled) el.focus();
+      setTimeout(() => el.classList.remove('wz-error'), 4000);
     }
     function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     function withTimeout(promise, ms = 10000) {
