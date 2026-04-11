@@ -1313,27 +1313,6 @@
       box-sizing: border-box;
     }
     #page-persona-mix .persona-custom-body textarea { resize: vertical; }
-    #page-persona-mix .persona-presets {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    #page-persona-mix .persona-preset-btn {
-      padding: 6px 12px;
-      border-radius: 999px;
-      border: 1px dashed var(--border);
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 12px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    #page-persona-mix .persona-preset-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      border-style: solid;
-    }
     #page-persona-mix .persona-preview {
       background: var(--bg);
       border: 1px solid var(--border);
@@ -2078,7 +2057,7 @@
       <div class="page" id="page-persona-mix">
         <div class="page-header">
           <h2>Tính cách bot</h2>
-          <p class="page-subtitle">Kết hợp vùng miền, giọng, tính cách (theo Big Five) để tạo phong cách nhân viên riêng cho shop. Bot sẽ áp dụng ngay sau khi lưu.</p>
+          <p class="page-subtitle">Kết hợp vùng miền, giọng và tính cách để tạo phong cách giao tiếp riêng cho bot. Thay đổi có hiệu lực ngay sau khi lưu.</p>
         </div>
 
         <div class="persona-section">
@@ -2146,18 +2125,13 @@
           <summary class="persona-custom-summary">Tùy chỉnh nâng cao (không bắt buộc)</summary>
           <div class="persona-custom-body">
             <div class="persona-label">Câu chào riêng</div>
-            <input type="text" id="persona-greeting" placeholder="VD: Dạ em Mai bên shop XYZ xin chào anh/chị ạ">
+            <input type="text" id="persona-greeting" placeholder="VD: Dạ em Mai bên MODORO xin chào anh/chị ạ">
             <div class="persona-label" style="margin-top:12px">Câu kết riêng</div>
             <input type="text" id="persona-closing" placeholder="VD: Anh/chị cần gì thêm cứ nhắn em nha">
             <div class="persona-label" style="margin-top:12px">Cụm từ đặc trưng (mỗi cụm 1 dòng)</div>
             <textarea id="persona-phrases" rows="3" placeholder="VD:&#10;Bên em làm chuẩn lắm ạ&#10;Em nhớ anh/chị như người quen nhé"></textarea>
           </div>
         </details>
-
-        <div class="persona-section">
-          <div class="persona-label">Mẫu có sẵn — click để auto-fill</div>
-          <div class="persona-presets" id="persona-presets"></div>
-        </div>
 
         <div class="persona-preview">
           <div class="persona-preview-label">Preview reply của bot</div>
@@ -2174,7 +2148,7 @@
       <div class="page" id="page-shop-state">
         <div class="page-header">
           <h2>Tình trạng hôm nay</h2>
-          <p class="page-subtitle">Cập nhật nhanh để bot biết shop đang có gì đặc biệt. Bot sẽ áp dụng khi trả lời khách.</p>
+          <p class="page-subtitle">Cập nhật tình hình hôm nay để bot trả lời khách chính xác hơn. Thông tin sẽ tự reset lúc 00:00.</p>
         </div>
 
         <div class="state-section">
@@ -2202,7 +2176,7 @@
         <div class="state-section">
           <h3>Khuyến mãi đang chạy</h3>
           <p class="hint">Mỗi khuyến mãi: "Tên | Mô tả | Hết hạn (YYYY-MM-DD)" trên 1 dòng.</p>
-          <textarea id="state-promotions" rows="4" placeholder="Sinh nhật shop | Giảm 15% đơn trên 500k | 2026-04-15"></textarea>
+          <textarea id="state-promotions" rows="4" placeholder="Kỷ niệm thành lập | Giảm 15% đơn trên 500k | 2026-04-15"></textarea>
         </div>
 
         <div class="state-section">
@@ -2227,7 +2201,7 @@
         </div>
 
         <div class="state-info">
-          <p class="hint">State sẽ tự reset về trống vào 00:00 mỗi ngày. Bot đọc state file này mỗi tin nhắn để biết tình hình thực tế shop.</p>
+          <p class="hint">Bot đọc thông tin này mỗi tin nhắn. Tự động reset về trống lúc 00:00 mỗi ngày.</p>
         </div>
       </div>
 
@@ -3188,19 +3162,6 @@
     };
     let _personaMixBound = false;
 
-    const PERSONA_MIX_PRESETS = [
-      { label: 'Chị bán hàng miền Tây', mix: { region: 'tay', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['am-ap','thuc-te','kien-nhan','chu-dao'], formality: 4 } },
-      { label: 'Em sale BĐS Sài Gòn', mix: { region: 'nam', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['nang-dong','chu-dong','chuyen-nghiep','chu-dao'], formality: 6 } },
-      { label: 'Cô giáo Hà Nội', mix: { region: 'bac', voice: 'chi-trung-nien', customer: 'anh-chi', traits: ['chin-chu','kien-nhan','chu-dao','tinh-te'], formality: 8 } },
-      { label: 'Dược sĩ ân cần', mix: { region: 'trung-tinh', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['chin-chu','dong-cam','diem-tinh','chu-dao'], formality: 6 } },
-      { label: 'Chị spa cao cấp', mix: { region: 'trung-tinh', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['tinh-te','am-ap','diem-tinh','linh-hoat'], formality: 7 } },
-      { label: 'Anh thợ sửa xe', mix: { region: 'nam', voice: 'em-nam-tre', customer: 'anh-chi', traits: ['thang-than','thuc-te','chu-dao','than-thien'], formality: 4 } },
-      { label: 'Cô lễ tân 5 sao', mix: { region: 'bac', voice: 'em-nu-tre', customer: 'quy-khach', traits: ['tinh-te','chuyen-nghiep','chin-chu','linh-hoat'], formality: 10 } },
-      { label: 'Anh sale ôtô', mix: { region: 'trung-tinh', voice: 'em-nam-tre', customer: 'anh-chi', traits: ['chuyen-nghiep','chu-dong','chu-dao','linh-hoat'], formality: 7 } },
-      { label: 'Chị chủ boutique', mix: { region: 'nam', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['sang-tao','tinh-te','am-ap','linh-hoat'], formality: 6 } },
-      { label: 'Anh kỹ thuật', mix: { region: 'trung-tinh', voice: 'em-nam-tre', customer: 'anh-chi', traits: ['chuyen-nghiep','kien-nhan','thuc-te','chu-dao'], formality: 6 } },
-    ];
-
     async function loadPersonaMix() {
       if (!window.claw || !window.claw.getPersonaMix) return;
       try {
@@ -3210,30 +3171,11 @@
         });
       } catch (e) { console.error('loadPersonaMix', e); }
       if (!_personaMixBound) {
-        renderPersonaPresets();
         bindPersonaMixChips();
         _personaMixBound = true;
       }
       syncPersonaMixUI();
       updatePersonaPreview();
-    }
-
-    function renderPersonaPresets() {
-      const row = document.getElementById('persona-presets');
-      if (!row) return;
-      row.innerHTML = PERSONA_MIX_PRESETS.map((p, i) => `
-        <button type="button" class="persona-preset-btn" data-pindex="${i}">${p.label}</button>
-      `).join('');
-      row.querySelectorAll('.persona-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const idx = parseInt(btn.getAttribute('data-pindex'), 10);
-          const preset = PERSONA_MIX_PRESETS[idx];
-          if (!preset) return;
-          Object.assign(_personaMix, preset.mix);
-          syncPersonaMixUI();
-          updatePersonaPreview();
-        });
-      });
     }
 
     function bindPersonaMixChips() {

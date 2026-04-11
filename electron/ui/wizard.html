@@ -742,27 +742,6 @@
     }
     .wz-mix-custom summary:hover { color: var(--text); }
     .wz-mix-custom[open] summary { color: var(--text); }
-    .wz-mix-preset-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    .wz-mix-preset-btn {
-      padding: 6px 12px;
-      border-radius: 999px;
-      border: 1px dashed var(--border);
-      background: transparent;
-      color: var(--text-muted, #9ba1a8);
-      font-size: 12px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .wz-mix-preset-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      border-style: solid;
-    }
     .wz-mix-preview {
       margin-top: 20px;
       padding: 14px 16px;
@@ -986,7 +965,7 @@
 
             <div class="wz-field">
               <label class="wz-label">Tính cách nhân viên của bot</label>
-              <p class="wz-help" style="margin-top:-2px;margin-bottom:12px">Chọn các đặc điểm phù hợp với shop. Bot sẽ kết hợp thành một phong cách riêng — không bị khóa vào preset cứng.</p>
+              <p class="wz-help" style="margin-top:-2px;margin-bottom:12px">Chọn các đặc điểm phù hợp. Bot sẽ kết hợp thành một phong cách giao tiếp riêng — không bị khóa vào khuôn mẫu cứng.</p>
 
               <div class="wz-mix-section">
                 <div class="wz-mix-label">Vùng miền</div>
@@ -1053,20 +1032,13 @@
                 <summary>Tùy chỉnh nâng cao (không bắt buộc)</summary>
                 <div style="padding-top:12px">
                   <div class="wz-mix-label" style="margin-top:4px">Câu chào riêng</div>
-                  <input type="text" id="mix-greeting" class="wz-input" placeholder="VD: Dạ em Mai bên shop XYZ xin chào anh/chị ạ">
+                  <input type="text" id="mix-greeting" class="wz-input" placeholder="VD: Dạ em Mai bên MODORO xin chào anh/chị ạ">
                   <div class="wz-mix-label" style="margin-top:12px">Câu kết riêng</div>
                   <input type="text" id="mix-closing" class="wz-input" placeholder="VD: Anh/chị cần gì thêm cứ nhắn em nha">
                   <div class="wz-mix-label" style="margin-top:12px">Cụm từ đặc trưng (mỗi cụm 1 dòng)</div>
                   <textarea id="mix-phrases" class="wz-input" rows="3" placeholder="VD:&#10;Bên em làm chuẩn lắm ạ&#10;Em nhớ anh/chị như người quen nhé"></textarea>
                 </div>
               </details>
-
-              <div class="wz-mix-section">
-                <div class="wz-mix-label" style="margin-bottom:8px">Hoặc chọn mẫu có sẵn để auto-fill nhanh</div>
-                <div class="wz-mix-preset-row" id="mix-presets">
-                  <!-- preset buttons rendered by JS -->
-                </div>
-              </div>
 
               <div class="wz-mix-preview">
                 <div class="wz-mix-preview-label">Preview reply của bot</div>
@@ -1556,40 +1528,6 @@
       phrases: '',
     };
 
-    // Presets: quick-start auto-fill from old archetype names. Clicking applies
-    // matching mix config but CEO can tweak after.
-    const PERSONA_PRESETS = [
-      { label: 'Chị bán hàng miền Tây', mix: { region: 'tay', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['am-ap','thuc-te','kien-nhan','chu-dao'], formality: 4 } },
-      { label: 'Em sale BĐS Sài Gòn', mix: { region: 'nam', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['nang-dong','chu-dong','chuyen-nghiep','chu-dao'], formality: 6 } },
-      { label: 'Cô giáo Hà Nội', mix: { region: 'bac', voice: 'chi-trung-nien', customer: 'anh-chi', traits: ['chin-chu','kien-nhan','chu-dao','tinh-te'], formality: 8 } },
-      { label: 'Dược sĩ ân cần', mix: { region: 'trung-tinh', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['chin-chu','dong-cam','diem-tinh','chu-dao'], formality: 6 } },
-      { label: 'Chị spa cao cấp', mix: { region: 'trung-tinh', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['tinh-te','am-ap','diem-tinh','linh-hoat'], formality: 7 } },
-      { label: 'Anh thợ sửa xe', mix: { region: 'nam', voice: 'em-nam-tre', customer: 'anh-chi', traits: ['thang-than','thuc-te','chu-dao','than-thien'], formality: 4 } },
-      { label: 'Cô lễ tân 5 sao', mix: { region: 'bac', voice: 'em-nu-tre', customer: 'quy-khach', traits: ['tinh-te','chuyen-nghiep','chin-chu','linh-hoat'], formality: 10 } },
-      { label: 'Anh sale ôtô', mix: { region: 'trung-tinh', voice: 'em-nam-tre', customer: 'anh-chi', traits: ['chuyen-nghiep','chu-dong','chu-dao','linh-hoat'], formality: 7 } },
-      { label: 'Chị chủ boutique', mix: { region: 'nam', voice: 'em-nu-tre', customer: 'anh-chi', traits: ['sang-tao','tinh-te','am-ap','linh-hoat'], formality: 6 } },
-      { label: 'Anh kỹ thuật', mix: { region: 'trung-tinh', voice: 'em-nam-tre', customer: 'anh-chi', traits: ['chuyen-nghiep','kien-nhan','thuc-te','chu-dao'], formality: 6 } },
-    ];
-
-    function renderPresets() {
-      const row = document.getElementById('mix-presets');
-      if (!row) return;
-      row.innerHTML = PERSONA_PRESETS.map((p, i) => `
-        <button type="button" class="wz-mix-preset-btn" data-preset-index="${i}">${esc(p.label)}</button>
-      `).join('');
-      row.querySelectorAll('.wz-mix-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => applyPreset(parseInt(btn.getAttribute('data-preset-index'), 10)));
-      });
-    }
-
-    function applyPreset(idx) {
-      const preset = PERSONA_PRESETS[idx];
-      if (!preset) return;
-      Object.assign(personaMix, preset.mix);
-      syncMixUI();
-      updateMixPreview();
-    }
-
     function syncMixUI() {
       // Single-select chips: region, voice, customer
       ['region', 'voice', 'customer'].forEach(group => {
@@ -2057,7 +1995,6 @@
 
       mountIcons();
       bindChoices();
-      renderPresets();
       bindMixChips();
       syncMixUI();
       updateMixPreview();
