@@ -5498,16 +5498,23 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
             const fixed = await autoFix9RouterSqlite();
             if (fixed) {
               stop9Router();
-              await new Promise(r => setTimeout(r, 1000));
+              // Wait > 1500ms (Mac SIGKILL grace period) so old process releases
+              // port 20128 before we restart. Also force-clear any lingering process
+              // on the port as belt-and-braces.
+              await new Promise(r => setTimeout(r, 2500));
+              try { killPort(20128); } catch {}
               start9Router();
               ready = await waitFor9RouterReady(30000);
               if (ready) {
                 console.log('[setup-9router-auto] 9router ready after native module auto-fix');
               } else {
-                throw new Error('9router vẫn không khởi động được sau khi tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.');
+                // BUG-A fix: return directly so we don't fall through to legacy
+                // file mode (which also fails with 500 when 9router is broken).
+                return { success: false, error: '9router vẫn không khởi động được sau khi tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.' };
               }
             } else {
-              throw new Error('9router gặp lỗi khởi động (HTTP 500) và không thể tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.');
+              // BUG-A fix: return directly, same reason as above.
+              return { success: false, error: '9router gặp lỗi khởi động (HTTP 500) và không thể tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.' };
             }
           } else {
             throw new Error('9router không khởi động được trong 10 giây — fallback file mode');
