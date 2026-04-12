@@ -5558,7 +5558,29 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           await nineRouterApi('DELETE', `/api/providers/${providerId}`);
           const errMsg = testRes.data?.error || testRes.error || 'Ollama key không hợp lệ';
           console.warn('[setup-9router-auto] provider test failed:', errMsg);
-          // Map common 9router errors to Vietnamese
+
+          // If error is a raw HTTP 5xx from 9router itself (not from the AI provider),
+          // it means 9router crashed internally — most likely better-sqlite3 ABI mismatch.
+          // waitFor9RouterReady passes (health endpoint works) but /test crashes SQLite.
+          // Attempt native module auto-fix + ask user to retry once.
+          if (/^HTTP [5]\d{2}$/.test(String(errMsg)) && !_9routerSqliteFixAttempted) {
+            console.log('[setup-9router-auto] provider test returned raw HTTP 5xx → likely 9router SQLite crash, attempting auto-fix');
+            const fixed = await autoFix9RouterSqlite();
+            if (fixed) {
+              stop9Router();
+              await new Promise(r => setTimeout(r, 2500));
+              try { killPort(20128); } catch {}
+              start9Router();
+              const readyAfterFix = await waitFor9RouterReady(30000);
+              if (readyAfterFix) {
+                console.log('[setup-9router-auto] 9router ready after SQLite auto-fix — ask user to retry');
+                return { success: false, error: 'Đã tự sửa xong lỗi nội bộ. Nhấn "Thiết lập AI" lại để thử nhé.', sqliteFixed: true };
+              }
+            }
+            return { success: false, error: '9router gặp lỗi nội bộ (HTTP 500) và không thể tự sửa. Mở thư mục log (9router.log) để xem chi tiết.' };
+          }
+
+          // Map common AI provider errors to Vietnamese
           let viError = errMsg;
           if (/401|unauthor/i.test(errMsg)) {
             viError = 'Ollama API key sai hoặc đã hết hạn. Vào ollama.com/settings/keys → tạo key mới → paste lại.';
