@@ -5352,6 +5352,84 @@ function nineRouterApi(method, path, body = null, timeoutMs = 5000) {
   });
 }
 
+// Runtime self-heal for 9router's bundled better-sqlite3 binary.
+// Mirrors the build-time fixNineRouterNativeModules() in prebuild-vendor.js, but
+// runs inside the packaged app when the binary ships with the wrong arch (e.g.
+// x64 binary on arm64 Mac, or vice versa). Runs at most once per process lifetime.
+let _9routerSqliteFixAttempted = false;
+async function autoFix9RouterSqlite() {
+  if (_9routerSqliteFixAttempted) return false;
+  _9routerSqliteFixAttempted = true;
+  try {
+    const vendorDir = getBundledVendorDir();
+    if (!vendorDir) {
+      console.warn('[9router-autofix] not packaged — skipping');
+      return false;
+    }
+    const bsqlDir = path.join(vendorDir, 'node_modules', '9router', 'app', 'node_modules', 'better-sqlite3');
+    if (!fs.existsSync(bsqlDir)) {
+      console.warn('[9router-autofix] better-sqlite3 dir not found:', bsqlDir);
+      return false;
+    }
+    const nodeBin = getBundledNodeBin();
+    if (!nodeBin) {
+      console.warn('[9router-autofix] bundled node binary not found');
+      return false;
+    }
+    // Get version of the BUNDLED Node (not Electron's embedded Node)
+    let nodeVer;
+    try {
+      nodeVer = require('child_process')
+        .execFileSync(nodeBin, ['--version'], { encoding: 'utf-8', timeout: 5000 })
+        .trim().replace(/^v/, '');
+    } catch (e) {
+      console.warn('[9router-autofix] could not get bundled node version:', e.message);
+      return false;
+    }
+    const arch = process.arch; // 'arm64' or 'x64'
+    const platform = process.platform;
+    console.log(`[9router-autofix] rebuilding better-sqlite3 for node-${nodeVer} ${platform}-${arch}`);
+    const { execFileSync } = require('child_process');
+    const bsqlBin = path.join(bsqlDir, 'build', 'Release', 'better_sqlite3.node');
+    // Try prebuild-install from 9router's own .bin dir
+    const prebuildBin = path.join(bsqlDir, '..', '.bin', 'prebuild-install');
+    if (fs.existsSync(prebuildBin)) {
+      try {
+        execFileSync(nodeBin, [prebuildBin, '-r', 'node', '-t', nodeVer, '--arch', arch], {
+          cwd: bsqlDir, timeout: 60000, shell: false,
+          env: { ...process.env, npm_config_arch: arch },
+        });
+        if (fs.existsSync(bsqlBin)) {
+          console.log('[9router-autofix] ✓ rebuilt via prebuild-install');
+          return true;
+        }
+      } catch (e) {
+        console.warn('[9router-autofix] prebuild-install failed:', e.message);
+      }
+    }
+    // Fallback: node-pre-gyp
+    const nodePreGyp = path.join(bsqlDir, '..', '.bin', 'node-pre-gyp');
+    if (fs.existsSync(nodePreGyp)) {
+      try {
+        execFileSync(nodeBin, [nodePreGyp, 'rebuild', `--target=${nodeVer}`, `--target_arch=${arch}`], {
+          cwd: bsqlDir, timeout: 120000, shell: false,
+        });
+        if (fs.existsSync(bsqlBin)) {
+          console.log('[9router-autofix] ✓ rebuilt via node-pre-gyp');
+          return true;
+        }
+      } catch (e) {
+        console.warn('[9router-autofix] node-pre-gyp failed:', e.message);
+      }
+    }
+    console.warn('[9router-autofix] all rebuild methods failed — user needs reinstall');
+    return false;
+  } catch (e) {
+    console.error('[9router-autofix] unexpected error:', e.message);
+    return false;
+  }
+}
+
 // Wait for 9router to be reachable. Polls /api/settings every 500ms up to maxMs.
 // Returns { ready: true } on success, or { ready: false, reason: '...' } on timeout.
 // Distinguishes between "never started" (ECONNREFUSED) vs "started but 5xx" (native
@@ -5409,9 +5487,31 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           console.log('[setup-9router-auto] 9router not running — starting');
           start9Router();
         }
-        const ready = await waitFor9RouterReady(10000);
+        let ready = await waitFor9RouterReady(10000);
         if (!ready) {
-          throw new Error('9router không khởi động được trong 10 giây — fallback file mode');
+          // Distinguish crash (5xx = native module broken) from not-started (ECONNREFUSED)
+          const ping = await nineRouterApi('GET', '/api/settings', null, 1500);
+          if (ping.statusCode && ping.statusCode >= 500) {
+            // Native module crash (e.g. better-sqlite3 arch mismatch on Mac).
+            // Attempt runtime rebuild — takes up to ~60s but wizard shows spinner.
+            console.log('[setup-9router-auto] 9router crash (HTTP', ping.statusCode, ') — attempting native module auto-fix');
+            const fixed = await autoFix9RouterSqlite();
+            if (fixed) {
+              stop9Router();
+              await new Promise(r => setTimeout(r, 1000));
+              start9Router();
+              ready = await waitFor9RouterReady(30000);
+              if (ready) {
+                console.log('[setup-9router-auto] 9router ready after native module auto-fix');
+              } else {
+                throw new Error('9router vẫn không khởi động được sau khi tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.');
+              }
+            } else {
+              throw new Error('9router gặp lỗi khởi động (HTTP 500) và không thể tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.');
+            }
+          } else {
+            throw new Error('9router không khởi động được trong 10 giây — fallback file mode');
+          }
         }
         console.log('[setup-9router-auto] 9router API reachable');
 

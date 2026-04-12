@@ -488,3 +488,17 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 ### `ensureDefaultConfig` write error surfacing (RISK-12)
 **Bug:** `ensureDefaultConfig()` catch block only called `console.error(...)` — if the function threw during a startup sequence (e.g., `openclaw.json` locked by another process, malformed JSON), the error was invisible to CEO and bot ran with broken config silently.
 **Fix:** Catch block now also appends to `~/.openclaw/logs/config-errors.log` with ISO timestamp and error message. Non-blocking (secondary write failure is silently swallowed). Log persists across restarts for post-mortem investigation.
+
+### 9router better-sqlite3 runtime auto-fix + wizard log link
+**Bug:** `fixNineRouterNativeModules()` in `prebuild-vendor.js` runs at build time only. If it failed silently (e.g. network unavailable during CI, or prebuild-install returned non-zero), the DMG ships a wrong-arch `better_sqlite3.node` inside `9router/app/node_modules/better-sqlite3`. Every request to 9router returns HTTP 500. The wizard "Thiết lập AI" step fails immediately with no actionable message.
+**Fix 1 — Runtime auto-fix** (`main.js:autoFix9RouterSqlite`): When `setup-9router-auto` detects that `waitFor9RouterReady` returned false AND a follow-up ping returns HTTP 5xx (= crash, not just slow start), it calls `autoFix9RouterSqlite()`:
+- Locates `{vendorDir}/node_modules/9router/app/node_modules/better-sqlite3`
+- Gets bundled Node version via `execFileSync(nodeBin, ['--version'])`
+- Runs `prebuild-install -r node -t <ver> --arch <arch>` from 9router's `.bin` → fallback `node-pre-gyp rebuild`
+- If successful: `stop9Router()` → 1s delay → `start9Router()` → `waitFor9RouterReady(30000)`
+- Runs at most once per process (`_9routerSqliteFixAttempted` flag)
+**Fix 2 — Wizard log link**: Both non-`validationFailed` error branches in `wizard.html` `autoSetup9Router()` now show a `Dev: Mở thư mục log → xem 9router.log` link that calls `window.claw.openLogFolder()`. Lets dev see crash cause immediately without hunting for the file.
+**Log paths for dev:**
+- Mac: `~/Library/Application Support/modoro-claw/logs/9router.log`
+- Win: `%APPDATA%\modoro-claw\logs\9router.log`
+**Verify:** On Mac arm64 with x64 vendor binary → wizard "Thiết lập AI" → spinner shows ~30-60s → auto-fix log `[9router-autofix] ✓ rebuilt via prebuild-install` in `main.log` → wizard completes successfully. If auto-fix fails: error shows "Mở thư mục log" link.

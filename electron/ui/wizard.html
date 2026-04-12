@@ -1665,7 +1665,7 @@
           window._aiModelReady = false;
           const errDetail = res.autoDetectError ? ' (' + esc(res.autoDetectError) + ')' : '';
           result.className = 'wz-alert error';
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Ollama key OK nhưng 9Router không detect được model</strong>${errDetail}<br><br>Có thể 9Router chưa khởi động kịp. Đợi 30 giây rồi nhấn <strong>"Thiết lập AI"</strong> lại để thử. Wizard sẽ không cho qua bước này đến khi combo AI có ít nhất 1 model — để tránh bot 404 lúc demo.</div>`;
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Ollama key OK nhưng 9Router không detect được model</strong>${errDetail}<br><br>Có thể 9Router chưa khởi động kịp. Đợi 30 giây rồi nhấn <strong>"Thiết lập AI"</strong> lại để thử. Wizard sẽ không cho qua bước này đến khi combo AI có ít nhất 1 model — để tránh bot 404 lúc demo.<br><small style="opacity:0.65;margin-top:6px;display:block">Dev: <a href="#" onclick="window.claw.openLogFolder();return false;" style="color:inherit;text-decoration:underline">Mở thư mục log</a> → xem <code>9router.log</code></small></div>`;
         }
       } else {
         window._aiModelReady = false;
@@ -1675,7 +1675,7 @@
         if (res.validationFailed) {
           result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Ollama API key không hoạt động</strong><br><br>${esc(res.error)}<br><br>Sửa lỗi rồi nhấn <strong>"Thiết lập AI"</strong> lại.</div>`;
         } else {
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>Lỗi: ${esc(res.error || 'Không xác định')}</div>`;
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>Lỗi: ${esc(res.error || 'Không xác định')}<br><small style="opacity:0.65;margin-top:6px;display:block">Dev: <a href="#" onclick="window.claw.openLogFolder();return false;" style="color:inherit;text-decoration:underline">Mở thư mục log</a> → xem <code>9router.log</code></small></div>`;
         }
       }
     }
