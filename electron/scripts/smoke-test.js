@@ -6,13 +6,13 @@
  * BEFORE we ship a .exe / .dmg with broken dependencies.
  *
  * Why this exists:
- * MODOROClaw depends on 4 third-party npm packages we don't control:
+ * 9BizClaw depends on 4 third-party npm packages we don't control:
  *   - openclaw            (the gateway + agent runtime)
  *   - openzca             (Zalo websocket listener)
  *   - 9router             (AI provider router)
  *   - @tuyenhx/openzalo   (openclaw plugin for Zalo channel)
  *
- * Each upstream version bump can silently break MODOROClaw if:
+ * Each upstream version bump can silently break 9BizClaw if:
  *   - Config schema validator rejects fields we set
  *   - CLI flags renamed/removed
  *   - Internal file format changed (session jsonl, listener-owner.json)
@@ -267,7 +267,7 @@ if (!openzcaCli) {
 // =========================================================================
 section('Plugin patch anchors');
 // Patch anchors: pass if EITHER the original anchor matches (unpatched plugin)
-// OR the MODOROClaw patch marker is present (already patched). Both states are
+// OR the 9BizClaw patch marker is present (already patched). Both states are
 // "smoke OK" — only failure is "neither matches", which means upstream
 // restructured the file in a way our patch logic can no longer find.
 function checkPatchAnchor(name, file, anchorRegex, patchMarker, hint) {
@@ -311,7 +311,7 @@ if (openzaloSrc) {
     'openzca.ts spawn anchor',
     path.join(openzaloSrc, 'openzca.ts'),
     /spawn\s*\(\s*binary\s*,/,
-    'MODOROClaw PATCH',
+    '9BizClaw PATCH',
     'ensureOpenzaloShellFix() in main.js may need updated patch template at electron/patches/openzalo-openzca.ts'
   );
 
@@ -320,7 +320,7 @@ if (openzaloSrc) {
     'inbound.ts disableBlockStreaming anchor',
     path.join(openzaloSrc, 'inbound.ts'),
     /disableBlockStreaming:\s*\n?\s*typeof account\.config\.blockStreaming === ["']boolean["']/,
-    'MODOROClaw FORCE-ONE-MESSAGE PATCH',
+    '9BizClaw FORCE-ONE-MESSAGE PATCH',
     'ensureOpenzaloForceOneMessageFix() regex needs updating — openzalo plugin restructured'
   );
 
@@ -329,7 +329,7 @@ if (openzaloSrc) {
     'inbound.ts blocklist anchor',
     path.join(openzaloSrc, 'inbound.ts'),
     /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
-    'MODOROClaw BLOCKLIST PATCH',
+    '9BizClaw BLOCKLIST PATCH',
     'ensureZaloBlocklistFix() anchor missing — openzalo plugin restructured'
   );
 } else {
@@ -345,10 +345,10 @@ if (!fs.existsSync(patchTemplate)) {
   fail('patches/openzalo-openzca.ts', `MISSING — ensureOpenzaloShellFix() will fail silently in production. Restore from git history.`);
 } else {
   const content = fs.readFileSync(patchTemplate, 'utf-8');
-  if (!content.includes('MODOROClaw PATCH')) {
-    fail('patches/openzalo-openzca.ts marker', 'file present but missing "MODOROClaw PATCH" marker — ensureOpenzaloShellFix will refuse to apply it');
+  if (!content.includes('9BizClaw PATCH')) {
+    fail('patches/openzalo-openzca.ts marker', 'file present but missing "9BizClaw PATCH" marker — ensureOpenzaloShellFix will refuse to apply it');
   } else {
-    pass('patches/openzalo-openzca.ts (has MODOROClaw PATCH marker)');
+    pass('patches/openzalo-openzca.ts (has 9BizClaw PATCH marker)');
   }
 }
 

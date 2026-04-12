@@ -1,5 +1,5 @@
 {
-  "name": "modoro-claw",
+  "name": "9bizclaw",
   "version": "2.2.41",
   "description": "9BizClaw — Trợ Lý AI Cho CEO (OpenClaw Desktop)",
   "author": "MODORO Tech Corp",
@@ -20,7 +20,7 @@
     "build:mac:universal": "node scripts/smoke-test.js && electron-builder --mac --universal"
   },
   "build": {
-    "appId": "vn.modoro.claw",
+    "appId": "vn.9biz.claw",
     "productName": "9BizClaw",
     "copyright": "© 2026 MODORO Tech Corp",
     "publish": null,

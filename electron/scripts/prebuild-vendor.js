@@ -29,7 +29,7 @@
  * app.isPackaged and uses the bundled binary exclusively. Nothing on the
  * user's machine matters.
  *
- * Skipped on Linux (no MODOROClaw distribution for Linux yet).
+ * Skipped on Linux (no 9BizClaw distribution for Linux yet).
  */
 const fs = require('fs');
 const path = require('path');
@@ -252,7 +252,7 @@ function npmInstallVendorPackages() {
       name: 'modoroclaw-vendor',
       version: '0.0.0',
       private: true,
-      description: 'Bundled CLI dependencies for the packaged MODOROClaw .app',
+      description: 'Bundled CLI dependencies for the packaged 9BizClaw .app',
     }, null, 2) + '\n');
   }
 
@@ -303,7 +303,7 @@ function npmInstallVendorPackages() {
   // pinning, every build fetches `latest` from npm — which means a single
   // upstream schema change (like the openclaw 2026.4.x rename of
   // `agents.defaults.blockStreaming` → `blockStreamingDefault`) can break
-  // every fresh MODOROClaw install overnight, with zero warning.
+  // every fresh 9BizClaw install overnight, with zero warning.
   //
   // To upgrade: change the version below, run a smoke test, manually verify
   // wizard + cron + Zalo + Telegram still work, THEN ship a build.

@@ -31,7 +31,7 @@ function initFileLogger() {
     // app.getPath('userData') only works after app.whenReady, but we can use
     // APPDATA directly here since Electron userData defaults to
     // <appData>/<app.getName()>. CRITICAL: app.getName() reads package.json
-    // top-level `name` field which is "modoro-claw" (LOWERCASE). It does NOT
+    // top-level `name` field which is "9bizclaw" (LOWERCASE). It does NOT
     // read build.productName ("MODOROClaw") — that's electron-builder installer
     // metadata only. Hardcoding capital "MODOROClaw" creates a phantom dir
     // separate from Electron's real userData, splitting logs across two paths.
@@ -41,7 +41,7 @@ function initFileLogger() {
       || (process.platform === 'darwin'
           ? path.join(process.env.HOME || '', 'Library', 'Application Support')
           : path.join(process.env.HOME || '', '.config'));
-    const logsDir = path.join(appData, 'modoro-claw', 'logs');
+    const logsDir = path.join(appData, '9bizclaw', 'logs');
     try { fs.mkdirSync(logsDir, { recursive: true }); } catch {}
     const logPath = path.join(logsDir, 'main.log');
     // Rotate previous session's log
@@ -143,12 +143,12 @@ function getWorkspace() {
       // app.whenReady hasn't fired yet — compute manually so early seedWorkspace
       // calls (e.g. from bootDiagRunFullCheck) get the right path.
       // CRITICAL: dir name must match Electron's app.getName() which reads
-      // the package.json `name` field ("modoro-claw", lowercase). NOT
+      // the package.json `name` field ("9bizclaw", lowercase). NOT
       // build.productName ("MODOROClaw") — that's electron-builder installer
       // metadata, not Electron runtime. Mismatch creates a phantom capital
       // dir that some code paths write to while real workspace is lowercase.
       const HOMETMP = process.env.USERPROFILE || process.env.HOME || '';
-      const APP_DIR = 'modoro-claw';
+      const APP_DIR = '9bizclaw';
       if (process.platform === 'win32') {
         _workspaceCached = path.join(process.env.APPDATA || path.join(HOMETMP, 'AppData', 'Roaming'), APP_DIR);
       } else if (process.platform === 'darwin') {
@@ -1136,7 +1136,7 @@ async function runOpenClaw(args, timeout = 10000) {
   return stdout;
 }
 
-// MODOROClaw PATCH: resolve `node` to an absolute path so child spawns work even
+// 9BizClaw PATCH: resolve `node` to an absolute path so child spawns work even
 // when Electron's PATH is missing nvm/volta/scoop/portable Node locations (a real
 // issue when Electron is launched from Finder on macOS or as Administrator on
 // Windows). Without this, `spawn('node', ...)` returns ENOENT for users who
@@ -1179,7 +1179,7 @@ function findNodeBin() {
   return null;
 }
 
-// MODOROClaw PATCH: resolve openclaw.mjs path so we can spawn `node openclaw.mjs ...`
+// 9BizClaw PATCH: resolve openclaw.mjs path so we can spawn `node openclaw.mjs ...`
 // directly with shell:false. Avoids cmd.exe silently truncating args containing
 // newlines (same class of bug as the OpenZalo `shell:true` issue documented in CLAUDE.md).
 let _cachedOpenClawCliJs = null;
@@ -2296,7 +2296,7 @@ function findGlobalPackageFile(packageName, relativeFile) {
     try {
       const userDataVendor = path.join(
         process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'),
-        'modoro-claw', 'vendor', 'node_modules', packageName, relativeFile
+        '9bizclaw', 'vendor', 'node_modules', packageName, relativeFile
       );
       if (fs.existsSync(userDataVendor)) return userDataVendor;
     } catch {}
@@ -2461,7 +2461,7 @@ function getAppPrefsPath() {
     const dir = app.getPath('userData');
     return path.join(dir, 'app-prefs.json');
   } catch {
-    return path.join(HOME, '.modoro-claw-app-prefs.json');
+    return path.join(HOME, '.9bizclaw-app-prefs.json');
   }
 }
 
@@ -3120,28 +3120,28 @@ function cleanupOrphanZaloListener() {
   } catch (e) { console.error('[zalo-cleanup] error:', e.message); }
 }
 
-// MODOROClaw PATCH: Drop Zalo group system event notifications (member join/leave,
+// 9BizClaw PATCH: Drop Zalo group system event notifications (member join/leave,
 // Per-sender message dedup guard: drop exact-text duplicates from the same sender
 // arriving within 3 seconds. This prevents "double-tap" Zalo quirk (where Zalo sometimes
 // delivers the same message event twice within milliseconds) from generating two bot replies.
 // Uses a module-level global Map in Node.js so the dedup state persists across calls.
-// Idempotent via "MODOROClaw SENDER-DEDUP PATCH" marker.
+// Idempotent via "9BizClaw SENDER-DEDUP PATCH" marker.
 // Injection anchor: RIGHT AFTER system-msg END marker (runs AFTER system-msg filter, BEFORE dispatch).
 function ensureZaloSenderDedupFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (content.includes('MODOROClaw SENDER-DEDUP PATCH')) return; // already patched
+    if (content.includes('9BizClaw SENDER-DEDUP PATCH')) return; // already patched
 
-    const anchor = '  // === END MODOROClaw SYSTEM-MSG PATCH ===';
+    const anchor = '  // === END 9BizClaw SYSTEM-MSG PATCH ===';
     if (!content.includes(anchor)) {
       console.warn('[zalo-sender-dedup] system-msg anchor missing — system-msg fix must run first');
       return;
     }
 
     const injection = `
-  // === MODOROClaw SENDER-DEDUP PATCH ===
+  // === 9BizClaw SENDER-DEDUP PATCH ===
   // Drop exact-text duplicates from same sender within 3s (Zalo double-delivery quirk).
   // Uses a process-global Map so state persists across invocations without module-level vars.
   try {
@@ -3162,7 +3162,7 @@ function ensureZaloSenderDedupFix() {
   } catch (__ddErr) {
     runtime.log?.('openzalo: sender-dedup check error: ' + String(__ddErr));
   }
-  // === END MODOROClaw SENDER-DEDUP PATCH ===
+  // === END 9BizClaw SENDER-DEDUP PATCH ===
 `;
     content = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, content, 'utf-8');
@@ -3175,7 +3175,7 @@ function ensureZaloSenderDedupFix() {
 // rename, avatar change, etc.) before they reach the AI. Without this filter the bot
 // occasionally replies to "X đã thêm Y vào nhóm" in customer groups — very embarrassing.
 // Code-level gate is more reliable than AGENTS.md LLM rule alone.
-// Idempotent via "MODOROClaw SYSTEM-MSG PATCH" marker.
+// Idempotent via "9BizClaw SYSTEM-MSG PATCH" marker.
 // Injection anchor: RIGHT AFTER blocklist END marker, so it runs FIRST among the post-blocklist
 // early-exit checks (ensureZaloSystemMsgFix must be called AFTER other ensure* calls so it
 // appears physically FIRST in the file — `replace(anchor, anchor+code)` inserts at top each time).
@@ -3184,16 +3184,16 @@ function ensureZaloSystemMsgFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (content.includes('MODOROClaw SYSTEM-MSG PATCH')) return; // already patched
+    if (content.includes('9BizClaw SYSTEM-MSG PATCH')) return; // already patched
 
-    const anchor = '  // === END MODOROClaw BLOCKLIST PATCH ===';
+    const anchor = '  // === END 9BizClaw BLOCKLIST PATCH ===';
     if (!content.includes(anchor)) {
       console.warn('[zalo-system-msg-fix] blocklist anchor missing — blocklist fix must run first');
       return;
     }
 
     const injection = `
-  // === MODOROClaw SYSTEM-MSG PATCH ===
+  // === 9BizClaw SYSTEM-MSG PATCH ===
   // Drop Zalo group system event notifications before they reach the AI.
   // These are automated event strings ("X đã thêm Y vào nhóm", etc.), not real messages.
   // Replying to them looks broken to the entire customer group.
@@ -3215,7 +3215,7 @@ function ensureZaloSystemMsgFix() {
       return;
     }
   }
-  // === END MODOROClaw SYSTEM-MSG PATCH ===
+  // === END 9BizClaw SYSTEM-MSG PATCH ===
 `;
     content = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, content, 'utf-8');
@@ -3225,16 +3225,16 @@ function ensureZaloSystemMsgFix() {
   }
 }
 
-// MODOROClaw PATCH: OpenZalo plugin doesn't natively honor Modoro's user blocklist
+// 9BizClaw PATCH: OpenZalo plugin doesn't natively honor Modoro's user blocklist
 // (zalo-blocklist.json) — only its own allowFrom whitelist. We inject a small check
 // at the top of handleOpenzaloInbound that drops messages from blocklisted senders.
-// Idempotent via "MODOROClaw BLOCKLIST PATCH" marker.
+// Idempotent via "9BizClaw BLOCKLIST PATCH" marker.
 function ensureZaloBlocklistFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (content.includes('MODOROClaw BLOCKLIST PATCH')) return; // already patched
+    if (content.includes('9BizClaw BLOCKLIST PATCH')) return; // already patched
 
     const anchor = '  if (!rawBody && !hasMedia) {\n    return;\n  }';
     if (!content.includes(anchor)) {
@@ -3249,7 +3249,7 @@ function ensureZaloBlocklistFix() {
     ];
     const injection = `
 
-  // === MODOROClaw BLOCKLIST PATCH ===
+  // === 9BizClaw BLOCKLIST PATCH ===
   // Drop messages from senders listed in zalo-blocklist.json (workspace file
   // managed via Dashboard → Zalo → Bạn bè). OpenZalo upstream only supports
   // allowFrom (whitelist); this gives Modoro CEOs a working blocklist UX.
@@ -3272,14 +3272,14 @@ function ensureZaloBlocklistFix() {
     if (__mzBlocked.length > 0) {
       const __sender = String(message.senderId || "").trim();
       if (__sender && __mzBlocked.includes(__sender)) {
-        runtime.log?.(\`openzalo: drop sender=\${__sender} (MODOROClaw blocklist)\`);
+        runtime.log?.(\`openzalo: drop sender=\${__sender} (9BizClaw blocklist)\`);
         return;
       }
     }
   } catch (__e) {
     runtime.log?.(\`openzalo: blocklist check error: \${String(__e)}\`);
   }
-  // === END MODOROClaw BLOCKLIST PATCH ===
+  // === END 9BizClaw BLOCKLIST PATCH ===
 `;
     const patched = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, patched, 'utf-8');
@@ -3289,25 +3289,25 @@ function ensureZaloBlocklistFix() {
   }
 }
 
-// MODOROClaw PAUSE PATCH: When CEO/staff types /pause in Zalo, bot stops
+// 9BizClaw PAUSE PATCH: When CEO/staff types /pause in Zalo, bot stops
 // replying for 30 min so human can take over. Also auto-detect staff reply.
-// Idempotent via "MODOROClaw PAUSE PATCH" marker.
+// Idempotent via "9BizClaw PAUSE PATCH" marker.
 function ensureZaloPauseFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
     // v2: owner-only /pause (was: anyone could /pause). Force re-inject if old version.
-    if (content.includes('MODOROClaw PAUSE PATCH')) {
+    if (content.includes('9BizClaw PAUSE PATCH')) {
       if (content.includes('__pzIsOwner')) return; // v2 already applied
       // Strip old patch so we can inject v2
-      content = content.replace(/\n\n  \/\/ === MODOROClaw PAUSE PATCH ===[\s\S]*?\/\/ === END MODOROClaw PAUSE PATCH ===/m, '');
+      content = content.replace(/\n\n  \/\/ === 9BizClaw PAUSE PATCH ===[\s\S]*?\/\/ === END 9BizClaw PAUSE PATCH ===/m, '');
       console.log('[zalo-pause-fix] Removed old pause patch (upgrading to v2 owner-only)');
     }
 
     // Inject after blocklist patch (or after the rawBody anchor if blocklist absent)
-    const anchor = content.includes('END MODOROClaw BLOCKLIST PATCH')
-      ? '// === END MODOROClaw BLOCKLIST PATCH ==='
+    const anchor = content.includes('END 9BizClaw BLOCKLIST PATCH')
+      ? '// === END 9BizClaw BLOCKLIST PATCH ==='
       : '  if (!rawBody && !hasMedia) {\n    return;\n  }';
     if (!content.includes(anchor)) {
       console.error('[zalo-pause-fix] anchor not found');
@@ -3325,7 +3325,7 @@ function ensureZaloPauseFix() {
 
     const injection = `
 
-  // === MODOROClaw PAUSE PATCH ===
+  // === 9BizClaw PAUSE PATCH ===
   // /pause and /resume: ONLY accepted from the Zalo account the bot is logged
   // into (ownerUserId in zalo-owner.json). This is the CEO/staff using the
   // same Zalo account as the bot. Customers typing /pause are ignored.
@@ -3387,7 +3387,7 @@ function ensureZaloPauseFix() {
   } catch (__e) {
     runtime.log?.("openzalo: pause check error: " + String(__e));
   }
-  // === END MODOROClaw PAUSE PATCH ===
+  // === END 9BizClaw PAUSE PATCH ===
 `;
     const patched = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, patched, 'utf-8');
@@ -3397,7 +3397,7 @@ function ensureZaloPauseFix() {
   }
 }
 
-// MODOROClaw FRIEND-CHECK PATCH: Zalo has a "stranger" concept — if a user
+// 9BizClaw FRIEND-CHECK PATCH: Zalo has a "stranger" concept — if a user
 // who is NOT a friend of the bot account sends a DM, Zalo shows it in a
 // separate "stranger box" and replies may not deliver reliably. Other Zalo
 // bots (seen in production) handle this by replying once with a "please
@@ -3411,7 +3411,7 @@ function ensureZaloPauseFix() {
 // returns. Dedupes per-sender with a 10-min window so a stranger spamming
 // 20 messages only gets 1 reply.
 //
-// Groups are NOT affected. Idempotent via "MODOROClaw FRIEND-CHECK PATCH" marker.
+// Groups are NOT affected. Idempotent via "9BizClaw FRIEND-CHECK PATCH" marker.
 // Custom message supported via workspace/zalo-friend-request-message.txt.
 function ensureZaloFriendCheckFix() {
   try {
@@ -3422,8 +3422,8 @@ function ensureZaloFriendCheckFix() {
     const FRIEND_CHECK_VERSION = 'FRIEND-CHECK-V3';
     if (content.includes(FRIEND_CHECK_VERSION)) return; // already patched with latest version
     // Strip old patch if exists (V1 blocked messages, V2 had Mac path bug)
-    if (content.includes('MODOROClaw FRIEND-CHECK PATCH')) {
-      content = content.replace(/\n\s*\/\/ === MODOROClaw FRIEND-CHECK PATCH ===[\s\S]*?\/\/ === END MODOROClaw FRIEND-CHECK PATCH ===/g, '');
+    if (content.includes('9BizClaw FRIEND-CHECK PATCH')) {
+      content = content.replace(/\n\s*\/\/ === 9BizClaw FRIEND-CHECK PATCH ===[\s\S]*?\/\/ === END 9BizClaw FRIEND-CHECK PATCH ===/g, '');
       console.log('[zalo-friend-check] stripped old patch — re-injecting V3');
     }
 
@@ -3431,7 +3431,7 @@ function ensureZaloFriendCheckFix() {
     // check runs AFTER blocklist (so blocked users don't get the friend
     // prompt) and BEFORE dmPolicy/agent dispatch. Requires blocklist patch
     // to have run first.
-    const anchor = '  // === END MODOROClaw BLOCKLIST PATCH ===';
+    const anchor = '  // === END 9BizClaw BLOCKLIST PATCH ===';
     if (!content.includes(anchor)) {
       console.warn('[zalo-friend-check-fix] blocklist anchor missing — blocklist fix must run first');
       return;
@@ -3439,7 +3439,7 @@ function ensureZaloFriendCheckFix() {
 
     const injection = `
 
-  // === MODOROClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V3
+  // === 9BizClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V3
   // For DM messages from non-friends, send a one-time "please add friend"
   // reply and short-circuit. Reads openzca's friend cache to determine
   // friend status. Groups skip this check. See main.js ensureZaloFriendCheckFix.
@@ -3500,10 +3500,10 @@ function ensureZaloFriendCheckFix() {
             const __fcExec = require("node:child_process").execFileSync;
             const __fcHome2 = require("node:os").homedir();
             // Find openzca CLI — check bundled vendor first, then PATH
-            const __fcAppDir = "modoro-claw";
+            const __fcAppDir = "9bizclaw";
             let __fcAppBase;
-            if (process.env.MODORO_WORKSPACE) {
-              __fcAppBase = __fcPath.dirname(process.env.MODORO_WORKSPACE);
+            if (process.env['9BIZ_WORKSPACE']) {
+              __fcAppBase = __fcPath.dirname(process.env['9BIZ_WORKSPACE']);
             } else if (process.platform === "darwin") {
               __fcAppBase = __fcPath.join(__fcHome2, "Library", "Application Support");
             } else if (process.platform === "win32") {
@@ -3535,10 +3535,10 @@ function ensureZaloFriendCheckFix() {
           // request succeeding. Bot tries silently but text always says customer should add.
           let __fcText = 'Dạ em chào anh/chị! Anh/chị bấm "Thêm bạn" để em hỗ trợ tốt hơn nhé.\\n\\nTrong lúc đó em vẫn trả lời được ạ.';
           try {
-            const __fcAppDir = "modoro-claw";
+            const __fcAppDir = "9bizclaw";
             const __fcCustomPaths = [];
-            if (process.env.MODORO_WORKSPACE) {
-              __fcCustomPaths.push(__fcPath.join(process.env.MODORO_WORKSPACE, "zalo-friend-request-message.txt"));
+            if (process.env['9BIZ_WORKSPACE']) {
+              __fcCustomPaths.push(__fcPath.join(process.env['9BIZ_WORKSPACE'], "zalo-friend-request-message.txt"));
             }
             if (process.platform === "darwin") {
               __fcCustomPaths.push(__fcPath.join(__fcHome, "Library", "Application Support", __fcAppDir, "zalo-friend-request-message.txt"));
@@ -3580,7 +3580,7 @@ function ensureZaloFriendCheckFix() {
       runtime.log?.(\`openzalo: friend check error: \${String(__fcErr)}\`);
     }
   }
-  // === END MODOROClaw FRIEND-CHECK PATCH ===`;
+  // === END 9BizClaw FRIEND-CHECK PATCH ===`;
 
     const patched = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, patched, 'utf-8');
@@ -3590,7 +3590,7 @@ function ensureZaloFriendCheckFix() {
   }
 }
 
-// MODOROCLAW ZALO-OWNER PATCH: when a Zalo DM arrives from the CEO's personal
+// 9BIZCLAW ZALO-OWNER PATCH: when a Zalo DM arrives from the CEO's personal
 // Zalo account (NOT the bot account that openzca logs in to), prepend a
 // special marker to the message body so the agent can switch to CEO mode.
 // AGENTS.md instructs the bot: when seeing `[ZALO_CHU_NHAN]` prefix, treat
@@ -3614,8 +3614,8 @@ function ensureZaloOwnerFix() {
     //   2. Inject owner check IMMEDIATELY after rawBody declaration, mutating rawBody
     //      directly via string concat before blocklist/friend-check/dispatch runs.
     const PATCH_VERSION_PIN = 'ZALO-OWNER-PATCH-V4';
-    const startMarker = '// === MODOROCLAW ZALO-OWNER PATCH ===';
-    const endMarker = '// === END MODOROCLAW ZALO-OWNER PATCH ===';
+    const startMarker = '// === 9BIZCLAW ZALO-OWNER PATCH ===';
+    const endMarker = '// === END 9BIZCLAW ZALO-OWNER PATCH ===';
 
     // Strip any old patch version (V2, V3, V4) first
     if (content.includes(startMarker)) {
@@ -3666,7 +3666,7 @@ function ensureZaloOwnerFix() {
 
     const injection = `
 
-  // === MODOROCLAW ZALO-OWNER PATCH ===
+  // === 9BIZCLAW ZALO-OWNER PATCH ===
   // ZALO-OWNER-PATCH-V4 — mutates rawBody directly (not message.text).
   // Works in BOTH DMs and groups. Runs BEFORE blocklist + friend-check + dispatch.
   // See electron/main.js ensureZaloOwnerFix.
@@ -3677,10 +3677,10 @@ function ensureZaloOwnerFix() {
     const __zoSender = String(message.senderId || "").trim();
     if (__zoSender) {
       const __zoOwnerPaths: string[] = [];
-      if (process.env.MODORO_WORKSPACE) {
-        __zoOwnerPaths.push(__zoPath.join(process.env.MODORO_WORKSPACE, "zalo-owner.json"));
+      if (process.env['9BIZ_WORKSPACE']) {
+        __zoOwnerPaths.push(__zoPath.join(process.env['9BIZ_WORKSPACE'], "zalo-owner.json"));
       }
-      const __zoAppDir = "modoro-claw";
+      const __zoAppDir = "9bizclaw";
       if (process.platform === "darwin") {
         __zoOwnerPaths.push(__zoPath.join(__zoOs.homedir(), "Library", "Application Support", __zoAppDir, "zalo-owner.json"));
       } else if (process.platform === "win32") {
@@ -3715,7 +3715,7 @@ function ensureZaloOwnerFix() {
   } catch (__zoErr) {
     runtime.log?.(\`openzalo: zalo-owner check error: \${String(__zoErr)}\`);
   }
-  // === END MODOROCLAW ZALO-OWNER PATCH ===`;
+  // === END 9BIZCLAW ZALO-OWNER PATCH ===`;
 
     const patched = content.replace(anchor, anchor + injection);
     if (patched === content) {
@@ -3729,7 +3729,7 @@ function ensureZaloOwnerFix() {
   }
 }
 
-// MODOROCLAW FRIEND-EVENT PATCH: openzca daemon's `listen` command only subscribes
+// 9BIZCLAW FRIEND-EVENT PATCH: openzca daemon's `listen` command only subscribes
 // to message/connected/error/closed events from zca-js — it does NOT listen for
 // `friend_event`. zca-js DOES emit friend_event on type=ADD/REMOVE/REQUEST etc.
 // Without subscribing, friends.json (the cache the friend-check patch reads) only
@@ -3760,7 +3760,7 @@ function ensureOpenzcaFriendEventFix() {
       return;
     }
     let content = fs.readFileSync(cliPath, 'utf-8');
-    if (content.includes('MODOROCLAW FRIEND-EVENT PATCH')) {
+    if (content.includes('9BIZCLAW FRIEND-EVENT PATCH')) {
       console.log('[openzca-friend-event] already patched');
       return;
     }
@@ -3783,7 +3783,7 @@ function ensureOpenzcaFriendEventFix() {
     // Inject right BEFORE the message listener so both handlers are siblings.
     // Uses `profile`, `api`, `refreshCacheForProfile` — all in scope inside the
     // listen action handler (verified at cli.js anchor location).
-    const injection = `// === MODOROCLAW FRIEND-EVENT PATCH ===
+    const injection = `// === 9BIZCLAW FRIEND-EVENT PATCH ===
         // Auto-handle friend events so friend-check cache stays fresh in real time.
         // type=0 ADD, type=2 REQUEST. See electron/main.js ensureOpenzcaFriendEventFix.
         api.listener.on("friend_event", async (event) => {
@@ -3851,7 +3851,7 @@ function ensureOpenzcaFriendEventFix() {
                   try {
                     const __welFs2 = require("fs");
                     const __welPath2 = require("path");
-                    const ws = process.env.MODORO_WORKSPACE || "";
+                    const ws = process.env['9BIZ_WORKSPACE'] || "";
                     if (ws) {
                       const companyPath = __welPath2.join(ws, "COMPANY.md");
                       if (__welFs2.existsSync(companyPath)) {
@@ -3881,7 +3881,7 @@ function ensureOpenzcaFriendEventFix() {
             console.error("[friend_event] handler error:", handlerErr && handlerErr.message ? handlerErr.message : String(handlerErr));
           }
         });
-        // === END MODOROCLAW FRIEND-EVENT PATCH ===
+        // === END 9BIZCLAW FRIEND-EVENT PATCH ===
         `;
 
     const patched = content.slice(0, anchorIdx) + injection + content.slice(anchorIdx);
@@ -3892,7 +3892,7 @@ function ensureOpenzcaFriendEventFix() {
   }
 }
 
-// MODOROClaw OUTPUT-FILTER PATCH v3 — Security Layer 2
+// 9BizClaw OUTPUT-FILTER PATCH v3 — Security Layer 2
 // v3 changes vs v2 (deep audit findings):
 //   - Fix \b regex bug for Vietnamese-leading branches. JS \b only works
 //     on [a-zA-Z0-9_]; for đ/ạ/ơ etc it never matches, so v2's
@@ -3922,8 +3922,8 @@ function ensureOpenzcaFriendEventFix() {
 // IMPORTANT: this function FORCE-REPLACES any prior version of the patch
 // (v1 or v2) on each app start. That way pattern updates ship immediately
 // without requiring users to delete extensions/openzalo/src/send.ts. The
-// strip is bounded by the unique markers `MODOROClaw OUTPUT-FILTER PATCH`
-// (start) and `END MODOROClaw OUTPUT-FILTER PATCH` (end).
+// strip is bounded by the unique markers `9BizClaw OUTPUT-FILTER PATCH`
+// (start) and `END 9BizClaw OUTPUT-FILTER PATCH` (end).
 function ensureZaloOutputFilterFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'send.ts');
@@ -3931,17 +3931,17 @@ function ensureZaloOutputFilterFix() {
     let content = fs.readFileSync(pluginFile, 'utf-8');
     const originalLength = content.length;
 
-    const CURRENT_VERSION = 'MODOROClaw OUTPUT-FILTER PATCH v3';
+    const CURRENT_VERSION = '9BizClaw OUTPUT-FILTER PATCH v3';
 
     // Fast path: file is already on the current version, nothing to do.
     if (content.includes(CURRENT_VERSION)) return;
 
     // Strip any prior version of the patch (v1 had marker without "v2").
-    // The injection block always begins with `// === MODOROClaw OUTPUT-FILTER PATCH`
-    // and ends with `// === END MODOROClaw OUTPUT-FILTER PATCH ===`. Strip
+    // The injection block always begins with `// === 9BizClaw OUTPUT-FILTER PATCH`
+    // and ends with `// === END 9BizClaw OUTPUT-FILTER PATCH ===`. Strip
     // the entire region (including any leading whitespace) so we can re-inject
     // cleanly. If no prior block exists this is a no-op.
-    const stripRe = /\n\n\s*\/\/ === MODOROClaw OUTPUT-FILTER PATCH[\s\S]*?\/\/ === END MODOROClaw OUTPUT-FILTER PATCH ===/g;
+    const stripRe = /\n\n\s*\/\/ === 9BizClaw OUTPUT-FILTER PATCH[\s\S]*?\/\/ === END 9BizClaw OUTPUT-FILTER PATCH ===/g;
     if (stripRe.test(content)) {
       content = content.replace(stripRe, '');
     }
@@ -3956,7 +3956,7 @@ function ensureZaloOutputFilterFix() {
 
     const injection = `
 
-  // === MODOROClaw OUTPUT-FILTER PATCH v3 ===
+  // === 9BizClaw OUTPUT-FILTER PATCH v3 ===
   // Scan outbound Zalo text for sensitive patterns + AI failure modes.
   // See main.js ensureZaloOutputFilterFix for v3 changelog vs v2.
   try {
@@ -4027,14 +4027,14 @@ function ensureZaloOutputFilterFix() {
       // logs/ dir so CEO can audit incidents.
       try {
         const __ofHome = __ofOs.homedir();
-        // Resolve workspace logs dir cross-platform. Prefer MODORO_WORKSPACE
+        // Resolve workspace logs dir cross-platform. Prefer 9BIZ_WORKSPACE
         // env (set by main.js at gateway spawn). Fallback to platform-specific
         // userData dir matching Electron's app.getPath('userData') which uses
-        // the lowercase package.json \`name\` field "modoro-claw".
-        const __ofAppDir = "modoro-claw";
+        // the lowercase package.json \`name\` field "9bizclaw".
+        const __ofAppDir = "9bizclaw";
         let __ofWsLogDir;
-        if (process.env.MODORO_WORKSPACE) {
-          __ofWsLogDir = __ofPath.join(process.env.MODORO_WORKSPACE, "logs");
+        if (process.env['9BIZ_WORKSPACE']) {
+          __ofWsLogDir = __ofPath.join(process.env['9BIZ_WORKSPACE'], "logs");
         } else if (process.platform === "darwin") {
           __ofWsLogDir = __ofPath.join(__ofHome, "Library", "Application Support", __ofAppDir, "logs");
         } else if (process.platform === "win32") {
@@ -4106,7 +4106,7 @@ function ensureZaloOutputFilterFix() {
     // Filter error must not break legit sends. Log and fall through.
     try { logOutbound("error", "output filter error", { err: String(__ofE) }); } catch {}
   }
-  // === END MODOROClaw OUTPUT-FILTER PATCH ===`;
+  // === END 9BizClaw OUTPUT-FILTER PATCH ===`;
 
     const patched = content.replace(anchor, anchor + injection);
 
@@ -4142,7 +4142,7 @@ function ensureZaloOutputFilterFix() {
   }
 }
 
-// MODOROClaw FORCE-ONE-MESSAGE PATCH: openzalo plugin's `dispatchReplyWithBufferedBlockDispatcher`
+// 9BizClaw FORCE-ONE-MESSAGE PATCH: openzalo plugin's `dispatchReplyWithBufferedBlockDispatcher`
 // call passes `disableBlockStreaming` ONLY when `account.config.blockStreaming` is an explicit
 // boolean. When openzalo config block is missing fields (which happens because openclaw 2026.4.x
 // gateway normalizes/strips openzalo-specific fields at startup so the block becomes `{}`),
@@ -4150,18 +4150,18 @@ function ensureZaloOutputFilterFix() {
 // coalesceIdleMs=1000ms → model emits "D" → model pauses >1s → idle flush sends "D" standalone →
 // then "ạ em chào..." arrives → sent as second message. CEO sees "Dạ" word split into 2 messages.
 // Fix: rewrite the conditional `disableBlockStreaming: ...` expression to hardcoded `true` so it
-// NEVER depends on config. Idempotent via "MODOROClaw FORCE-ONE-MESSAGE PATCH" marker.
+// NEVER depends on config. Idempotent via "9BizClaw FORCE-ONE-MESSAGE PATCH" marker.
 function ensureOpenzaloForceOneMessageFix() {
   // PART 1: Patch channel.ts capability flag (affects groups + DMs at gateway level)
   try {
     const channelFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'channel.ts');
     if (fs.existsSync(channelFile)) {
       let channelContent = fs.readFileSync(channelFile, 'utf-8');
-      if (!channelContent.includes('MODOROClaw FORCE-ONE-MESSAGE CAPABILITY')) {
+      if (!channelContent.includes('9BizClaw FORCE-ONE-MESSAGE CAPABILITY')) {
         // Match `blockStreaming: true,` inside capabilities block
         const capRe = /blockStreaming:\s*true,/;
         if (capRe.test(channelContent)) {
-          const capReplacement = 'blockStreaming: false, // MODOROClaw FORCE-ONE-MESSAGE CAPABILITY: disable at capability level so gateway never tries to split-stream Zalo replies (fixes "Dạ" → "D" + "ạ..." in groups)';
+          const capReplacement = 'blockStreaming: false, // 9BizClaw FORCE-ONE-MESSAGE CAPABILITY: disable at capability level so gateway never tries to split-stream Zalo replies (fixes "Dạ" → "D" + "ạ..." in groups)';
           channelContent = channelContent.replace(capRe, capReplacement);
           fs.writeFileSync(channelFile, channelContent, 'utf-8');
           console.log('[zalo-force-one-msg] patched channel.ts capability flag');
@@ -4184,13 +4184,13 @@ function ensureOpenzaloForceOneMessageFix() {
       return;
     }
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (!content.includes('MODOROClaw FORCE-ONE-MESSAGE PATCH')) {
+    if (!content.includes('9BizClaw FORCE-ONE-MESSAGE PATCH')) {
       // Match the exact source form we expect. Plugin minor versions may vary whitespace
       // so we use a flexible regex.
       const re = /disableBlockStreaming:\s*\n?\s*typeof account\.config\.blockStreaming === "boolean"\s*\n?\s*\? !account\.config\.blockStreaming\s*\n?\s*: undefined\s*,/;
       if (re.test(content)) {
         const replacement =
-          '// MODOROClaw FORCE-ONE-MESSAGE PATCH: always disable block streaming regardless of\n' +
+          '// 9BizClaw FORCE-ONE-MESSAGE PATCH: always disable block streaming regardless of\n' +
           '      // config — openclaw 2026.4.x gateway strips openzalo config fields to {} at startup,\n' +
           '      // so the old conditional fell back to undefined → default enabled → "Dạ" split.\n' +
           '      // Hardcoding true ensures Zalo ALWAYS sends one complete message per turn.\n' +
@@ -4215,18 +4215,18 @@ function ensureOpenzaloForceOneMessageFix() {
     //   If callback not found → revert partial state → retry on next startup.
     //   (3) timer flush logs errors instead of swallowing → group send failures
     //   surface in gateway logs instead of silently disappearing.
-    if (!content.includes('MODOROClaw DELIVER-COALESCE PATCH v4')) {
+    if (!content.includes('9BizClaw DELIVER-COALESCE PATCH v4')) {
       const coalesceAnchor = '  const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({';
       // v2/v3 installs: buffer vars already injected — skip Part 1, only upgrade deliver callback.
       // Must check BOTH v2 AND v3 markers — installs that received 4f4f01a as their first
       // coalesce patch have the v3 marker, not v2.
-      const hasV2Buffer = content.includes('MODOROClaw DELIVER-COALESCE PATCH v2') ||
-                          content.includes('MODOROClaw DELIVER-COALESCE PATCH v3');
+      const hasV2Buffer = content.includes('9BizClaw DELIVER-COALESCE PATCH v2') ||
+                          content.includes('9BizClaw DELIVER-COALESCE PATCH v3');
       if (!content.includes(coalesceAnchor)) {
         console.warn('[zalo-force-one-msg] Part 3 anchor missing — dispatchReply not found');
       } else {
         const coalesceInjection =
-          '  // MODOROClaw DELIVER-COALESCE PATCH v4:\n' +
+          '  // 9BizClaw DELIVER-COALESCE PATCH v4:\n' +
           '  // Root cause of "Dạ" → "D" + "ạ..." split: model (reasoning-enabled) emits\n' +
           '  // interleaved content array like [text:"D", thinking:"", text:"ạ..."].\n' +
           '  // Openclaw turns each text part into a separate final payload. disableBlockStreaming\n' +
@@ -4273,8 +4273,8 @@ function ensureOpenzaloForceOneMessageFix() {
           // v3 → v4: upgrade silent catch → error-logging catch; bump comment version
           content = content.replace(v3TimerSuffix, v4TimerSuffix);
           content = content.replace(
-            '// MODOROClaw DELIVER-COALESCE v3:',
-            '// MODOROClaw DELIVER-COALESCE v4:'
+            '// 9BizClaw DELIVER-COALESCE v3:',
+            '// 9BizClaw DELIVER-COALESCE v4:'
           );
           deliverReplaced = true;
           console.log('[zalo-force-one-msg] Part 3 deliver callback upgraded v3→v4 (error logging added to timer)');
@@ -4283,7 +4283,7 @@ function ensureOpenzaloForceOneMessageFix() {
           const deliverCallbackRegex = /([ \t]+deliver:\s*async\s*\(payload\)\s*=>\s*\{\n[ \t]+await deliverAndRememberOpenzaloReply\(\{[\s\S]*?\}\);\n[ \t]+\},)/;
           const newDeliver =
             '      deliver: async (payload) => {\n' +
-            '        // MODOROClaw DELIVER-COALESCE v4: route through buffer so consecutive text chunks\n' +
+            '        // 9BizClaw DELIVER-COALESCE v4: route through buffer so consecutive text chunks\n' +
             '        // (model emits [text:"D", thinking:"", text:"ạ..."]) get merged before send.\n' +
             '        const hasMedia = (payload?.mediaUrl || (payload?.mediaUrls?.length ?? 0) > 0 || (payload?.mediaPaths?.length ?? 0) > 0);\n' +
             '        const text = String(payload?.text || "").trim();\n' +
@@ -4320,11 +4320,11 @@ function ensureOpenzaloForceOneMessageFix() {
         }
 
         // Part 2: inject final flush if not already present (v2/v3 already has it)
-        if (!content.includes('await __mcFlush(); // MODOROClaw DELIVER-COALESCE flush')) {
+        if (!content.includes('await __mcFlush(); // 9BizClaw DELIVER-COALESCE flush')) {
           const dispatchCallEnd = /(\s+},\s*\n\s*replyOptions:\s*\{[\s\S]*?\n\s*\}\s*,?\s*\n\s*\}\);)/;
           const m = content.match(dispatchCallEnd);
           if (m) {
-            const injectAfter = '\n  await __mcFlush(); // MODOROClaw DELIVER-COALESCE flush';
+            const injectAfter = '\n  await __mcFlush(); // 9BizClaw DELIVER-COALESCE flush';
             content = content.replace(m[1], m[1] + injectAfter);
           } else {
             console.warn('[zalo-force-one-msg] Part 3 dispatch end not found — final flush will rely on 400ms timer only');
@@ -4335,14 +4335,14 @@ function ensureOpenzaloForceOneMessageFix() {
         if (hasV2Buffer) {
           // Upgrade existing v2 marker → v4 (2-line marker block)
           content = content.replace(
-            '// MODOROClaw DELIVER-COALESCE PATCH v2 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v2:',
-            '// MODOROClaw DELIVER-COALESCE PATCH v4 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v4:'
+            '// 9BizClaw DELIVER-COALESCE PATCH v2 — marker\n  // 9BizClaw DELIVER-COALESCE PATCH v2:',
+            '// 9BizClaw DELIVER-COALESCE PATCH v4 — marker\n  // 9BizClaw DELIVER-COALESCE PATCH v4:'
           );
         } else {
           // Fresh inject: find the v4 comment block we injected and add marker suffix
           content = content.replace(
-            '  // MODOROClaw DELIVER-COALESCE PATCH v4:',
-            '  // MODOROClaw DELIVER-COALESCE PATCH v4 — marker\n  // MODOROClaw DELIVER-COALESCE PATCH v4:'
+            '  // 9BizClaw DELIVER-COALESCE PATCH v4:',
+            '  // 9BizClaw DELIVER-COALESCE PATCH v4 — marker\n  // 9BizClaw DELIVER-COALESCE PATCH v4:'
           );
         }
         fs.writeFileSync(pluginFile, content, 'utf-8');
@@ -4354,7 +4354,7 @@ function ensureOpenzaloForceOneMessageFix() {
   }
 }
 
-// MODOROClaw PATCH: OpenZalo plugin's `runOpenzcaStreaming` uses spawn(binary, args, {shell:true})
+// 9BizClaw PATCH: OpenZalo plugin's `runOpenzcaStreaming` uses spawn(binary, args, {shell:true})
 // where binary defaults to "openzca" (the npm shim). On Windows packaged installs, Electron's
 // inherited PATH frequently does NOT include ~/AppData/Roaming/npm/, so cmd.exe can't find the
 // shim → spawn exits non-zero → openzca listener never starts → CEO sees "Chưa sẵn sàng" forever.
@@ -4378,12 +4378,12 @@ function ensureOpenzaloShellFix() {
       return;
     }
     const currentContent = fs.readFileSync(pluginFile, 'utf-8');
-    // Two-tier version check: (1) MODOROClaw PATCH marker = any version patched,
-    // (2) MODORO_OPENZCA_CLI_JS = v2+ patch which supports bundled-vendor via
+    // Two-tier version check: (1) 9BizClaw PATCH marker = any version patched,
+    // (2) BIZCLAW_OPENZCA_CLI_JS = v2+ patch which supports bundled-vendor via
     // env var override. If only (1) is present → force re-apply from newer
     // template so bundled .dmg installs can resolve openzca.
-    const hasV1 = currentContent.includes('MODOROClaw PATCH');
-    const hasV2 = currentContent.includes('MODORO_OPENZCA_CLI_JS');
+    const hasV1 = currentContent.includes('9BizClaw PATCH');
+    const hasV2 = currentContent.includes('BIZCLAW_OPENZCA_CLI_JS');
     if (hasV1 && hasV2) {
       console.log('[openzalo-fix] already patched (v2 marker present)');
       return;
@@ -4429,15 +4429,15 @@ function ensureOpenzaloShellFix() {
       return;
     }
     // Verify template itself is valid before writing
-    if (!templateContent.includes('MODOROClaw PATCH')) {
-      console.error('[openzalo-fix] CRITICAL: template at ' + foundAt + ' is missing MODOROClaw PATCH marker — refusing to apply (corrupt?)');
+    if (!templateContent.includes('9BizClaw PATCH')) {
+      console.error('[openzalo-fix] CRITICAL: template at ' + foundAt + ' is missing 9BizClaw PATCH marker — refusing to apply (corrupt?)');
       return;
     }
     fs.writeFileSync(pluginFile, templateContent, 'utf-8');
     console.log('[openzalo-fix] Patched openzca.ts from template at ' + foundAt + ' (' + templateContent.length + ' bytes)');
     // Verify write succeeded
     const verify = fs.readFileSync(pluginFile, 'utf-8');
-    if (!verify.includes('MODOROClaw PATCH')) {
+    if (!verify.includes('9BizClaw PATCH')) {
       console.error('[openzalo-fix] CRITICAL: write verification failed — file does not contain marker after write');
     } else {
       console.log('[openzalo-fix] write verified — openzca.ts now has patch');
@@ -4886,17 +4886,17 @@ async function _startOpenClawImpl() {
   // Expose workspace path so plugin patches (e.g. ensureZaloOwnerFix) can find
   // workspace files regardless of dev vs packaged. main.js getWorkspace()
   // already resolved the correct location at this point.
-  // SECURITY: explicitly delete any pre-existing MODORO_WORKSPACE from the
+  // SECURITY: explicitly delete any pre-existing 9BIZ_WORKSPACE from the
   // user's shell env BEFORE setting our own value. Without this, if the user
-  // launches Electron from a shell with `MODORO_WORKSPACE=/tmp` set (or any
+  // launches Electron from a shell with `9BIZ_WORKSPACE=/tmp` set (or any
   // other poisoned value), and getWorkspace() throws for any reason, the
   // gateway would inherit the poisoned value and patches would write to /tmp.
-  delete enrichedEnv.MODORO_WORKSPACE;
+  delete enrichedEnv['9BIZ_WORKSPACE'];
   try {
     const __ws = getWorkspace();
-    if (__ws) enrichedEnv.MODORO_WORKSPACE = __ws;
+    if (__ws) enrichedEnv['9BIZ_WORKSPACE'] = __ws;
   } catch (e) {
-    console.warn('[gateway] could not resolve MODORO_WORKSPACE:', e?.message);
+    console.warn('[gateway] could not resolve 9BIZ_WORKSPACE:', e?.message);
   }
   try {
     const npmBinDirs = [];
@@ -4980,7 +4980,7 @@ async function _startOpenClawImpl() {
       try { if (fs.existsSync(p)) { foundOzCli = p; break; } } catch {}
     }
     if (foundOzCli) {
-      enrichedEnv.MODORO_OPENZCA_CLI_JS = foundOzCli;
+      enrichedEnv.BIZCLAW_OPENZCA_CLI_JS = foundOzCli;
       console.log('[gateway] openzca CLI:', foundOzCli);
     } else {
       console.warn('[gateway] openzca CLI not found in any known location — Zalo listener may fail. Searched:', ozCliCandidates.length, 'paths');
@@ -6197,7 +6197,7 @@ async function _ensureZaloPluginImpl() {
           // immediately after copy so the very first gateway boot reads the
           // patched files. Without these, Windows multi-line args get
           // truncated by cmd.exe AND Mac builds can't resolve bundled openzca
-          // via MODORO_OPENZCA_CLI_JS env var.
+          // via BIZCLAW_OPENZCA_CLI_JS env var.
           try { ensureOpenzaloShellFix(); } catch (e) { console.warn('[ensureZaloPlugin] shell fix failed:', e?.message); }
           try { ensureZaloBlocklistFix(); } catch (e) { console.warn('[ensureZaloPlugin] blocklist fix failed:', e?.message); }
           try { ensureZaloPauseFix(); } catch (e) { console.warn('[ensureZaloPlugin] pause fix failed:', e?.message); }
@@ -9406,7 +9406,7 @@ function findOpenzcaListenerPid() {
       }
     }
   } catch (e) {
-    if (process.env.MODORO_DEBUG) console.error('[findOpenzcaListenerPid]', e.message);
+    if (process.env.BIZCLAW_DEBUG) console.error('[findOpenzcaListenerPid]', e.message);
   }
   return null;
 }
@@ -11960,10 +11960,10 @@ ipcMain.handle('install-openclaw', async (event) => {
     // CRITICAL: pin versions to protect against upstream schema breakage.
     // Without pinning, fresh installs months from now will pull `latest` which
     // may have incompatible schema → wizard fails on day 1 with "Config invalid".
-    // To upgrade pinned versions: edit MODORO_PINNED_VERSIONS table below,
+    // To upgrade pinned versions: edit PINNED_VERSIONS table below,
     // smoke-test, then ship a new build. Single source of truth is also in
     // electron/scripts/prebuild-vendor.js — keep both in sync (and PINNING.md).
-    const MODORO_PINNED_VERSIONS = [
+    const PINNED_VERSIONS = [
       'openclaw@2026.4.5',
       '9router@0.3.82',
       'openzca@0.1.57',
@@ -11971,10 +11971,10 @@ ipcMain.handle('install-openclaw', async (event) => {
     let cmd, args;
     if (isWin) {
       cmd = 'npm.cmd';
-      args = ['install', '-g', '--save-exact', ...MODORO_PINNED_VERSIONS];
+      args = ['install', '-g', '--save-exact', ...PINNED_VERSIONS];
     } else {
       cmd = 'npm';
-      args = ['install', '-g', '--save-exact', ...MODORO_PINNED_VERSIONS];
+      args = ['install', '-g', '--save-exact', ...PINNED_VERSIONS];
     }
 
     const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });

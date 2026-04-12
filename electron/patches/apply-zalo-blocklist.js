@@ -10,7 +10,7 @@ if (!fs.existsSync(pluginFile)) {
   process.exit(0);
 }
 let content = fs.readFileSync(pluginFile, 'utf-8');
-if (content.includes('MODOROClaw BLOCKLIST PATCH')) {
+if (content.includes('9BizClaw BLOCKLIST PATCH')) {
   console.log('already patched');
   process.exit(0);
 }
@@ -26,7 +26,7 @@ const blocklistPaths = [
 ];
 const injection = `
 
-  // === MODOROClaw BLOCKLIST PATCH ===
+  // === 9BizClaw BLOCKLIST PATCH ===
   // Drop messages from senders listed in zalo-blocklist.json (Dashboard → Zalo → Bạn bè).
   try {
     const __mzFs = require("node:fs");
@@ -44,12 +44,12 @@ const injection = `
     if (__mzBlocked.length > 0) {
       const __sender = String(message.senderId || "").trim();
       if (__sender && __mzBlocked.includes(__sender)) {
-        runtime.log?.(\`openzalo: drop sender=\${__sender} (MODOROClaw blocklist)\`);
+        runtime.log?.(\`openzalo: drop sender=\${__sender} (9BizClaw blocklist)\`);
         return;
       }
     }
   } catch (__e) { runtime.log?.(\`openzalo: blocklist check error: \${String(__e)}\`); }
-  // === END MODOROClaw BLOCKLIST PATCH ===
+  // === END 9BizClaw BLOCKLIST PATCH ===
 `;
 content = content.replace(anchor, anchor + injection);
 fs.writeFileSync(pluginFile, content, 'utf-8');

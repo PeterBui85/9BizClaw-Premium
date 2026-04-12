@@ -7,7 +7,7 @@
 - **KHÔNG chạy `openclaw` CLI** qua Bash — CLI treo. Đọc/ghi JSON trực tiếp.
 - **KHÔNG hiển thị lỗi kỹ thuật** cho CEO (stack trace, exit code, port, pid).
 - **KHÔNG yêu cầu CEO chạy terminal** — tự xử lý hoặc "em đang xử lý".
-- **KHÔNG hỏi CEO restart** — MODOROClaw tự restart khi cần.
+- **KHÔNG hỏi CEO restart** — 9BizClaw tự restart khi cần.
 - **Cron không chạy đúng giờ** = lỗi ứng dụng, không phải lỗi bot. Ghi `.learnings/ERRORS.md`.
 - **Cron status:** đọc `schedules.json` + `custom-crons.json`. KHÔNG `openclaw cron list`.
 
@@ -549,7 +549,7 @@ Xem `SOUL.md` mục "Giọng Zalo CSKH" — 7 nguyên tắc + độ dài + bản
 
 ### Đặt lịch hẹn — ghi thẳng `workspace/appointments.json`
 
-MODOROClaw có local calendar engine. File: `workspace/appointments.json` (array). Dispatcher tick mỗi 60s → fire reminder + push target tự động. KHÔNG cần Google Calendar.
+9BizClaw có local calendar engine. File: `workspace/appointments.json` (array). Dispatcher tick mỗi 60s → fire reminder + push target tự động. KHÔNG cần Google Calendar.
 
 **Khi khách Zalo xin đặt lịch:**
 1. Hỏi đủ 3 info: ngày/giờ cụ thể, nội dung, xác nhận
@@ -786,7 +786,7 @@ Nhắn Zalo PHẢI có groupId — đọc groups.json tìm ID.
 
 ## Quản lý lịch hẹn cho CEO
 
-MODOROClaw có local calendar engine — file `workspace/appointments.json`. Dispatcher tick mỗi phút → tự fire reminder và push target theo config. CEO ra lệnh qua Telegram → bot đọc/ghi file này trực tiếp.
+9BizClaw có local calendar engine — file `workspace/appointments.json`. Dispatcher tick mỗi phút → tự fire reminder và push target theo config. CEO ra lệnh qua Telegram → bot đọc/ghi file này trực tiếp.
 
 **CHỈ CEO mới được tạo/sửa/xóa lịch.** Verify:
 - Telegram: allowlist đã có sẵn, mọi tin từ Telegram = CEO.
@@ -811,7 +811,7 @@ MODOROClaw có local calendar engine — file `workspace/appointments.json`. Dis
     {
       "channel": "zalo_group",
       "toId": "g_1234567890",
-      "toName": "MODOROClaw Demo",
+      "toName": "9BizClaw Demo",
       "atTime": "08:00",
       "daily": true,
       "template": "Sáng nay có {title} lúc {startHHMM}. Link họp: {meetingUrl}"
@@ -882,7 +882,7 @@ CEO: *"thêm lịch mai 3pm họp Minh zoom.us/j/abc, nhắc 15 phút, mỗi 8h 
 
 ### Flow sửa/xóa lịch
 
-- **Sửa giờ/ngày:** CEO nói "đổi giờ họp Minh sang 4pm" → bot đọc file, tìm appointment có title chứa "Minh" và `status = scheduled`, cập nhật `start`/`end`. **QUAN TRỌNG:** engine (MODOROClaw) sẽ tự reset `reminderFiredAt = null` + `pushedAt = {}` khi phát hiện start/end đổi — bot KHÔNG cần tự clear. Nhưng bot PHẢI gửi patch qua IPC `update-appointment` (KHÔNG ghi thẳng file tay khi chỉ đổi giờ), vì IPC chạy logic reset. Nếu bot ghi tay cả object → reminder sẽ không fire cho giờ mới. Khi bot chạy ngoài Electron và không có IPC: bot phải TỰ set `reminderFiredAt: null` và `pushedAt: {}` trong JSON write-out.
+- **Sửa giờ/ngày:** CEO nói "đổi giờ họp Minh sang 4pm" → bot đọc file, tìm appointment có title chứa "Minh" và `status = scheduled`, cập nhật `start`/`end`. **QUAN TRỌNG:** engine (9BizClaw) sẽ tự reset `reminderFiredAt = null` + `pushedAt = {}` khi phát hiện start/end đổi — bot KHÔNG cần tự clear. Nhưng bot PHẢI gửi patch qua IPC `update-appointment` (KHÔNG ghi thẳng file tay khi chỉ đổi giờ), vì IPC chạy logic reset. Nếu bot ghi tay cả object → reminder sẽ không fire cho giờ mới. Khi bot chạy ngoài Electron và không có IPC: bot phải TỰ set `reminderFiredAt: null` và `pushedAt: {}` trong JSON write-out.
 - **Nhiều match** → hỏi CEO chọn cái nào trước khi sửa. KHÔNG tự đoán.
 - **Xóa mềm:** CEO nói "hủy lịch họp Minh" → set `status: "canceled"` (KHÔNG xóa record để giữ audit trail), confirm.
 - **Xóa cứng:** CEO nói "xóa hẳn lịch X" → filter bỏ khỏi array, confirm.

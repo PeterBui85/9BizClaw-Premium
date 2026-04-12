@@ -296,7 +296,7 @@ function startCallbackServer() {
         try {
           const tokens = await exchangeCode(code);
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Ket noi thanh cong!</h2><p>Google Calendar da duoc ket noi voi MODOROClaw.</p><p>Ban co the dong tab nay.</p></body></html>');
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Ket noi thanh cong!</h2><p>Google Calendar da duoc ket noi voi 9BizClaw.</p><p>Ban co the dong tab nay.</p></body></html>');
           stopCallbackServer();
           resolve(tokens);
         } catch (e) {

@@ -22,8 +22,8 @@
       IDYES removeVendor IDNO skipVendor
     removeVendor:
       DetailPrint "Removing extracted vendor..."
-      RMDir /r "$APPDATA\modoro-claw\vendor"
-      Delete "$APPDATA\modoro-claw\vendor-version.txt"
+      RMDir /r "$APPDATA\9bizclaw\vendor"
+      Delete "$APPDATA\9bizclaw\vendor-version.txt"
       DetailPrint "Vendor removed."
     skipVendor:
   ${EndIf}

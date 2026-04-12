@@ -3,24 +3,24 @@ import * as fsSync from "node:fs";
 import * as pathModule from "node:path";
 
 // On Windows with shell:true, args containing spaces must be quoted.
-// MODOROClaw PATCH: newlines/quotes in args cause cmd.exe to silently truncate messages
+// 9BizClaw PATCH: newlines/quotes in args cause cmd.exe to silently truncate messages
 // (group bot replies never arrived). We avoid shell:true entirely when possible.
 function shellSafeArgs(args: string[]): string[] {
   if (process.platform !== "win32") return args;
   return args.map(a => (a.includes(" ") || a.includes("&") || a.includes("|")) ? `"${a}"` : a);
 }
 
-// MODOROClaw PATCH: resolve openzca binary to direct `node <cli.js>` so we can use shell:false.
+// 9BizClaw PATCH: resolve openzca binary to direct `node <cli.js>` so we can use shell:false.
 // Avoids cmd.exe corrupting multi-line args on Windows AND enables bundled-
 // vendor resolution on packaged Mac .dmg where openzca lives under
 // process.resourcesPath/vendor/node_modules/openzca.
 let _cachedCliJsPath: string | null = null;
 function resolveOpenzcaCliJs(binary: string): string | null {
   if (_cachedCliJsPath !== null) return _cachedCliJsPath;
-  // HIGHEST PRIORITY: env var set by MODOROClaw Electron main when spawning
+  // HIGHEST PRIORITY: env var set by 9BizClaw Electron main when spawning
   // the gateway. Points to the exact openzca cli.js (bundled vendor in
   // packaged .dmg, or user's npm global in dev). Single source of truth.
-  const envOverride = process.env.MODORO_OPENZCA_CLI_JS;
+  const envOverride = process.env.BIZCLAW_OPENZCA_CLI_JS;
   if (envOverride && envOverride.trim()) {
     try { if (fsSync.existsSync(envOverride)) { _cachedCliJsPath = envOverride; return envOverride; } } catch {}
   }
@@ -112,7 +112,7 @@ export function resolveOpenzcaExec(account: ResolvedOpenzaloAccount): {
 
 export async function runOpenzcaCommand(options: OpenzcaRunOptions): Promise<OpenzcaRunResult> {
   const binary = options.binary?.trim() || "openzca";
-  // MODOROClaw PATCH: prefer direct node invocation to avoid cmd.exe arg corruption
+  // 9BizClaw PATCH: prefer direct node invocation to avoid cmd.exe arg corruption
   const cliJs = resolveOpenzcaCliJs(binary);
   let spawnCmd: string;
   let spawnArgs: string[];
@@ -212,7 +212,7 @@ export async function runOpenzcaInteractive(
   options: Omit<OpenzcaRunOptions, "timeoutMs" | "signal">,
 ): Promise<OpenzcaRunResult> {
   const binary = options.binary?.trim() || "openzca";
-  // MODOROClaw PATCH: prefer direct node invocation
+  // 9BizClaw PATCH: prefer direct node invocation
   const cliJs = resolveOpenzcaCliJs(binary);
   let spawnCmd: string;
   let spawnArgs: string[];
@@ -278,7 +278,7 @@ export async function runOpenzcaJson<T = unknown>(options: OpenzcaRunOptions): P
 
 export async function runOpenzcaStreaming(options: OpenzcaStreamingOptions): Promise<{ exitCode: number }> {
   const binary = options.binary?.trim() || "openzca";
-  // MODOROClaw PATCH: prefer direct node invocation
+  // 9BizClaw PATCH: prefer direct node invocation
   const cliJs = resolveOpenzcaCliJs(binary);
   let spawnCmd: string;
   let spawnArgs: string[];
