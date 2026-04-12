@@ -5590,6 +5590,10 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
             viError = 'Không kết nối được ollama.com. Kiểm tra Internet.';
           } else if (/429|rate/i.test(errMsg)) {
             viError = 'Ollama trả về 429 (rate limit). Đợi 1 phút rồi thử lại.';
+          } else if (/^HTTP [5]\d{2}$/.test(String(errMsg))) {
+            // Raw HTTP 5xx from 9router itself (not from Ollama) — SQLite or internal crash.
+            // The auto-fix path above already ran and failed — show accurate message.
+            viError = '9router gặp lỗi nội bộ khi kiểm tra kết nối. Thử tắt app và mở lại, sau đó nhấn "Thiết lập AI" lại. Nếu vẫn lỗi, mở thư mục log → xem 9router.log.';
           } else if (/\b5\d{2}\b|internal.server.error/i.test(errMsg)) {
             viError = 'Ollama đang gặp sự cố tạm thời (HTTP 5xx). Thử lại sau vài phút hoặc kiểm tra status.ollama.com.';
           }
