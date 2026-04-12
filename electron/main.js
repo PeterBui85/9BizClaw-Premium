@@ -5391,7 +5391,7 @@ async function autoFix9RouterSqlite() {
     console.log(`[9router-autofix] rebuilding better-sqlite3 for node-${nodeVer} ${platform}-${arch}`);
     const { execFileSync } = require('child_process');
     const bsqlBin = path.join(bsqlDir, 'build', 'Release', 'better_sqlite3.node');
-    // Try prebuild-install from 9router's own .bin dir
+    // Strategy 1: prebuild-install from 9router's own .bin dir (fastest — prebuilt binary)
     const prebuildBin = path.join(bsqlDir, '..', '.bin', 'prebuild-install');
     if (fs.existsSync(prebuildBin)) {
       try {
@@ -5407,7 +5407,7 @@ async function autoFix9RouterSqlite() {
         console.warn('[9router-autofix] prebuild-install failed:', e.message);
       }
     }
-    // Fallback: node-pre-gyp
+    // Strategy 2: node-pre-gyp from 9router's .bin dir
     const nodePreGyp = path.join(bsqlDir, '..', '.bin', 'node-pre-gyp');
     if (fs.existsSync(nodePreGyp)) {
       try {
@@ -5422,7 +5422,45 @@ async function autoFix9RouterSqlite() {
         console.warn('[9router-autofix] node-pre-gyp failed:', e.message);
       }
     }
-    console.warn('[9router-autofix] all rebuild methods failed — user needs reinstall');
+    // Strategy 3: npx prebuild-install — downloads prebuild-install if not in .bin.
+    // This handles 9router versions that don't ship prebuild-install as a dep.
+    const npxBin = path.join(path.dirname(nodeBin), 'npx');
+    if (fs.existsSync(npxBin)) {
+      try {
+        console.log('[9router-autofix] trying npx prebuild-install...');
+        execFileSync(npxBin, ['--yes', 'prebuild-install', '-r', 'node', '-t', nodeVer, '--arch', arch], {
+          cwd: bsqlDir, timeout: 90000, shell: false,
+          env: { ...process.env, npm_config_arch: arch },
+        });
+        if (fs.existsSync(bsqlBin)) {
+          console.log('[9router-autofix] ✓ rebuilt via npx prebuild-install');
+          return true;
+        }
+      } catch (e) {
+        console.warn('[9router-autofix] npx prebuild-install failed:', e.message);
+      }
+    }
+    // Strategy 4: npm rebuild from the 9router app dir (compiles from source).
+    // Needs Xcode CLT on Mac, but that's the last resort.
+    const vendorDir2 = getBundledVendorDir();
+    const npmBin = path.join(path.dirname(nodeBin), 'npm');
+    if (vendorDir2 && fs.existsSync(npmBin)) {
+      try {
+        console.log('[9router-autofix] trying npm rebuild better-sqlite3...');
+        execFileSync(npmBin, ['rebuild', 'better-sqlite3', `--arch=${arch}`], {
+          cwd: path.join(vendorDir2, 'node_modules', '9router', 'app'),
+          timeout: 180000, shell: false,
+          env: { ...process.env, npm_config_arch: arch, npm_config_target: nodeVer, npm_config_runtime: 'node' },
+        });
+        if (fs.existsSync(bsqlBin)) {
+          console.log('[9router-autofix] ✓ rebuilt via npm rebuild');
+          return true;
+        }
+      } catch (e) {
+        console.warn('[9router-autofix] npm rebuild failed:', e.message);
+      }
+    }
+    console.warn('[9router-autofix] all 4 rebuild strategies failed — user needs reinstall');
     return false;
   } catch (e) {
     console.error('[9router-autofix] unexpected error:', e.message);
