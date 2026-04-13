@@ -6,6 +6,15 @@ const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
 
 // ============================================
+//  GPU ACCELERATION — disable for Quadro/legacy GPU compatibility
+// ============================================
+// Electron/Chromium GPU renderer calls into GPU driver at kernel level.
+// Old professional GPUs (Quadro K4000, older AMD FirePro, etc.) have driver
+// bugs triggered by Chromium's GPU init → BSOD 0x00000050 PAGE_FAULT.
+// Software rendering is sufficient for our dashboard UI (no WebGL needed).
+app.disableHardwareAcceleration();
+
+// ============================================
 //  SINGLE INSTANCE LOCK (must be before app.whenReady)
 // ============================================
 const gotTheLock = app.requestSingleInstanceLock();
@@ -2161,6 +2170,55 @@ async function sendCeoAlert(text) {
 // fire, and never fails silently — total failure always yields a notice on ALL channels.
 async function runCronAgentPrompt(prompt, { label, timeoutMs = 600000 } = {}) {
   const niceLabel = label || 'cron';
+
+  // Fast-path: if prompt starts with "exec: <shell command>", run it directly
+  // in main.js with the enriched PATH (vendor node + openzca in .bin/).
+  // This bypasses the openclaw agent entirely — the agent's bash tool may not
+  // have vendor openzca in PATH on customer machines (bundled install).
+  // Example: "exec: openzca msg send <groupId> "text" --group"
+  const execMatch = prompt.trim().match(/^exec:\s+(.+)$/s);
+  if (execMatch) {
+    const shellCmd = execMatch[1].trim();
+    console.log(`[cron-exec] "${niceLabel}" running direct: ${shellCmd.slice(0, 120)}`);
+    const enrichedEnv = { ...process.env };
+    try {
+      const vd = getBundledVendorDir();
+      if (vd) {
+        const isWin = process.platform === 'win32';
+        const nodeDir = isWin ? path.join(vd, 'node') : path.join(vd, 'node', 'bin');
+        const binDir = path.join(vd, 'node_modules', '.bin');
+        const sep = isWin ? ';' : ':';
+        const extra = [nodeDir, binDir].filter(p => { try { return fs.existsSync(p); } catch { return false; } });
+        if (extra.length) enrichedEnv.PATH = extra.join(sep) + sep + (enrichedEnv.PATH || '');
+      }
+    } catch {}
+    return new Promise((resolve) => {
+      const child = require('child_process').spawn(
+        shellCmd, [],
+        { shell: true, env: enrichedEnv, timeout: Math.min(timeoutMs, 60000), stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      let stdout = '', stderr = '';
+      child.stdout?.on('data', d => { stdout += d; });
+      child.stderr?.on('data', d => { stderr += d; });
+      child.on('close', (code) => {
+        if (code === 0) {
+          console.log(`[cron-exec] "${niceLabel}" ok:`, stdout.slice(0, 200));
+          journalCronRun({ phase: 'ok', label: niceLabel });
+          resolve(true);
+        } else {
+          console.error(`[cron-exec] "${niceLabel}" exit ${code}: ${stderr.slice(0, 300)}`);
+          journalCronRun({ phase: 'fail', label: niceLabel, code, err: stderr.slice(0, 300) });
+          sendCeoAlert(`*Cron "${niceLabel}" thất bại*\nExit ${code}\n\`\`\`\n${stderr.slice(0, 300)}\n\`\`\``).catch(() => {});
+          resolve(false);
+        }
+      });
+      child.on('error', (e) => {
+        console.error(`[cron-exec] "${niceLabel}" spawn error:`, e.message);
+        journalCronRun({ phase: 'fail', label: niceLabel, err: e.message });
+        resolve(false);
+      });
+    });
+  }
 
   // Defense-in-depth heal #1: synchronously remove deprecated openclaw config
   // keys BEFORE the first agent spawn. Cheap, idempotent. Catches any path that
