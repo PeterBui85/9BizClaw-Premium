@@ -553,7 +553,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 26;
+const CURRENT_AGENTS_MD_VERSION = 27;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -3011,8 +3011,21 @@ async function ensureDefaultConfig() {
       config.agents.defaults.compaction.notifyUser = false;
       changed = true;
     }
+    // Enable cross-channel messaging: bot on Telegram channel can call `message`
+    // tool targeting Zalo channel (e.g. CEO says "nhắn group Zalo X"). Without
+    // this flag openclaw hard-throws "Cross-context messaging denied" even if the
+    // bot follows AGENTS.md instruction. Config key confirmed from source:
+    //   message-action-runner.js: cfg.tools?.message?.crossContext?.allowAcrossProviders
+    if (!config.tools) config.tools = {};
+    if (!config.tools.message) config.tools.message = {};
+    if (!config.tools.message.crossContext) config.tools.message.crossContext = {};
+    if (config.tools.message.crossContext.allowAcrossProviders !== true) {
+      config.tools.message.crossContext.allowAcrossProviders = true;
+      changed = true;
+    }
+
     // Remove any unknown keys that OpenClaw rejects
-    const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'security'];
+    const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'security', 'tools', 'messages'];
     for (const key of Object.keys(config)) {
       if (!validKeys.includes(key)) { delete config[key]; changed = true; }
     }

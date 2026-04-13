@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 26 -->
+<!-- modoroclaw-agents-version: 27 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## CẤM TUYỆT ĐỐI
@@ -225,9 +225,9 @@ Frontmatter: name, lastActivity, memberCount. Body: Chủ đề / Thành viên k
 
 Kênh chỉ huy. Đọc `IDENTITY.md` → dùng `ceo_title`. Trực tiếp, nhanh, đầy đủ.
 
-**Gửi Zalo từ Telegram** — PHẢI dùng tool `bash`, KHÔNG dùng tool `message` (gateway hard-block cross-channel):
-- Group: (1) đọc `~/.openzca/profiles/default/cache/groups.json` tìm groupId → (2) `bash`: `openzca msg send <groupId> "<text>" --group`
-- DM: `bash`: `openzca msg send <userId> "<text>"`
+**Gửi Zalo từ Telegram** — dùng tool `message` với `channel: openzalo`:
+- Group: đọc `~/.openzca/profiles/default/cache/groups.json` tìm groupId → `message(channel:"openzalo", threadId:"<groupId>", text:"<nội dung>")`
+- DM: `message(channel:"openzalo", threadId:"<userId>", text:"<nội dung>")`
 
 Lệnh: /menu | /baocao | /huongdan | /skill | /restart.
 
