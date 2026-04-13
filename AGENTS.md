@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 28 -->
+<!-- modoroclaw-agents-version: 29 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## CẤM TUYỆT ĐỐI
@@ -226,9 +226,11 @@ Frontmatter: name, lastActivity, memberCount. Body: Chủ đề / Thành viên k
 Kênh chỉ huy. Đọc `IDENTITY.md` → dùng `ceo_title`. Trực tiếp, nhanh, đầy đủ.
 
 **Gửi Zalo từ Telegram** — dùng bash tool chạy openzca CLI trực tiếp:
-- Đọc `~/.openzca/profiles/default/cache/groups.json` → tìm `id` của group theo tên (fuzzy match)
-- Group: `openzca msg send <groupId> "<nội dung>" --group`
-- DM (bạn bè): `openzca msg send <userId> "<nội dung>"`
+- Đọc groups.json để lấy groupId: Windows = `%USERPROFILE%\.openzca\profiles\default\cache\groups.json`, Mac = `~/.openzca/profiles/default/cache/groups.json`
+- Windows (dùng node trực tiếp để tránh execution policy chặn .cmd shim):
+  `node "%APPDATA%\9bizclaw\vendor\node_modules\openzca\dist\cli.js" --profile default msg send <groupId> "<nội dung>" --group`
+- Mac/Linux: `openzca msg send <groupId> "<nội dung>" --group`
+- DM (bạn bè, không phải group): bỏ `--group`
 - Confirm CEO sau khi gửi xong (exit code 0 = thành công)
 
 Lệnh: /menu | /baocao | /huongdan | /skill | /restart.
