@@ -5633,6 +5633,14 @@ async function _startOpenClawImpl() {
     return !!lastNotifyOkAt &&
       (Date.now() - lastNotifyOkAt) < READY_NOTIFY_THROTTLE_MS;
   };
+  const markChannelConfirmed = (channel, by, ts = Date.now()) => {
+    const st = notifyState[channel];
+    st.awaitingConfirmation = false;
+    st.confirmedAt = ts;
+    st.confirmedBy = by;
+    st.lastNotifyOkAt = ts;
+    st.lastError = '';
+  };
   const readinessBuf = { tg: '', zl: '' };
   const scanForReadiness = (chunk) => {
     try {
@@ -5647,10 +5655,7 @@ async function _startOpenClawImpl() {
         console.log('[ready-notify] Telegram channel confirmed ready via gateway marker');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         if (readyNotifyThrottled('telegram')) {
-          notifyState.telegram.awaitingConfirmation = false;
-          notifyState.telegram.confirmedAt = Date.now();
-          notifyState.telegram.confirmedBy = 'throttle';
-          notifyState.telegram.lastError = '';
+          markChannelConfirmed('telegram', 'throttle');
           console.log('[ready-notify] Telegram notify throttled (same channel already confirmed <10min ago)');
           setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         } else {
@@ -5660,21 +5665,16 @@ async function _startOpenClawImpl() {
             '_(Thông báo này tự bot gửi — nếu anh nhận được = Telegram đã work 100%)_'
           ).then(ok => {
             if (ok) {
-              const now = Date.now();
-              notifyState.telegram.awaitingConfirmation = false;
-              notifyState.telegram.confirmedAt = now;
-              notifyState.telegram.confirmedBy = 'send';
-              notifyState.telegram.lastNotifyOkAt = now;
-              notifyState.telegram.lastError = '';
+              markChannelConfirmed('telegram', 'send');
               console.log('[ready-notify] Telegram notify sent:', ok);
             } else {
               notifyState.telegram.awaitingConfirmation = true;
-              notifyState.telegram.lastError = '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram nh\u01b0ng ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c tin x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.';
+              notifyState.telegram.lastError = 'Đã kết nối Telegram nhưng chưa gửi được tin xác nhận sẵn sàng.';
               console.log('[ready-notify] Telegram notify failed');
             }
           }).catch(() => {
             notifyState.telegram.awaitingConfirmation = true;
-            notifyState.telegram.lastError = '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram nh\u01b0ng g\u1eedi tin x\u00e1c nh\u1eadn b\u1ecb l\u1ed7i.';
+            notifyState.telegram.lastError = 'Đã kết nối Telegram nhưng gửi tin xác nhận bị lỗi.';
           }).finally(() => {
             setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
           });
@@ -5690,10 +5690,7 @@ async function _startOpenClawImpl() {
         console.log('[ready-notify] Zalo channel confirmed ready via gateway marker');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         if (readyNotifyThrottled('zalo')) {
-          notifyState.zalo.awaitingConfirmation = false;
-          notifyState.zalo.confirmedAt = Date.now();
-          notifyState.zalo.confirmedBy = 'throttle';
-          notifyState.zalo.lastError = '';
+          markChannelConfirmed('zalo', 'throttle');
           console.log('[ready-notify] Zalo notify throttled (same channel already confirmed <10min ago)');
           setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         } else {
@@ -5703,21 +5700,16 @@ async function _startOpenClawImpl() {
             '_(Thông báo gửi qua Telegram vì hệ thống không có Zalo ID của anh)_'
           ).then(ok => {
             if (ok) {
-              const now = Date.now();
-              notifyState.zalo.awaitingConfirmation = false;
-              notifyState.zalo.confirmedAt = now;
-              notifyState.zalo.confirmedBy = 'send';
-              notifyState.zalo.lastNotifyOkAt = now;
-              notifyState.zalo.lastError = '';
+              markChannelConfirmed('zalo', 'send');
               console.log('[ready-notify] Zalo notify sent:', ok);
             } else {
               notifyState.zalo.awaitingConfirmation = true;
-              notifyState.zalo.lastError = 'Zalo \u0111\u00e3 k\u1ebft n\u1ed1i nh\u01b0ng ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c tin x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.';
+              notifyState.zalo.lastError = 'Zalo đã kết nối nhưng chưa gửi được tin xác nhận sẵn sàng.';
               console.log('[ready-notify] Zalo notify failed');
             }
           }).catch(() => {
             notifyState.zalo.awaitingConfirmation = true;
-            notifyState.zalo.lastError = 'Zalo \u0111\u00e3 k\u1ebft n\u1ed1i nh\u01b0ng g\u1eedi tin x\u00e1c nh\u1eadn b\u1ecb l\u1ed7i.';
+            notifyState.zalo.lastError = 'Zalo đã kết nối nhưng gửi tin xác nhận bị lỗi.';
           }).finally(() => {
             setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
           });
@@ -7264,27 +7256,81 @@ ipcMain.handle('list-zalo-friends', async () => {
 // Searches ALL node-manager lib dirs for openzca/dist/cli.js (handles mixed
 // nvm/system Node setups), then spawns via absolute node path so PATH issues
 // can't break this on Mac Finder launches.
-async function runZaloCacheRefresh() {
-  try {
-    const zcaScript = findGlobalPackageFile('openzca', 'dist/cli.js');
-    let cmd, args, opts = { timeout: 15000, windowsHide: true };
-    if (zcaScript) {
-      cmd = findNodeBin() || 'node';
-      args = [zcaScript, 'auth', 'cache-refresh'];
-    } else {
-      // PATH fallback. On Windows we need .cmd + shell:true; on Mac/Linux just
-      // openzca with PATH already augmented at boot.
-      const isWin = process.platform === 'win32';
-      cmd = isWin ? 'openzca.cmd' : 'openzca';
-      args = ['auth', 'cache-refresh'];
-      opts.shell = isWin;
-    }
-    await execFilePromise(cmd, args, opts);
-    return true;
-  } catch (e) {
-    console.error('[zalo-cache] refresh failed:', e.message);
-    return false;
+let _zaloCacheRefreshInFlight = null;
+let _zaloCacheRefreshLastStartedAt = 0;
+let _zaloCacheRefreshCooldownUntil = 0;
+const ZALO_CACHE_REFRESH_MIN_GAP_MS = 30 * 1000;
+const ZALO_CACHE_REFRESH_429_COOLDOWN_MS = 2 * 60 * 1000;
+
+async function runZaloCacheRefresh({ source = 'manual', force = false } = {}) {
+  const now = Date.now();
+  if (_zaloCacheRefreshInFlight) {
+    console.log(`[zalo-cache] refresh join existing in-flight run (source=${source})`);
+    return _zaloCacheRefreshInFlight;
   }
+  if (!force && _zaloCacheRefreshCooldownUntil > now) {
+    const retryAfterSec = Math.max(1, Math.ceil((_zaloCacheRefreshCooldownUntil - now) / 1000));
+    console.warn(`[zalo-cache] refresh skipped during cooldown (${retryAfterSec}s left, source=${source})`);
+    return {
+      ok: false,
+      skipped: true,
+      rateLimited: true,
+      retryAfterSec,
+      error: `Zalo đang giới hạn đồng bộ cache. Đợi ${retryAfterSec} giây rồi thử lại.`,
+    };
+  }
+  if (!force && _zaloCacheRefreshLastStartedAt && (now - _zaloCacheRefreshLastStartedAt) < ZALO_CACHE_REFRESH_MIN_GAP_MS) {
+    const retryAfterSec = Math.max(1, Math.ceil((ZALO_CACHE_REFRESH_MIN_GAP_MS - (now - _zaloCacheRefreshLastStartedAt)) / 1000));
+    console.log(`[zalo-cache] refresh skipped (too soon, source=${source}, retryAfter=${retryAfterSec}s)`);
+    return {
+      ok: false,
+      skipped: true,
+      retryAfterSec,
+      error: `Vừa đồng bộ cache Zalo xong. Đợi ${retryAfterSec} giây rồi thử lại.`,
+    };
+  }
+
+  _zaloCacheRefreshInFlight = (async () => {
+    _zaloCacheRefreshLastStartedAt = Date.now();
+    try {
+      const zcaScript = findGlobalPackageFile('openzca', 'dist/cli.js');
+      let cmd, args, opts = { timeout: 15000, windowsHide: true };
+      if (zcaScript) {
+        cmd = findNodeBin() || 'node';
+        args = [zcaScript, 'auth', 'cache-refresh'];
+      } else {
+        // PATH fallback. On Windows we need .cmd + shell:true; on Mac/Linux just
+        // openzca with PATH already augmented at boot.
+        const isWin = process.platform === 'win32';
+        cmd = isWin ? 'openzca.cmd' : 'openzca';
+        args = ['auth', 'cache-refresh'];
+        opts.shell = isWin;
+      }
+      await execFilePromise(cmd, args, opts);
+      _zaloCacheRefreshCooldownUntil = 0;
+      console.log(`[zalo-cache] refresh ok (source=${source})`);
+      return { ok: true };
+    } catch (e) {
+      const msg = e?.message || String(e);
+      if (/status code 429|(?:^|\\b)429(?:\\b|$)|rate limit/i.test(msg)) {
+        _zaloCacheRefreshCooldownUntil = Date.now() + ZALO_CACHE_REFRESH_429_COOLDOWN_MS;
+        const retryAfterSec = Math.ceil(ZALO_CACHE_REFRESH_429_COOLDOWN_MS / 1000);
+        console.warn(`[zalo-cache] refresh rate-limited (source=${source}, cooldown=${retryAfterSec}s): ${msg}`);
+        return {
+          ok: false,
+          rateLimited: true,
+          retryAfterSec,
+          error: `Zalo đang rate limit đồng bộ cache. Đợi ${retryAfterSec} giây rồi thử lại.`,
+        };
+      }
+      console.error(`[zalo-cache] refresh failed (source=${source}):`, msg);
+      return { ok: false, error: msg };
+    } finally {
+      _zaloCacheRefreshInFlight = null;
+    }
+  })();
+
+  return _zaloCacheRefreshInFlight;
 }
 
 // Periodic auto-refresh (every 10 min) so new groups/friends show up without manual action
@@ -7292,8 +7338,8 @@ let _zaloCacheInterval = null;
 function startZaloCacheAutoRefresh() {
   if (_zaloCacheInterval) clearInterval(_zaloCacheInterval);
   _zaloCacheInterval = setInterval(() => {
-    runZaloCacheRefresh().then(ok => {
-      if (ok && mainWindow && !mainWindow.isDestroyed()) {
+    runZaloCacheRefresh({ source: 'auto-interval' }).then(res => {
+      if (res?.ok && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('zalo-cache-refreshed');
       }
     });
@@ -7302,8 +7348,14 @@ function startZaloCacheAutoRefresh() {
 
 // Trigger openzca to refresh its cache from live Zalo server (manual)
 ipcMain.handle('refresh-zalo-cache', async () => {
-  const ok = await runZaloCacheRefresh();
-  return { success: ok };
+  const result = await runZaloCacheRefresh({ source: 'manual' });
+  return {
+    success: !!result?.ok,
+    skipped: !!result?.skipped,
+    rateLimited: !!result?.rateLimited,
+    retryAfterSec: result?.retryAfterSec || 0,
+    error: result?.error || null,
+  };
 });
 
 ipcMain.handle('list-zalo-groups', async () => {

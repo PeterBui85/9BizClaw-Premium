@@ -3843,15 +3843,40 @@
         const r = await window.claw.refreshZaloCache();
         if (r?.success) {
           addActivity('Đồng bộ xong, đang tải lại...');
+        } else if (r?.rateLimited) {
+          addActivity(r.error || ('Zalo đang giới hạn đồng bộ. Thử lại sau ' + (r.retryAfterSec || 0) + ' giây.'));
+        } else if (r?.skipped) {
+          addActivity(r.error || 'Zalo vừa đồng bộ xong, chưa cần chạy lại ngay.');
         } else {
           addActivity('Đồng bộ thất bại: ' + (r?.error || 'unknown'));
         }
       } catch (e) { addActivity('Lỗi đồng bộ: ' + e.message); }
-      await loadZaloManagerData();
+      await loadZaloManagerData({ preserveDraft: true });
     }
 
-    async function loadZaloManagerData() {
+    function getCurrentZaloManagerDraft() {
+      const enabledEl = document.getElementById('zalo-mgr-enabled');
+      return {
+        ...zaloMgrConfig,
+        enabled: enabledEl ? enabledEl.checked : (zaloMgrConfig.enabled !== false),
+        groupAllowFrom: Array.isArray(zaloMgrConfig.groupAllowFrom) ? [...zaloMgrConfig.groupAllowFrom] : [],
+        userBlocklist: Array.isArray(zaloMgrConfig.userBlocklist) ? [...zaloMgrConfig.userBlocklist] : [],
+      };
+    }
+
+    function syncZaloManagerUi() {
+      document.getElementById('zalo-mgr-friend-count').textContent = zaloFriends.length;
+      document.getElementById('zalo-mgr-group-count').textContent = zaloGroups.length;
+      document.getElementById('zalo-mgr-enabled').checked = zaloMgrConfig.enabled !== false;
+      updateBlockedCount();
+      renderZaloGroups();
+      renderZaloFriends();
+    }
+
+    async function loadZaloManagerData(opts = {}) {
+      const preserveDraft = !!opts.preserveDraft;
       try {
+        const draft = preserveDraft && zaloDataLoaded ? getCurrentZaloManagerDraft() : null;
         const [friends, groups, config] = await Promise.all([
           window.claw.listZaloFriends(),
           window.claw.listZaloGroups(),
@@ -3859,15 +3884,18 @@
         ]);
         zaloFriends = friends || [];
         zaloGroups = groups || [];
-        zaloMgrConfig = config || zaloMgrConfig;
+        if (draft) {
+          zaloMgrConfig = {
+            ...(config || {}),
+            ...draft,
+            groupAllowFrom: Array.isArray(draft.groupAllowFrom) ? draft.groupAllowFrom : [],
+            userBlocklist: Array.isArray(draft.userBlocklist) ? draft.userBlocklist : [],
+          };
+        } else {
+          zaloMgrConfig = config || zaloMgrConfig;
+        }
         zaloDataLoaded = true;
-
-        document.getElementById('zalo-mgr-friend-count').textContent = zaloFriends.length;
-        document.getElementById('zalo-mgr-group-count').textContent = zaloGroups.length;
-        document.getElementById('zalo-mgr-enabled').checked = zaloMgrConfig.enabled !== false;
-        updateBlockedCount();
-        renderZaloGroups();
-        renderZaloFriends();
+        syncZaloManagerUi();
       } catch (e) {
         console.error('loadZaloManagerData error:', e);
         addActivity('Lỗi load Zalo manager');
@@ -4330,7 +4358,7 @@
         await window.claw.pauseZalo(30);
         showToast('Zalo tạm dừng 30 phút', 'info');
       }
-      try { await loadZaloManagerData(); } catch {}
+      try { await loadZaloManagerData({ preserveDraft: true }); } catch {}
       refreshPauseUI();
     }
     async function refreshPauseUI() {
@@ -4465,13 +4493,23 @@
       const status = document.getElementById('zalo-owner-dashboard-status');
       if (status) { status.style.display = 'block'; status.textContent = 'Đang refresh danh sách bạn bè...'; status.style.color = 'var(--text-muted)'; }
       try {
-        await window.claw.refreshZaloCache();
-        // Wait a moment for cache file to be written
-        await new Promise(r => setTimeout(r, 1500));
+        const res = await window.claw.refreshZaloCache();
+        if (res?.success) {
+          // Wait a moment for cache file to be written
+          await new Promise(r => setTimeout(r, 1500));
+        }
         await loadDashboardZaloOwner();
         if (status) {
-          status.textContent = 'Danh sách đã cập nhật.';
-          status.style.color = 'var(--success,#16a34a)';
+          if (res?.success) {
+            status.textContent = 'Danh sách đã cập nhật.';
+            status.style.color = 'var(--success,#16a34a)';
+          } else if (res?.rateLimited || res?.skipped) {
+            status.textContent = res?.error || 'Zalo đang giới hạn đồng bộ, tạm dùng dữ liệu hiện có.';
+            status.style.color = 'var(--warning,#f59e0b)';
+          } else {
+            status.textContent = 'Lỗi refresh: ' + (res?.error || 'không xác định');
+            status.style.color = 'var(--danger)';
+          }
           setTimeout(() => { if (status) status.style.display = 'none'; }, 2500);
         }
       } catch (e) {

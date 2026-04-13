@@ -505,20 +505,42 @@
       position: absolute;
       top: 24px;
       right: 24px;
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: var(--surface);
-      border: 1px solid var(--border);
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(20, 20, 27, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.14);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--text-secondary);
+      color: var(--text);
       cursor: pointer;
       transition: all 0.2s ease;
       z-index: 10;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      backdrop-filter: blur(12px);
     }
-    .wz-theme-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+    .wz-theme-toggle:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.24);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+    }
+    html[data-theme="light"] .wz-theme-toggle {
+      background: rgba(255, 255, 255, 0.92);
+      border-color: rgba(29, 29, 31, 0.12);
+      color: #1D1D1F;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+    }
+    html[data-theme="light"] .wz-theme-toggle:hover {
+      border-color: rgba(29, 29, 31, 0.18);
+      box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
+    }
+    #theme-icon,
+    #theme-icon svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
 
     /* ===== Done step ===== */
     .wz-done-icon {
@@ -1408,7 +1430,7 @@
       if (scroll) scroll.scrollTop = 0;
     }
 
-    function navNext() {
+    async function navNext() {
       const ci = stepIdx(currentStep);
       const next = STEP_ORDER[ci + 1];
       if (!next) return;
