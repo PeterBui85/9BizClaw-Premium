@@ -232,8 +232,7 @@ Kênh chỉ huy. Đọc `IDENTITY.md` → dùng `ceo_title`. Trực tiếp, nhan
 
 Quy trình:
 1. Đọc groups.json lấy groupId (nếu gửi group) — dùng `read` tool:
-   - Windows: `%USERPROFILE%\.openzca\profiles\default\cache\groups.json`
-   - Mac: `~/.openzca/profiles/default/cache/groups.json`
+   - Path: `~/.openzca/profiles/default/cache/groups.json` (cả Windows + Mac)
    - Parse JSON, tìm theo trường `name` **CHÍNH XÁC** khớp tên CEO nói. Nhiều hơn 1 kết quả → hỏi CEO chọn.
 2. **XÁC NHẬN VỚI CEO** — reply Telegram:
    "Em tìm thấy nhóm [tên] ([số] thành viên). Nội dung em sẽ gửi: [nội dung]. Anh reply 'ok' để em gửi."
