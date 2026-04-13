@@ -5608,6 +5608,18 @@ async function _startOpenClawImpl() {
   notifyState.telegramReady = false;
   notifyState.zaloReady = false;
   notifyState.bootSessionId = Date.now();
+  notifyState.telegram = notifyState.telegram || {};
+  notifyState.zalo = notifyState.zalo || {};
+  for (const ch of ['telegram', 'zalo']) {
+    const channelState = notifyState[ch];
+    channelState.markerSeen = false;
+    channelState.markerSeenAt = 0;
+    channelState.confirmedAt = 0;
+    channelState.awaitingConfirmation = false;
+    channelState.confirmedBy = '';
+    channelState.lastError = '';
+    if (!Number.isFinite(channelState.lastNotifyOkAt)) channelState.lastNotifyOkAt = 0;
+  }
   // H1 throttle: if a readiness notification was already sent within the
   // last 10 minutes, suppress re-notify on subsequent gateway restarts (e.g.
   // mid-demo Stop/Start, heartbeat watchdog fire). CEO shouldn't see the
@@ -5616,44 +5628,99 @@ async function _startOpenClawImpl() {
   // notification. A fresh boot after >10min gap (app restart next day) still
   // fires normally.
   const READY_NOTIFY_THROTTLE_MS = 10 * 60 * 1000;
-  const readyNotifyThrottled = () => {
-    return global._lastReadyNotifyAt &&
-      (Date.now() - global._lastReadyNotifyAt) < READY_NOTIFY_THROTTLE_MS;
+  const readyNotifyThrottled = (channel) => {
+    const lastNotifyOkAt = notifyState[channel]?.lastNotifyOkAt || 0;
+    return !!lastNotifyOkAt &&
+      (Date.now() - lastNotifyOkAt) < READY_NOTIFY_THROTTLE_MS;
   };
   const readinessBuf = { tg: '', zl: '' };
   const scanForReadiness = (chunk) => {
     try {
       const text = chunk.toString('utf8');
       // Telegram marker
-      if (!notifyState.telegramReady && /\[telegram\]\s*\[\w+\]\s*starting provider/i.test(text)) {
+      if (!notifyState.telegram.markerSeen && /\[telegram\]\s*\[\w+\]\s*starting provider/i.test(text)) {
         notifyState.telegramReady = true;
+        notifyState.telegram.markerSeen = true;
+        notifyState.telegram.markerSeenAt = Date.now();
+        notifyState.telegram.awaitingConfirmation = true;
+        notifyState.telegram.lastError = '';
         console.log('[ready-notify] Telegram channel confirmed ready via gateway marker');
-        if (readyNotifyThrottled()) {
-          console.log('[ready-notify] Telegram notify throttled (last sent <10min ago)');
+        setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+        if (readyNotifyThrottled('telegram')) {
+          notifyState.telegram.awaitingConfirmation = false;
+          notifyState.telegram.confirmedAt = Date.now();
+          notifyState.telegram.confirmedBy = 'throttle';
+          notifyState.telegram.lastError = '';
+          console.log('[ready-notify] Telegram notify throttled (same channel already confirmed <10min ago)');
+          setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         } else {
-          global._lastReadyNotifyAt = Date.now();
           sendTelegram(
             '*Telegram đã sẵn sàng*\n\n' +
             'Bot đã kết nối + đăng ký channel. Nhắn bất kỳ tin nào ngay bây giờ, sẽ có reply thật.\n\n' +
             '_(Thông báo này tự bot gửi — nếu anh nhận được = Telegram đã work 100%)_'
-          ).then(ok => console.log('[ready-notify] Telegram notify sent:', ok))
-           .catch(() => {});
+          ).then(ok => {
+            if (ok) {
+              const now = Date.now();
+              notifyState.telegram.awaitingConfirmation = false;
+              notifyState.telegram.confirmedAt = now;
+              notifyState.telegram.confirmedBy = 'send';
+              notifyState.telegram.lastNotifyOkAt = now;
+              notifyState.telegram.lastError = '';
+              console.log('[ready-notify] Telegram notify sent:', ok);
+            } else {
+              notifyState.telegram.awaitingConfirmation = true;
+              notifyState.telegram.lastError = '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram nh\u01b0ng ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c tin x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.';
+              console.log('[ready-notify] Telegram notify failed');
+            }
+          }).catch(() => {
+            notifyState.telegram.awaitingConfirmation = true;
+            notifyState.telegram.lastError = '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram nh\u01b0ng g\u1eedi tin x\u00e1c nh\u1eadn b\u1ecb l\u1ed7i.';
+          }).finally(() => {
+            setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+          });
         }
       }
       // Zalo marker — openzca listener connected = inbound pipeline live
-      if (!notifyState.zaloReady && /\[openzalo\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
+      if (!notifyState.zalo.markerSeen && /\[openzalo\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
         notifyState.zaloReady = true;
+        notifyState.zalo.markerSeen = true;
+        notifyState.zalo.markerSeenAt = Date.now();
+        notifyState.zalo.awaitingConfirmation = true;
+        notifyState.zalo.lastError = '';
         console.log('[ready-notify] Zalo channel confirmed ready via gateway marker');
-        if (readyNotifyThrottled()) {
-          console.log('[ready-notify] Zalo notify throttled (last sent <10min ago)');
+        setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+        if (readyNotifyThrottled('zalo')) {
+          notifyState.zalo.awaitingConfirmation = false;
+          notifyState.zalo.confirmedAt = Date.now();
+          notifyState.zalo.confirmedBy = 'throttle';
+          notifyState.zalo.lastError = '';
+          console.log('[ready-notify] Zalo notify throttled (same channel already confirmed <10min ago)');
+          setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         } else {
-          global._lastReadyNotifyAt = Date.now();
           sendTelegram(
             '*Zalo đã sẵn sàng*\n\n' +
             'Openzca listener đã connect Zalo web, đang đọc tin nhắn. Nhắn bot trên Zalo ngay bây giờ, sẽ có reply thật.\n\n' +
             '_(Thông báo gửi qua Telegram vì hệ thống không có Zalo ID của anh)_'
-          ).then(ok => console.log('[ready-notify] Zalo notify sent:', ok))
-           .catch(() => {});
+          ).then(ok => {
+            if (ok) {
+              const now = Date.now();
+              notifyState.zalo.awaitingConfirmation = false;
+              notifyState.zalo.confirmedAt = now;
+              notifyState.zalo.confirmedBy = 'send';
+              notifyState.zalo.lastNotifyOkAt = now;
+              notifyState.zalo.lastError = '';
+              console.log('[ready-notify] Zalo notify sent:', ok);
+            } else {
+              notifyState.zalo.awaitingConfirmation = true;
+              notifyState.zalo.lastError = 'Zalo \u0111\u00e3 k\u1ebft n\u1ed1i nh\u01b0ng ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c tin x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.';
+              console.log('[ready-notify] Zalo notify failed');
+            }
+          }).catch(() => {
+            notifyState.zalo.awaitingConfirmation = true;
+            notifyState.zalo.lastError = 'Zalo \u0111\u00e3 k\u1ebft n\u1ed1i nh\u01b0ng g\u1eedi tin x\u00e1c nh\u1eadn b\u1ecb l\u1ed7i.';
+          }).finally(() => {
+            setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+          });
         }
       }
     } catch (e) { /* never break on observer */ }
@@ -10169,6 +10236,71 @@ ipcMain.handle('resolve-zalo-target', async (_e, payload) => {
 // Telegram: call getMe — Telegram's API endpoint that returns bot identity.
 // 200 + ok=true is conclusive proof: the token is valid AND Telegram's servers
 // can reach this bot. Cheap (~150ms), doesn't send a user-visible message.
+function getReadyGateState(channel) {
+  const state = (global._readyNotifyState && global._readyNotifyState[channel]) || {};
+  return {
+    markerSeen: !!state.markerSeen,
+    confirmed: !!state.confirmedAt,
+    confirmedAt: state.confirmedAt || 0,
+    confirmedBy: state.confirmedBy || '',
+    awaitingConfirmation: !!state.awaitingConfirmation,
+    lastError: state.lastError || '',
+  };
+}
+
+function finalizeTelegramReadyProbe(base, hasCeoChatId) {
+  const gate = getReadyGateState('telegram');
+  if (!hasCeoChatId) {
+    return {
+      ...base,
+      ready: false,
+      technicalReady: true,
+      reason: 'no-ceo-chat-id',
+      error: '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram nh\u01b0ng ch\u01b0a c\u00f3 CEO chat ID \u0111\u1ec3 g\u1eedi tin x\u00e1c nh\u1eadn.',
+    };
+  }
+  if (gate.confirmed) {
+    return {
+      ...base,
+      ready: true,
+      readinessConfirmedAt: gate.confirmedAt,
+      readinessConfirmedBy: gate.confirmedBy,
+    };
+  }
+  return {
+    ...base,
+    ready: false,
+    technicalReady: true,
+    awaitingConfirmation: true,
+    reason: 'awaiting-confirmation',
+    error: gate.lastError || (gate.markerSeen
+      ? '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram, \u0111ang ch\u1edd g\u1eedi tin x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.'
+      : '\u0110\u00e3 k\u1ebft n\u1ed1i Telegram, \u0111ang ch\u1edd gateway \u0111\u0103ng k\u00fd channel.'),
+  };
+}
+
+function finalizeZaloReadyProbe(base) {
+  const gate = getReadyGateState('zalo');
+  if (gate.confirmed) {
+    return {
+      ...base,
+      ready: true,
+      readinessConfirmedAt: gate.confirmedAt,
+      readinessConfirmedBy: gate.confirmedBy,
+    };
+  }
+  return {
+    ...base,
+    ready: false,
+    technicalReady: true,
+    awaitingConfirmation: true,
+    reason: 'awaiting-confirmation',
+    error: gate.lastError || (gate.markerSeen
+      ? '\u0110\u00e3 k\u1ebft n\u1ed1i Zalo, \u0111ang ch\u1edd g\u1eedi tin x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.'
+      : 'Zalo listener \u0111\u00e3 l\u00ean, \u0111ang ch\u1edd gateway x\u00e1c nh\u1eadn s\u1eb5n s\u00e0ng.'),
+  };
+}
+
 async function probeTelegramReady() {
   const { token, chatId } = getTelegramConfig();
   if (!token) return { ready: false, error: 'Chưa cấu hình bot token' };
@@ -10184,13 +10316,12 @@ async function probeTelegramReady() {
           try {
             const parsed = JSON.parse(data);
             if (parsed.ok && parsed.result) {
-              resolve({
-                ready: true,
+              resolve(finalizeTelegramReadyProbe({
                 username: parsed.result.username,
                 botName: parsed.result.first_name,
                 botId: parsed.result.id,
                 hasCeoChatId: !!chatId,
-              });
+              }, !!chatId));
             } else {
               resolve({ ready: false, error: parsed.description || 'Telegram API trả về lỗi' });
             }
@@ -10420,13 +10551,13 @@ async function probeZaloReady() {
         try {
           const freshOwner = JSON.parse(fs.readFileSync(ownerFile, 'utf-8'));
           if (freshOwner.pid && freshOwner.pid !== ownerPid) {
-            return { ready: true, listenerPid: freshOwner.pid, lastRefreshMinAgo: cacheAgeMin };
+            return finalizeZaloReadyProbe({ listenerPid: freshOwner.pid, lastRefreshMinAgo: cacheAgeMin });
           }
         } catch {}
         // Also retry process search (PowerShell fallback may now succeed)
         const retryPid = findOpenzcaListenerPid();
         if (retryPid) {
-          return { ready: true, listenerPid: retryPid, lastRefreshMinAgo: cacheAgeMin };
+          return finalizeZaloReadyProbe({ listenerPid: retryPid, lastRefreshMinAgo: cacheAgeMin });
         }
         return {
           ready: false,
@@ -10439,19 +10570,17 @@ async function probeZaloReady() {
 
     // Stale cache warning (still ready — listener can reconnect)
     if (cacheAgeMin != null && cacheAgeMin > 30) {
-      return {
-        ready: true,
+      return finalizeZaloReadyProbe({
         listenerPid,
         lastRefreshMinAgo: cacheAgeMin,
         warning: `Cookie cache ${cacheAgeMin} phút trước — sắp cần refresh.`,
-      };
+      });
     }
 
-    return {
-      ready: true,
+    return finalizeZaloReadyProbe({
       listenerPid,
       lastRefreshMinAgo: cacheAgeMin,
-    };
+    });
   } catch (e) {
     return { ready: false, error: 'Probe error: ' + e.message };
   }
@@ -10514,12 +10643,52 @@ let _channelStatusInterval = null;
 let _channelStatusBootTimers = [];
 let _lastChannelState = { telegram: null, zalo: null };
 let _lastChannelAlertAt = { telegram: 0, zalo: 0 };
+let _channelStatusBroadcastInFlight = false;
+async function broadcastChannelStatusOnce() {
+  if (_channelStatusBroadcastInFlight) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  _channelStatusBroadcastInFlight = true;
+  try {
+    const [tg, zl] = await Promise.all([probeTelegramReady(), probeZaloReady()]);
+    mainWindow.webContents.send('channel-status', {
+      telegram: { ...tg, paused: isChannelPaused('telegram') },
+      zalo: { ...zl, paused: isChannelPaused('zalo') },
+      checkedAt: new Date().toISOString(),
+    });
+
+    try { checkZaloCookieAge(); } catch {}
+
+    const THROTTLE_MS = 15 * 60 * 1000;
+    const now = Date.now();
+    const probes = { telegram: tg, zalo: zl };
+    const labels = { telegram: 'Telegram', zalo: 'Zalo' };
+    for (const ch of ['telegram', 'zalo']) {
+      const prev = _lastChannelState[ch];
+      const cur = probes[ch];
+      if (prev !== null && prev.ready === true && cur.ready === false) {
+        if (now - (_lastChannelAlertAt[ch] || 0) >= THROTTLE_MS) {
+          const hhmm = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+          const reason = (cur && cur.error) ? String(cur.error) : '\u006b\u0068\u00f4ng r\u00f5';
+          const msg = `K\u00eanh ${labels[ch]} v\u1eeba m\u1ea5t k\u1ebft n\u1ed1i l\u00fac ${hhmm}. L\u00fd do: ${reason}. Em s\u1ebd t\u1ef1 th\u1eed k\u1ebft n\u1ed1i l\u1ea1i, n\u1ebfu sau 2 ph\u00fat ch\u01b0a \u0111\u01b0\u1ee3c, anh m\u1edf Dashboard xem chi ti\u1ebft.`;
+          try { sendCeoAlert(msg); } catch (e) { console.error('[channel-status] sendCeoAlert error:', e.message); }
+          _lastChannelAlertAt[ch] = now;
+        }
+      }
+      _lastChannelState[ch] = cur;
+    }
+  } catch (e) {
+    console.error('[channel-status] broadcast error:', e.message);
+  } finally {
+    _channelStatusBroadcastInFlight = false;
+  }
+}
 function startChannelStatusBroadcast() {
   if (_channelStatusInterval) clearInterval(_channelStatusInterval);
   for (const t of _channelStatusBootTimers) clearTimeout(t);
   _channelStatusBootTimers = [];
 
   const broadcast = async () => {
+    return await broadcastChannelStatusOnce();
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
       const [tg, zl] = await Promise.all([probeTelegramReady(), probeZaloReady()]);
@@ -12336,22 +12505,43 @@ ipcMain.handle('check-all-channels', async () => {
 
   // 2. Telegram — check botToken in openclaw.json
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
-    if (cfg.channels?.telegram?.botToken) r.telegram = botRunning ? 'ok' : 'configured';
+    const tg = await probeTelegramReady();
+    const { token } = getTelegramConfig();
+    const telegramPause = getChannelPauseStatus('telegram');
+    if (!token) {
+      r.telegram = 'not_configured';
+    } else if (telegramPause?.permanent) {
+      r.telegram = 'disabled';
+    } else if (telegramPause?.paused) {
+      r.telegram = 'paused';
+    } else if (tg.ready) {
+      r.telegram = 'ok';
+    } else if (tg.awaitingConfirmation) {
+      r.telegram = 'checking';
+    } else if (tg.reason === 'no-ceo-chat-id') {
+      r.telegram = 'error';
+    } else {
+      r.telegram = botRunning ? 'error' : 'stopped';
+    }
   } catch {}
 
   // 3. Zalo — check credentials file
   try {
-    const state = readZaloChannelState();
-    const pause = getChannelPauseStatus('zalo');
-    if (state.configError) {
+    const zl = await probeZaloReady();
+    if (zl.reason === 'config-error') {
       r.zalo = 'error';
-    } else if (state.enabled === false || pause?.permanent) {
+    } else if (zl.reason === 'disabled' || zl.reason === 'paused-permanent') {
       r.zalo = 'disabled';
-    } else if (pause?.paused) {
+    } else if (zl.reason === 'paused') {
       r.zalo = 'paused';
-    } else if (fs.existsSync(path.join(HOME, '.openzca', 'profiles', state.profile || 'default', 'credentials.json'))) {
-      r.zalo = botRunning ? 'ok' : 'configured';
+    } else if (zl.ready) {
+      r.zalo = 'ok';
+    } else if (zl.awaitingConfirmation) {
+      r.zalo = 'checking';
+    } else if (zl.reason === 'no-credentials') {
+      r.zalo = 'not_configured';
+    } else {
+      r.zalo = botRunning ? 'error' : 'stopped';
     }
   } catch {}
 

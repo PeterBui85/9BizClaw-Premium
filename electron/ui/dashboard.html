@@ -4173,7 +4173,8 @@
       if (!info) return;
       const elapsed = elapsedSec();
       const expected = channel === 'zalo' ? ZALO_EXPECTED_STARTUP_SEC : TELEGRAM_EXPECTED_STARTUP_SEC;
-      const isStartingUp = !info.ready && elapsed < expected;
+      const isAwaitingConfirmation = !!info.awaitingConfirmation;
+      const isStartingUp = !info.ready && !isAwaitingConfirmation && elapsed < expected;
 
       let state, summary;
       if (info.ready) {
@@ -4184,6 +4185,11 @@
         } else {
           summary = '✓ Sẵn sàng — anh nhắn Zalo cho bot ngay';
         }
+      } else if (isAwaitingConfirmation) {
+        state = 'checking';
+        summary = info.error || (channel === 'telegram'
+          ? 'Đã kết nối Telegram, đang chờ tin xác nhận sẵn sàng'
+          : 'Đã kết nối Zalo, đang chờ tin xác nhận sẵn sàng');
       } else if (isStartingUp) {
         // Still within expected boot window — show progress, NOT error.
         // No emojis (premium UI rule) — use plain text stages.
@@ -4265,7 +4271,13 @@
         _lastChannelStatus.telegram = info;
         _lastChannelStatus.checkedAt = new Date().toISOString();
         applyChannelStatus('telegram', info, _lastChannelStatus.checkedAt);
-        showToast(info.ready ? '✓ Telegram sẵn sàng — anh nhắn được rồi' : ('Telegram lỗi: ' + (info.error||'')), info.ready ? 'success' : 'error');
+        if (info.ready) {
+          showToast('✓ Telegram sẵn sàng — anh nhắn được rồi', 'success');
+        } else if (info.awaitingConfirmation) {
+          showToast(info.error || 'Telegram đang chờ tin xác nhận sẵn sàng', 'info');
+        } else {
+          showToast('Telegram lỗi: ' + (info.error || ''), 'error');
+        }
       } catch (e) { showToast('Lỗi kiểm tra: ' + e.message, 'error'); }
     }
     async function recheckZalo() {
@@ -4277,7 +4289,13 @@
         _lastChannelStatus.zalo = info;
         _lastChannelStatus.checkedAt = new Date().toISOString();
         applyChannelStatus('zalo', info, _lastChannelStatus.checkedAt);
-        showToast(info.ready ? '✓ Zalo sẵn sàng — anh nhắn được rồi' : ('Zalo: ' + (info.error||'')), info.ready ? 'success' : 'error');
+        if (info.ready) {
+          showToast('✓ Zalo sẵn sàng — anh nhắn được rồi', 'success');
+        } else if (info.awaitingConfirmation) {
+          showToast(info.error || 'Zalo đang chờ tin xác nhận sẵn sàng', 'info');
+        } else {
+          showToast('Zalo: ' + (info.error || ''), 'error');
+        }
       } catch (e) { showToast('Lỗi kiểm tra: ' + e.message, 'error'); }
     }
     async function testTelegramSend() {
