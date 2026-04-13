@@ -3621,7 +3621,8 @@ function ensureZaloPauseFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    const CURRENT_MARKER = '9BizClaw PAUSE PATCH v5';
+    const CURRENT_MARKER = '9BizClaw PAUSE PATCH v6';
+    // v6: drop bot commands (/pause /resume /bot) from non-owners silently
     // v5: runtime path resolution + owner-only /pause + honor permanent pause +
     // enabled=false + parse errors fail-closed.
     if (content.includes('9BizClaw PAUSE PATCH')) {
@@ -3649,7 +3650,7 @@ function ensureZaloPauseFix() {
   // /pause and /resume: ONLY accepted from the Zalo account the bot is logged
   // into (ownerUserId in zalo-owner.json). This is the CEO/staff using the
   // same Zalo account as the bot. Customers typing /pause are ignored.
-  // 9BizClaw PAUSE PATCH v5: runtime path resolution + honor permanent pause
+  // 9BizClaw PAUSE PATCH v6: drop bot commands from non-owners + runtime path
   // files + openclaw.json channels.openzalo.enabled=false + parse errors blocked.
   try {
     const __pzFs = require("node:fs");
@@ -3699,7 +3700,8 @@ function ensureZaloPauseFix() {
 
     const __pzIsOwner = __pzOwner && __pzSender === __pzOwner;
 
-    // Handle /pause and /resume commands — ONLY from bot's own Zalo account
+    // Handle /pause and /resume commands
+    const __pzIsBotCmd = __pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly" || __pzBody === "/resume" || __pzBody === "/bot";
     if (__pzIsOwner && (__pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly")) {
       const __pzUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       for (const __p of __pzPaths) {
@@ -3715,6 +3717,11 @@ function ensureZaloPauseFix() {
       }
       runtime.log?.("openzalo: RESUMED by owner " + __pzSender);
       // Don't return — let this message be processed normally
+    }
+    // Drop bot commands from non-owners silently — don't let bot reply to "/pause" as if it's a question
+    if (!__pzIsOwner && __pzIsBotCmd) {
+      runtime.log?.("openzalo: drop bot command from non-owner " + __pzSender + ": " + __pzBody);
+      return;
     }
 
     // Respect the Dashboard master toggle even if the pause file is missing.
