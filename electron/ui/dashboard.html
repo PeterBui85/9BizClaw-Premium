@@ -3915,8 +3915,14 @@
         return;
       }
       const openMode = isOpenGroupMode();
-      list.innerHTML = filtered.map(g => {
-        // In open mode: all checked by default. In allowlist mode: only those in the list.
+      // Sort: enabled groups first, then alphabetical
+      const sorted = [...filtered].sort((a, b) => {
+        const aOn = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(a.groupId);
+        const bOn = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(b.groupId);
+        if (aOn !== bOn) return aOn ? -1 : 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      list.innerHTML = sorted.map(g => {
         const checked = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(g.groupId);
         const avatarHtml = g.avatar
           ? `<div class="avatar-wrap"><img class="avatar-img" src="${esc(g.avatar)}" referrerpolicy="no-referrer" onerror="this.parentElement.classList.add('failed')"><div class="avatar-fallback">${icon('users', 18)}</div></div>`
@@ -3969,7 +3975,14 @@
         list.innerHTML = '<div class="zalo-mgr-empty">Không tìm thấy user.</div>';
         return;
       }
-      list.innerHTML = filtered.slice(0, 500).map(f => {
+      // Sort: blocked users sink to bottom, rest alphabetical
+      const sorted = [...filtered].sort((a, b) => {
+        const aBlocked = (zaloMgrConfig.userBlocklist || []).includes(a.userId);
+        const bBlocked = (zaloMgrConfig.userBlocklist || []).includes(b.userId);
+        if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
+        return (a.displayName || '').localeCompare(b.displayName || '');
+      });
+      list.innerHTML = sorted.slice(0, 500).map(f => {
         // INVERTED semantic: checked = bot REPLIES (not in blocklist). Default = all checked.
         const blocked = (zaloMgrConfig.userBlocklist || []).includes(f.userId);
         const checked = !blocked;
