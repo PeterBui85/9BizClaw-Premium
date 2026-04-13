@@ -2988,7 +2988,11 @@ async function ensureDefaultConfig() {
     } catch (e) { console.warn('[config] plugin entry heal failed:', e?.message); }
     {
       const oz = config.channels.openzalo;
-      if (oz.enabled !== true) { oz.enabled = true; changed = true; }
+      // Default OFF on fresh install — CEO must enable from Settings > Zalo.
+      // If field already exists (any value), preserve it so disabling from
+      // dashboard survives restarts. Previously this forced true every boot,
+      // which overrode the CEO's explicit disable.
+      if (oz.enabled === undefined) { oz.enabled = false; changed = true; }
       if (!oz.dmPolicy) { oz.dmPolicy = 'open'; changed = true; }
       if (!oz.allowFrom) { oz.allowFrom = ['*']; changed = true; }
       if (!oz.groupPolicy) { oz.groupPolicy = 'open'; changed = true; }
