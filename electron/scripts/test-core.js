@@ -267,10 +267,14 @@ if (!fs.existsSync(safeScript)) {
   const _filterTestId = (() => {
     try {
       const friendsFile = path.join(ZCA_CACHE, 'friends.json');
-      if (fs.existsSync(friendsFile)) {
-        const friends = JSON.parse(fs.readFileSync(friendsFile, 'utf-8'));
-        if (Array.isArray(friends) && friends[0]?.userId) return String(friends[0].userId);
-      }
+      if (!fs.existsSync(friendsFile)) return null;
+      const friends = JSON.parse(fs.readFileSync(friendsFile, 'utf-8'));
+      if (!Array.isArray(friends)) return null;
+      // Find a friend NOT in blocklist so Gate 4 doesn't block before Gate 6
+      let blocklist = [];
+      try { blocklist = JSON.parse(fs.readFileSync(path.join(WS, 'zalo-blocklist.json'), 'utf-8')).map(b => String(b.id || b)); } catch {}
+      const safe = friends.find(f => f.userId && !blocklist.includes(String(f.userId)));
+      return safe ? String(safe.userId) : (friends[0]?.userId ? String(friends[0].userId) : null);
     } catch {}
     return null;
   })();
@@ -299,16 +303,19 @@ if (!fs.existsSync(safeScript)) {
     else fail('T3.6 output filter', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
   })();
 
-  // T3.7: Target validation — unknown groupId blocked
+  // T3.7: Target validation — unknown groupId blocked (by target-not-found OR allowlist)
   (() => {
     const groupsFile = path.join(ZCA_CACHE, 'groups.json');
     if (!fs.existsSync(groupsFile)) return skip('T3.7 target validation', 'no groups.json');
     const r = runSafe(['9999999999999999999', 'test', '--group']);
-    if (r.code === 1 && r.stderr.includes('not found')) pass('T3.7 unknown groupId blocked', r.stderr.slice(0, 80));
-    else fail('T3.7 target validation', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
+    if (r.code === 1 && (r.stderr.includes('not found') || r.stderr.includes('not in allowlist'))) {
+      pass('T3.7 unknown groupId blocked', r.stderr.slice(0, 80));
+    } else {
+      fail('T3.7 target validation', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
+    }
   })();
 
-  // T3.8: Clean message with valid groupId passes all gates
+  // T3.8: Clean message with ALLOWED groupId passes all gates
   (() => {
     if (!ocConfig || ocConfig.channels?.openzalo?.enabled === false) {
       return skip('T3.8 clean message pass', 'Zalo disabled');
@@ -317,9 +324,17 @@ if (!fs.existsSync(safeScript)) {
     if (fs.existsSync(pausePath)) return skip('T3.8 clean message pass', 'Zalo paused');
     const groupsFile = path.join(ZCA_CACHE, 'groups.json');
     if (!fs.existsSync(groupsFile)) return skip('T3.8 clean message', 'no groups.json');
+    // Find a group that's in the allowlist (or any group if policy=open)
     let groupId;
-    try { groupId = JSON.parse(fs.readFileSync(groupsFile, 'utf-8'))[0]?.groupId; } catch {}
-    if (!groupId) return skip('T3.8 clean message', 'no groups');
+    try {
+      const groups = JSON.parse(fs.readFileSync(groupsFile, 'utf-8'));
+      const oz = ocConfig.channels?.openzalo || {};
+      const allowFrom = Array.isArray(oz.groupAllowFrom) ? oz.groupAllowFrom : ['*'];
+      const isOpen = oz.groupPolicy !== 'allowlist' || allowFrom.includes('*');
+      if (isOpen) { groupId = groups[0]?.groupId; }
+      else { const allowed = groups.find(g => allowFrom.includes(g.groupId)); groupId = allowed?.groupId; }
+    } catch {}
+    if (!groupId) return skip('T3.8 clean message', 'no allowed group');
     const r = runSafe([String(groupId), 'Xin chao test', '--group']);
     // exit 0 = sent, exit 2 = openzca fail (gates passed), exit null = timeout (gates passed, send slow)
     if (r.code === 0 || r.code === 2) pass('T3.8 clean message passes all gates', 'exit ' + r.code);
