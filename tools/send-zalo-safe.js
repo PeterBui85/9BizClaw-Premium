@@ -107,15 +107,56 @@ if (!isGroup) {
   } catch {}
 }
 
-// --- Gate 5: Output filter (same patterns as main.js) ---
+// --- Gate 5: Target validation (verify targetId exists in cache) ---
+(() => {
+  const cacheDir = path.join(HOME, '.openzca', 'profiles', 'default', 'cache');
+  const cacheFile = isGroup
+    ? path.join(cacheDir, 'groups.json')
+    : path.join(cacheDir, 'friends.json');
+  if (!fs.existsSync(cacheFile)) {
+    // No cache = Zalo listener hasn't run. Allow send but warn.
+    process.stderr.write('WARNING: ' + (isGroup ? 'groups' : 'friends') + '.json not found — cannot verify target. Proceeding anyway.\n');
+  } else {
+    try {
+      const data = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+      if (!Array.isArray(data)) throw new Error('not array');
+      const idField = isGroup ? 'groupId' : 'userId';
+      const nameField = isGroup ? 'name' : 'displayName';
+      const match = data.find(e => String(e[idField]) === targetId);
+      if (!match) {
+        const known = data.map(e => `${e[idField]} (${e[nameField] || '?'})`).slice(0, 5).join(', ');
+        process.stderr.write('BLOCKED: Target ' + targetId + ' not found in ' + (isGroup ? 'groups' : 'friends') + '.json. Known: ' + known + '\n');
+        process.exit(1);
+      }
+      // Print target name for CEO confirmation in agent output
+      process.stderr.write('TARGET: ' + (match[nameField] || targetId) + '\n');
+    } catch (e) {
+      if (e.message !== 'not array') {
+        process.stderr.write('WARNING: Cannot parse cache file: ' + e.message + '. Proceeding anyway.\n');
+      }
+    }
+  }
+})();
+
+// --- Gate 6: Output filter (critical patterns — blocks sensitive content) ---
 const FILTER_PATTERNS = [
+  // File paths
   { name: 'file-path-win', re: /[A-Z]:\\[A-Za-z0-9_\\.-]{3,}/i },
   { name: 'file-path-unix', re: /(?:\/usr\/|\/home\/|\/tmp\/|~\/|\.\.\/)[A-Za-z0-9_/.-]{3,}/ },
+  { name: 'file-path-config', re: /\bopenclaw\.json\b/i },
+  { name: 'file-path-core-md', re: /\b(?:SOUL|AGENTS|IDENTITY|BOOTSTRAP|HEARTBEAT)\.md\b/i },
+  // Secrets
   { name: 'api-key', re: /(?:sk-|pk_|token[=: ]+)[A-Za-z0-9_-]{10,}/ },
+  { name: 'bearer-token', re: /\bBearer\s+[a-zA-Z0-9_\-.]{20,}/i },
+  { name: 'botToken-field', re: /\bbotToken\b/i },
+  // Env / errors
   { name: 'env-var-leak', re: /(?:APPDATA|USERPROFILE|HOME|PATH)=[^\s]{5,}/ },
   { name: 'stack-trace', re: /at\s+\S+\s+\([^)]*:\d+:\d+\)/ },
   { name: 'exit-code', re: /exit(?:\s+code)?\s*[=: ]+\d+/i },
   { name: 'node-error', re: /Error:\s+(?:ENOENT|EACCES|ECONNREFUSED|MODULE_NOT_FOUND)/ },
+  // Meta-commentary (AI narrating its own actions)
+  { name: 'meta-tool-name', re: /\b(?:tool (?:Edit|Write|Read|Bash)|use the (?:Edit|Write|Read) tool)\b/i },
+  { name: 'compaction-notice', re: /(?:Auto-compaction|Compacting context|Context limit exceeded)/i },
 ];
 for (const p of FILTER_PATTERNS) {
   if (p.re.test(message)) {

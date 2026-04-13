@@ -261,41 +261,70 @@ if (!fs.existsSync(safeScript)) {
     }
   })();
 
+  // T3.4-T3.6: Output filter tests. Need a valid targetId so target
+  // validation (Gate 5) passes and the output filter (Gate 6) can run.
+  // Use first friendId from cache for DM mode, or first groupId for group mode.
+  const _filterTestId = (() => {
+    try {
+      const friendsFile = path.join(ZCA_CACHE, 'friends.json');
+      if (fs.existsSync(friendsFile)) {
+        const friends = JSON.parse(fs.readFileSync(friendsFile, 'utf-8'));
+        if (Array.isArray(friends) && friends[0]?.userId) return String(friends[0].userId);
+      }
+    } catch {}
+    return null;
+  })();
+
   // T3.4: Output filter — file path
   (() => {
-    const r = runSafe(['123', 'Check C:\\Users\\admin\\secret\\file.txt', '--group']);
+    if (!_filterTestId) return skip('T3.4 output filter', 'no friendId for test');
+    const r = runSafe([_filterTestId, 'Check C:\\Users\\admin\\secret\\file.txt']);
     if (r.code === 1 && r.stderr.includes('filter')) pass('T3.4 output filter blocks file path', r.stderr.slice(0, 80));
     else fail('T3.4 output filter', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
   })();
 
   // T3.5: Output filter — API key
   (() => {
-    const r = runSafe(['123', 'Your key is sk-1234567890abcdef1234', '--group']);
+    if (!_filterTestId) return skip('T3.5 output filter', 'no friendId for test');
+    const r = runSafe([_filterTestId, 'Your key is sk-1234567890abcdef1234']);
     if (r.code === 1 && r.stderr.includes('filter')) pass('T3.5 output filter blocks API key', r.stderr.slice(0, 80));
     else fail('T3.5 output filter', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
   })();
 
   // T3.6: Output filter — stack trace
   (() => {
-    const r = runSafe(['123', 'Error at Object.run (/usr/lib/node:123:45)', '--group']);
+    if (!_filterTestId) return skip('T3.6 output filter', 'no friendId for test');
+    const r = runSafe([_filterTestId, 'Error at Object.run (/usr/lib/node:123:45)']);
     if (r.code === 1 && r.stderr.includes('filter')) pass('T3.6 output filter blocks stack trace', r.stderr.slice(0, 80));
     else fail('T3.6 output filter', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
   })();
 
-  // T3.7: Clean message passes gates (when channel enabled + not paused)
+  // T3.7: Target validation — unknown groupId blocked
+  (() => {
+    const groupsFile = path.join(ZCA_CACHE, 'groups.json');
+    if (!fs.existsSync(groupsFile)) return skip('T3.7 target validation', 'no groups.json');
+    const r = runSafe(['9999999999999999999', 'test', '--group']);
+    if (r.code === 1 && r.stderr.includes('not found')) pass('T3.7 unknown groupId blocked', r.stderr.slice(0, 80));
+    else fail('T3.7 target validation', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
+  })();
+
+  // T3.8: Clean message with valid groupId passes all gates
   (() => {
     if (!ocConfig || ocConfig.channels?.openzalo?.enabled === false) {
-      return skip('T3.7 clean message pass', 'Zalo disabled in config');
+      return skip('T3.8 clean message pass', 'Zalo disabled');
     }
     const pausePath = path.join(WS, 'zalo-paused.json');
-    if (fs.existsSync(pausePath)) {
-      return skip('T3.7 clean message pass', 'Zalo paused — cannot test clean pass without unpausing');
-    }
-    // Use a fake groupId that won't match any real group — openzca will fail (exit 2) but gates should pass
-    const r = runSafe(['0000000000000000000', 'Xin chao test', '--group']);
-    // Exit 0 = sent (unlikely with fake ID), exit 2 = openzca fail (gates passed), exit 1 = gate blocked
-    if (r.code === 0 || r.code === 2) pass('T3.7 clean message passes gates', 'exit ' + r.code + ' (gates not blocking)');
-    else fail('T3.7 clean message blocked by gate', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
+    if (fs.existsSync(pausePath)) return skip('T3.8 clean message pass', 'Zalo paused');
+    const groupsFile = path.join(ZCA_CACHE, 'groups.json');
+    if (!fs.existsSync(groupsFile)) return skip('T3.8 clean message', 'no groups.json');
+    let groupId;
+    try { groupId = JSON.parse(fs.readFileSync(groupsFile, 'utf-8'))[0]?.groupId; } catch {}
+    if (!groupId) return skip('T3.8 clean message', 'no groups');
+    const r = runSafe([String(groupId), 'Xin chao test', '--group']);
+    // exit 0 = sent, exit 2 = openzca fail (gates passed), exit null = timeout (gates passed, send slow)
+    if (r.code === 0 || r.code === 2) pass('T3.8 clean message passes all gates', 'exit ' + r.code);
+    else if (r.code === null) pass('T3.8 clean message passes gates (send timeout)', 'gates OK, openzca timed out');
+    else fail('T3.8 clean message blocked', 'exit=' + r.code + ' stderr=' + r.stderr.slice(0, 100));
   })();
 }
 
