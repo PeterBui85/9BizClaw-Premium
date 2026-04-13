@@ -1958,10 +1958,14 @@
               <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
                 <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Tài khoản Zalo cá nhân của chủ nhân <span class="tip" data-tooltip="Bot nhận diện tài khoản này là chủ, trả lời khác với khách">?</span></div>
                 <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.5">Bot nhận diện tài khoản này là chủ doanh nghiệp (như Telegram), trả lời theo persona CEO và nhận lệnh quản trị.</div>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <select id="zalo-owner-dashboard-select" style="flex:1;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px">
-                    <option value="">— Chưa chọn —</option>
-                  </select>
+                <div style="display:flex;gap:8px;align-items:center;position:relative">
+                  <div style="flex:1;position:relative">
+                    <input type="text" id="zalo-owner-search" placeholder="Tim theo ten..." autocomplete="off"
+                      style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;box-sizing:border-box"
+                      onfocus="showOwnerDropdown()" oninput="filterOwnerDropdown()">
+                    <div id="zalo-owner-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-top:2px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>
+                  </div>
+                  <input type="hidden" id="zalo-owner-dashboard-select" value="">
                   <button class="btn btn-secondary btn-small" onclick="refreshZaloOwnerList()" style="flex-shrink:0;padding:6px 12px;font-size:11px">Refresh</button>
                 </div>
                 <div id="zalo-owner-dashboard-status" style="display:none;font-size:11px;margin-top:6px"></div>
@@ -4449,59 +4453,91 @@
       } catch {}
     })();
 
-    // === Zalo owner picker on Dashboard ===
+    // === Zalo owner picker on Dashboard (searchable) ===
+    let _ownerFriendsList = [];
+    let _ownerSavedId = '';
     async function loadDashboardZaloOwner() {
-      const sel = document.getElementById('zalo-owner-dashboard-select');
+      const hiddenSel = document.getElementById('zalo-owner-dashboard-select');
+      const searchInput = document.getElementById('zalo-owner-search');
       const status = document.getElementById('zalo-owner-dashboard-status');
-      if (!sel) return;
+      if (!hiddenSel || !searchInput) return;
       try {
         const friends = await window.claw.listZaloFriends();
         if (!Array.isArray(friends) || friends.length === 0) {
-          sel.innerHTML = '<option value="">Chưa có bạn bè (đăng nhập Zalo trước)</option>';
+          searchInput.placeholder = 'Chua co ban be (dang nhap Zalo truoc)';
+          _ownerFriendsList = [];
           return;
         }
         friends.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'vi'));
-        let savedOwner = '';
+        _ownerFriendsList = friends;
         try {
           const existing = await window.claw.getZaloOwner();
-          savedOwner = (existing && existing.ownerUserId) || '';
+          _ownerSavedId = (existing && existing.ownerUserId) || '';
         } catch {}
-        const opts = ['<option value="">— Chưa chọn —</option>'];
-        for (const f of friends) {
-          const id = String(f.userId || '');
-          const name = String(f.displayName || '(không tên)').replace(/</g, '&lt;');
-          const phone = f.phoneNumber ? ' · ' + f.phoneNumber : '';
-          const isSelected = id === savedOwner ? ' selected' : '';
-          opts.push('<option value="' + id + '" data-name="' + name + '"' + isSelected + '>' + name + phone + '</option>');
-        }
-        sel.innerHTML = opts.join('');
-        sel.onchange = async (ev) => {
-          const userId = ev.target.value;
-          if (!userId) return;
-          const opt = ev.target.options[ev.target.selectedIndex];
-          const name = opt.getAttribute('data-name') || '';
-          status.style.display = 'block';
-          status.textContent = 'Đang lưu...';
-          status.style.color = 'var(--text-muted)';
-          try {
-            const res = await window.claw.saveZaloOwner({ ownerUserId: userId, ownerName: name });
-            if (res && res.success) {
-              status.textContent = '✓ Đã lưu — bot sẽ nhận diện ' + name + ' là chủ doanh nghiệp.';
-              status.style.color = 'var(--success,#16a34a)';
-              addActivity('Đã đặt chủ nhân Zalo: ' + name);
-            } else {
-              status.textContent = 'Lỗi: ' + (res?.error || 'không xác định');
-              status.style.color = 'var(--danger,#e74c3c)';
-            }
-          } catch (e) {
-            status.textContent = 'Lỗi: ' + e.message;
-            status.style.color = 'var(--danger,#e74c3c)';
+        if (_ownerSavedId) {
+          const saved = friends.find(f => String(f.userId) === _ownerSavedId);
+          if (saved) {
+            searchInput.value = saved.displayName + (saved.phoneNumber ? ' · ' + saved.phoneNumber : '');
+            hiddenSel.value = _ownerSavedId;
           }
-        };
+        }
       } catch (e) {
         console.warn('loadDashboardZaloOwner error:', e);
       }
     }
+    function showOwnerDropdown() {
+      filterOwnerDropdown();
+      document.getElementById('zalo-owner-dropdown').style.display = 'block';
+    }
+    function filterOwnerDropdown() {
+      const dd = document.getElementById('zalo-owner-dropdown');
+      const q = (document.getElementById('zalo-owner-search').value || '').toLowerCase();
+      const filtered = _ownerFriendsList.filter(f => !q || (f.displayName || '').toLowerCase().includes(q) || (f.phoneNumber || '').includes(q));
+      if (filtered.length === 0) {
+        dd.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:12px;text-align:center">Khong tim thay</div>';
+        return;
+      }
+      dd.innerHTML = filtered.slice(0, 50).map(f => {
+        const id = String(f.userId || '');
+        const name = esc(f.displayName || '(khong ten)');
+        const phone = f.phoneNumber ? ' <span style="color:var(--text-muted)">· ' + esc(f.phoneNumber) + '</span>' : '';
+        const isCurrent = id === _ownerSavedId ? ' style="background:var(--accent-muted,#e8f4ff)"' : '';
+        return '<div class="zalo-mgr-row" onclick="selectOwner(\'' + id + '\', \'' + esc(f.displayName || '') + '\')"' + isCurrent + '>' +
+          (f.avatar ? '<img src="' + esc(f.avatar) + '" style="width:28px;height:28px;border-radius:50%" onerror="this.style.display=\'none\'">' : '') +
+          '<div class="info"><div class="name">' + name + phone + '</div><div class="sub">ID: ' + id + '</div></div></div>';
+      }).join('');
+      if (filtered.length > 50) dd.innerHTML += '<div style="padding:8px;color:var(--text-muted);font-size:11px;text-align:center">... con ' + (filtered.length - 50) + ' ket qua. Go ten cu the hon.</div>';
+    }
+    async function selectOwner(userId, name) {
+      document.getElementById('zalo-owner-dropdown').style.display = 'none';
+      document.getElementById('zalo-owner-search').value = name;
+      document.getElementById('zalo-owner-dashboard-select').value = userId;
+      const status = document.getElementById('zalo-owner-dashboard-status');
+      status.style.display = 'block';
+      status.textContent = 'Dang luu...';
+      status.style.color = 'var(--text-muted)';
+      try {
+        const res = await window.claw.saveZaloOwner({ ownerUserId: userId, ownerName: name });
+        if (res && res.success) {
+          _ownerSavedId = userId;
+          status.textContent = 'Da luu — bot se nhan dien ' + name + ' la chu doanh nghiep.';
+          status.style.color = 'var(--success,#16a34a)';
+          addActivity('Da dat chu nhan Zalo: ' + name);
+        } else {
+          status.textContent = 'Loi: ' + (res?.error || 'khong xac dinh');
+          status.style.color = 'var(--danger,#e74c3c)';
+        }
+      } catch (e) {
+        status.textContent = 'Loi: ' + e.message;
+        status.style.color = 'var(--danger,#e74c3c)';
+      }
+    }
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      const dd = document.getElementById('zalo-owner-dropdown');
+      const search = document.getElementById('zalo-owner-search');
+      if (dd && search && !dd.contains(e.target) && e.target !== search) dd.style.display = 'none';
+    });
     async function refreshZaloOwnerList() {
       const status = document.getElementById('zalo-owner-dashboard-status');
       if (status) { status.style.display = 'block'; status.textContent = 'Đang refresh danh sách bạn bè...'; status.style.color = 'var(--text-muted)'; }
