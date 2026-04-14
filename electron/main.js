@@ -8064,11 +8064,13 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       if (!Array.isArray(cfg.channels.openzalo.allowFrom)) {
         cfg.channels.openzalo.allowFrom = ['*'];
       }
-      // Sync per-group requireMention to openclaw.json so openzalo plugin
-      // respects the "Mọi tin" / "@mention" / "Tắt" setting from dashboard.
-      // Default openzalo is requireMention=true — we set false for "all" mode.
+      // Sync per-group requireMention + groupAllowFrom to openclaw.json.
+      // BOTH must be in sync: groups.<id>.enabled controls the plugin's
+      // per-group gate, groupAllowFrom controls the native allowlist gate.
+      // If only one is set, messages get through one gate but blocked by the other.
       if (groupSettings && typeof groupSettings === 'object') {
         if (!cfg.channels.openzalo.groups) cfg.channels.openzalo.groups = {};
+        const enabledGroupIds = [];
         for (const [gid, gs] of Object.entries(groupSettings)) {
           if (!gid) continue;
           if (!cfg.channels.openzalo.groups[gid]) cfg.channels.openzalo.groups[gid] = {};
@@ -8076,13 +8078,24 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
           if (mode === 'all') {
             cfg.channels.openzalo.groups[gid].requireMention = false;
             cfg.channels.openzalo.groups[gid].enabled = true;
+            enabledGroupIds.push(gid);
           } else if (mode === 'mention') {
             cfg.channels.openzalo.groups[gid].requireMention = true;
             cfg.channels.openzalo.groups[gid].enabled = true;
+            enabledGroupIds.push(gid);
           } else {
-            // "off" — disable the group entirely
             cfg.channels.openzalo.groups[gid].enabled = false;
           }
+        }
+        // Sync groupAllowFrom to match — add any newly enabled groups
+        if (cfg.channels.openzalo.groupPolicy === 'allowlist') {
+          const allow = new Set(cfg.channels.openzalo.groupAllowFrom || []);
+          for (const gid of enabledGroupIds) allow.add(gid);
+          // Remove disabled groups
+          for (const [gid, gs] of Object.entries(groupSettings)) {
+            if (gs && gs.mode === 'off') allow.delete(gid);
+          }
+          cfg.channels.openzalo.groupAllowFrom = [...allow];
         }
       }
       writeOpenClawConfigIfChanged(configPath, cfg);
