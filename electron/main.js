@@ -8112,15 +8112,12 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       if (!cfg.channels) cfg.channels = {};
       if (!cfg.channels.openzalo) cfg.channels.openzalo = {};
       cfg.channels.openzalo.enabled = enabled !== false;
-      if (groupPolicy === 'allowlist') {
-        cfg.channels.openzalo.groupPolicy = 'allowlist';
-        cfg.channels.openzalo.groupAllowFrom = Array.isArray(groupAllowFrom) && groupAllowFrom.length > 0
-          ? groupAllowFrom
-          : [];
-      } else {
-        cfg.channels.openzalo.groupPolicy = 'open';
-        cfg.channels.openzalo.groupAllowFrom = ['*'];
-      }
+      // ALWAYS keep native gate open — let code-level patch in inbound.ts
+      // handle group filtering via zalo-group-settings.json (realtime, no restart).
+      // Setting allowlist here blocks groups at the native gate BEFORE our
+      // patches run, making Dashboard group toggle useless.
+      cfg.channels.openzalo.groupPolicy = 'open';
+      cfg.channels.openzalo.groupAllowFrom = ['*'];
       // CRITICAL: openzalo plugin defaults dmPolicy to "pairing" → unknown DM
       // sender → "OpenClaw: access not configured." pairing reply. We always
       // want CEO + their contacts to DM the bot directly without pairing dance.

@@ -4355,18 +4355,10 @@
 
     async function saveZaloManager() {
       zaloMgrConfig.enabled = document.getElementById('zalo-mgr-enabled').checked;
-      // groupPolicy is derived: explicit "*" or all groups selected => "open".
-      // Empty allowlist means "không cho nhóm nào", not open mode.
-      if (!zaloMgrConfig.groupAllowFrom || zaloMgrConfig.groupAllowFrom.includes('*') || zaloMgrConfig.groupPolicy === 'open') {
-        zaloMgrConfig.groupPolicy = 'open';
-        zaloMgrConfig.groupAllowFrom = ['*'];
-      } else if (zaloGroups.length > 0 && zaloMgrConfig.groupAllowFrom.length === zaloGroups.length) {
-        // User ticked ALL groups → switch back to open mode
-        zaloMgrConfig.groupPolicy = 'open';
-        zaloMgrConfig.groupAllowFrom = ['*'];
-      } else {
-        zaloMgrConfig.groupPolicy = 'allowlist';
-      }
+      // Always send open policy — native openzalo gate must let ALL groups through.
+      // Group filtering is handled by code-level patch reading zalo-group-settings.json.
+      zaloMgrConfig.groupPolicy = 'open';
+      zaloMgrConfig.groupAllowFrom = ['*'];
       // Apply loading state to ALL save buttons (one per tab)
       const saveBtns = document.querySelectorAll('.zalo-save-btn');
       saveBtns.forEach(btn => { btn.disabled = true; btn.classList.add('is-loading'); });
