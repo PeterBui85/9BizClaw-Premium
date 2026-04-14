@@ -4249,6 +4249,9 @@
     }
 
     function setAllGroupsMode(mode) {
+      if (mode === 'off' && zaloGroups.length > 1) {
+        if (!confirm(`Tắt bot ở TẤT CẢ ${zaloGroups.length} nhóm Zalo? Bot sẽ ngừng trả lời mọi nhóm.`)) return;
+      }
       if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
       zaloMgrConfig.groupPolicy = 'allowlist';
       if (mode === 'off') {

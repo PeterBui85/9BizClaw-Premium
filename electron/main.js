@@ -703,6 +703,22 @@ function seedWorkspace() {
     }
   } catch {}
 
+  // Cleanup: legacy zalo-group-settings.json from old buggy version that
+  // wrote ALL groups as "off" on save → bot silenced in all groups after
+  // a single save. If file exists with ALL entries as "off", delete it so
+  // the runtime patch falls back to default (all groups enabled).
+  try {
+    const gsPath = path.join(ws, 'zalo-group-settings.json');
+    if (fs.existsSync(gsPath)) {
+      const gs = JSON.parse(fs.readFileSync(gsPath, 'utf-8'));
+      const entries = Object.values(gs);
+      if (entries.length > 0 && entries.every(e => e?.mode === 'off')) {
+        fs.unlinkSync(gsPath);
+        console.log('[seedWorkspace] removed legacy all-off zalo-group-settings.json');
+      }
+    }
+  } catch {}
+
   // Seed default active-persona mix if missing (wizard overwrites later).
   // Format: active-persona.json (structured config) + active-persona.md
   // (compiled prompt bot reads on bootstrap).
@@ -8174,10 +8190,25 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     // 2. Write user blocklist to workspace (bot reads this per AGENTS.md rule)
     const bp = getZaloBlocklistPath();
     fs.writeFileSync(bp, JSON.stringify(userBlocklist || [], null, 2), 'utf-8');
-    // 3. Write per-group settings (mention/all/off) to workspace
+    // 3. Write per-group settings (mention/all/off) to workspace.
+    // CRITICAL: drop entries with mode='mention' (the implicit default) — only
+    // persist EXPLICIT off/all overrides. Otherwise any save bloats the file
+    // with default entries; if a future bug flips defaults to 'off', every
+    // group gets disabled silently.
     if (groupSettings && typeof groupSettings === 'object') {
       const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
-      fs.writeFileSync(gsPath, JSON.stringify(groupSettings, null, 2), 'utf-8');
+      const filtered = {};
+      for (const [gid, gs] of Object.entries(groupSettings)) {
+        if (!gs || !gs.mode) continue;
+        if (gs.mode === 'mention') continue; // implicit default — don't persist
+        filtered[gid] = gs;
+      }
+      if (Object.keys(filtered).length > 0) {
+        fs.writeFileSync(gsPath, JSON.stringify(filtered, null, 2), 'utf-8');
+      } else if (fs.existsSync(gsPath)) {
+        // No explicit overrides — remove file so patch defaults to "all on"
+        try { fs.unlinkSync(gsPath); } catch {}
+      }
     }
     // 4. Write stranger policy to workspace
     if (strangerPolicy) {
