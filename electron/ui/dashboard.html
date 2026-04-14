@@ -1888,21 +1888,94 @@
           <span>Bot Telegram đang tạm dừng. <span id="telegram-pause-until"></span></span>
         </div>
         <div class="main-card">
-          <h3>Giới thiệu</h3>
           <div style="font-size:13px;color:var(--text);line-height:1.6;padding:12px;background:var(--bg);border-radius:8px;display:flex;gap:10px;align-items:flex-start">
             <span data-icon="lightbulb" data-icon-size="18" style="color:var(--accent);flex-shrink:0;margin-top:2px"></span>
-            <div>Telegram là kênh giao tiếp chính giữa CEO và trợ lý AI. Dùng các lệnh nhanh bên dưới để điều khiển bot. Để xem trạng thái kết nối, vào <strong>Tổng quan</strong>.</div>
+            <div>Nhắn bất kỳ thứ gì cho bot qua Telegram. Bot hiểu tiếng Việt tự nhiên — không cần học lệnh. Dưới đây là gợi ý để khai thác tối đa.</div>
           </div>
         </div>
+
+        <!-- Quick commands -->
         <div class="main-card" style="margin-top:12px">
-          <h3>Lệnh nhanh</h3>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <div class="how-item"><strong style="color:var(--accent);min-width:100px">/menu</strong> <span style="font-size:12px;color:var(--text-muted)">Mẫu giao việc theo ngành</span></div>
-            <div class="how-item"><strong style="color:var(--accent);min-width:100px">/baocao</strong> <span style="font-size:12px;color:var(--text-muted)">Báo cáo tổng hợp ngay</span></div>
-            <div class="how-item"><strong style="color:var(--accent);min-width:100px">/huongdan</strong> <span style="font-size:12px;color:var(--text-muted)">Hướng dẫn sử dụng</span></div>
-            <div class="how-item"><strong style="color:var(--accent);min-width:100px">/skill</strong> <span style="font-size:12px;color:var(--text-muted)">Kỹ năng đã cài</span></div>
-            <div class="how-item"><strong style="color:var(--accent);min-width:100px">Knowledge</strong> <span style="font-size:12px;color:var(--text-muted)">Tài liệu doanh nghiệp (tab bên trái)</span></div>
-            <div class="how-item"><strong style="color:var(--accent);min-width:100px">/reset</strong> <span style="font-size:12px;color:var(--text-muted)">Xóa ngữ cảnh, bắt đầu lại</span></div>
+          <h3 style="margin-bottom:10px">Lệnh nhanh</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div class="how-item"><strong style="color:var(--accent)">/menu</strong> <span style="font-size:12px;color:var(--text-muted)">Mẫu giao việc theo ngành</span></div>
+            <div class="how-item"><strong style="color:var(--accent)">/baocao</strong> <span style="font-size:12px;color:var(--text-muted)">Báo cáo tổng hợp ngay</span></div>
+            <div class="how-item"><strong style="color:var(--accent)">/huongdan</strong> <span style="font-size:12px;color:var(--text-muted)">Hướng dẫn chi tiết</span></div>
+            <div class="how-item"><strong style="color:var(--accent)">/reset</strong> <span style="font-size:12px;color:var(--text-muted)">Xóa ngữ cảnh, bắt đầu lại</span></div>
+          </div>
+        </div>
+
+        <!-- Zalo remote -->
+        <div class="main-card" style="margin-top:12px">
+          <h3 style="margin-bottom:10px">Điều khiển Zalo từ Telegram</h3>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Nhắn tiếng Việt tự nhiên — bot sẽ hỏi xác nhận trước khi gửi.</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText('Nhắn vào nhóm Zalo [tên nhóm]: Chào mọi người, hôm nay shop có chương trình giảm giá 20% tất cả sản phẩm!')"><code style="font-size:12px;background:var(--bg);padding:8px 12px;border-radius:6px;display:block;line-height:1.5">Nhắn vào nhóm Zalo [tên nhóm]: Chào mọi người, hôm nay shop có chương trình giảm giá 20% tất cả sản phẩm!</code></div>
+            <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText('Nhắn cho [tên bạn bè] trên Zalo: Anh ơi, đơn hàng của anh đã sẵn sàng giao rồi ạ')"><code style="font-size:12px;background:var(--bg);padding:8px 12px;border-radius:6px;display:block;line-height:1.5">Nhắn cho [tên bạn bè] trên Zalo: Anh ơi, đơn hàng của anh đã sẵn sàng giao rồi ạ</code></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px;font-style:italic">Click để copy. Paste vào Telegram rồi sửa tên nhóm/nội dung.</div>
+        </div>
+
+        <!-- Skills showcase -->
+        <div class="main-card" style="margin-top:12px">
+          <h3 style="margin-bottom:4px">70+ Kỹ năng chuyên gia</h3>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Nhắn tiếng Việt — bot tự chọn skill phù hợp. Dưới đây là ví dụ prompt cho từng nhóm.</div>
+
+          <!-- Advisory -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span data-icon="briefcase" data-icon-size="16"></span> Cố vấn C-Level (11 skills)</div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-left:4px">
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Em phân tích dòng tiền tháng này, đề xuất cắt giảm chi phí nào trước</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">CFO</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Đánh giá nên build hay mua hệ thống CRM, team 5 dev</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">CTO</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Tư vấn chiến lược tuyển dụng Q3, cần 10 người, budget hạn chế</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">CHRO</span></div>
+            </div>
+          </div>
+
+          <!-- Marketing -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span data-icon="trending-up" data-icon-size="16"></span> Marketing & Growth (35 skills)</div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-left:4px">
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Viết bài quảng cáo Facebook cho sản phẩm mới, target nữ 25-35</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Facebook Ads</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Phân tích đối thủ ABC, điểm mạnh yếu, cơ hội cho mình</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Competitor Analysis</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Soạn email marketing cho chiến dịch Black Friday, 3 email sequence</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Email Marketing</span></div>
+            </div>
+          </div>
+
+          <!-- Strategy -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span data-icon="target" data-icon-size="16"></span> Chiến lược & Vận hành (9 skills)</div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-left:4px">
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Chuẩn bị tài liệu họp ban điều hành tuần tới, focus KPI Q2</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Board Meeting</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Đề xuất chiến lược giá cho dịch vụ mới, 3 gói: starter, pro, enterprise</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Pricing</span></div>
+            </div>
+          </div>
+
+          <!-- Content -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span data-icon="edit-3" data-icon-size="16"></span> Nội dung & Thương hiệu (9 skills)</div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-left:4px">
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Viết bài tuyển dụng Senior Developer, tone trẻ trung chuyên nghiệp</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Content Creator</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Lên content plan tháng tới cho fanpage, 3 bài/tuần, chủ đề tết</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Content Strategy</span></div>
+            </div>
+          </div>
+
+          <!-- Sales -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span data-icon="dollar-sign" data-icon-size="16"></span> Bán hàng & Doanh thu (5 skills)</div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-left:4px">
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Soạn cold email B2B cho giám đốc công ty logistics, giới thiệu dịch vụ</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Cold Email</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Thiết kế chương trình giới thiệu khách hàng, thưởng 2 bên</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Referral</span></div>
+            </div>
+          </div>
+
+          <!-- Daily operations -->
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px"><span data-icon="clock" data-icon-size="16"></span> Hàng ngày</div>
+            <div style="display:flex;flex-direction:column;gap:4px;padding-left:4px">
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Tóm tắt hoạt động hôm nay</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Báo cáo</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Tạo lịch nhắc họp với đối tác ABC lúc 14h thứ 5</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Lịch hẹn</span></div>
+              <div class="how-item" style="cursor:pointer" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent)"><code style="font-size:12px;background:var(--bg);padding:6px 10px;border-radius:6px;display:block">Tạo cron mỗi sáng 8h nhắc nhân viên A báo cáo doanh số</code><span style="font-size:11px;color:var(--text-muted);margin-left:8px">Tự động hóa</span></div>
+            </div>
           </div>
         </div>
       </div>
