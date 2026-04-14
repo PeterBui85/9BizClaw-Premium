@@ -107,45 +107,48 @@ jobs:
           # electron-builder's @electron/rebuild may have overridden the binary
           # with host arch (arm64) even when targeting x64. Check the FINAL
           # binary inside dist/ and fix if mismatched.
-          BINARY=$(find ../dist -name "better_sqlite3.node" -path "*/app.asar.unpacked/*" | head -1)
+          BINARY=$(find "$(pwd)/../dist" -name "better_sqlite3.node" -path "*/app.asar.unpacked/*" 2>/dev/null | head -1)
           if [ -z "$BINARY" ]; then
-            echo "WARN: better_sqlite3.node not found in dist (may be inside asar)"
+            echo "WARN: better_sqlite3.node not found in dist — listing dist structure:"
+            find "$(pwd)/../dist" -name "*.node" 2>/dev/null || true
+            echo "Skipping arch verify (binary may be inside asar)"
             exit 0
           fi
+          echo "Found binary: $BINARY"
           DETECTED=$(node -e "
-            const fs=require('fs'),fd=fs.openSync('$BINARY','r'),b=Buffer.alloc(16);
+            const fs=require('fs'),fd=fs.openSync(process.argv[1],'r'),b=Buffer.alloc(16);
             fs.readSync(fd,b,0,16,0);fs.closeSync(fd);
             const cpu=b.readUInt32LE(4);
             console.log(cpu===0x0100000c?'arm64':cpu===0x01000007?'x64':'unknown');
-          ")
+          " "$BINARY")
           echo "Final binary arch: $DETECTED, target: ${{ matrix.arch }}"
           if [ "$DETECTED" = "${{ matrix.arch }}" ]; then
             echo "OK — arch matches"
-          else
-            echo "MISMATCH — rebuilding better-sqlite3 for ${{ matrix.arch }}"
-            cd node_modules/better-sqlite3
-            npx --yes prebuild-install -r electron -t 28.3.3 --arch ${{ matrix.arch }} --platform darwin
-            FIXED_BINARY="build/Release/better_sqlite3.node"
-            if [ -f "$FIXED_BINARY" ]; then
-              cp "$FIXED_BINARY" "$BINARY"
-              echo "FIXED — copied correct binary into dist"
-              # Verify fix
-              VERIFY=$(node -e "
-                const fs=require('fs'),fd=fs.openSync('$BINARY','r'),b=Buffer.alloc(16);
-                fs.readSync(fd,b,0,16,0);fs.closeSync(fd);
-                const cpu=b.readUInt32LE(4);
-                console.log(cpu===0x0100000c?'arm64':cpu===0x01000007?'x64':'unknown');
-              ")
-              echo "Verified: $VERIFY"
-              if [ "$VERIFY" != "${{ matrix.arch }}" ]; then
-                echo "FATAL: still mismatched after fix"
-                exit 1
-              fi
-            else
-              echo "FATAL: prebuild-install did not produce binary"
-              exit 1
-            fi
+            exit 0
           fi
+          echo "MISMATCH — fetching correct binary for ${{ matrix.arch }}"
+          BSQL_DIR="$(pwd)/node_modules/better-sqlite3"
+          npx --yes prebuild-install -r electron -t 28.3.3 --arch ${{ matrix.arch }} --platform darwin --cwd "$BSQL_DIR"
+          FIXED="$BSQL_DIR/build/Release/better_sqlite3.node"
+          if [ ! -f "$FIXED" ]; then
+            echo "FATAL: prebuild-install did not produce binary at $FIXED"
+            ls -la "$BSQL_DIR/build/Release/" 2>/dev/null || true
+            exit 1
+          fi
+          cp "$FIXED" "$BINARY"
+          echo "Copied fixed binary to $BINARY"
+          VERIFY=$(node -e "
+            const fs=require('fs'),fd=fs.openSync(process.argv[1],'r'),b=Buffer.alloc(16);
+            fs.readSync(fd,b,0,16,0);fs.closeSync(fd);
+            const cpu=b.readUInt32LE(4);
+            console.log(cpu===0x0100000c?'arm64':cpu===0x01000007?'x64':'unknown');
+          " "$BINARY")
+          echo "Verified: $VERIFY"
+          if [ "$VERIFY" != "${{ matrix.arch }}" ]; then
+            echo "FATAL: still mismatched after fix"
+            exit 1
+          fi
+          echo "FIXED — ${{ matrix.arch }} binary in place"
 
       - name: List dist output
         run: ls -lh dist/ || true
