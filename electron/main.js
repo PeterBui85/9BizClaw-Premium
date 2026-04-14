@@ -3463,6 +3463,70 @@ function ensureZaloSenderDedupFix() {
   }
 }
 
+// Group settings patch: read zalo-group-settings.json at runtime (like blocklist).
+// This makes group enable/disable work INSTANTLY without gateway restart.
+// Idempotent via "9BizClaw GROUP-SETTINGS PATCH" marker.
+function ensureZaloGroupSettingsFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = fs.readFileSync(pluginFile, 'utf-8');
+    if (content.includes('9BizClaw GROUP-SETTINGS PATCH')) return;
+
+    const anchor = '  // === END 9BizClaw SENDER-DEDUP PATCH ===';
+    if (!content.includes(anchor)) {
+      console.warn('[zalo-group-settings-fix] sender-dedup anchor missing');
+      return;
+    }
+
+    const injection = `
+  // === 9BizClaw GROUP-SETTINGS PATCH ===
+  // Read zalo-group-settings.json at runtime so Dashboard group toggle
+  // takes effect immediately without gateway restart. Same pattern as blocklist.
+  if (message.isGroup) {
+    try {
+      const __gsFs = require("node:fs");
+      const __gsPath = require("node:path");
+      const __gsHome = require("node:os").homedir();
+      const __gsAppDir = "9bizclaw";
+      const __gsCandidates: string[] = [];
+      if (process.env['9BIZ_WORKSPACE']) {
+        __gsCandidates.push(__gsPath.join(process.env['9BIZ_WORKSPACE'], "zalo-group-settings.json"));
+      }
+      if (process.platform === "darwin") {
+        __gsCandidates.push(__gsPath.join(__gsHome, "Library", "Application Support", __gsAppDir, "zalo-group-settings.json"));
+      } else if (process.platform === "win32") {
+        const __gsAppData = process.env.APPDATA || __gsPath.join(__gsHome, "AppData", "Roaming");
+        __gsCandidates.push(__gsPath.join(__gsAppData, __gsAppDir, "zalo-group-settings.json"));
+      } else {
+        const __gsConfig = process.env.XDG_CONFIG_HOME || __gsPath.join(__gsHome, ".config");
+        __gsCandidates.push(__gsPath.join(__gsConfig, __gsAppDir, "zalo-group-settings.json"));
+      }
+      const __gsThreadId = message.threadId;
+      for (const __gp of __gsCandidates) {
+        try {
+          if (!__gsFs.existsSync(__gp)) continue;
+          const __gsRaw = JSON.parse(__gsFs.readFileSync(__gp, "utf-8"));
+          const __gsEntry = __gsRaw[__gsThreadId];
+          if (__gsEntry && __gsEntry.mode === "off") {
+            runtime.log?.(\`openzalo: group \${__gsThreadId} disabled via dashboard settings\`);
+            return;
+          }
+          break;
+        } catch {}
+      }
+    } catch {}
+  }
+  // === END 9BizClaw GROUP-SETTINGS PATCH ===
+`;
+    content = content.replace(anchor, anchor + injection);
+    fs.writeFileSync(pluginFile, content, 'utf-8');
+    console.log('[zalo-group-settings-fix] Injected group settings check into inbound.ts');
+  } catch (e) {
+    console.error('[zalo-group-settings-fix] error:', e?.message || e);
+  }
+}
+
 // rename, avatar change, etc.) before they reach the AI. Without this filter the bot
 // occasionally replies to "X đã thêm Y vào nhóm" in customer groups — very embarrassing.
 // Code-level gate is more reliable than AGENTS.md LLM rule alone.
@@ -5304,6 +5368,8 @@ async function _startOpenClawImpl() {
   // Sender dedup guard: drop exact-text duplicates from same sender within 3s.
   // Must run AFTER ensureZaloSystemMsgFix (depends on SYSTEM-MSG END anchor).
   ensureZaloSenderDedupFix();
+  // Group settings: read zalo-group-settings.json realtime so Dashboard toggle works instantly.
+  ensureZaloGroupSettingsFix();
   // Force-one-message: hardcode disableBlockStreaming=true in openzalo inbound.ts
   // so "Dạ" word never gets split between messages regardless of config drift.
   ensureOpenzaloForceOneMessageFix();
@@ -8119,6 +8185,14 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
       fs.writeFileSync(spPath, JSON.stringify({ mode: strangerPolicy }, null, 2), 'utf-8');
     }
+    // 5. Restart gateway so config changes take effect immediately.
+    // Gateway caches config in-memory — writeOpenClawConfigIfChanged may
+    // skip the write (bytes equal) so the file watcher never fires.
+    // A soft restart ensures the new group settings are picked up NOW.
+    try {
+      console.log('[save-zalo-manager] restarting gateway to apply config changes');
+      startOpenClaw();
+    } catch (e2) { console.warn('[save-zalo-manager] restart failed:', e2.message); }
     return { success: gateOk };
   } catch (e) {
     return { success: false, error: e.message };
@@ -10942,16 +11016,29 @@ function startChannelStatusBroadcast() {
       const now = Date.now();
       const probes = { telegram: tg, zalo: zl };
       const labels = { telegram: 'Telegram', zalo: 'Zalo' };
+      if (!global._channelDownSince) global._channelDownSince = {};
+      const DOWN_GRACE_MS = 2 * 60 * 1000; // Only alert after 2 minutes of continuous disconnect
       for (const ch of ['telegram', 'zalo']) {
         const prev = _lastChannelState[ch];
         const cur = probes[ch];
         if (prev !== null && prev.ready === true && cur.ready === false) {
+          // Channel just went down — record timestamp but don't alert yet
+          if (!global._channelDownSince[ch]) global._channelDownSince[ch] = now;
+        }
+        if (cur.ready === true) {
+          // Channel recovered — clear the down timer silently
+          delete global._channelDownSince[ch];
+        }
+        // Only alert after 2 minutes of continuous disconnect
+        if (cur.ready === false && global._channelDownSince[ch] && (now - global._channelDownSince[ch]) >= DOWN_GRACE_MS) {
           if (now - (_lastChannelAlertAt[ch] || 0) >= THROTTLE_MS) {
             const hhmm = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
             const reason = (cur && cur.error) ? String(cur.error) : 'không rõ';
-            const msg = `Kênh ${labels[ch]} vừa mất kết nối lúc ${hhmm}. Lý do: ${reason}. Em sẽ tự thử kết nối lại, nếu sau 2 phút chưa được, anh mở Dashboard xem chi tiết.`;
+            const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
+            const msg = `Kênh ${labels[ch]} mất kết nối đã ${downMin} phút (từ ${hhmm}). Lý do: ${reason}. Mở Dashboard để kiểm tra.`;
             try { sendCeoAlert(msg); } catch (e) { console.error('[channel-status] sendCeoAlert error:', e.message); }
             _lastChannelAlertAt[ch] = now;
+            delete global._channelDownSince[ch]; // Reset so next alert needs another 2min
           }
         }
         _lastChannelState[ch] = cur;
