@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>9BizClaw — Thiết lập</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
   <style>
     /* ===== Wizard premium full-screen layout ===== */
@@ -37,6 +38,14 @@
       height: 500px;
       background: radial-gradient(circle, var(--accent-soft) 0%, transparent 60%);
       pointer-events: none;
+    }
+    /* Light mode: soft off-white rail, neutral — not a red tint */
+    html[data-theme="light"] .wz-brand {
+      background: #fafafa;
+      border-right: 1px solid var(--border);
+    }
+    html[data-theme="light"] .wz-brand::before {
+      background: radial-gradient(circle, rgba(0,0,0,0.025) 0%, transparent 60%);
     }
     .wz-brand-mark {
       display: flex;
@@ -77,8 +86,7 @@
       font-size: 12px;
       font-weight: 600;
       color: var(--accent);
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
+      letter-spacing: 0.3px;
       margin-bottom: 16px;
     }
     .wz-headline {
@@ -313,8 +321,7 @@
       font-size: 10px;
       font-weight: 600;
       color: var(--text-tertiary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       vertical-align: middle;
     }
 
@@ -458,6 +465,91 @@
       display: flex;
       gap: 12px;
       align-items: flex-start;
+    }
+    /* Roadmap — premium cards, theme-adaptive (light + dark via CSS vars) */
+    .wz-coming-soon {
+      margin: 28px 0 20px;
+    }
+    .wz-cs-head {
+      margin-bottom: 14px;
+    }
+    .wz-cs-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--wz-text, #0f172a);
+      margin: 0 0 2px;
+      letter-spacing: -0.01em;
+    }
+    .wz-cs-sub {
+      font-size: 12px;
+      color: var(--wz-muted, #64748b);
+      margin: 0;
+    }
+    .wz-cs-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 640px) {
+      .wz-cs-grid { grid-template-columns: 1fr; }
+    }
+    .wz-cs-item {
+      display: flex;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--wz-card, #ffffff);
+      border: 1px solid var(--wz-border, #e2e8f0);
+      border-radius: 10px;
+      align-items: flex-start;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .wz-cs-item:hover {
+      border-color: var(--wz-border-strong, #cbd5e1);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+    }
+    .wz-cs-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(220, 38, 38, 0.08);
+      color: #dc2626;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .wz-cs-body {
+      flex: 1;
+      min-width: 0;
+    }
+    .wz-cs-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 3px;
+    }
+    .wz-cs-item strong {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--wz-text, #0f172a);
+      line-height: 1.3;
+    }
+    .wz-cs-tag {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--wz-muted, #737373);
+      border: 1px solid var(--wz-border-strong, #d4d4d4);
+      background: transparent;
+      padding: 1px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+    .wz-cs-item p {
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--wz-muted, #64748b);
+      margin: 0;
     }
     .wz-alert.error {
       background: rgba(248, 113, 113, 0.08);
@@ -780,8 +872,8 @@
     .wz-mix-preview-label {
       font-size: 11px;
       color: var(--text-muted, #9ba1a8);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
       margin-bottom: 6px;
     }
     .wz-mix-preview-bubble {
@@ -883,7 +975,7 @@
               </div>
 
               <div id="biz-preview-wrap" class="wz-hidden" style="margin-top: 12px; padding: 12px 14px; background: var(--surface-2, #f5f5f7); border-radius: 10px; border: 1px solid var(--border, #e5e5ea);">
-                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary, #888); margin-bottom: 6px;">Bot sẽ thấy</div>
+                <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.3px; color: var(--text-tertiary, #888); margin-bottom: 6px;">Bot sẽ thấy</div>
                 <div id="biz-preview" style="font-size: 14px; line-height: 1.5; color: var(--text-primary, #1d1d1f);"></div>
               </div>
 
@@ -959,26 +1051,19 @@
 
             <div class="wz-field-row">
               <div class="wz-field">
-                <label class="wz-label">Giờ mở cửa</label>
-                <input type="time" class="wz-input" id="work-start" value="08:00">
-                <p class="wz-help">Bot trả lời khách "giờ làm từ..." + gửi báo cáo sáng vào giờ này.</p>
+                <label class="wz-label">Giờ báo cáo sáng</label>
+                <input type="time" class="wz-input" id="work-start" value="07:30">
+                <p class="wz-help">Bot gửi báo cáo sáng qua Telegram vào giờ này.</p>
               </div>
               <div class="wz-field">
-                <label class="wz-label">Giờ đóng cửa</label>
-                <input type="time" class="wz-input" id="work-end" value="17:30">
-                <p class="wz-help">Ngoài giờ: bot trả lời khách "sếp phản hồi vào..." + gửi tóm tắt cuối ngày.</p>
+                <label class="wz-label">Giờ tóm tắt cuối ngày</label>
+                <input type="time" class="wz-input" id="work-end" value="18:00">
+                <p class="wz-help">Bot gửi tóm tắt kinh doanh cuối ngày vào giờ này.</p>
               </div>
             </div>
-            <div class="wz-field-row">
-              <div class="wz-field">
-                <label class="wz-label">SĐT liên hệ (khách gọi)</label>
-                <input type="text" class="wz-input" id="biz-phone" placeholder="Ví dụ: 0901 234 567">
-              </div>
-              <div class="wz-field">
-                <label class="wz-label">Địa chỉ (không bắt buộc)</label>
-                <input type="text" class="wz-input" id="biz-address" placeholder="Ví dụ: 123 Nguyễn Huệ, Q.1, TP.HCM">
-              </div>
-            </div>
+            <!-- Hidden low-priority fields — sau này có thể bật lại trong Dashboard -->
+            <input type="hidden" id="biz-phone" value="">
+            <input type="hidden" id="biz-address" value="">
           </section>
 
           <!-- ============ STEP 1B: Industry & style ============ -->
@@ -1313,6 +1398,44 @@
               </div>
             </div>
 
+            <!-- Roadmap — 4 items, concrete months, low hype -->
+            <div class="wz-coming-soon">
+              <div class="wz-cs-head">
+                <p class="wz-cs-title">Lộ trình phát triển</p>
+                <p class="wz-cs-sub">Tính năng đang được xây dựng cho các bản cập nhật tới</p>
+              </div>
+              <div class="wz-cs-grid">
+                <div class="wz-cs-item">
+                  <span class="wz-cs-icon"><span data-icon="message-circle" data-icon-size="16"></span></span>
+                  <div class="wz-cs-body">
+                    <div class="wz-cs-row"><strong>Facebook Messenger</strong><span class="wz-cs-tag">Tháng 6 · 2026</span></div>
+                    <p>Bot trả lời khách trên Fanpage và Inbox</p>
+                  </div>
+                </div>
+                <div class="wz-cs-item">
+                  <span class="wz-cs-icon"><span data-icon="activity" data-icon-size="16"></span></span>
+                  <div class="wz-cs-body">
+                    <div class="wz-cs-row"><strong>Dashboard analytics</strong><span class="wz-cs-tag">Tháng 6 · 2026</span></div>
+                    <p>Biểu đồ doanh thu, khách mới, conversion</p>
+                  </div>
+                </div>
+                <div class="wz-cs-item">
+                  <span class="wz-cs-icon"><span data-icon="phone-call" data-icon-size="16"></span></span>
+                  <div class="wz-cs-body">
+                    <div class="wz-cs-row"><strong>Gọi điện AI</strong><span class="wz-cs-tag">Tháng 9 · 2026</span></div>
+                    <p>Bot nghe máy giúp khi sếp bận họp</p>
+                  </div>
+                </div>
+                <div class="wz-cs-item">
+                  <span class="wz-cs-icon"><span data-icon="clipboard-list" data-icon-size="16"></span></span>
+                  <div class="wz-cs-body">
+                    <div class="wz-cs-row"><strong>CRM tích hợp</strong><span class="wz-cs-tag">Tháng 9 · 2026</span></div>
+                    <p>Tự lưu khách hàng, deal và theo dõi</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <button class="wz-btn wz-btn-primary" id="dashboard-btn" onclick="launchDashboard()" type="button">
               Khởi động trợ lý
             </button>
@@ -1482,7 +1605,7 @@
           if (!loggedIn) {
             const ok = window.confirm(
               'Zalo chưa đăng nhập.\n\n' +
-              'Bot sẽ KHÔNG nhận tin Zalo cho đến khi anh login lại ở Dashboard → Zalo.\n\n' +
+              'Bot sẽ không nhận tin Zalo cho đến khi anh login lại ở Dashboard → Zalo.\n\n' +
               'Vẫn tiếp tục hoàn tất cài đặt?'
             );
             if (!ok) return;
@@ -1871,7 +1994,7 @@
       try {
         const res = await window.claw.saveZaloOwner({ ownerUserId: userId, ownerName: name });
         if (res && res.success) {
-          status.textContent = '✓ Đã lưu — bot sẽ nhận diện tài khoản này là chủ doanh nghiệp.';
+          status.textContent = 'Đã lưu — bot sẽ nhận diện tài khoản này là chủ doanh nghiệp.';
           status.style.color = 'var(--success)';
           status.classList.remove('wz-hidden');
         } else {

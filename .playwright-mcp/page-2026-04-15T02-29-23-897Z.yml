@@ -1,0 +1,95 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e5]:
+        - heading "9BizClaw" [level=1] [ref=e6]
+        - generic [ref=e7]: Trợ lý AI doanh nghiệp
+        - generic [ref=e8]: v—
+      - generic [ref=e9]:
+        - generic [ref=e11]: Đang kiểm tra...
+        - text: Bot đang nhận và trả lời tin nhắn
+      - button "Khởi động Tạm dừng bot. Bot sẽ không trả lời khách cho đến khi bật lại" [ref=e12]
+      - button "Kiểm tra kênh" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]:
+        - generic [ref=e15]: Điều khiển
+        - generic [ref=e16] [cursor=pointer]:
+          - img [ref=e18]
+          - generic [ref=e21]: Tổng quan
+        - generic [ref=e22] [cursor=pointer]:
+          - img [ref=e24]
+          - generic [ref=e26]: Lịch tự động
+        - generic [ref=e27] [cursor=pointer]:
+          - img [ref=e29]
+          - generic [ref=e32]: Tài liệu
+        - generic [ref=e33] [cursor=pointer]:
+          - img [ref=e35]
+          - generic [ref=e37]: Tính cách bot
+        - generic [ref=e38] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e42]: Tình trạng hôm nay
+        - generic [ref=e43] [cursor=pointer]:
+          - img [ref=e45]
+          - generic [ref=e47]: Lịch hẹn
+        - generic [ref=e48]: Kênh
+        - generic [ref=e49] [cursor=pointer]:
+          - img [ref=e51]
+          - generic [ref=e54]: Telegram
+          - generic "Đang kiểm tra..." [ref=e55]
+        - generic [ref=e56] [cursor=pointer]:
+          - img [ref=e58]
+          - generic [ref=e60]: Zalo
+          - generic "Đang kiểm tra..." [ref=e61]
+        - generic [ref=e62]: Cài đặt
+        - generic [ref=e63] [cursor=pointer]:
+          - img [ref=e65]
+          - generic [ref=e68]: AI Models
+        - generic [ref=e69] [cursor=pointer]:
+          - img [ref=e71]
+          - generic [ref=e77]: Giao diện sáng
+        - generic [ref=e78] [cursor=pointer]:
+          - img [ref=e80]
+          - generic [ref=e82]: Ẩn xuống tray khi mở
+          - generic [ref=e83]:
+            - checkbox
+    - generic [ref=e85]:
+      - generic [ref=e86]:
+        - generic [ref=e87]:
+          - generic [ref=e89]: Đang tải...
+          - generic [ref=e92]: ...
+        - generic [ref=e93]:
+          - generic [ref=e94]:
+            - generic [ref=e95]: "--"
+            - generic [ref=e96]:
+              - text: Khách mới Zalo hôm nay
+              - generic [ref=e97]: "? Số khách Zalo mới nhắn tin hôm nay"
+          - generic [ref=e98]:
+            - generic [ref=e99]: "--"
+            - generic [ref=e100]:
+              - text: Sự kiện hôm nay
+              - generic [ref=e101]: "? Tổng hoạt động bot ghi nhận hôm nay"
+          - generic [ref=e102]:
+            - generic [ref=e103]: "--"
+            - generic [ref=e104]:
+              - text: Cron OK hôm nay
+              - generic [ref=e105]: "? Số lịch tự động đã chạy thành công hôm nay"
+        - generic [ref=e107]:
+          - generic [ref=e108]:
+            - heading "Khách Zalo gần đây" [level=3] [ref=e109]
+            - button "Mở trang Zalo" [ref=e110] [cursor=pointer]:
+              - img [ref=e112]
+          - generic [ref=e115]: Chưa có khách nào
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - heading "Lịch hôm nay" [level=3] [ref=e118]
+            - button "Mở Lịch tự động" [ref=e119] [cursor=pointer]:
+              - img [ref=e121]
+          - generic [ref=e124]: Không có lịch nào
+      - text: Bot chạy tự động theo lịch này Bot nhận diện tài khoản này là chủ doanh nghiệp Kéo thả hoặc bấm để thêm file. PDF, Word, Excel, TXT
+  - button [ref=e125] [cursor=pointer]:
+    - img [ref=e127]
+  - generic [ref=e130]:
+    - generic [ref=e131]:
+      - heading "Hoạt động gần đây" [level=3] [ref=e132]
+      - button [ref=e133] [cursor=pointer]:
+        - img [ref=e135]
+    - generic [ref=e139]: Chưa có hoạt động

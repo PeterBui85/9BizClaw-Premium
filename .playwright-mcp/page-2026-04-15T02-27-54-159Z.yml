@@ -1,0 +1,50 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - button "Đổi giao diện" [ref=e4] [cursor=pointer]:
+      - img [ref=e6]
+    - generic [ref=e13]:
+      - generic [ref=e14]: 9BizClaw
+      - generic [ref=e15]: Trợ Lý AI Cho Doanh Nghiệp
+    - generic [ref=e16]:
+      - generic [ref=e17]: Bước 1 / 7
+      - heading "Chào mừng đến với 9BizClaw" [level=1] [ref=e18]
+      - paragraph [ref=e19]: Trợ lý AI 1-click giúp anh/chị quản lý khách hàng Zalo, Telegram và báo cáo doanh nghiệp tự động. Hướng dẫn cài đặt hoàn tất trong vài phút.
+    - generic [ref=e20]: Toàn bộ dữ liệu lưu local trên máy anh/chị, không gửi lên cloud.
+  - main [ref=e21]:
+    - generic [ref=e25]:
+      - generic [ref=e26]: Bước 1 trong 7
+      - generic [ref=e27]: 0%
+    - generic [ref=e30]:
+      - heading "Thông tin cơ bản" [level=2] [ref=e31]
+      - paragraph [ref=e32]: Vui lòng nhập họ tên và thông tin doanh nghiệp của anh/chị để cá nhân hóa trợ lý.
+      - generic [ref=e33]:
+        - generic [ref=e34]:
+          - generic [ref=e35]: Họ và tên anh/chị (chủ doanh nghiệp)
+          - 'textbox "Ví dụ: Nguyễn Văn A" [ref=e36]'
+        - generic [ref=e37]:
+          - generic [ref=e38]: Tên công ty / cửa hàng
+          - textbox "Không bắt buộc" [ref=e39]
+      - generic [ref=e40]:
+        - generic [ref=e41]: Tên trợ lý ảo (không bắt buộc)
+        - 'textbox "Để trống = bot tự xưng ''em''. Ví dụ: Momo, Linh, Claw" [ref=e42]'
+        - paragraph [ref=e43]: Đây là tên riêng của trợ lý AI. Khách Zalo sẽ thấy bot tự giới thiệu bằng tên này.
+      - generic [ref=e44]:
+        - generic [ref=e45]: Mô tả doanh nghiệp
+        - paragraph [ref=e46]: Anh/chị trả lời 3 câu hỏi ngắn — hệ thống tự ghép thành đoạn mô tả cho bot dùng. Không cần viết văn dài.
+        - generic [ref=e47]:
+          - generic [ref=e48]: Bán gì? (sản phẩm hoặc dịch vụ chính)
+          - 'textbox "Ví dụ: cà phê specialty và máy pha gia đình" [ref=e49]'
+        - generic [ref=e50]:
+          - generic [ref=e51]: Bán cho ai? (khách hàng mục tiêu)
+          - 'textbox "Ví dụ: dân văn phòng và cafe lover ở Sài Gòn" [ref=e52]'
+        - generic [ref=e53]:
+          - generic [ref=e54]: Điểm nổi bật / quy mô (tùy chọn)
+          - 'textbox "Ví dụ: 3 chi nhánh, giao tận nơi trong 1 giờ" [ref=e55]'
+      - generic [ref=e56]:
+        - generic [ref=e57]: Quy mô đội ngũ
+        - combobox [ref=e58]:
+          - option "Solo founder (chỉ 1 mình)"
+          - option "2 - 10 người" [selected]
+          - option "11 - 50 người"
+          - option "51+ người"
+    - button "Tiếp tục" [ref=e61] [cursor=pointer]

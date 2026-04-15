@@ -34,7 +34,10 @@ contextBridge.exposeInMainWorld('claw', {
   listZaloFriends: () => ipcRenderer.invoke('list-zalo-friends'),
   listZaloGroups: () => ipcRenderer.invoke('list-zalo-groups'),
   refreshZaloCache: () => ipcRenderer.invoke('refresh-zalo-cache'),
-  onZaloCacheRefreshed: (cb) => ipcRenderer.on('zalo-cache-refreshed', cb),
+  onZaloCacheRefreshed: (cb) => {
+    ipcRenderer.removeAllListeners('zalo-cache-refreshed');
+    ipcRenderer.on('zalo-cache-refreshed', cb);
+  },
   getZaloManagerConfig: () => ipcRenderer.invoke('get-zalo-manager-config'),
   saveZaloManagerConfig: (config) => ipcRenderer.invoke('save-zalo-manager-config', config),
   getZaloGroupSummaries: () => ipcRenderer.invoke('get-zalo-group-summaries'),
@@ -63,8 +66,16 @@ contextBridge.exposeInMainWorld('claw', {
   saveSchedules: (schedules) => ipcRenderer.invoke('save-schedules', schedules),
   getCustomCrons: () => ipcRenderer.invoke('get-custom-crons'),
   saveCustomCrons: (crons) => ipcRenderer.invoke('save-custom-crons', crons),
-  onCustomCronsUpdated: (cb) => ipcRenderer.on('custom-crons-updated', (_e, data) => cb(data)),
-  onSchedulesUpdated: (cb) => ipcRenderer.on('schedules-updated', (_e, data) => cb(data)),
+  // CRIT #10: Always removeAllListeners before re-registering so renderer
+  // hot-reloads / PIN re-lock don't stack N listeners that all fire per event.
+  onCustomCronsUpdated: (cb) => {
+    ipcRenderer.removeAllListeners('custom-crons-updated');
+    ipcRenderer.on('custom-crons-updated', (_e, data) => cb(data));
+  },
+  onSchedulesUpdated: (cb) => {
+    ipcRenderer.removeAllListeners('schedules-updated');
+    ipcRenderer.on('schedules-updated', (_e, data) => cb(data));
+  },
   testCron: (type, id) => ipcRenderer.invoke('test-cron', { type, id }),
 
   // App version
@@ -108,6 +119,8 @@ contextBridge.exposeInMainWorld('claw', {
   checkTelegramReady: () => ipcRenderer.invoke('check-telegram-ready'),
   checkZaloReady: () => ipcRenderer.invoke('check-zalo-ready'),
   telegramSelfTest: () => ipcRenderer.invoke('telegram-self-test'),
+  getInboundDebounce: () => ipcRenderer.invoke('get-inbound-debounce'),
+  setInboundDebounce: (channel, ms) => ipcRenderer.invoke('set-inbound-debounce', { channel, ms }),
   onChannelStatus: (callback) => {
     ipcRenderer.removeAllListeners('channel-status');
     ipcRenderer.on('channel-status', (_, data) => callback(data));

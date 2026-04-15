@@ -33,9 +33,16 @@ echo   Xoa 9Router config...
 if exist "%APPDATA%\9router" rmdir /s /q "%APPDATA%\9router"
 
 :: Xoa legacy cron files (tu phien ban cu - truoc khi chuyen vao workspace)
-echo   Xoa legacy schedule files...
+echo   Xoa legacy + current workspace files...
 if exist "%APPDATA%\claw-schedules.json" del "%APPDATA%\claw-schedules.json"
 if exist "%APPDATA%\MODOROClaw" rmdir /s /q "%APPDATA%\MODOROClaw"
+if exist "%APPDATA%\modoro-claw" rmdir /s /q "%APPDATA%\modoro-claw"
+:: V4: current post-rebrand workspace. Dev simulation wasn't truly fresh
+:: before because this dir survived RESET — seedWorkspace() 'if !exists'
+:: blocks then skip re-seeding from bundle templates.
+if exist "%APPDATA%\9bizclaw" rmdir /s /q "%APPDATA%\9bizclaw"
+:: Wipe extracted vendor cache in userData (set up on first-launch tar extract)
+if exist "%APPDATA%\9bizclaw\vendor-version.txt" del "%APPDATA%\9bizclaw\vendor-version.txt"
 
 :: Xoa openzca data (Zalo session)
 echo   Xoa Zalo session...

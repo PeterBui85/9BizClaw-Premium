@@ -2316,7 +2316,24 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   return ok ? true : false;
 }
 
-async function runCronAgentPrompt(prompt, { label, timeoutMs = 600000 } = {}) {
+// Cron serialization queue — cron jobs can fire near-simultaneously (morning
+// briefing + follow-up queue + custom cron all spawning openclaw agents).
+// Two concurrent children = double memory + competing WS + out-of-order delivery.
+// Serialize through a rolling promise so only one agent runs at a time. Depth
+// logged when callers actually wait (depth > 1).
+let _cronAgentQueue = Promise.resolve();
+let _cronAgentQueueDepth = 0;
+async function runCronAgentPrompt(prompt, opts = {}) {
+  _cronAgentQueueDepth++;
+  if (_cronAgentQueueDepth > 1) {
+    console.log(`[cron-agent] queued (depth=${_cronAgentQueueDepth}) label="${opts?.label || 'cron'}"`);
+  }
+  const run = _cronAgentQueue.then(() => _runCronAgentPromptImpl(prompt, opts));
+  _cronAgentQueue = run.catch(() => {}).finally(() => { _cronAgentQueueDepth--; });
+  return run;
+}
+
+async function _runCronAgentPromptImpl(prompt, { label, timeoutMs = 600000 } = {}) {
   const niceLabel = label || 'cron';
 
   // Fast-path: if prompt starts with "exec: <shell command>", run it directly
@@ -3215,6 +3232,11 @@ async function ensureDefaultConfig() {
       // dashboard survives restarts. Previously this forced true every boot,
       // which overrode the CEO's explicit disable.
       if (oz.enabled === undefined) { oz.enabled = false; changed = true; }
+      // U2: purge legacy channels.openzalo.groups on upgrade. v2.58 stored
+      // per-group requireMention/enabled here, creating a dual source of
+      // truth with zalo-group-settings.json (CRIT #5). We're now
+      // single-sourcing via the JSON file + GROUP-SETTINGS v3 patch.
+      if (oz.groups && typeof oz.groups === 'object') { delete oz.groups; changed = true; }
       if (!oz.dmPolicy) { oz.dmPolicy = 'open'; changed = true; }
       if (!oz.allowFrom) { oz.allowFrom = ['*']; changed = true; }
       if (!oz.groupPolicy) { oz.groupPolicy = 'open'; changed = true; }
@@ -3487,7 +3509,18 @@ function ensureZaloGroupSettingsFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    if (content.includes('9BizClaw GROUP-SETTINGS PATCH')) return;
+    // Marker v3: tightened mention detection (only matches @botName, not any @).
+    if (content.includes('9BizClaw GROUP-SETTINGS PATCH v4')) return;
+
+    // Strip ANY old v1/v2 block before re-injecting v3 so the regex update applies.
+    if (content.includes('9BizClaw GROUP-SETTINGS PATCH')) {
+      const oldStart = content.indexOf('  // === 9BizClaw GROUP-SETTINGS PATCH');
+      const oldEnd = content.indexOf('  // === END 9BizClaw GROUP-SETTINGS PATCH ===');
+      if (oldStart !== -1 && oldEnd !== -1) {
+        const endMarkerLen = '  // === END 9BizClaw GROUP-SETTINGS PATCH ===\n'.length;
+        content = content.slice(0, oldStart) + content.slice(oldEnd + endMarkerLen);
+      }
+    }
 
     const anchor = '  // === END 9BizClaw SENDER-DEDUP PATCH ===';
     if (!content.includes(anchor)) {
@@ -3495,10 +3528,12 @@ function ensureZaloGroupSettingsFix() {
       return;
     }
 
+    // CRIT #5: Single source of truth = zalo-group-settings.json.
+    // 'off' → drop. 'mention' → require @bot in rawBody else drop. 'all' → pass.
+    // Missing entry → openzalo default (which we keep permissive via
+    // groupPolicy=open + groupAllowFrom=['*']).
     const injection = `
-  // === 9BizClaw GROUP-SETTINGS PATCH ===
-  // Read zalo-group-settings.json at runtime so Dashboard group toggle
-  // takes effect immediately without gateway restart. Same pattern as blocklist.
+  // === 9BizClaw GROUP-SETTINGS PATCH v4 ===
   if (message.isGroup) {
     try {
       const __gsFs = require("node:fs");
@@ -3528,6 +3563,24 @@ function ensureZaloGroupSettingsFix() {
             runtime.log?.(\`openzalo: group \${__gsThreadId} disabled via dashboard settings\`);
             return;
           }
+          if (__gsEntry && __gsEntry.mode === "mention") {
+            // Only match explicit bot mention — NOT arbitrary @someone (customer
+            // tagging their colleague would have triggered reply otherwise).
+            // Zalo openzca sets message.isMentioned when bot is the target.
+            const __gsBody = (message.text || "").toLowerCase();
+            const __gsBotName = (process.env.OPENZALO_BOT_NAME || "").toLowerCase();
+            const __gsBotId = String(botUserId || "").trim();
+            const __gsMentionRe = __gsBotName
+              ? new RegExp("@" + __gsBotName.replace(/[.*+?^\${}()|[\\]\\\\]/g, "\\\\\$&") + "(?![\\\\w-])", "i")
+              : null;
+            const __gsMentioned = (message as any).isMentioned === true
+              || (__gsMentionRe && __gsMentionRe.test(__gsBody))
+              || (__gsBotId && __gsBody.includes("@" + __gsBotId.toLowerCase()));
+            if (!__gsMentioned) {
+              runtime.log?.(\`openzalo: group \${__gsThreadId} mention-only, bot not mentioned — skip\`);
+              return;
+            }
+          }
           break;
         } catch {}
       }
@@ -3537,7 +3590,7 @@ function ensureZaloGroupSettingsFix() {
 `;
     content = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, content, 'utf-8');
-    console.log('[zalo-group-settings-fix] Injected group settings check into inbound.ts');
+    console.log('[zalo-group-settings-fix] Injected v3 group settings check (off + tight-mention modes)');
   } catch (e) {
     console.error('[zalo-group-settings-fix] error:', e?.message || e);
   }
@@ -3895,7 +3948,7 @@ function ensureZaloFriendCheckFix() {
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
     // Version pin: V3 = fix vendor CLI path on Mac (was APPDATA fallback = wrong dir)
-    const FRIEND_CHECK_VERSION = 'FRIEND-CHECK-V3';
+    const FRIEND_CHECK_VERSION = 'FRIEND-CHECK-V4';
     if (content.includes(FRIEND_CHECK_VERSION)) return; // already patched with latest version
     // Strip old patch if exists (V1 blocked messages, V2 had Mac path bug)
     if (content.includes('9BizClaw FRIEND-CHECK PATCH')) {
@@ -3915,7 +3968,7 @@ function ensureZaloFriendCheckFix() {
 
     const injection = `
 
-  // === 9BizClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V3
+  // === 9BizClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V4
   // For DM messages from non-friends, send a one-time "please add friend"
   // reply and short-circuit. Reads openzca's friend cache to determine
   // friend status. Groups skip this check. See main.js ensureZaloFriendCheckFix.
@@ -4046,10 +4099,25 @@ function ensureZaloFriendCheckFix() {
             runtime.log?.(\`openzalo: friend-request send error: \${String(__fcSendErr)}\`);
           }
           } // end else (dedup check)
-          // DON'T return — let the message continue to AI pipeline.
-          // Zalo allows reply in thread that customer initiated (even to strangers).
-          // Bot sends friend request + replies the actual question in same turn.
-          runtime.log?.(\`openzalo: non-friend \${__fcSender} — continuing to AI pipeline (customer initiated)\`);
+          // CRIT #6: Rate-limit AI dispatch for non-friends to 1/10min (distinct
+          // from friend-request dedupe above). Stranger spamming 20 DMs used to
+          // burn 20x 9router tokens; now we reply once every 10min max.
+          if (!__fcGlobal.__modoroStrangerAiDedupe) {
+            __fcGlobal.__modoroStrangerAiDedupe = new Map();
+          }
+          const __fcAiMap: Map<string, number> = __fcGlobal.__modoroStrangerAiDedupe;
+          const __fcAiLast = __fcAiMap.get(__fcSender) || 0;
+          const __fcAiNow = Date.now();
+          const __fcAiWindow = 10 * 60 * 1000;
+          if (__fcAiNow - __fcAiLast < __fcAiWindow) {
+            runtime.log?.(\`openzalo: non-friend \${__fcSender} — AI dispatch rate-limited (<10min since last) — skip\`);
+            return;
+          }
+          __fcAiMap.set(__fcSender, __fcAiNow);
+          for (const [__fcAk, __fcAts] of __fcAiMap.entries()) {
+            if (__fcAiNow - __fcAts > 60 * 60 * 1000) __fcAiMap.delete(__fcAk);
+          }
+          runtime.log?.(\`openzalo: non-friend \${__fcSender} — AI dispatch allowed (first msg in window)\`);
         }
       }
     } catch (__fcErr) {
@@ -5212,6 +5280,45 @@ function auditLog(event, meta) {
 }
 
 let _startOpenClawInFlight = false;
+// Set true in before-quit handler — wizard-complete IIFE checks this between
+// awaits so the bg sequence aborts if user force-quits mid-boot instead of
+// racing file writes against shutdown cleanup.
+let _appIsQuitting = false;
+// IPC in-flight counter — incremented on entry to mutating handlers, decremented
+// in finally. before-quit awaits drain (up to 3s) so a save isn't interrupted
+// by app.exit(0) leaving openclaw.json half-written.
+let _ipcInFlightCount = 0;
+function waitForIpcDrain(timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    if (_ipcInFlightCount === 0) { resolve({ drained: true, elapsed: 0 }); return; }
+    const iv = setInterval(() => {
+      if (_ipcInFlightCount === 0) {
+        clearInterval(iv);
+        resolve({ drained: true, elapsed: Date.now() - start });
+      } else if (Date.now() - start >= timeoutMs) {
+        clearInterval(iv);
+        resolve({ drained: false, elapsed: Date.now() - start, inFlight: _ipcInFlightCount });
+      }
+    }, 100);
+  });
+}
+// Shared guard for mutating IPC during gateway boot. Returns a rejection envelope
+// when unsafe (restart mid-spawn corrupts openclaw.json or crashes gateway);
+// returns null when it's safe to proceed. Keep read-only handlers exempt.
+function rejectIfBooting(handlerName) {
+  const booting = _startOpenClawInFlight === true
+    || (botRunning === false && _startOpenClawInFlight !== false);
+  if (booting) {
+    try { console.log(`[${handlerName}] rejected — BOOT_IN_PROGRESS`); } catch {}
+    return {
+      success: false,
+      error: 'BOOT_IN_PROGRESS',
+      message: 'Bot đang khởi động, vui lòng đợi vài giây rồi thử lại',
+    };
+  }
+  return null;
+}
 async function startOpenClaw() {
   if (botRunning) return;
   // Prevent re-entrant start while a previous start is still spawning. Without
@@ -5402,14 +5509,48 @@ async function _startOpenClawImpl() {
     }
   } catch (e) { console.error('Memory DB rebuild failed:', e.message); }
 
-  // Check if gateway already running — if yes, just adopt it
-  const alreadyRunning = await isGatewayAlive();
-  if (alreadyRunning) {
-    console.log('Gateway already running on :18789 — adopting');
-    botRunning = true;
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bot-status', { running: true });
-    createTray();
-    return;
+  // CRIT #12: On cold boot (first call per Electron session), NEVER adopt an
+  // orphan gateway. The orphan may have been spawned by a previous crashed
+  // Electron, with stale in-memory config predating our latest patches — all
+  // our ensureXxxFix runs + ensureDefaultConfig heals would have ZERO effect
+  // on this run because the orphan already loaded the old config. Force a
+  // clean respawn. Heartbeat-triggered restarts (after _coldBootDone=true)
+  // still get to adopt so we don't thrash port during steady-state.
+  if (!global._coldBootDone) {
+    // R3: short 1500ms timeout on cold-boot probe. Fresh install has no
+    // orphan → ECONNREFUSED fires <50ms. Only Defender-scanned ports see
+    // any delay. 8s default would add dead time to every launch.
+    const orphan = await isGatewayAlive(1500);
+    if (orphan) {
+      console.log('[boot] cold-start: killing stale gateway on :18789 (prevent stale-config adoption)');
+      try { killPort(18789); } catch {}
+      // Bumped 10×300ms (3s) → 30×500ms (15s). Observed on slow Defender-
+      // heavy machines: taskkill can take 5-8s to fully release the port,
+      // and a premature exit-with-port-still-bound leads to our new spawn
+      // failing with EADDRINUSE. 15s is safe ceiling; fresh installs with
+      // no orphan break out immediately on first iteration anyway.
+      let stillAlive = true;
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        if (!(await isGatewayAlive(1500))) { stillAlive = false; break; }
+      }
+      if (stillAlive) {
+        const msg = '[cold-boot] gateway still alive after 15s — taskkill strategy exhausted';
+        try { (typeof logger !== 'undefined' && logger?.warn) ? logger.warn(msg) : console.warn(msg); } catch { console.warn(msg); }
+        try { auditLog('gateway_stale_kill_fail', { port: 18789, strategyMs: 15000 }); } catch {}
+      }
+    }
+    global._coldBootDone = true;
+  } else {
+    // Steady-state restart (e.g. heartbeat): adoption is fine
+    const alreadyRunning = await isGatewayAlive();
+    if (alreadyRunning) {
+      console.log('Gateway already running on :18789 — adopting (steady-state restart)');
+      botRunning = true;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bot-status', { running: true });
+      createTray();
+      return;
+    }
   }
 
   // Cold start: clean up any stale Zalo listener tree before spawning new gateway
@@ -5647,12 +5788,37 @@ async function _startOpenClawImpl() {
   const gwReadyDeadline = Date.now() + 240000;
   let gwReady = false;
   let probeAttempts = 0;
+  let lastBootingEmitAt = 0;
+  // Capture the process reference locally so we can detect external kill
+  // (stopOpenClaw sets the global `openclawProcess = null` but our local
+  // ref still points to the killed proc — we check `openclawProcess === procRef`
+  // to bail out fast instead of uselessly probing for 240s).
+  const procRef = openclawProcess;
   while (Date.now() < gwReadyDeadline) {
     probeAttempts++;
+    if (openclawProcess !== procRef) {
+      console.warn('[startOpenClaw] gateway process was killed externally during WS wait — aborting probe loop');
+      return;
+    }
     try {
       if (await isGatewayAlive(2000)) { gwReady = true; break; }
     } catch {}
-    await new Promise((r) => setTimeout(r, 500));
+    // Emit `gateway-booting` IPC every 3s so renderers can disable mutating
+    // buttons (A5 also IPC-rejects, this is belt-and-suspenders UI feedback).
+    const elapsedSoFar = Date.now() - gwStartMs;
+    if (elapsedSoFar - lastBootingEmitAt >= 3000) {
+      lastBootingEmitAt = elapsedSoFar;
+      try {
+        const { BrowserWindow: _BW } = require('electron');
+        for (const w of _BW.getAllWindows()) {
+          if (!w.isDestroyed()) { try { w.webContents.send('gateway-booting', { elapsedMs: elapsedSoFar }); } catch {} }
+        }
+      } catch {}
+    }
+    // Cadence: first 5s use 500ms (catch fast boots), then 1000ms to cut
+    // probe count on slow machines (total timeout unchanged).
+    const sleepMs = elapsedSoFar < 5000 ? 500 : 1000;
+    await new Promise((r) => setTimeout(r, sleepMs));
   }
   if (gwReady) {
     const elapsedMs = Date.now() - gwStartMs;
@@ -5795,10 +5961,16 @@ async function _startOpenClawImpl() {
           console.log('[ready-notify] Telegram notify throttled (same channel already confirmed <10min ago)');
           setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         } else {
+          // skipFilter: these are OUR system notifications, not AI output.
+          // The output filter is meant to catch AI leaking internal info to
+          // customers — doesn't apply here. Without skipFilter, Zalo version
+          // below was replaced with "Dạ em xin lỗi..." because text contained
+          // the brand name "openzca" (see filter pattern brand-openzca).
           sendTelegram(
-            '*Telegram đã sẵn sàng*\n\n' +
-            'Bot đã kết nối + đăng ký channel. Nhắn bất kỳ tin nào ngay bây giờ, sẽ có reply thật.\n\n' +
-            '_(Thông báo này tự bot gửi — nếu anh nhận được = Telegram đã work 100%)_'
+            'Telegram đã sẵn sàng.\n\n' +
+            'Anh/chị nhắn bất kỳ tin nào cho bot ngay bây giờ, sẽ có trả lời thật.\n\n' +
+            '(Tin này do bot tự gửi — nếu anh/chị nhận được = Telegram đã hoạt động 100%)',
+            { skipFilter: true }
           ).then(ok => {
             if (ok) {
               markChannelConfirmed('telegram', 'send');
@@ -5831,9 +6003,10 @@ async function _startOpenClawImpl() {
           setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         } else {
           sendTelegram(
-            '*Zalo đã sẵn sàng*\n\n' +
-            'Openzca listener đã connect Zalo web, đang đọc tin nhắn. Nhắn bot trên Zalo ngay bây giờ, sẽ có reply thật.\n\n' +
-            '_(Thông báo gửi qua Telegram vì hệ thống không có Zalo ID của anh)_'
+            'Zalo đã sẵn sàng.\n\n' +
+            'Bot đã kết nối Zalo và đang đọc tin nhắn. Anh/chị nhắn bot trên Zalo ngay bây giờ, sẽ có trả lời thật.\n\n' +
+            '(Tin này gửi qua Telegram vì hệ thống chưa có Zalo ID của anh/chị)',
+            { skipFilter: true }
           ).then(ok => {
             if (ok) {
               markChannelConfirmed('zalo', 'send');
@@ -5853,6 +6026,14 @@ async function _startOpenClawImpl() {
       }
     } catch (e) { /* never break on observer */ }
   };
+  // Guard: if an external stopOpenClaw() killed the process mid-spawn, the
+  // reference here is null — attaching .on() would throw and break the
+  // spawn path permanently (observed: wizard-complete race with resume-zalo
+  // → 240s timeout → null.stdout crash → gateway never recovers).
+  if (!openclawProcess) {
+    console.warn('[startOpenClaw] gateway process was killed externally during spawn — aborting attachment');
+    return;
+  }
   openclawProcess.stdout.on('data', scanForReadiness);
   openclawProcess.stderr.on('data', scanForReadiness);
 
@@ -6285,6 +6466,26 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         }
         console.log('[setup-9router-auto] 9router API reachable');
 
+        // Advisory-only direct validation against ollama.com/api/ps.
+        // Previously this was FAIL-CLOSED on 401/403 but ollama.com's /api/ps
+        // endpoint behavior is brittle: Cloudflare challenge pages, regional
+        // firewall, new key-format changes, or rate-limit can return 401 even
+        // for valid keys. 9router's own test against ollama.com is the
+        // authoritative source — we trust its result, not ours. Log for debug
+        // but never block on direct check.
+        if (opts.ollamaKey && typeof opts.ollamaKey === 'string') {
+          try {
+            const directCheck = await validateOllamaKeyDirect(opts.ollamaKey.trim());
+            if (!directCheck.valid) {
+              console.warn('[setup-9router-auto] direct-check advisory:', directCheck.statusCode, directCheck.error, '— proceeding via 9router');
+            } else {
+              console.log('[setup-9router-auto] direct-check PASSED (ollama.com 200)');
+            }
+          } catch (e) {
+            console.warn('[setup-9router-auto] direct-check threw (non-fatal):', e?.message);
+          }
+        }
+
         // 2. Look for existing Ollama provider — if exists, delete it first
         //    so we don't accumulate dupes when user re-runs wizard
         const listRes = await nineRouterApi('GET', '/api/providers');
@@ -6333,20 +6534,24 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           // Key was already validated directly via validateOllamaKey() in wizard.html
           // before this IPC was called, so we KNOW the key is valid.
           // Skip the test result, do NOT delete the provider, fall through to models.
-          if (/^HTTP [5]\d{2}$/.test(String(testErrMsg))) {
-            console.warn('[setup-9router-auto] HTTP 5xx = 9router internal bug (testConnection SQLite write crash) — key was pre-validated, skipping test result');
-            // fall through to step 5 (models)
+          // 5xx OR transient network errors (ECONNRESET, EPIPE, ETIMEDOUT,
+          // socket hang up) = NOT a key validation failure. Bypass test,
+          // proceed to models. If models lookup later also fails, we'll
+          // surface the real error there.
+          if (
+            /^HTTP [5]\d{2}$/.test(String(testErrMsg)) ||
+            /ECONNRESET|EPIPE|socket hang up|ETIMEDOUT|read ETIMEDOUT|network/i.test(String(testErrMsg))
+          ) {
+            console.warn('[setup-9router-auto] transient test error — proceeding (key trusted):', testErrMsg);
           } else {
             // Non-5xx = genuine key/network failure (401, ENOTFOUND, etc.)
             // Delete the bad provider so it doesn't pollute db.json
             await nineRouterApi('DELETE', `/api/providers/${providerId}`);
             let viError = testErrMsg;
             if (/401|unauthor/i.test(testErrMsg)) {
-              viError = 'Ollama API key sai hoặc đã hết hạn. Vào ollama.com/settings/keys → tạo key mới → paste lại.';
-            } else if (/timeout|ETIMEDOUT/i.test(testErrMsg)) {
-              viError = 'Timeout khi gọi Ollama. Kiểm tra kết nối Internet.';
+              viError = 'Ollama trả về 401. Nếu key chắc chắn đúng, có thể do Cloudflare/firewall chặn — thử đổi mạng (4G, VPN khác) rồi thử lại.';
             } else if (/ENOTFOUND|DNS/i.test(testErrMsg)) {
-              viError = 'Không kết nối được ollama.com. Kiểm tra Internet.';
+              viError = 'Không kết nối được ollama.com. Kiểm tra Internet hoặc thử đổi mạng.';
             } else if (/429|rate/i.test(testErrMsg)) {
               viError = 'Ollama trả về 429 (rate limit). Đợi 1 phút rồi thử lại.';
             } else if (/\b5\d{2}\b|internal.server.error/i.test(testErrMsg)) {
@@ -8121,8 +8326,36 @@ ipcMain.handle('get-zalo-manager-config', async () => {
   }
 });
 
+let _saveZaloManagerInFlight = false;
 ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, groupSettings, strangerPolicy }) => {
+  const booting = rejectIfBooting('save-zalo-manager-config');
+  if (booting) return booting;
+  // Double-click guard: a rapid 2nd save before the 1st completes would
+  // read the same prev snapshot, both compute identical diffs, both try
+  // to restart gateway → two concurrent stopOpenClaw calls racing.
+  if (_saveZaloManagerInFlight) {
+    return { success: false, error: 'Lưu đang chạy — thử lại sau 1-2 giây' };
+  }
+  _saveZaloManagerInFlight = true;
+  _ipcInFlightCount++;
   try {
+    // Detect whether `channels.openzalo.enabled` actually changes. Only this
+    // field needs a hard gateway restart (stop+wait+start) because it
+    // controls whether openclaw loads the openzalo plugin + spawns the
+    // openzca listener subprocess at all. All other fields (blocklist,
+    // groupSettings, strangerPolicy) are read realtime by inbound.ts patches
+    // so zero restart is needed for them.
+    let prevEnabled = null;
+    try {
+      const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+      if (fs.existsSync(configPath)) {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        prevEnabled = cfg?.channels?.openzalo?.enabled !== false;
+      }
+    } catch {}
+    const newEnabled = enabled !== false;
+    const enabledChanged = (prevEnabled !== null) && (prevEnabled !== newEnabled);
+
     // 1. Update openclaw.json (groups handled natively by OpenZalo)
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
@@ -8145,39 +8378,16 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       if (!Array.isArray(cfg.channels.openzalo.allowFrom)) {
         cfg.channels.openzalo.allowFrom = ['*'];
       }
-      // Sync per-group requireMention + groupAllowFrom to openclaw.json.
-      // BOTH must be in sync: groups.<id>.enabled controls the plugin's
-      // per-group gate, groupAllowFrom controls the native allowlist gate.
-      // If only one is set, messages get through one gate but blocked by the other.
-      if (groupSettings && typeof groupSettings === 'object') {
-        if (!cfg.channels.openzalo.groups) cfg.channels.openzalo.groups = {};
-        const enabledGroupIds = [];
-        for (const [gid, gs] of Object.entries(groupSettings)) {
-          if (!gid) continue;
-          if (!cfg.channels.openzalo.groups[gid]) cfg.channels.openzalo.groups[gid] = {};
-          const mode = gs && gs.mode;
-          if (mode === 'all') {
-            cfg.channels.openzalo.groups[gid].requireMention = false;
-            cfg.channels.openzalo.groups[gid].enabled = true;
-            enabledGroupIds.push(gid);
-          } else if (mode === 'mention') {
-            cfg.channels.openzalo.groups[gid].requireMention = true;
-            cfg.channels.openzalo.groups[gid].enabled = true;
-            enabledGroupIds.push(gid);
-          } else {
-            cfg.channels.openzalo.groups[gid].enabled = false;
-          }
-        }
-        // Sync groupAllowFrom to match — add any newly enabled groups
-        if (cfg.channels.openzalo.groupPolicy === 'allowlist') {
-          const allow = new Set(cfg.channels.openzalo.groupAllowFrom || []);
-          for (const gid of enabledGroupIds) allow.add(gid);
-          // Remove disabled groups
-          for (const [gid, gs] of Object.entries(groupSettings)) {
-            if (gs && gs.mode === 'off') allow.delete(gid);
-          }
-          cfg.channels.openzalo.groupAllowFrom = [...allow];
-        }
+      // CRIT #5: zalo-group-settings.json is single source of truth —
+      // inbound.ts GROUP-SETTINGS PATCH v3 handles off/mention/all modes
+      // realtime. Purge any legacy groups[gid] entries from openclaw.json.
+      if (cfg.channels.openzalo.groups) delete cfg.channels.openzalo.groups;
+      // Also sync plugins.entries.openzalo.enabled with channels.openzalo.enabled
+      // so "Tắt Zalo" is a real hard-off (gateway won't even load plugin
+      // on next boot). ensureDefaultConfig syncs this too but doing it here
+      // ensures the in-memory flip propagates immediately.
+      if (cfg.plugins?.entries?.openzalo) {
+        cfg.plugins.entries.openzalo.enabled = newEnabled;
       }
       writeOpenClawConfigIfChanged(configPath, cfg);
     }
@@ -8190,23 +8400,21 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     // 2. Write user blocklist to workspace (bot reads this per AGENTS.md rule)
     const bp = getZaloBlocklistPath();
     fs.writeFileSync(bp, JSON.stringify(userBlocklist || [], null, 2), 'utf-8');
-    // 3. Write per-group settings (mention/all/off) to workspace.
-    // CRITICAL: drop entries with mode='mention' (the implicit default) — only
-    // persist EXPLICIT off/all overrides. Otherwise any save bloats the file
-    // with default entries; if a future bug flips defaults to 'off', every
-    // group gets disabled silently.
+    // 3. CRIT #5: Persist ALL explicit modes (off/mention/all) — zalo-group-settings.json
+    // is the single source of truth used by GROUP-SETTINGS PATCH v2. If user
+    // sets 'mention' in Dashboard we must persist it so the patch enforces
+    // @mention gating (not openzalo native which we bypassed above).
     if (groupSettings && typeof groupSettings === 'object') {
       const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
       const filtered = {};
       for (const [gid, gs] of Object.entries(groupSettings)) {
         if (!gs || !gs.mode) continue;
-        if (gs.mode === 'mention') continue; // implicit default — don't persist
+        if (!['off', 'mention', 'all'].includes(gs.mode)) continue;
         filtered[gid] = gs;
       }
       if (Object.keys(filtered).length > 0) {
         fs.writeFileSync(gsPath, JSON.stringify(filtered, null, 2), 'utf-8');
       } else if (fs.existsSync(gsPath)) {
-        // No explicit overrides — remove file so patch defaults to "all on"
         try { fs.unlinkSync(gsPath); } catch {}
       }
     }
@@ -8215,17 +8423,39 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
       fs.writeFileSync(spPath, JSON.stringify({ mode: strangerPolicy }, null, 2), 'utf-8');
     }
-    // 5. Restart gateway so config changes take effect immediately.
-    // Gateway caches config in-memory — writeOpenClawConfigIfChanged may
-    // skip the write (bytes equal) so the file watcher never fires.
-    // A soft restart ensures the new group settings are picked up NOW.
-    try {
-      console.log('[save-zalo-manager] restarting gateway to apply config changes');
-      startOpenClaw();
-    } catch (e2) { console.warn('[save-zalo-manager] restart failed:', e2.message); }
+    // 5. Hard gateway restart ONLY when openzalo enabled flag actually flipped.
+    // This is the only field that requires full gateway reload — the plugin
+    // loader decides at boot whether to register openzalo + spawn openzca
+    // listener subprocess. Toggling it without a restart means:
+    //   disable → plugin still loaded, listener still running (memory leak)
+    //   enable  → plugin NOT loaded (it was disabled at boot), no listener
+    //             → Dashboard shows green but customers get silence
+    // Proper restart pattern: stopOpenClaw + wait + startOpenClaw.
+    // startOpenClaw alone is a no-op when botRunning=true, so we MUST stop first.
+    if (enabledChanged) {
+      if (_startOpenClawInFlight) {
+        console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — gateway spawn in progress, skip restart (will read new config)`);
+      } else {
+        console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — hard-restart gateway (bg)`);
+        // Fire-and-forget so IPC returns fast — UI sidebar dots will flip
+        // to checking→ready via channel-status broadcast as gateway boots.
+        (async () => {
+          try {
+            stopOpenClaw();
+            await new Promise(r => setTimeout(r, 2000));
+            await startOpenClaw();
+          } catch (e2) { console.warn('[save-zalo-manager] restart failed:', e2.message); }
+        })();
+      }
+    } else {
+      console.log('[save-zalo-manager] no enable/disable flip — skipping restart (realtime patches apply)');
+    }
     return { success: gateOk };
   } catch (e) {
     return { success: false, error: e.message };
+  } finally {
+    _saveZaloManagerInFlight = false;
+    _ipcInFlightCount--;
   }
 });
 
@@ -8825,6 +9055,9 @@ ipcMain.handle('setup-google', async () => {
 // Batch config set (for complex nested objects like model providers)
 // Batch config set — write JSON directly
 ipcMain.handle('set-batch-config', async (_event, ops) => {
+  const booting = rejectIfBooting('set-batch-config');
+  if (booting) return booting;
+  _ipcInFlightCount++;
   try {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -8844,10 +9077,13 @@ ipcMain.handle('set-batch-config', async (_event, ops) => {
     writeOpenClawConfigIfChanged(configPath, config);
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
+  finally { _ipcInFlightCount--; }
 });
 
 // Save config by writing openclaw.json directly — no CLI dependency
 ipcMain.handle('save-wizard-config', async (_event, configs) => {
+  // Not gated by rejectIfBooting — wizard runs before boot by design.
+  _ipcInFlightCount++;
   try {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -8887,6 +9123,7 @@ ipcMain.handle('save-wizard-config', async (_event, configs) => {
     writeOpenClawConfigIfChanged(configPath, config);
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
+  finally { _ipcInFlightCount--; }
 });
 
 // Add cron — save custom times to claw-schedules.json (bypasses broken CLI)
@@ -8948,7 +9185,7 @@ function loadSchedules() {
           fs.appendFileSync(errFile, `\n## ${new Date().toISOString()} — schedules.json corrupt\n\nError: ${parseErr.message}\nBackup: ${backupPath}\nFell back to defaults so morning/evening still fire.\n`, 'utf-8');
         } catch {}
         try {
-          sendCeoAlert(`🚨 *schedules.json bị lỗi JSON*\n\n\`${parseErr.message}\`\n\nĐã backup về \`${path.basename(backupPath)}\` và fall back về default schedules. Vào Dashboard → Lịch để xem.`);
+          sendCeoAlert(`Cảnh báo: schedules.json bị lỗi JSON\n\n${parseErr.message}\n\nĐã backup về ${path.basename(backupPath)} và fall back về default schedules. Vào Dashboard, tab Lịch để xem.`);
         } catch {}
         return DEFAULT_SCHEDULES_JSON;
       }
@@ -9029,7 +9266,22 @@ ipcMain.handle('get-custom-crons', async () => {
 ipcMain.handle('save-custom-crons', async (_event, crons) => {
   try {
     if (!Array.isArray(crons)) return { success: false, error: 'crons must be an array' };
-    fs.writeFileSync(getCustomCronsPath(), JSON.stringify(crons, null, 2), 'utf-8');
+    // CRIT #7: Dashboard `get-custom-crons` merges MODOROClaw crons with
+    // OpenClaw-sourced entries (source:'openclaw' — bot-created crons read
+    // from ~/.openclaw/agents/main/jobs.json). FE passes the merged array back
+    // on any toggle/delete. If we wrote it verbatim, those OpenClaw entries
+    // would get copied INTO our custom-crons.json and double-fire every day.
+    // Strip anything not ours before persisting.
+    const mine = crons.filter(c => !c || c.source !== 'openclaw');
+    // Validate cronExpr so a malformed entry doesn't crash the cron scheduler
+    // on the watcher reload (which would then keep re-firing).
+    const nodeCron = require('node-cron');
+    for (const c of mine) {
+      if (c && typeof c.cronExpr === 'string' && !nodeCron.validate(c.cronExpr)) {
+        return { success: false, error: `Cron expression invalid: "${c.cronExpr}" (label: ${c.label || c.id || '?'})` };
+      }
+    }
+    fs.writeFileSync(getCustomCronsPath(), JSON.stringify(mine, null, 2), 'utf-8');
     // CRITICAL: do NOT rely on the file watcher alone — fs.watch is unreliable
     // on Windows + atomic-replace editors. Explicitly reload cron jobs after
     // every write so the new schedule takes effect immediately, even if the
@@ -9576,10 +9828,17 @@ const _outputFilterPatterns = [
   // are all-Latin but legitimate CS replies. CoT leaks are long walls of English text (>200c).
   { name: 'no-vietnamese-diacritic', re: /^(?!.*https?:\/\/)(?=[\s\S]{200,})(?!.*[àáảãạâấầẩẫậăắằẳẵặèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]).+/s },
   // Layer E: brand + internal name leakage
-  { name: 'brand-9bizclaw', re: /\b9BizClaw\b/i },
-  { name: 'brand-openclaw', re: /\bOpenClaw\b/i },
-  { name: 'brand-9router', re: /\b9Router\b/i },
-  { name: 'brand-openzca', re: /\bopenzca\b/i },
+  // v2.2.59 fix: old regex \bopenzca\b blocked legit system notifications
+  // like "Zalo đã sẵn sàng" (mentions "openzca listener"). Tightened to
+  // match only path-like / CoT-debug contexts: file exts, path separators,
+  // debug verbs (error/crashed/spawn). Plain brand word is now allowed —
+  // system alerts are either routed via sendCeoAlert (skipFilter=true) or
+  // ready-notify (skipFilter=true), and AI CoT leaks always appear alongside
+  // paths or debug verbs, not as bare brand name.
+  { name: 'brand-9bizclaw', re: /9bizclaw[\/\\\\.\-](?:dist|cli|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+9bizclaw/i },
+  { name: 'brand-openclaw', re: /openclaw[\/\\\\.\-](?:dist|cli|mjs|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+openclaw/i },
+  { name: 'brand-9router', re: /9router[\/\\\\.\-](?:dist|cli|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+9router/i },
+  { name: 'brand-openzca', re: /openzca[\/\\\\.\-](?:dist|cli|listen|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+openzca/i },
   { name: 'zalo-chu-nhan-marker', re: /\[ZALO_CHU_NHAN/i },
   // Layer F: prompt injection acknowledgment leakage
   { name: 'jailbreak-acknowledge', re: /\b(developer mode|jailbreak|ignore previous|forget instructions|role\s*play as|you are now|pretend to be)\b/i },
@@ -9806,6 +10065,20 @@ function getChannelPauseStatus(channel) {
 
 // skipFilter: bypass output filter for system alerts (cron errors, boot pings)
 // that are OUR messages, not AI-generated. Blocking these would cause silent failures.
+// R1: strip Telegram Markdown v1 syntax tokens so plain-text send doesn't
+// leak raw `*` / backtick / triple-backtick into CEO's alert output.
+// sendCeoAlert call sites use `*bold*` + ``` code fences historically.
+function stripTelegramMarkdown(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/```[a-z]*\n?/gi, '')               // fence open
+    .replace(/```/g, '')                          // fence close
+    .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '$1')   // *bold* / **bold**
+    .replace(/`([^`\n]+)`/g, '$1')                // `code`
+    .replace(/__([^_\n]+)__/g, '$1')              // __double__
+    .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, '$1'); // _italic_ (skip snake_case)
+}
+
 async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false } = {}) {
   // Check pause state — skip send if Telegram is paused
   if (!skipPauseCheck && isChannelPaused('telegram')) {
@@ -9819,26 +10092,62 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
       console.warn(`[sendTelegram] output filter blocked (${filtered.pattern})`);
       text = filtered.text;
     }
+  } else {
+    // Bypass audit — so we can later verify bypass isn't abused.
+    console.log('[sendTelegram] filter BYPASSED for system alert');
+    try {
+      const logDir = path.join(getWorkspace(), 'logs');
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
+        JSON.stringify({ t: new Date().toISOString(), event: 'output_bypass', channel: 'telegram', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+    } catch {}
   }
   const { token, chatId } = getTelegramConfig();
   if (!token || !chatId) {
     console.error('[sendTelegram] missing token or chatId');
     return null;
   }
+  // CRIT #8: Robust send with 429 retry, 401/403 persistent-failure alert,
+  // 400 parse-mode fallback. Old code used parse_mode:'Markdown' (legacy v1)
+  // which failed 400 on URLs with `_` or customer names like "DJ_Kool" — silent
+  // cron drop. We now send plain text (no parse_mode) — safe for all content.
+  // Strip Markdown syntax since we send without parse_mode (plain text)
+  text = stripTelegramMarkdown(text);
   const https = require('https');
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
+  const doRequest = (withRetry = true) => new Promise((resolve) => {
+    const payload = JSON.stringify({ chat_id: chatId, text });
     const req = https.request(
       `https://api.telegram.org/bot${token}/sendMessage`,
       { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
       (res) => {
         let d = '';
         res.on('data', c => d += c);
-        res.on('end', () => {
+        res.on('end', async () => {
           try {
             const parsed = JSON.parse(d);
-            if (parsed.ok) { resolve(true); }
-            else { console.error('[sendTelegram] API error:', parsed.description); resolve(null); }
+            if (parsed.ok) { resolve(true); return; }
+            const code = parsed.error_code || res.statusCode;
+            const desc = parsed.description || '';
+            // 429: rate limit — retry once after retry_after seconds
+            if (code === 429 && withRetry) {
+              const wait = Math.min((parsed.parameters?.retry_after || 3) * 1000, 15000);
+              console.warn(`[sendTelegram] 429 rate limit — retrying in ${wait}ms`);
+              setTimeout(() => doRequest(false).then(resolve), wait);
+              return;
+            }
+            // 401/403: token revoked or bot blocked — log to missed-alerts
+            if (code === 401 || code === 403) {
+              console.error('[sendTelegram] token invalid/blocked:', desc);
+              try {
+                const logPath = path.join(getWorkspace(), 'logs', 'ceo-alerts-missed.log');
+                fs.mkdirSync(path.dirname(logPath), { recursive: true });
+                fs.appendFileSync(logPath, `${new Date().toISOString()}\tTELEGRAM-${code}\t${desc}\t${text.slice(0, 200)}\n`);
+              } catch {}
+              resolve(null);
+              return;
+            }
+            console.error('[sendTelegram] API error:', code, desc);
+            resolve(null);
           } catch (e) { console.error('[sendTelegram] parse error:', e.message); resolve(null); }
         });
       }
@@ -9847,6 +10156,7 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
     req.write(payload);
     req.end();
   });
+  return doRequest(true);
 }
 
 // Send a direct Zalo message to the CEO's personal Zalo account via openzca CLI.
@@ -9872,6 +10182,15 @@ async function sendZalo(text, { skipFilter = false, skipPauseCheck = false } = {
       console.warn(`[sendZalo] output filter blocked (${filtered.pattern})`);
       text = filtered.text;
     }
+  } else {
+    // Bypass audit — so we can later verify bypass isn't abused.
+    console.log('[sendZalo] filter BYPASSED for system alert');
+    try {
+      const logDir = path.join(getWorkspace(), 'logs');
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
+        JSON.stringify({ t: new Date().toISOString(), event: 'output_bypass', channel: 'zalo', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+    } catch {}
   }
   const owner = readZaloOwner();
   if (!owner || !owner.ownerUserId) {
@@ -10931,7 +11250,7 @@ ipcMain.handle('check-zalo-ready', async () => probeZaloReady());
 ipcMain.handle('telegram-self-test', async () => {
   // Self-test bypasses pause + filter — CEO explicitly clicked "Gửi tin test"
   const ok = await sendTelegram(
-    '🧪 *Test kết nối*\n\nĐây là tin nhắn test từ Dashboard. Nếu anh thấy tin này, ' +
+    'Test kết nối\n\nĐây là tin nhắn test từ Dashboard. Nếu anh thấy tin này, ' +
     'channel Telegram đã sẵn sàng nhận lệnh.',
     { skipFilter: true, skipPauseCheck: true }
   );
@@ -10952,14 +11271,127 @@ ipcMain.handle('pause-zalo', async (_e, { minutes } = {}) => {
   return { success: pauseChannel('zalo', minutes || 30) };
 });
 ipcMain.handle('resume-zalo', async () => {
+  const booting = rejectIfBooting('resume-zalo');
+  if (booting) return booting;
+  _ipcInFlightCount++;
+  try {
+  // Detect if enabled was previously false — transitioning false→true needs
+  // a hard gateway restart so openclaw loads the openzalo plugin + spawns
+  // openzca listener (both skipped at boot when enabled=false).
+  let wasDisabled = false;
+  try {
+    const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
+    if (fs.existsSync(cfgPath)) {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      wasDisabled = cfg?.channels?.openzalo?.enabled === false;
+    }
+  } catch {}
   const resumed = resumeChannel('zalo');
   const enabled = setZaloChannelEnabled(true);
   const cleared = clearChannelPermanentPause('zalo');
   if (enabled && cleared) markOnboardingComplete('resume-zalo');
+  if (wasDisabled) {
+    // Defer restart if gateway spawn is already in progress (wizard just
+    // finished, boot path still spawning). Killing mid-spawn causes 240s
+    // WS timeout → null.stdout crash → gateway dead permanently. Instead
+    // let the in-flight spawn finish — it will read our freshly-written
+    // enabled=true config itself.
+    if (_startOpenClawInFlight) {
+      console.log('[resume-zalo] gateway spawn in progress — skip restart, config change will apply on its own');
+    } else {
+      console.log('[resume-zalo] transitioning disabled→enabled — hard-restart gateway (bg)');
+      (async () => {
+        try {
+          stopOpenClaw();
+          await new Promise(r => setTimeout(r, 2000));
+          await startOpenClaw();
+        } catch (e) { console.warn('[resume-zalo] restart failed:', e?.message); }
+      })();
+    }
+  }
   return { success: resumed && enabled && cleared };
+  } finally { _ipcInFlightCount--; }
 });
 ipcMain.handle('get-zalo-pause-status', async () => {
   return getChannelPauseStatus('zalo');
+});
+
+// Inbound debounce — how long bot waits to coalesce rapid messages from
+// same customer into 1 turn. Openclaw has one global setting; we expose
+// it via 2 sliders (Telegram + Zalo pages) that share the same backend
+// so CEO can adjust from either page. Default 3000ms; 0 = no coalesce.
+ipcMain.handle('get-inbound-debounce', async () => {
+  try {
+    const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return { telegram: 3000, zalo: 3000 };
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const tgMs = cfg?.channels?.telegram?.messages?.inbound?.debounceMs;
+    const zlMs = cfg?.channels?.openzalo?.messages?.inbound?.debounceMs;
+    const globalMs = cfg?.messages?.inbound?.debounceMs ?? 3000;
+    return {
+      telegram: typeof tgMs === 'number' ? tgMs : globalMs,
+      zalo: typeof zlMs === 'number' ? zlMs : globalMs,
+    };
+  } catch { return { telegram: 3000, zalo: 3000 }; }
+});
+ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
+  const booting = rejectIfBooting('set-inbound-debounce');
+  if (booting) return booting;
+  _ipcInFlightCount++;
+  try {
+    if (!['telegram', 'zalo'].includes(channel)) return { success: false, error: 'channel must be telegram or zalo' };
+    const clampedMs = Math.max(0, Math.min(10000, Number(ms) || 0));
+    const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return { success: false, error: 'config not found' };
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (!cfg.channels) cfg.channels = {};
+    const chanKey = channel === 'zalo' ? 'openzalo' : 'telegram';
+    if (!cfg.channels[chanKey]) cfg.channels[chanKey] = {};
+    if (!cfg.channels[chanKey].messages) cfg.channels[chanKey].messages = {};
+    if (!cfg.channels[chanKey].messages.inbound) cfg.channels[chanKey].messages.inbound = {};
+    cfg.channels[chanKey].messages.inbound.debounceMs = clampedMs;
+    // Also sync global to minimum of both — openclaw may fall back to global
+    // if per-channel override is stripped by schema validation.
+    const otherKey = chanKey === 'telegram' ? 'openzalo' : 'telegram';
+    const otherMs = cfg.channels?.[otherKey]?.messages?.inbound?.debounceMs;
+    if (!cfg.messages) cfg.messages = {};
+    if (!cfg.messages.inbound) cfg.messages.inbound = {};
+    cfg.messages.inbound.debounceMs = typeof otherMs === 'number'
+      ? Math.min(clampedMs, otherMs) : clampedMs;
+    writeOpenClawConfigIfChanged(cfgPath, cfg);
+
+    // Schema probe: run `openclaw --help` — if it exits non-zero with schema
+    // error mentioning the per-channel path, revert per-channel key and keep
+    // only the global key (defense-in-depth if openclaw schema drops support).
+    try {
+      const cliJs = (typeof findOpenClawCliJs === 'function') ? findOpenClawCliJs() : null;
+      const nodeBin = (typeof findNodeBin === 'function') ? findNodeBin() : null;
+      if (cliJs && nodeBin) {
+        const probe = require('child_process').spawnSync(nodeBin, [cliJs, '--help'], {
+          timeout: 4000, encoding: 'utf-8', shell: false
+        });
+        const stderr = String(probe.stderr || '') + String(probe.stdout || '');
+        if (probe.status !== 0 && /Config invalid|Unrecognized key/i.test(stderr)) {
+          // Route through existing heal path which handles dynamic key removal.
+          try { healOpenClawConfigInline(stderr); } catch {}
+          // As a last resort, strip the per-channel override explicitly.
+          const cfg2 = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+          if (cfg2?.channels?.[chanKey]?.messages?.inbound) {
+            delete cfg2.channels[chanKey].messages.inbound.debounceMs;
+            if (!cfg2.messages) cfg2.messages = {};
+            if (!cfg2.messages.inbound) cfg2.messages.inbound = {};
+            cfg2.messages.inbound.debounceMs = clampedMs;
+            writeOpenClawConfigIfChanged(cfgPath, cfg2);
+          }
+          return { success: true, ms: clampedMs, scope: 'global-fallback' };
+        }
+      }
+    } catch { /* non-fatal probe failure */ }
+
+    return { success: true, ms: clampedMs };
+  } catch (e) {
+    return { success: false, error: e?.message };
+  } finally { _ipcInFlightCount--; }
 });
 
 // App prefs (start minimized, etc.) — persisted in <userData>/app-prefs.json
@@ -10986,7 +11418,26 @@ async function broadcastChannelStatusOnce() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   _channelStatusBroadcastInFlight = true;
   try {
-    const [tg, zl] = await Promise.all([probeTelegramReady(), probeZaloReady()]);
+    // OPTIM: skip expensive network probe if gateway recently emitted a
+    // "provider ready" marker (within 5min). Marker is ground-truth readiness
+    // — no need to hit Telegram getMe / scan process list again. Saves probe
+    // cost AND avoids false-negatives during transient network blips.
+    const MARKER_FRESH_MS = 5 * 60 * 1000;
+    const notifyState = global._readyNotifyState || null;
+    const now = Date.now();
+    const tgFresh = notifyState?.telegram?.markerSeenAt && (now - notifyState.telegram.markerSeenAt) < MARKER_FRESH_MS;
+    const zlFresh = notifyState?.zalo?.markerSeenAt && (now - notifyState.zalo.markerSeenAt) < MARKER_FRESH_MS;
+    const [tg, zl] = await Promise.all([
+      tgFresh
+        ? Promise.resolve({ ready: true, cachedFromMarker: true })
+        : probeTelegramReady(),
+      zlFresh
+        ? Promise.resolve({ ready: true, cachedFromMarker: true })
+        : probeZaloReady(),
+    ]);
+    if (tgFresh || zlFresh) {
+      console.log(`[channel-status] skip probe (marker fresh) telegram=${!!tgFresh} zalo=${!!zlFresh}`);
+    }
     mainWindow.webContents.send('channel-status', {
       telegram: { ...tg, paused: isChannelPaused('telegram') },
       zalo: { ...zl, paused: isChannelPaused('zalo') },
@@ -10995,20 +11446,36 @@ async function broadcastChannelStatusOnce() {
 
     try { checkZaloCookieAge(); } catch {}
 
+    // F-2: alert only after 5 minutes of continuous disconnect (skip transient
+    // restarts / AI-busy probe misses). Previously this alerted on first
+    // ready→not-ready transition with only 15min THROTTLE_MS — CEO phone
+    // buzzed on every reply-serving probe miss. The grace logic used to live
+    // in startChannelStatusBroadcast but was unreachable dead code behind
+    // an accidental early `return await`.
     const THROTTLE_MS = 15 * 60 * 1000;
-    const now = Date.now();
+    const DOWN_GRACE_MS = 5 * 60 * 1000;
+    // `now` already declared above (marker-fresh check); reuse.
     const probes = { telegram: tg, zalo: zl };
     const labels = { telegram: 'Telegram', zalo: 'Zalo' };
+    if (!global._channelDownSince) global._channelDownSince = {};
     for (const ch of ['telegram', 'zalo']) {
       const prev = _lastChannelState[ch];
       const cur = probes[ch];
       if (prev !== null && prev.ready === true && cur.ready === false) {
+        if (!global._channelDownSince[ch]) global._channelDownSince[ch] = now;
+      }
+      if (cur.ready === true) {
+        delete global._channelDownSince[ch];
+      }
+      if (cur.ready === false && global._channelDownSince[ch] && (now - global._channelDownSince[ch]) >= DOWN_GRACE_MS) {
         if (now - (_lastChannelAlertAt[ch] || 0) >= THROTTLE_MS) {
           const hhmm = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-          const reason = (cur && cur.error) ? String(cur.error) : '\u006b\u0068\u00f4ng r\u00f5';
-          const msg = `K\u00eanh ${labels[ch]} v\u1eeba m\u1ea5t k\u1ebft n\u1ed1i l\u00fac ${hhmm}. L\u00fd do: ${reason}. Em s\u1ebd t\u1ef1 th\u1eed k\u1ebft n\u1ed1i l\u1ea1i, n\u1ebfu sau 2 ph\u00fat ch\u01b0a \u0111\u01b0\u1ee3c, anh m\u1edf Dashboard xem chi ti\u1ebft.`;
+          const reason = (cur && cur.error) ? String(cur.error) : 'không rõ';
+          const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
+          const msg = `Kênh ${labels[ch]} mất kết nối đã ${downMin} phút (từ ${hhmm}). Tự khôi phục không thành công. Anh mở Dashboard kiểm tra giúp em ạ. Lý do: ${reason}.`;
           try { sendCeoAlert(msg); } catch (e) { console.error('[channel-status] sendCeoAlert error:', e.message); }
           _lastChannelAlertAt[ch] = now;
+          delete global._channelDownSince[ch];
         }
       }
       _lastChannelState[ch] = cur;
@@ -11023,67 +11490,76 @@ function startChannelStatusBroadcast() {
   if (_channelStatusInterval) clearInterval(_channelStatusInterval);
   for (const t of _channelStatusBootTimers) clearTimeout(t);
   _channelStatusBootTimers = [];
+  // Tear down any previous fs.watch handles from a prior broadcast setup.
+  if (global._channelStatusWatchers) {
+    for (const w of global._channelStatusWatchers) { try { w.close(); } catch {} }
+  }
+  global._channelStatusWatchers = [];
 
-  const broadcast = async () => {
-    return await broadcastChannelStatusOnce();
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    try {
-      const [tg, zl] = await Promise.all([probeTelegramReady(), probeZaloReady()]);
-      mainWindow.webContents.send('channel-status', {
-        telegram: { ...tg, paused: isChannelPaused('telegram') },
-        zalo: { ...zl, paused: isChannelPaused('zalo') },
-        checkedAt: new Date().toISOString(),
-      });
-
-      // Daily cookie expiry check (cheap, runs inside broadcast loop)
-      try { checkZaloCookieAge(); } catch {}
-
-      // Push alert when a channel transitions ready:true -> ready:false.
-      // Throttle: at most 1 alert per channel per 15 minutes. Skip the
-      // first poll (cached state === null) so we don't alert on cold boot
-      // when we don't actually know the previous state.
-      const THROTTLE_MS = 15 * 60 * 1000;
-      const now = Date.now();
-      const probes = { telegram: tg, zalo: zl };
-      const labels = { telegram: 'Telegram', zalo: 'Zalo' };
-      if (!global._channelDownSince) global._channelDownSince = {};
-      const DOWN_GRACE_MS = 5 * 60 * 1000; // Only alert after 5 minutes of continuous disconnect (skip transient crashes/restarts)
-      for (const ch of ['telegram', 'zalo']) {
-        const prev = _lastChannelState[ch];
-        const cur = probes[ch];
-        if (prev !== null && prev.ready === true && cur.ready === false) {
-          // Channel just went down — record timestamp but don't alert yet
-          if (!global._channelDownSince[ch]) global._channelDownSince[ch] = now;
-        }
-        if (cur.ready === true) {
-          // Channel recovered — clear the down timer silently
-          delete global._channelDownSince[ch];
-        }
-        // Only alert after 2 minutes of continuous disconnect
-        if (cur.ready === false && global._channelDownSince[ch] && (now - global._channelDownSince[ch]) >= DOWN_GRACE_MS) {
-          if (now - (_lastChannelAlertAt[ch] || 0) >= THROTTLE_MS) {
-            const hhmm = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-            const reason = (cur && cur.error) ? String(cur.error) : 'không rõ';
-            const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
-            const msg = `Kênh ${labels[ch]} mất kết nối đã ${downMin} phút (từ ${hhmm}). Tự khôi phục không thành công. Anh mở Dashboard kiểm tra giúp em ạ. Lý do: ${reason}.`;
-            try { sendCeoAlert(msg); } catch (e) { console.error('[channel-status] sendCeoAlert error:', e.message); }
-            _lastChannelAlertAt[ch] = now;
-            delete global._channelDownSince[ch]; // Reset so next alert needs another 2min
-          }
-        }
-        _lastChannelState[ch] = cur;
-      }
-    } catch (e) { console.error('[channel-status] broadcast error:', e.message); }
+  const broadcast = async () => broadcastChannelStatusOnce();
+  // Debounced broadcast — file watchers can fire 2-3 events per write
+  // (create + modify on Windows). Coalesce within 250ms.
+  let _watchDebounce = null;
+  const broadcastSoon = (reason) => {
+    if (_watchDebounce) clearTimeout(_watchDebounce);
+    _watchDebounce = setTimeout(() => {
+      _watchDebounce = null;
+      console.log('[channel-status] fs.watch trigger:', reason);
+      broadcast();
+    }, 250);
   };
 
-  // Boot phase: fast polls so the openzalo listener spawn (~10-15s) is caught
-  // quickly and the user doesn't sit on a stale "Chưa sẵn sàng" pill.
-  const bootDelays = [500, 3000, 6000, 10000, 15000, 20000, 25000, 30000];
+  // Boot phase: fast polls so listener spawn is caught quickly (first 30s)
+  const bootDelays = [500, 2000, 4000, 6000, 8000, 10000, 12000, 15000, 20000, 25000, 30000];
   for (const delay of bootDelays) {
     _channelStatusBootTimers.push(setTimeout(broadcast, delay));
   }
-  // Steady-state polling
+  // Steady-state polling — 45s cadence (matches CLAUDE.md v2.2.7 intent).
+  // Fast boot-phase timers above catch the first 30s; fs.watch handles
+  // instant updates on state-file writes. The 45s interval is pure backstop
+  // for edge cases (cookie age, offline listener). Marker-fresh cache in
+  // broadcastChannelStatusOnce further short-circuits probes for 5 minutes
+  // after gateway emits a ready marker, so steady-state cost is minimal.
   _channelStatusInterval = setInterval(broadcast, 45 * 1000);
+
+  // INSTANT triggers — file watches on load-bearing state files. Any write
+  // fires a coalesced broadcast in <500ms. This eliminates the "phải bấm
+  // Refresh mới thấy xanh" lag: listener-owner.json created → dot xanh
+  // within 250ms; pause file deleted → dot xanh immediately; etc.
+  const watchTargets = [];
+  try {
+    const ozDir = path.join(HOME, '.openzca', 'profiles', 'default');
+    if (fs.existsSync(ozDir)) watchTargets.push({ dir: ozDir, label: 'openzca-profile' });
+  } catch {}
+  try {
+    const ws = getWorkspace();
+    if (fs.existsSync(ws)) watchTargets.push({ dir: ws, label: 'workspace' });
+  } catch {}
+  try {
+    const openclawDir = path.join(HOME, '.openclaw');
+    if (fs.existsSync(openclawDir)) watchTargets.push({ dir: openclawDir, label: 'openclaw' });
+  } catch {}
+  for (const { dir, label } of watchTargets) {
+    try {
+      const watcher = fs.watch(dir, { persistent: false }, (eventType, filename) => {
+        if (!filename) return;
+        const name = String(filename);
+        if (
+          name === 'listener-owner.json' ||
+          name === 'credentials.json' ||
+          name === 'zalo-paused.json' ||
+          name === 'telegram-paused.json' ||
+          name === 'openclaw.json'
+        ) {
+          broadcastSoon(`${label}/${name}`);
+        }
+      });
+      watcher.on('error', () => {}); // ignore — fall back to polling
+      global._channelStatusWatchers.push(watcher);
+    } catch (e) {
+      console.warn('[channel-status] fs.watch failed on', dir, ':', e?.message);
+    }
+  }
 }
 
 async function registerTelegramCommands() {
@@ -11442,6 +11918,21 @@ function loadCustomCrons() {
         if (!Array.isArray(parsed)) {
           throw new Error('custom-crons.json must be an array, got ' + typeof parsed);
         }
+        // U4: one-shot migration — strip OpenClaw-sourced entries that got
+        // written to custom-crons.json by a v2.58 bug (Dashboard toggle/delete
+        // pushed the merged array back verbatim, copying OC crons into our
+        // file → they double-fire every day alongside the real OpenClaw ones).
+        const beforeLen = parsed.length;
+        const cleaned = parsed.filter(c => !c || c.source !== 'openclaw');
+        const ocStripped = beforeLen - cleaned.length;
+        if (ocStripped > 0) {
+          try {
+            fs.writeFileSync(customCronsPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+            console.log(`[custom-crons] upgrade migration: stripped ${ocStripped} OpenClaw-merged entries`);
+          } catch (e) { console.warn('[custom-crons] migration writeback failed:', e.message); }
+          parsed.length = 0;
+          Array.prototype.push.apply(parsed, cleaned);
+        }
         const wasHealed = healCustomCronEntries(parsed);
         if (wasHealed) {
           try {
@@ -11464,7 +11955,7 @@ function loadCustomCrons() {
         } catch {}
         try {
           // Best-effort Telegram alert (sendTelegram is sync-callable)
-          sendCeoAlert(`🚨 *custom-crons.json bị lỗi JSON*\n\n\`${parseErr.message}\`\n\nFile gốc đã backup về: \`${path.basename(backupPath)}\`. Tất cả custom cron sẽ KHÔNG chạy cho tới khi sửa file. Vào Dashboard → Cron để recreate hoặc khôi phục từ backup.`);
+          sendCeoAlert(`Cảnh báo: custom-crons.json bị lỗi JSON\n\n${parseErr.message}\n\nFile gốc đã backup về: ${path.basename(backupPath)}. Tất cả custom cron sẽ KHÔNG chạy cho tới khi sửa file. Vào Dashboard, tab Cron để recreate hoặc khôi phục từ backup.`);
         } catch {}
         return [];
       }
@@ -11813,6 +12304,14 @@ function startCronJobs() {
         cronExpr = `*/${everyMin} * * * *`;
         handler = async () => {
           try {
+            // Race guard: skip heartbeat if user-triggered restart is in
+            // progress (save-zalo-manager or resume-zalo hard-restart) — else
+            // heartbeat sees "gateway down" mid-user-restart → tries its own
+            // restart → two concurrent stopOpenClaw+startOpenClaw race.
+            if (_saveZaloManagerInFlight || _startOpenClawInFlight) {
+              console.log('[heartbeat] skipping — user-triggered restart in progress');
+              return;
+            }
             const alive1 = await isGatewayAlive(8000);
             if (alive1) {
               // Gateway alive → also verify openzca listener is running.
@@ -12064,16 +12563,30 @@ function autoFixBetterSqlite3() {
   if (_documentsDbAutoFixAttempted) return false;
   _documentsDbAutoFixAttempted = true;
   try {
-    const fixScript = path.join(__dirname, 'scripts', 'fix-better-sqlite3.js');
-    if (!fs.existsSync(fixScript)) return false;
-    console.log('[documents] auto-fixing better-sqlite3 ABI mismatch via', fixScript);
-    require('child_process').execFileSync('node', [fixScript], {
-      cwd: __dirname,
+    // V1: in packaged Electron, __dirname is inside app.asar (virtual fs).
+    // scripts/** + better-sqlite3/** are in asarUnpack list, so they're
+    // at app.asar.unpacked/... — resolve correctly by probing both paths.
+    // Plain `node` isn't installed on fresh customer machines, so prefer
+    // the bundled vendor node we ship.
+    const asarUnpacked = __dirname.replace(/[\\/]app\.asar($|[\\/])/i, (m, tail) => m.replace('app.asar', 'app.asar.unpacked'));
+    const candScripts = [
+      path.join(asarUnpacked, 'scripts', 'fix-better-sqlite3.js'),
+      path.join(__dirname, 'scripts', 'fix-better-sqlite3.js'),
+    ];
+    let fixScript = null;
+    for (const p of candScripts) { if (fs.existsSync(p)) { fixScript = p; break; } }
+    if (!fixScript) {
+      console.error('[documents] auto-fix script not found in asar.unpacked nor __dirname');
+      return false;
+    }
+    const nodeBin = (typeof getBundledNodeBin === 'function' && getBundledNodeBin()) || 'node';
+    const scriptCwd = path.dirname(path.dirname(fixScript)); // parent of scripts/
+    console.log('[documents] auto-fixing better-sqlite3 ABI via', nodeBin, fixScript);
+    require('child_process').execFileSync(nodeBin, [fixScript], {
+      cwd: scriptCwd,
       timeout: 120000,
       stdio: 'inherit',
     });
-    // After the fix script runs, the require cache still has the broken module.
-    // Clear it so the next require() picks up the new binary.
     try {
       const moduleId = require.resolve('better-sqlite3');
       delete require.cache[moduleId];
@@ -13275,44 +13788,75 @@ ipcMain.handle('wizard-complete', async () => {
   if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
   // Fresh install: seed workspace files with defaults + cleanup any stale listener
   try { seedWorkspace(); } catch (e) { console.error('[wizard-complete seed] error:', e.message); }
-  // Default: Zalo disabled on fresh install. CEO must click "Bật Zalo" in Dashboard.
-  // IMPORTANT: this lives in wizard-complete (not seedWorkspace) so it only fires
-  // once on fresh install. seedWorkspace runs on every boot — putting it there would
-  // re-disable Zalo every restart after CEO has explicitly enabled it.
+  // F-3 + U3: Detect whether user completed Zalo QR login in wizard.
+  // Poll for up to 3 seconds in case credentials.json is still being written
+  // by the listener (QR scan completes → subprocess writes file asynchronously,
+  // may lag 1-2s behind the IPC that says "login ok").
+  let zaloLoggedIn = false;
+  const credPath = path.join(os.homedir(), '.openzca', 'profiles', 'default', 'credentials.json');
+  for (let i = 0; i < 6; i++) {
+    try {
+      if (fs.existsSync(credPath)) {
+        const stat = fs.statSync(credPath);
+        if ((Date.now() - stat.mtimeMs) < 24 * 60 * 60 * 1000) { zaloLoggedIn = true; break; }
+      }
+    } catch {}
+    if (i < 5) await new Promise(r => setTimeout(r, 500));
+  }
   try {
     const zaloPausePath = path.join(getWorkspace(), 'zalo-paused.json');
-    if (!fs.existsSync(zaloPausePath)) {
+    if (zaloLoggedIn) {
+      // Clear stale default-disabled pause file (U3 — may exist from v2.58)
+      try {
+        if (fs.existsSync(zaloPausePath)) {
+          const raw = JSON.parse(fs.readFileSync(zaloPausePath, 'utf-8'));
+          if (raw && raw.reason === 'default-disabled') {
+            fs.unlinkSync(zaloPausePath);
+            console.log('[wizard-complete] deleted stale default-disabled zalo-paused.json (QR login succeeded)');
+          }
+        }
+      } catch {}
+      // Flip oz.enabled = true in openclaw.json (F-3)
+      try {
+        const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+        if (fs.existsSync(configPath)) {
+          const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          if (!cfg.channels) cfg.channels = {};
+          if (!cfg.channels.openzalo) cfg.channels.openzalo = {};
+          cfg.channels.openzalo.enabled = true;
+          writeOpenClawConfigIfChanged(configPath, cfg);
+          console.log('[wizard-complete] flipped channels.openzalo.enabled=true (QR login succeeded)');
+        }
+      } catch (e) { console.warn('[wizard-complete] flip openzalo.enabled failed:', e?.message); }
+    } else if (!fs.existsSync(zaloPausePath)) {
       fs.writeFileSync(zaloPausePath, JSON.stringify({
         permanent: true,
         reason: 'default-disabled',
         pausedAt: new Date().toISOString(),
       }, null, 2), 'utf-8');
-      console.log('[wizard-complete] zalo-paused.json created (default-disabled)');
+      console.log('[wizard-complete] zalo-paused.json created (no fresh credentials)');
     }
   } catch {}
   try { cleanupOrphanZaloListener(); } catch {}
   try { markOnboardingComplete('wizard-complete'); } catch {}
   mainWindow.loadFile(path.join(__dirname, 'ui', 'dashboard.html'));
   mainWindow.maximize();
-  // ORDER MATTERS — three hard dependencies:
-  //   1. ensureZaloPlugin() — copies bundled openzalo plugin from vendor (Mac
-  //      .dmg) OR installs from npm (dev mode). MUST finish before gateway
-  //      starts, otherwise gateway won't register the openzalo channel and
-  //      Zalo stays silently broken. Awaited here to eliminate the race with
-  //      the parallel call from app.whenReady (which is fire-and-forget).
-  //      _zaloReady flag makes this idempotent.
-  //   2. startOpenClaw() runs ensureDefaultConfig() which heals the
-  //      openclaw.json schema (deletes deprecated keys, creates
-  //      channels.openzalo section, etc.).
-  //   3. Cron jobs scheduled AFTER — otherwise the first cron handler can
-  //      spawn `openclaw agent` against an unhealed config and fail with
-  //      "Config invalid".
-  try { await ensureZaloPlugin(); } catch (e) { console.error('[wizard-complete ensureZaloPlugin] error:', e?.message || e); }
-  try { await startOpenClaw(); } catch (e) { console.error('[wizard-complete startOpenClaw] error:', e?.message || e); }
-  startCronJobs();
-  watchCustomCrons();
-  startZaloCacheAutoRefresh();
-  startAppointmentDispatcher();
+  // CRIT #2: Return IMMEDIATELY. Previously this awaited ensureZaloPlugin +
+  // startOpenClaw sequentially → UI froze 30-180s on fresh Windows install.
+  // Non-tech CEOs force-quit. Dashboard channel-status broadcast (every 45s
+  // after boot, 500ms-30s during boot window) drives sidebar dots as gateway
+  // comes up — user sees progress instead of a frozen window.
+  (async () => {
+    if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-ensureZaloPlugin)'); return; }
+    try { await ensureZaloPlugin(); } catch (e) { console.error('[wizard-complete ensureZaloPlugin] error:', e?.message || e); }
+    if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-startOpenClaw)'); return; }
+    try { await startOpenClaw(); } catch (e) { console.error('[wizard-complete startOpenClaw] error:', e?.message || e); }
+    if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-startCronJobs)'); return; }
+    try { startCronJobs(); } catch (e) { console.error('[wizard-complete startCronJobs] error:', e?.message || e); }
+    try { watchCustomCrons(); } catch {}
+    try { startZaloCacheAutoRefresh(); } catch {}
+    try { startAppointmentDispatcher(); } catch {}
+  })();
   return { success: true };
 });
 
@@ -13406,7 +13950,7 @@ ipcMain.handle('install-openclaw', async (event) => {
       const libDir = path.join(npmPrefix, 'lib', 'node_modules');
       try { fs.accessSync(libDir, fs.constants.W_OK); }
       catch {
-        send(`⚠️  npm global prefix khong ghi duoc: ${npmPrefix}`);
+        send(`Canh bao: npm global prefix khong ghi duoc: ${npmPrefix}`);
         send('');
         send('Khac phuc: thiet lap user-prefix cho npm:');
         send('  mkdir -p ~/.npm-global');
@@ -13449,10 +13993,15 @@ ipcMain.handle('install-openclaw', async (event) => {
     // To upgrade pinned versions: edit PINNED_VERSIONS table below,
     // smoke-test, then ship a new build. Single source of truth is also in
     // electron/scripts/prebuild-vendor.js — keep both in sync (and PINNING.md).
+    // CRIT #11: All 4 vendor packages must be pinned. Previously @tuyenhx/openzalo
+    // was missing — dev-mode fresh installs pulled `latest` via openclaw's
+    // plugin auto-install path, so an upstream breaking change in openzalo
+    // would silently break Zalo for every new VIP installing that day.
     const PINNED_VERSIONS = [
       'openclaw@2026.4.5',
       '9router@0.3.82',
       'openzca@0.1.57',
+      '@tuyenhx/openzalo@2026.3.31',
     ];
     let cmd, args;
     if (isWin) {
@@ -13499,7 +14048,7 @@ ipcMain.handle('install-openclaw', async (event) => {
     const timeout = setTimeout(() => {
       proc.kill();
       send('');
-      send('❌ Quá thời gian (10 phút).');
+      send('Qua thoi gian (10 phut).');
       safeResolve({ success: false, error: 'Quá thời gian. Thử lại hoặc cài thủ công.' });
     }, 10 * 60 * 1000);
 
@@ -13520,12 +14069,12 @@ ipcMain.handle('install-openclaw', async (event) => {
           safeResolve({ success: true });
         } else if (code === 0) {
           send('');
-          send('⚠️ Installer chạy xong nhưng không tìm thấy openclaw.');
+          send('Canh bao: Installer chay xong nhung khong tim thay openclaw.');
           send('Thử khởi động lại app.');
           safeResolve({ success: false, error: 'Cài xong nhưng không tìm thấy openclaw. Khởi động lại app.' });
         } else {
           send('');
-          send('❌ Cài đặt thất bại.');
+          send('Cai dat that bai.');
           safeResolve({ success: false, error: `Mã lỗi: ${code}\n\n${output.slice(-1000)}` });
         }
       }, 2000);
@@ -13534,7 +14083,7 @@ ipcMain.handle('install-openclaw', async (event) => {
     proc.on('error', (err) => {
       clearTimeout(timeout);
       send('');
-      send('❌ Không chạy được: ' + err.message);
+      send('Khong chay duoc: ' + err.message);
       safeResolve({ success: false, error: err.message });
     });
   });
@@ -14123,17 +14672,66 @@ app.on('window-all-closed', () => {});
 app.on('activate', () => {
   if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
 });
+// Centralized lifecycle-cleanup helper (intervals, watchers, cron, child
+// processes). Called AFTER A5's IPC drain so no handler fires against a
+// half-torn-down state. Each step wrapped so one failure doesn't block rest.
+function _beforeQuitCleanup() {
+  // (1) Clear all tracked intervals
+  try { if (_followUpInterval) { clearInterval(_followUpInterval); _followUpInterval = null; } } catch (e2) { console.warn('[before-quit] _followUpInterval:', e2?.message); }
+  try { if (_zaloCacheInterval) { clearInterval(_zaloCacheInterval); _zaloCacheInterval = null; } } catch (e2) { console.warn('[before-quit] _zaloCacheInterval:', e2?.message); }
+  try { if (_apptDispatcherInterval) { clearInterval(_apptDispatcherInterval); _apptDispatcherInterval = null; } } catch (e2) { console.warn('[before-quit] _apptDispatcherInterval:', e2?.message); }
+  try { if (_channelStatusInterval) { clearInterval(_channelStatusInterval); _channelStatusInterval = null; } } catch (e2) { console.warn('[before-quit] _channelStatusInterval:', e2?.message); }
+  try { if (_watchPollerInterval) { clearInterval(_watchPollerInterval); _watchPollerInterval = null; } } catch (e2) { console.warn('[before-quit] _watchPollerInterval:', e2?.message); }
+  try { if (global._telegramCmdInterval) { clearInterval(global._telegramCmdInterval); global._telegramCmdInterval = null; } } catch (e2) { console.warn('[before-quit] _telegramCmdInterval:', e2?.message); }
+
+  // (2) Clear boot-phase timeouts + close fs.watch handles
+  try {
+    if (Array.isArray(_channelStatusBootTimers)) {
+      for (const t of _channelStatusBootTimers) { try { clearTimeout(t); } catch {} }
+      _channelStatusBootTimers = [];
+    }
+  } catch (e2) { console.warn('[before-quit] _channelStatusBootTimers:', e2?.message); }
+  try {
+    if (Array.isArray(global._channelStatusWatchers)) {
+      for (const w of global._channelStatusWatchers) { try { w.close(); } catch {} }
+      global._channelStatusWatchers = [];
+    }
+  } catch (e2) { console.warn('[before-quit] _channelStatusWatchers:', e2?.message); }
+
+  // (3) Stop all cron jobs — node-cron tasks hold setInterval internally
+  try { stopCronJobs(); } catch (e2) { console.warn('[before-quit] stopCronJobs:', e2?.message); }
+
+  // (4) Stop child processes
+  try { stopOpenClaw(); } catch (e2) { console.warn('[before-quit] stopOpenClaw:', e2?.message); }
+  try { cleanupOrphanZaloListener(); } catch {}
+  try { stop9Router(); } catch (e2) { console.warn('[before-quit] stop9Router:', e2?.message); }
+}
+
 app.on('before-quit', (e) => {
   app.isQuitting = true;
-  // Clear cron/follow-up intervals to prevent fire during shutdown
-  if (_followUpInterval) { clearInterval(_followUpInterval); _followUpInterval = null; }
-  stopOpenClaw();
-  try { cleanupOrphanZaloListener(); } catch {}
-  try { stop9Router(); } catch {}
-  // On Windows, taskkill is async — give it a moment to finish.
-  // Without this, the app may exit before child processes are killed.
-  if (process.platform === 'win32') {
+  _appIsQuitting = true;
+  // Wait up to 3s for mutating IPC handlers (save-zalo-manager-config,
+  // set-inbound-debounce, etc.) to finish writing openclaw.json. Without
+  // this, app.exit(0) can interrupt a writeOpenClawConfigIfChanged call
+  // mid-rename, leaving a corrupt JSON that breaks next boot.
+  // Cleanup (intervals/watchers/cron/child-procs) runs AFTER drain so no
+  // tick fires against a half-torn-down state.
+  const needsDrain = _ipcInFlightCount > 0;
+  if (needsDrain || process.platform === 'win32') {
     e.preventDefault();
-    setTimeout(() => app.exit(0), 500);
+    (async () => {
+      if (needsDrain) {
+        const res = await waitForIpcDrain(3000);
+        if (res.drained) console.log(`[quit] IPC drain completed in ${res.elapsed}ms`);
+        else console.warn(`[quit] IPC drain TIMEOUT after ${res.elapsed}ms — ${res.inFlight} handlers still in flight`);
+      }
+      try { _beforeQuitCleanup(); } catch (e2) { console.warn('[quit] cleanup threw:', e2?.message); }
+      // On Windows, taskkill is async — give it a moment to finish.
+      const tailDelay = process.platform === 'win32' ? 500 : 0;
+      setTimeout(() => app.exit(0), tailDelay);
+    })();
+  } else {
+    // Non-drain, non-Windows path — still clean up synchronously.
+    try { _beforeQuitCleanup(); } catch (e2) { console.warn('[quit] cleanup threw:', e2?.message); }
   }
 });

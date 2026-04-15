@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:20128 http://127.0.0.1:18789; frame-src http://127.0.0.1:18789 http://127.0.0.1:20128 http://localhost:18789 http://localhost:20128; img-src 'self' data: https:;">
   <title>9BizClaw</title>
+  <link rel="icon" href="data:,">
   <script>
     // Apply theme before paint to avoid flash of wrong theme
     try {
@@ -261,7 +262,7 @@
     .zum-footer textarea:focus { outline:none; border-color:var(--accent, #4a9eff); }
     .zum-content { font-size:13.5px; line-height:1.6; color:var(--text); }
     .zum-content h1 { font-size:18px; margin:0 0 12px; font-weight:700; }
-    .zum-content h2 { font-size:14px; margin:18px 0 8px; font-weight:600; color:var(--text); text-transform:uppercase; letter-spacing:0.4px; }
+    .zum-content h2 { font-size:14px; margin:18px 0 8px; font-weight:600; color:var(--text); letter-spacing:0.3px; }
     .zum-content h3 { font-size:13px; margin:14px 0 6px; font-weight:600; }
     .zum-content h4 { font-size:12px; margin:10px 0 4px; font-weight:600; color:var(--text-muted); }
     .zum-content ul { margin:6px 0 12px; padding-left:20px; }
@@ -353,7 +354,7 @@
     .zalo-layout { display:grid; grid-template-columns:260px 1fr; gap:16px; flex:1; min-height:0; }
     .zalo-sidebar { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; display:flex; flex-direction:column; overflow-y:auto; }
     .zs-section { margin-bottom:14px; }
-    .zs-label { display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.3px; }
+    .zs-label { display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:5px; letter-spacing:0.3px; }
     .zs-select { width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:7px; color:var(--text); font-size:12px; }
     .zs-select:focus { outline:none; border-color:var(--accent); }
     .zalo-main { display:flex; flex-direction:column; min-height:0; }
@@ -446,7 +447,7 @@
     .zalo-mgr-badge { background:var(--bg); padding:3px 8px; border-radius:10px; font-size:11px; color:var(--text-muted); }
     /* Side menu nav */
     .sidebar-menu { margin-top:14px; border-top:1px solid var(--border); padding-top:10px; display:flex; flex-direction:column; gap:2px; }
-    .sidebar-menu-header { font-size:10px; text-transform:uppercase; color:var(--text-muted); padding:6px 8px 2px; letter-spacing:0.5px; }
+    .sidebar-menu-header { font-size:10px; font-weight:600; color:var(--text-muted); padding:6px 8px 2px; letter-spacing:0.3px; }
     .sidebar-menu-item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; cursor:pointer; font-size:13px; color:var(--text); transition:background 0.15s; }
     /* Real-readiness indicator dot — pushed to right of menu item */
     .ready-dot { margin-left:auto; width:9px; height:9px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 2px var(--surface); }
@@ -475,6 +476,12 @@
     @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+    /* Skeleton shimmer loader */
+    .skeleton { display:inline-block; height:1em; width:8em; background:linear-gradient(90deg, var(--surface-hover, var(--bg)) 0%, var(--border) 50%, var(--surface-hover, var(--bg)) 100%); background-size:200% 100%; border-radius:4px; animation:shimmer 1.2s infinite linear; vertical-align:middle; }
+    .skeleton-text { width:12em; height:0.9em; }
+    .skeleton-num { width:2.5em; height:1.2em; }
+    .skeleton-row { width:100%; height:2.2em; margin-bottom:6px; }
+    @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
     .btn-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
     .zalo-saving-overlay { position:absolute; inset:0; background:var(--bg, rgba(0,0,0,0.15)); opacity:0.35; pointer-events:none; border-radius:inherit; transition:opacity 0.2s; z-index:5; }
@@ -606,9 +613,8 @@
     }
     .sidebar-menu-header {
       font-size: 10px !important;
-      font-weight: 700 !important;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
+      font-weight: 600 !important;
+      letter-spacing: 0.3px;
       color: var(--text-tertiary, var(--text-muted)) !important;
       padding: 14px 12px 6px !important;
     }
@@ -641,9 +647,8 @@
       background: var(--surface-hover) !important;
       color: var(--text-tertiary, var(--text-muted)) !important;
       font-size: 9px !important;
-      font-weight: 700 !important;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-weight: 600 !important;
+      letter-spacing: 0.3px;
       padding: 2px 7px !important;
       border-radius: 999px !important;
       border: 1px solid var(--border);
@@ -799,9 +804,8 @@
     .ov-card-head h3 {
       margin: 0;
       font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
       color: var(--text-tertiary, var(--text-muted));
     }
     .ov-card-action {
@@ -992,9 +996,8 @@
     .main-card:hover { border-color: var(--border-strong, var(--border)); }
     .main-card h3 {
       font-size: 11px !important;
-      font-weight: 700 !important;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
+      font-weight: 600 !important;
+      letter-spacing: 0.3px;
       color: var(--text-tertiary, var(--text-muted)) !important;
       margin: 0 0 18px !important;
     }
@@ -1127,9 +1130,8 @@
     }
     .activity-header h3 {
       font-size: 11px !important;
-      font-weight: 700 !important;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
+      font-weight: 600 !important;
+      letter-spacing: 0.3px;
       color: var(--text-tertiary, var(--text-muted));
     }
     .activity-list { padding: 8px 24px !important; }
@@ -1140,8 +1142,7 @@
     .activity-time {
       font-size: 10px !important;
       color: var(--text-tertiary, var(--text-muted)) !important;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       font-weight: 600;
     }
     .activity-text {
@@ -1366,8 +1367,8 @@
     #page-persona-mix .persona-preview-label {
       font-size: 11px;
       color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
       margin-bottom: 6px;
     }
     #page-persona-mix .persona-preview-bubble {
@@ -1437,8 +1438,7 @@
     #page-calendar .appt-section-title {
       font-size: 11px;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.3px;
       color: var(--text-muted);
     }
     #page-calendar .appt-count {
@@ -1595,8 +1595,7 @@
       margin-bottom: 8px;
       font-size: 11px;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       color: var(--text-muted);
     }
     #page-calendar .appt-push-hint {
@@ -1840,7 +1839,7 @@
         <!-- Greeting hero card -->
         <div class="ov-hero">
           <div class="ov-hero-text">
-            <div class="ov-hero-greeting" id="ov-greeting">Đang tải...</div>
+            <div class="ov-hero-greeting" id="ov-greeting"><span class="skeleton skeleton-text" style="width:14em"></span></div>
             <div class="ov-hero-sub" id="ov-greeting-sub"></div>
           </div>
           <div class="ov-hero-status" id="ov-bot-status">
@@ -1852,15 +1851,15 @@
         <!-- Stat cards -->
         <div class="ov-stats" id="ov-stats">
           <div class="ov-stat">
-            <div class="ov-stat-num" id="ov-stat-customers">--</div>
+            <div class="ov-stat-num" id="ov-stat-customers"><span class="skeleton skeleton-num"></span></div>
             <div class="ov-stat-label">Khách mới Zalo hôm nay <span class="tip" data-tooltip="Số khách Zalo mới nhắn tin hôm nay">?</span></div>
           </div>
           <div class="ov-stat">
-            <div class="ov-stat-num" id="ov-stat-events">--</div>
+            <div class="ov-stat-num" id="ov-stat-events"><span class="skeleton skeleton-num"></span></div>
             <div class="ov-stat-label">Sự kiện hôm nay <span class="tip" data-tooltip="Tổng hoạt động bot ghi nhận hôm nay">?</span></div>
           </div>
           <div class="ov-stat">
-            <div class="ov-stat-num" id="ov-stat-cron">--</div>
+            <div class="ov-stat-num" id="ov-stat-cron"><span class="skeleton skeleton-num"></span></div>
             <div class="ov-stat-label">Cron OK hôm nay <span class="tip" data-tooltip="Số lịch tự động đã chạy thành công hôm nay">?</span></div>
           </div>
         </div>
@@ -1902,7 +1901,9 @@
         </div>
         <div class="main-card">
           <div id="schedule-list" style="display:flex;flex-direction:column;gap:6px">
-            <div style="color:var(--text-muted);font-size:13px">Đang tải...</div>
+            <div class="skeleton skeleton-row"></div>
+            <div class="skeleton skeleton-row" style="width:85%"></div>
+            <div class="skeleton skeleton-row" style="width:70%"></div>
           </div>
         </div>
       </div>
@@ -1930,6 +1931,20 @@
         <div class="ds-tip">
           <span class="ds-tip-icon" data-icon="lightbulb" data-icon-size="18"></span>
           <div>Nhắn bất kỳ thứ gì cho bot qua Telegram. Bot hiểu tiếng Việt tự nhiên — không cần học lệnh. Dưới đây là gợi ý để khai thác tối đa.</div>
+        </div>
+
+        <!-- Debounce slider -->
+        <div class="ds-section">
+          <div class="ds-section-header">
+            <h3 class="ds-section-title">Thời gian gộp tin khách</h3>
+          </div>
+          <div class="ds-card" style="padding:16px 18px">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+              <input type="range" id="tg-debounce-slider" min="0" max="5000" step="500" value="3000" oninput="onDebounceInput('telegram', this.value)" style="flex:1;min-width:200px;accent-color:var(--danger)">
+              <div style="min-width:80px;text-align:right"><span id="tg-debounce-label" style="font-weight:600;font-size:16px">3.0s</span></div>
+            </div>
+            <p class="ds-section-desc" style="margin-top:10px;font-size:12px;line-height:1.5">Bot chờ X giây sau tin cuối của khách rồi mới trả lời, tránh phản hồi 3 lần khi khách gõ 3 tin liên tiếp. 0s = trả lời ngay mỗi tin (phù hợp bot không làm CSKH). 3-5s = CSKH kỹ, khách gõ xong mới reply.</p>
+          </div>
         </div>
 
         <!-- Quick commands -->
@@ -2137,12 +2152,29 @@
           <span>Bot Zalo đang tạm dừng. <span id="zalo-pause-until"></span></span>
         </div>
 
+        <!-- Debounce slider -->
+        <div class="ds-section">
+          <div class="ds-section-header">
+            <h3 class="ds-section-title">Thời gian gộp tin khách</h3>
+          </div>
+          <div class="ds-card" style="padding:16px 18px">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+              <input type="range" id="zl-debounce-slider" min="0" max="5000" step="500" value="3000" oninput="onDebounceInput('zalo', this.value)" style="flex:1;min-width:200px;accent-color:var(--danger)">
+              <div style="min-width:80px;text-align:right"><span id="zl-debounce-label" style="font-weight:600;font-size:16px">3.0s</span></div>
+            </div>
+            <p class="ds-section-desc" style="margin-top:10px;font-size:12px;line-height:1.5">Bot chờ X giây sau tin cuối của khách rồi mới trả lời, tránh phản hồi 3 lần khi khách gõ 3 tin liên tiếp. 0s = trả lời ngay mỗi tin. 3-5s = CSKH kỹ, chờ khách gõ xong mới reply.</p>
+          </div>
+        </div>
+
         <div class="zalo-layout">
           <!-- LEFT: Settings sidebar (always visible) -->
           <div class="zalo-sidebar">
             <div class="zs-section">
               <div class="switch-row" style="padding:0;margin:0">
-                <div><div style="font-weight:600;font-size:13px">Bật Zalo</div></div>
+                <div>
+                  <div style="font-weight:600;font-size:13px">Bật Zalo</div>
+                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Bấm "Lưu cấu hình" để áp dụng — cần khởi động lại gateway</div>
+                </div>
                 <label class="toggle-switch"><input type="checkbox" id="zalo-mgr-enabled"><span class="toggle-slider"></span></label>
               </div>
             </div>
@@ -2676,7 +2708,7 @@
     </div>
   </div>
 
-  <!-- Factory Reset modal — 2-layer confirmation + type "XOA" to confirm -->
+  <!-- Factory Reset modal — 2-layer confirmation + type "xóa" to confirm -->
   <div id="factory-reset-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:5000;align-items:center;justify-content:center" onclick="if(event.target===this)hideFactoryResetModal()">
     <div style="background:var(--surface);border:2px solid #e06666;border-radius:16px;max-width:520px;width:92%;padding:24px 28px;box-shadow:0 12px 48px rgba(0,0,0,0.5)">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -2695,10 +2727,10 @@
         <li>Google Calendar OAuth token</li>
       </ul>
       <div style="padding:10px 14px;background:#2a1215;border:1px solid #5c2b2b;border-radius:8px;font-size:12px;color:#e8a8a8;margin-bottom:14px">
-        <strong>KHÔNG thể khôi phục sau khi xóa.</strong> Sau khi reset, app sẽ restart và chạy lại wizard onboarding từ đầu.
+        <strong>Không thể khôi phục sau khi xóa.</strong> Sau khi reset, app sẽ restart và chạy lại wizard onboarding từ đầu.
       </div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Nhập <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:#e06666">XOA</code> để xác nhận:</div>
-      <input type="text" id="factory-reset-confirm-input" placeholder="Nhập XOA" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px" oninput="_updateFactoryResetBtn()">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Nhập <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:#e06666">xóa</code> để xác nhận:</div>
+      <input type="text" id="factory-reset-confirm-input" placeholder="Nhập xóa" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px" oninput="_updateFactoryResetBtn()">
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-secondary btn-small" onclick="hideFactoryResetModal()">Hủy</button>
         <button class="btn btn-small" id="factory-reset-confirm-btn" onclick="doFactoryReset()" disabled style="background:#e06666;color:#fff;opacity:0.5;cursor:not-allowed">Xóa sạch</button>
@@ -2723,7 +2755,7 @@
     <!-- Step card -->
     <div id="walkthrough-card" style="position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 22px;width:360px;box-shadow:0 16px 48px rgba(0,0,0,0.5);transition:all 0.35s cubic-bezier(0.4,0,0.2,1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div id="walkthrough-progress" style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:0.5px;text-transform:uppercase">Bước 1 / 8</div>
+        <div id="walkthrough-progress" style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:0.3px">Bước 1 / 8</div>
         <button onclick="walkthroughSkip()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:4px 8px;border-radius:6px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='none'">Bỏ qua</button>
       </div>
       <h3 id="walkthrough-title" style="margin:0 0 8px;font-size:16px;font-weight:600;color:var(--text)">Title</h3>
@@ -3207,13 +3239,22 @@
       document.execCommand('copy');
       try { navigator.clipboard.writeText(input.value); } catch {}
       addActivity('Đã copy Gateway Token');
-      showToast('✓ Đã copy Gateway token');
+      showToast('Đã copy Gateway token');
     }
 
     // Schedules (fixed + custom)
     let currentSchedules = [];
     let customCrons = [];
     async function loadSchedules() {
+      // 2s fallback: if IPC hasn't responded, replace skeletons with friendly empty-state
+      let _loaded = false;
+      const _fallbackTimer = setTimeout(() => {
+        if (_loaded) return;
+        const el = document.getElementById('schedule-list');
+        if (el && el.querySelector('.skeleton')) {
+          el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px 4px">Chưa có lịch nào. Nhấn + để thêm.</div>';
+        }
+      }, 2000);
       try {
         currentSchedules = await window.claw.getSchedules();
       } catch (e) {
@@ -3227,6 +3268,8 @@
       try {
         customCrons = await window.claw.getCustomCrons() || [];
       } catch { customCrons = []; }
+      _loaded = true;
+      clearTimeout(_fallbackTimer);
       renderSchedules();
     }
     function cronToTime(expr) {
@@ -3291,7 +3334,7 @@
           <div class="cron-detail-row"><span class="cron-detail-label">Mô tả</span><span class="cron-detail-value">${esc(data.description || '')}</span></div>
           <div class="cron-detail-row"><span class="cron-detail-label">Trạng thái</span><span class="cron-detail-value">${statusDotHtml(data.enabled)}</span></div>
           <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-            <button class="btn btn-secondary btn-small" onclick="testCron('fixed','${esc(data.id)}')">▶ Test ngay</button>
+            <button class="btn btn-secondary btn-small" onclick="testCron('fixed','${escJs(data.id)}')" style="display:inline-flex;align-items:center;gap:6px">${icon('play', 13)}Test ngay</button>
             <button class="btn btn-secondary btn-small" onclick="closeCronDetail()">Đóng</button>
           </div>
         `;
@@ -3309,8 +3352,8 @@
           <div style="margin-top:8px"><span class="cron-detail-label">Nội dung thực hiện:</span></div>
           <div class="cron-detail-prompt">${esc(data.prompt)}</div>
           <div style="margin-top:16px;text-align:right;display:flex;justify-content:flex-end;gap:8px">
-            <button class="btn btn-secondary btn-small" onclick="testCron('custom','${esc(data.id)}')">▶ Test ngay</button>
-            <button class="btn btn-secondary btn-small" style="color:var(--danger);display:inline-flex;align-items:center;gap:6px" onclick="deleteCustomCron('${esc(data.id)}')">${icon('trash', 14)} Xóa</button>
+            <button class="btn btn-secondary btn-small" onclick="testCron('custom','${escJs(data.id)}')" style="display:inline-flex;align-items:center;gap:6px">${icon('play', 13)}Test ngay</button>
+            <button class="btn btn-secondary btn-small" style="color:var(--danger);display:inline-flex;align-items:center;gap:6px" onclick="deleteCustomCron('${escJs(data.id)}')">${icon('trash', 14)} Xóa</button>
             <button class="btn btn-secondary btn-small" onclick="closeCronDetail()">Đóng</button>
           </div>
         `;
@@ -3359,8 +3402,12 @@
         if (!zaloDataLoaded) loadZaloManagerData();
         else loadZaloManagerData({ preserveDraft: true });
         startZaloAutoRefresh();
+        loadInboundDebounce();
       } else {
         stopZaloAutoRefresh();
+      }
+      if (page === 'telegram') {
+        loadInboundDebounce();
       }
       if (page === 'schedules') {
         loadSchedules();
@@ -3811,7 +3858,7 @@
         document.getElementById('gateway-token').value = token;
         document.getElementById('gateway-token-box').style.display = 'block';
         addActivity('Đã copy Gateway token');
-        showToast('✓ Đã copy token — paste vào ô đăng nhập OpenClaw');
+        showToast('Đã copy token — paste vào ô đăng nhập OpenClaw');
       } catch (e) {
         showToast('Lỗi: ' + e.message, 'error');
       }
@@ -3870,7 +3917,7 @@
           const iconName = KNOW_ICONS[f.id] || 'book-open';
           const count = counts[f.id] || 0;
           const isActive = f.id === currentKnowledgeCategory ? ' active' : '';
-          const deleteBtn = f.isDefault ? '' : '<button class="know-folder-delete" onclick="event.stopPropagation();deleteKnowledgeFolder(\'' + esc(f.id) + '\')" title="Xóa thư mục">&times;</button>';
+          const deleteBtn = f.isDefault ? '' : '<button class="know-folder-delete" onclick="event.stopPropagation();deleteKnowledgeFolder(\'' + escJs(f.id) + '\')" title="Xóa thư mục">&times;</button>';
           return '<div class="know-folder' + isActive + '" data-cat="' + esc(f.id) + '" onclick="selectKnowledgeFolder(\'' + esc(f.id) + '\')">'
             + '<div class="icon-wrap" data-icon="' + iconName + '"></div>'
             + '<div class="info"><div class="name">' + esc(f.label) + '</div><div class="count">' + count + ' tài liệu</div></div>'
@@ -3963,7 +4010,7 @@
                 ${f.summary ? `<div class="file-summary">${esc(f.summary)}</div>` : ''}
               </div>
               <div class="file-actions">
-                <button class="know-file-delete" onclick="deleteKnowledgeFile('${esc(f.filename)}')" title="Xóa">
+                <button class="know-file-delete" onclick="deleteKnowledgeFile('${escJs(f.filename)}')" title="Xóa">
                   <span data-icon="trash" data-icon-size="16"></span>
                 </button>
               </div>
@@ -4156,6 +4203,12 @@
         } else {
           zaloMgrConfig = config || zaloMgrConfig;
         }
+        // Seed autoSave freshness cache with the just-fetched enabled flag so
+        // autoSaveZaloManager can use it without an extra round-trip.
+        if (config && typeof config.enabled === 'boolean'
+            && typeof markZmFresh === 'function') {
+          markZmFresh(config.enabled);
+        }
         zaloDataLoaded = true;
         syncZaloManagerUi();
       } catch (e) {
@@ -4177,11 +4230,20 @@
         return;
       }
       const openMode = isOpenGroupMode();
-      // Sort: enabled groups first, then alphabetical
+      // Resolve each group's current mode (same logic as render below)
+      // then sort by PRIORITY: all → mention → off. Within same mode,
+      // alphabetical. User sees active groups (answering "Mọi tin") first,
+      // then @mention-only, then disabled at bottom.
+      const modeOf = (g) => {
+        const checked = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(g.groupId);
+        const gs = (zaloMgrConfig.groupSettings || {})[g.groupId] || {};
+        return gs.mode || (checked ? 'mention' : 'off');
+      };
+      const priority = { all: 0, mention: 1, off: 2 };
       const sorted = [...filtered].sort((a, b) => {
-        const aOn = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(a.groupId);
-        const bOn = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(b.groupId);
-        if (aOn !== bOn) return aOn ? -1 : 1;
+        const pa = priority[modeOf(a)] ?? 3;
+        const pb = priority[modeOf(b)] ?? 3;
+        if (pa !== pb) return pa - pb;
         return (a.name || '').localeCompare(b.name || '');
       });
       list.innerHTML = sorted.map(g => {
@@ -4229,6 +4291,64 @@
       }
     }
 
+    // Debounced auto-save for workspace-file changes (blocklist, groupSettings,
+    // strangerPolicy). These files are read realtime by inbound.ts patches —
+    // zero gateway restart needed. Master Zalo on/off is NOT auto-saved (it
+    // triggers hard restart) and keeps the explicit "Lưu cấu hình" button.
+    let _zaloAutoSaveTimer = null;
+    // Freshness cache for the `enabled` flag. When cached value is younger
+    // than 5s we trust it — avoids a round-trip per keystroke during rapid
+    // group toggles. Stale → fetch fresh before save so we never risk
+    // flipping enabled based on an outdated snapshot.
+    let _cachedZmEnabled = null;
+    let _lastZmFreshAt = 0;
+    const ZM_FRESHNESS_MS = 5000;
+    function markZmFresh(enabled) {
+      if (typeof enabled === 'boolean') {
+        _cachedZmEnabled = enabled;
+        _lastZmFreshAt = Date.now();
+      }
+    }
+    async function autoSaveZaloManager() {
+      if (_zaloAutoSaveTimer) clearTimeout(_zaloAutoSaveTimer);
+      _zaloAutoSaveTimer = setTimeout(async () => {
+        _zaloAutoSaveTimer = null;
+        try {
+          // Preserve currently-saved enabled state. If read fails, SKIP the
+          // save — never risk flipping Zalo enable/disable unexpectedly
+          // because a transient IPC error would default enabled → undefined →
+          // `!== false` = true → hard gateway restart triggered from a harmless
+          // per-group toggle. User must save manually in that case.
+          let enabledToUse = null;
+          const age = Date.now() - _lastZmFreshAt;
+          if (typeof _cachedZmEnabled === 'boolean' && age <= ZM_FRESHNESS_MS) {
+            enabledToUse = _cachedZmEnabled;
+          } else {
+            const fresh = await window.claw.getZaloManagerConfig();
+            if (!fresh || typeof fresh.enabled !== 'boolean') {
+              console.warn('[autoSaveZaloManager] could not read current enabled state — skipping (fail-closed, NOT flipping to true)');
+              showToast('Chưa lưu được — bấm "Lưu cấu hình" để áp dụng', 'info');
+              return;
+            }
+            markZmFresh(fresh.enabled);
+            enabledToUse = fresh.enabled;
+          }
+          const payload = { ...zaloMgrConfig, enabled: enabledToUse };
+          payload.groupPolicy = 'open';
+          payload.groupAllowFrom = ['*'];
+          const r = await window.claw.saveZaloManagerConfig(payload);
+          if (r?.success) {
+            showToast('Đã áp dụng ngay', 'info');
+            markZmFresh(enabledToUse);
+          } else if (r?.error === 'BOOT_IN_PROGRESS') {
+            showToast(r.message || 'Bot đang khởi động, vui lòng đợi vài giây rồi thử lại', 'info');
+          } else {
+            console.warn('[autoSaveZaloManager] save returned', r);
+          }
+        } catch (e) { console.warn('[autoSaveZaloManager]', e); }
+      }, 800);
+    }
+
     function setGroupMode(groupId, mode) {
       if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
       zaloMgrConfig.groupSettings[groupId] = { mode };
@@ -4246,6 +4366,7 @@
         if (!arr.includes(groupId)) arr.push(groupId);
       }
       renderZaloGroups();
+      autoSaveZaloManager();
     }
 
     function setAllGroupsMode(mode) {
@@ -4262,10 +4383,12 @@
         for (const g of zaloGroups) zaloMgrConfig.groupSettings[g.groupId] = { mode };
       }
       renderZaloGroups();
+      autoSaveZaloManager();
     }
 
     function changeStrangerPolicy(value) {
       zaloMgrConfig.strangerPolicy = value;
+      autoSaveZaloManager();
     }
 
     function toggleAllGroups(checked) {
@@ -4321,7 +4444,7 @@
               ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' · '))}</div>` : ''}
             </div>
             <div class="zc-actions">
-              <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escAttr(f.userId)}', '${escAttr(f.displayName)}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>
+              <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>
               <label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
             </div>
           </div>`;
@@ -4344,6 +4467,7 @@
       }
       zaloMgrConfig.userBlocklist = arr;
       updateBlockedCount();
+      autoSaveZaloManager();
     }
 
     function toggleAllFriends(checked) {
@@ -4354,6 +4478,7 @@
       }
       updateBlockedCount();
       renderZaloFriends();
+      autoSaveZaloManager();
     }
 
     async function saveZaloManager() {
@@ -4369,8 +4494,14 @@
         const result = await window.claw.saveZaloManagerConfig(zaloMgrConfig);
         if (result?.success) {
           addActivity('Đã lưu cấu hình Zalo');
-          showToast('✓ Đã lưu cấu hình Zalo');
+          showToast('Đã lưu cấu hình Zalo');
+          markZmFresh(zaloMgrConfig.enabled);
           try { await loadZaloManagerData(); } catch (e) { console.warn('reload zalo data failed', e); }
+        } else if (result?.error === 'BOOT_IN_PROGRESS') {
+          // Soft info toast — not a red error. Bot is still booting; user can
+          // retry in a few seconds.
+          addActivity('Bot đang khởi động — chưa lưu được');
+          showToast(result.message || 'Bot đang khởi động, vui lòng đợi vài giây rồi thử lại', 'info');
         } else {
           const err = result?.error || 'unknown';
           addActivity('Lỗi lưu: ' + err);
@@ -4385,7 +4516,9 @@
     }
     async function deleteCustomCron(id) {
       customCrons = customCrons.filter(x => x.id !== id);
-      try { await window.claw.saveCustomCrons(customCrons); } catch {}
+      // CRIT #7 defense: strip OpenClaw-sourced entries so we never write them
+      // into custom-crons.json (backend filters too — defense-in-depth).
+      try { await window.claw.saveCustomCrons(customCrons.filter(c => c.source !== 'openclaw')); } catch {}
       closeCronDetail();
       renderSchedules();
       addActivity('Đã xóa custom cron');
@@ -4399,13 +4532,13 @@
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;' + (i > 0 ? 'border-top:1px solid var(--border);' : '');
         row.innerHTML = `
           <span class="schedule-icon-wrap">${scheduleIcon(s.id, 18)}</span>
-          <div style="flex:1;min-width:0" onclick="showCronDetail('fixed','${esc(s.id)}')">
+          <div style="flex:1;min-width:0" onclick="showCronDetail('fixed','${escJs(s.id)}')">
             <div style="font-size:13px;font-weight:600">${esc(s.label)}</div>
             <div style="font-size:11px;color:var(--text-muted)">${esc(s.description || '')}</div>
           </div>
           <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;margin-right:4px">${esc(s.time)}</div>
           <label class="toggle-switch">
-            <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSchedule('${esc(s.id)}',this.checked)">
+            <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSchedule('${escJs(s.id)}',this.checked)">
             <span class="toggle-slider"></span>
           </label>
         `;
@@ -4434,12 +4567,12 @@
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;border-top:1px solid var(--border);';
         row.innerHTML = `
           <span class="schedule-icon-wrap">${icon(isOC ? 'zap' : 'bot', 18)}</span>
-          <div style="flex:1;min-width:0" onclick="showCronDetail('custom','${esc(c.id)}')">
+          <div style="flex:1;min-width:0" onclick="showCronDetail('custom','${escJs(c.id)}')">
             <div style="font-size:13px;font-weight:600">${esc(c.label || 'Custom cron')}${isOC ? ' <span style=\"font-size:10px;color:var(--accent);font-weight:400;margin-left:6px\">(bot tạo)</span>' : ''}</div>
             <div style="font-size:11px;color:var(--text-muted)">${esc(c.prompt ? c.prompt.substring(0, 60) + (c.prompt.length > 60 ? '...' : '') : '')}${extraInfo ? '<span style=\"color:var(--accent);margin-left:6px\">' + esc(extraInfo) + '</span>' : ''}</div>
           </div>
           <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;margin-right:4px">${timeDisplay}${isOC && c.deleteAfterRun ? ' (1 lần)' : ''}</div>
-          ${isOC ? '<span style="font-size:10px;color:var(--text-muted);padding:2px 6px;border:1px solid var(--border);border-radius:4px">OpenClaw</span>' : `<label class="toggle-switch"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCustomCron('${esc(c.id)}',this.checked)"><span class="toggle-slider"></span></label>`}
+          ${isOC ? '<span style="font-size:10px;color:var(--text-muted);padding:2px 6px;border:1px solid var(--border);border-radius:4px">OpenClaw</span>' : `<label class="toggle-switch"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCustomCron('${escJs(c.id)}',this.checked)"><span class="toggle-slider"></span></label>`}
         `;
         list.appendChild(row);
       });
@@ -4470,8 +4603,8 @@
       const c = customCrons.find(x => x.id === id);
       if (c) {
         c.enabled = enabled;
-        // Save back via main process — update the custom-crons.json
-        try { await window.claw.saveCustomCrons(customCrons); } catch {}
+        // Save back via main — strip OpenClaw-sourced entries (CRIT #7)
+        try { await window.claw.saveCustomCrons(customCrons.filter(x => x.source !== 'openclaw')); } catch {}
         renderSchedules();
         addActivity(`${enabled ? 'Bật' : 'Tắt'} ${c.label || 'Custom cron'}`);
       }
@@ -4515,10 +4648,10 @@
       if (info.ready) {
         state = 'ready';
         if (channel === 'telegram') {
-          summary = '✓ Sẵn sàng — anh nhắn Telegram cho bot ngay'
+          summary = 'Sẵn sàng — anh nhắn Telegram cho bot ngay'
             + (info.username ? ' (@' + info.username + ')' : '');
         } else {
-          summary = '✓ Sẵn sàng — anh nhắn Zalo cho bot ngay';
+          summary = 'Sẵn sàng — anh nhắn Zalo cho bot ngay';
         }
       } else if (isAwaitingConfirmation) {
         state = 'checking';
@@ -4596,6 +4729,35 @@
       if (tg) applyChannelStatus('telegram', tg, _lastChannelStatus.checkedAt);
       if (zl) applyChannelStatus('zalo', zl, _lastChannelStatus.checkedAt);
     }, 1000);
+    // Inbound debounce sliders — debounced save to avoid spamming IPC on drag
+    let _dbSaveTimer = null;
+    function onDebounceInput(channel, valueMs) {
+      const ms = Math.max(0, Math.min(5000, parseInt(valueMs, 10) || 0));
+      const secs = (ms / 1000).toFixed(1) + 's';
+      const labelId = channel === 'telegram' ? 'tg-debounce-label' : 'zl-debounce-label';
+      const el = document.getElementById(labelId);
+      if (el) el.textContent = secs;
+      if (_dbSaveTimer) clearTimeout(_dbSaveTimer);
+      _dbSaveTimer = setTimeout(async () => {
+        try {
+          const r = await window.claw.setInboundDebounce(channel, ms);
+          if (r?.success) showToast(`Đã lưu thời gian gộp tin ${channel === 'telegram' ? 'Telegram' : 'Zalo'}: ${secs}`, 'info');
+        } catch (e) { console.warn('[debounce save]', e); }
+      }, 400);
+    }
+    async function loadInboundDebounce() {
+      try {
+        const r = await window.claw.getInboundDebounce();
+        if (!r) return;
+        const tg = document.getElementById('tg-debounce-slider');
+        const tgLbl = document.getElementById('tg-debounce-label');
+        if (tg && typeof r.telegram === 'number') { tg.value = r.telegram; tgLbl.textContent = (r.telegram / 1000).toFixed(1) + 's'; }
+        const zl = document.getElementById('zl-debounce-slider');
+        const zlLbl = document.getElementById('zl-debounce-label');
+        if (zl && typeof r.zalo === 'number') { zl.value = r.zalo; zlLbl.textContent = (r.zalo / 1000).toFixed(1) + 's'; }
+      } catch (e) { console.warn('[debounce load]', e); }
+    }
+
     async function recheckTelegram() {
       const pill = document.getElementById('ready-pill-telegram');
       if (pill) pill.setAttribute('data-state', 'checking');
@@ -4607,7 +4769,7 @@
         _lastChannelStatus.checkedAt = new Date().toISOString();
         applyChannelStatus('telegram', info, _lastChannelStatus.checkedAt);
         if (info.ready) {
-          showToast('✓ Telegram sẵn sàng — anh nhắn được rồi', 'success');
+          showToast('Telegram sẵn sàng — anh nhắn được rồi', 'success');
         } else if (info.awaitingConfirmation) {
           showToast(info.error || 'Telegram đang chờ tin xác nhận sẵn sàng', 'info');
         } else {
@@ -4625,7 +4787,7 @@
         _lastChannelStatus.checkedAt = new Date().toISOString();
         applyChannelStatus('zalo', info, _lastChannelStatus.checkedAt);
         if (info.ready) {
-          showToast('✓ Zalo sẵn sàng — anh nhắn được rồi', 'success');
+          showToast('Zalo sẵn sàng — anh nhắn được rồi', 'success');
         } else if (info.awaitingConfirmation) {
           showToast(info.error || 'Zalo đang chờ tin xác nhận sẵn sàng', 'info');
         } else {
@@ -4638,7 +4800,7 @@
         showToast('Đang gửi tin test...', 'info');
         const r = await window.claw.telegramSelfTest();
         if (r && r.success) {
-          showToast('✓ Đã gửi tin test — kiểm tra Telegram của anh', 'success');
+          showToast('Đã gửi tin test — kiểm tra Telegram của anh', 'success');
         } else {
           showToast('Gửi thất bại — token sai hoặc không có CEO chat ID', 'error');
         }
@@ -5065,7 +5227,7 @@
         const res = await window.claw.resetPin(tgId, newPin);
         if (res.success) {
           status.style.color = 'var(--success,#16a34a)';
-          status.textContent = '✓ Đã đặt lại PIN. Đang vào Dashboard...';
+          status.textContent = 'Đã đặt lại PIN. Đang vào Dashboard...';
           setTimeout(unlockDashboard, 800);
         } else {
           status.style.color = 'var(--danger,#e74c3c)';
@@ -5839,7 +6001,7 @@
       if (descEl) descEl.textContent = step.desc;
       if (progEl) progEl.textContent = 'Bước ' + (_walkIdx + 1) + ' / ' + WALKTHROUGH_STEPS.length;
       if (prevBtn) prevBtn.style.visibility = _walkIdx === 0 ? 'hidden' : 'visible';
-      if (nextBtn) nextBtn.textContent = _walkIdx === WALKTHROUGH_STEPS.length - 1 ? 'Hoàn tất ✓' : 'Tiếp →';
+      if (nextBtn) nextBtn.textContent = _walkIdx === WALKTHROUGH_STEPS.length - 1 ? 'Hoàn tất' : 'Tiếp →';
       _renderWalkDots();
 
       const target = document.querySelector(step.target);
@@ -5932,7 +6094,7 @@
       const inp = document.getElementById('factory-reset-confirm-input');
       const btn = document.getElementById('factory-reset-confirm-btn');
       if (!inp || !btn) return;
-      const ok = inp.value.trim().toUpperCase() === 'XOA';
+      const ok = (inp.value || '').trim().toLowerCase() === 'xóa';
       btn.disabled = !ok;
       btn.style.opacity = ok ? '1' : '0.5';
       btn.style.cursor = ok ? 'pointer' : 'not-allowed';
