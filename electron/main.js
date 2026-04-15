@@ -6797,15 +6797,14 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           }
         }
 
-        // 3. Create new Ollama provider
+        // 3. Create new Ollama provider — DO NOT set baseUrl.
+        // 9Router knows the correct Ollama cloud endpoint internally for
+        // provider type 'ollama'. Setting baseUrl: 'https://ollama.com'
+        // previously overrode the default → requests hit wrong URL → 401.
         const createRes = await nineRouterApi('POST', '/api/providers', {
           provider: 'ollama',
           name: 'Ollama',
           apiKey: opts.ollamaKey.trim(),
-          // Ollama cloud API (ollama.com/settings/keys) — without this 9router
-          // defaults to localhost:11434 (local Ollama) which is never running on
-          // user machines, causing the /test endpoint to crash with HTTP 500.
-          baseUrl: 'https://ollama.com',
         });
         if (!createRes.success) {
           throw new Error('Không tạo được provider: ' + (createRes.error || 'unknown'));
@@ -6983,7 +6982,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         provider: 'ollama',
         authType: 'apikey',
         name: 'Ollama',
-        apiKey: opts.ollamaKey,
+        apiKey: opts.ollamaKey.trim(),
         priority: 1,
         isActive: true,
         testStatus: 'unknown',
