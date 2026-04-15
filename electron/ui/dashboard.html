@@ -2361,6 +2361,28 @@
             </div>
           </div>
         </div>
+
+        <div class="ds-section" style="margin-top:20px">
+          <div class="ds-section-header">
+            <h3 class="ds-section-title">Test tìm kiếm tài liệu</h3>
+            <p class="ds-section-desc">Nhập câu hỏi của khách để xem bot sẽ tìm thấy đoạn nào trong tài liệu đã upload</p>
+          </div>
+          <div class="ds-card" style="padding:16px">
+            <div style="display:flex; gap:8px; margin-bottom:12px">
+              <input id="know-test-query" type="text" placeholder="VD: iPhone 15 Pro giá bao nhiêu?" style="flex:1; padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px">
+              <select id="know-test-cat" style="padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px">
+                <option value="">Tất cả</option>
+                <option value="cong-ty">Công ty</option>
+                <option value="san-pham">Sản phẩm</option>
+                <option value="nhan-vien">Nhân viên</option>
+              </select>
+              <button class="btn btn-primary btn-small" onclick="testKnowledgeSearch()">Tìm</button>
+            </div>
+            <div id="know-test-results" style="font-size:13px; line-height:1.5; color:var(--text-muted)">
+              Kết quả tìm kiếm sẽ hiện ở đây
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- PAGE: Tính cách bot (persona mix editor) -->
@@ -4135,6 +4157,39 @@
         }
       } catch (e) {
         addActivity('Lỗi: ' + e.message);
+      }
+    }
+
+    async function testKnowledgeSearch() {
+      const query = document.getElementById('know-test-query').value.trim();
+      const category = document.getElementById('know-test-cat').value || null;
+      const resultsEl = document.getElementById('know-test-results');
+      if (!query) {
+        resultsEl.innerHTML = '<span style="color:var(--danger)">Nhập câu hỏi trước</span>';
+        return;
+      }
+      resultsEl.innerHTML = '<span class="skeleton skeleton-text"></span> Đang tìm...';
+      try {
+        const r = await window.claw.knowledgeSearch(query, category, 5);
+        if (!r || !r.success) {
+          resultsEl.innerHTML = '<span style="color:var(--danger)">Lỗi: ' + esc((r && r.error) || 'Không rõ') + '</span>';
+          return;
+        }
+        if (!r.results || r.results.length === 0) {
+          resultsEl.innerHTML = '<em>Không tìm thấy kết quả. Upload thêm tài liệu hoặc thử câu hỏi khác.</em>';
+          return;
+        }
+        resultsEl.innerHTML = r.results.map((hit, i) => `
+          <div style="margin-bottom:12px; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:8px">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px">
+              <strong style="color:var(--text); font-size:12px">${i+1}. ${esc(hit.filename || '')}</strong>
+              <span style="font-size:11px; color:var(--text-muted)">Chunk #${hit.chunk_index != null ? hit.chunk_index : '?'} · Score ${(hit.score || 0).toFixed(2)}</span>
+            </div>
+            <div style="color:var(--text); font-size:12px; line-height:1.5">${hit.snippet || esc((hit.content || '')).slice(0,300)}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        resultsEl.innerHTML = '<span style="color:var(--danger)">Lỗi: ' + esc(e.message || String(e)) + '</span>';
       }
     }
 

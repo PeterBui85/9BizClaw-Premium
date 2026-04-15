@@ -1,6 +1,6 @@
 {
   "name": "9bizclaw",
-  "version": "2.2.60",
+  "version": "2.3.0",
   "description": "9BizClaw — Trợ Lý AI Cho CEO (OpenClaw Desktop)",
   "author": "MODORO Tech Corp",
   "repository": {
@@ -35,6 +35,7 @@
       "scripts/**/*",
       "gcal/**/*",
       "patches/**/*",
+      "data/**/*",
       "node_modules/**/*",
       "!node_modules/**/{CHANGELOG.md,README.md,readme.md,changelog.md}",
       "!node_modules/**/{test,tests,__tests__,*.test.js,*.spec.js}",

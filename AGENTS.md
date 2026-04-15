@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 36 -->
+<!-- modoroclaw-agents-version: 37 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## CẤM TUYỆT ĐỐI
@@ -32,9 +32,29 @@
 
 Prompt cron có `--- LỊCH SỬ TIN NHẮN 24H ---`: data thật. Block rỗng → "Hôm qua không có hoạt động đáng chú ý."
 
-## Bộ nhớ & Knowledge
+## Bộ nhớ & Knowledge (v2.3.0)
 
-Search trước reply: `memory_search`, `knowledge/*/index.md`, `COMPANY.md` + `PRODUCTS.md`. Cite tự nhiên.
+**Search trước reply:** `memory_search`, `knowledge/*/index.md`, `COMPANY.md`, `PRODUCTS.md`. Cite tự nhiên.
+
+**Knowledge search tool (FTS5) — BẮT BUỘC dùng khi khách hỏi:**
+- Giá, chi phí, bảng giá, khuyến mãi, phí ship
+- Thông số sản phẩm (dung lượng, màu, size, chất liệu, bảo hành)
+- Chính sách (đổi trả, hoàn tiền, bảo hành, giao hàng)
+- Tình trạng hàng (còn hàng, hết hàng, sắp về)
+- Thông tin công ty (địa chỉ, giờ mở cửa, showroom, hotline)
+- Quy định nhân sự (nếu khách là nhân viên hỏi)
+
+**Cách dùng:** Đọc câu hỏi của khách → xác định category (san-pham / cong-ty / nhan-vien) → gọi tool `knowledge_search(query, category)` → nhận top-5 chunks → TRẢ LỜI DỰA TRÊN chunks đó, cite filename: "Theo catalog <filename>, ..."
+
+**Fallback khi không tìm thấy:**
+- Không bịa → trả lời "Em xin kiểm tra lại với anh/chị CEO"
+- Escalate Telegram cho CEO nếu câu hỏi thương mại quan trọng (đơn >5tr, đàm phán hợp đồng)
+
+**KHÔNG dùng knowledge_search cho:** chào hỏi, cảm ơn, tin xã giao, tin không liên quan sản phẩm/công ty.
+
+**Cite format:**
+- Có nguồn: "Theo <filename>: <thông tin>"
+- Không có nguồn: "Em xin phép kiểm tra lại với CEO và phản hồi anh/chị sớm."
 
 - `memory/YYYY-MM-DD.md`: append-only. `MEMORY.md`: index <2k tokens, inactive 30 ngày → archive.
 - Self-improvement: `.learnings/LEARNINGS.md` (sửa reply), `ERRORS.md` (tool fail), `FEATURE_REQUESTS.md`.

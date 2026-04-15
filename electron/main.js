@@ -562,7 +562,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 36;
+const CURRENT_AGENTS_MD_VERSION = 37;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -13193,6 +13193,240 @@ function ensureDocumentsDir() {
 let _documentsDbErrorLogged = false;
 let _documentsDbAutoFixAttempted = false;
 
+// ============================================
+//  KNOWLEDGE SEARCH — Vietnamese FTS5 helpers
+//  (K1 of v2.3.0: schema migration + chunker + normalizer)
+// ============================================
+
+// Vietnamese stopword list — dropped from `tokens` column to reduce FTS noise.
+// Keep short-word (<2 chars) filtering separate so "id", "sn" codes survive.
+const VI_STOPWORDS = new Set([
+  'ở','la','voi','cua','cho','nay','kia','va','hoac','thi','ma','nen',
+  'vay','roi','dang','se','da','co','cac','nhung','mot','trong','ngoai',
+  'tren','duoi','khi','neu','tai','ve','theo','boi','vi','do','qua',
+  'den','tu','vao','ra','len','xuong','di','toi','bang','cung','con',
+  'do','day','kia','ay','nao','sao','dau','gi','ai','may','bao',
+  'u','a','o','a','oi','nhe','nha','day','nhi','chu','ha','ho',
+  'de','moi','chi','rat','hon','nhat','qua','that','that_su'
+]);
+
+// NFD decomposition strips combining marks; `đ`/`Đ` aren't decomposable so
+// handle separately. Used by FTS5 unicode61 tokenizer also sets
+// `remove_diacritics 2` but we still need a JS copy for `content_plain`
+// and `tokens` columns (FTS5 tokenizer works on indexed text, not on
+// the JS side where we compute derived columns).
+function stripViDiacritics(s) {
+  if (!s) return '';
+  return String(s)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+}
+
+function normalizeForSearch(text) {
+  if (!text) return '';
+  return stripViDiacritics(String(text)).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function tokenizeForSearch(text) {
+  if (!text) return '';
+  const plain = normalizeForSearch(text);
+  const tokens = plain.split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !VI_STOPWORDS.has(t));
+  return tokens.join(' ');
+}
+
+// Chunk Vietnamese text at sentence boundaries with configurable size + overlap.
+// Sentence splitter recognises Latin (. ! ?) and CJK fullwidth (。？！) — useful
+// for mixed VN/EN/CN product catalogs. Minimum chunk size 50: tiny trailing
+// fragments merge into the previous chunk so FTS5 rows stay meaningful.
+// Hard-cut fallback: a single sentence > chunkSize is split at chunkSize regardless.
+function chunkVietnameseText(text, opts) {
+  const chunkSize = (opts && opts.chunkSize) || 500;
+  const overlap = (opts && opts.overlap) || 100;
+  const minChunk = 50;
+  if (!text) return [];
+  // Normalise whitespace but preserve original char offsets by tracking cleaned
+  // positions relative to the cleaned string. `char_start`/`char_end` refer to
+  // the cleaned text (used for highlighting; exact byte-offsets in raw PDFs are
+  // unreliable anyway after pdf-parse's own normalisation).
+  const clean = String(text).replace(/\s+/g, ' ').trim();
+  if (clean.length === 0) return [];
+
+  // 1) Split into candidate sentences with their start offsets.
+  const sentences = [];
+  const re = /[.!?。？！]+[\s]+/g;
+  let lastIdx = 0;
+  let m;
+  while ((m = re.exec(clean)) !== null) {
+    const endIdx = m.index + m[0].length;
+    sentences.push({ text: clean.slice(lastIdx, endIdx).trim(), start: lastIdx, end: endIdx });
+    lastIdx = endIdx;
+  }
+  if (lastIdx < clean.length) {
+    sentences.push({ text: clean.slice(lastIdx).trim(), start: lastIdx, end: clean.length });
+  }
+
+  // 2) Hard-cut any sentence > chunkSize into fixed-width pieces.
+  const pieces = [];
+  for (const s of sentences) {
+    if (s.text.length <= chunkSize) { pieces.push(s); continue; }
+    let off = 0;
+    while (off < s.text.length) {
+      const slice = s.text.slice(off, off + chunkSize);
+      pieces.push({ text: slice, start: s.start + off, end: s.start + off + slice.length });
+      off += chunkSize;
+    }
+  }
+
+  // 3) Greedy pack pieces into chunks up to chunkSize, with `overlap` tail
+  //    from the previous chunk prepended to each new chunk (except the first).
+  const chunks = [];
+  let cur = { text: '', start: -1, end: -1 };
+  for (const p of pieces) {
+    if (cur.text.length === 0) { cur = { text: p.text, start: p.start, end: p.end }; continue; }
+    if (cur.text.length + 1 + p.text.length <= chunkSize) {
+      cur.text = cur.text + ' ' + p.text;
+      cur.end = p.end;
+    } else {
+      chunks.push(cur);
+      // Build overlap from the tail of the previous chunk.
+      const tailLen = Math.min(overlap, cur.text.length);
+      const tail = tailLen > 0 ? cur.text.slice(cur.text.length - tailLen) : '';
+      const tailStart = cur.end - tailLen;
+      if (tail) {
+        const combined = tail + ' ' + p.text;
+        cur = { text: combined.length <= chunkSize ? combined : p.text,
+                start: combined.length <= chunkSize ? tailStart : p.start,
+                end: p.end };
+      } else {
+        cur = { text: p.text, start: p.start, end: p.end };
+      }
+    }
+  }
+  if (cur.text.length > 0) chunks.push(cur);
+
+  // 4) Merge tiny trailing chunks (< minChunk) into the previous one.
+  const merged = [];
+  for (const c of chunks) {
+    if (merged.length > 0 && c.text.length < minChunk) {
+      const prev = merged[merged.length - 1];
+      prev.text = prev.text + ' ' + c.text;
+      prev.end = c.end;
+    } else {
+      merged.push(c);
+    }
+  }
+
+  return merged.map((c, i) => ({
+    index: i,
+    content: c.text,
+    char_start: c.start,
+    char_end: c.end,
+  }));
+}
+
+// Idempotent schema migration for the chunk table + FTS5 mirror. Runs inside
+// getDocumentsDb() so every DB open catches fresh installs + upgrades. The
+// triggers keep documents_chunks_fts mirror in sync with documents_chunks
+// writes — INSERT/UPDATE/DELETE routed via rowid. tokens column stores the
+// stopword-stripped, diacritic-stripped form used by the query-rewrite code
+// (K3) to boost recall over plain FTS. content_plain is the diacritic-free
+// but stopword-retained form — used for snippet() highlighting.
+function ensureKnowledgeChunksSchema(db) {
+  if (!db) return;
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS documents_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        char_start INTEGER,
+        char_end INTEGER,
+        FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_chunks_doc ON documents_chunks(document_id);
+      CREATE INDEX IF NOT EXISTS idx_chunks_cat ON documents_chunks(category);
+      CREATE VIRTUAL TABLE IF NOT EXISTS documents_chunks_fts USING fts5(
+        content,
+        content_plain,
+        tokens,
+        tokenize = "unicode61 remove_diacritics 2"
+      );
+      CREATE TRIGGER IF NOT EXISTS documents_chunks_ad
+        AFTER DELETE ON documents_chunks BEGIN
+          DELETE FROM documents_chunks_fts WHERE rowid = old.id;
+        END;
+    `);
+  } catch (e) {
+    console.error('[knowledge] chunk schema migrate error:', e.message);
+  }
+}
+
+// Re-index a single document: delete existing chunks + FTS rows, run chunker,
+// insert rows + FTS mirror inside a single transaction. Called from
+// upload-knowledge-file after the documents row is inserted, and from
+// backfillDocumentChunks for existing rows without chunks.
+function indexDocumentChunks(db, documentId, category, rawText) {
+  if (!db) return { chunks: 0, totalChars: 0 };
+  try {
+    ensureKnowledgeChunksSchema(db);
+    const chunks = chunkVietnameseText(rawText || '');
+    const txn = db.transaction(() => {
+      // Clean re-index: drop existing chunks (trigger removes FTS rows).
+      db.prepare('DELETE FROM documents_chunks WHERE document_id = ?').run(documentId);
+      const insChunk = db.prepare(
+        'INSERT INTO documents_chunks (document_id, category, chunk_index, char_start, char_end) VALUES (?, ?, ?, ?, ?)'
+      );
+      const insFts = db.prepare(
+        'INSERT INTO documents_chunks_fts (rowid, content, content_plain, tokens) VALUES (?, ?, ?, ?)'
+      );
+      for (const c of chunks) {
+        const info = insChunk.run(documentId, category, c.index, c.char_start, c.char_end);
+        const rowid = Number(info.lastInsertRowid);
+        insFts.run(rowid, c.content, normalizeForSearch(c.content), tokenizeForSearch(c.content));
+      }
+    });
+    txn();
+    const totalChars = chunks.reduce((s, c) => s + c.content.length, 0);
+    return { chunks: chunks.length, totalChars };
+  } catch (e) {
+    console.error('[knowledge] indexDocumentChunks error:', e.message);
+    return { chunks: 0, totalChars: 0, error: e.message };
+  }
+}
+
+// Boot-time catch-up: any documents row that has zero chunks gets chunked.
+// Non-blocking; called via setTimeout from app.whenReady so it never delays
+// boot. Fails gracefully if DB not available (e.g. ABI mismatch still being
+// auto-fixed).
+async function backfillDocumentChunks() {
+  const db = getDocumentsDb();
+  if (!db) return;
+  try {
+    ensureKnowledgeChunksSchema(db);
+    const rows = db.prepare(`
+      SELECT d.id, d.category, d.content
+      FROM documents d
+      LEFT JOIN (SELECT document_id, COUNT(*) c FROM documents_chunks GROUP BY document_id) x
+        ON x.document_id = d.id
+      WHERE x.c IS NULL OR x.c = 0
+    `).all();
+    let indexed = 0, totalChunks = 0;
+    for (const r of rows) {
+      if (!r.content) continue;
+      const res = indexDocumentChunks(db, r.id, r.category || 'general', r.content);
+      if (res.chunks > 0) { indexed += 1; totalChunks += res.chunks; }
+    }
+    if (indexed > 0) console.log(`[knowledge] backfill chunks: indexed ${indexed} docs, ${totalChunks} chunks`);
+  } catch (e) {
+    console.error('[knowledge] backfillDocumentChunks error:', e.message);
+  } finally {
+    try { db.close(); } catch {}
+  }
+}
+
 // Self-heal better-sqlite3 ABI mismatch by re-running the postinstall script
 // (which calls prebuild-install for the bundled Electron version). Synchronous
 // because getDocumentsDb is synchronous and called from many call sites — we
@@ -13265,6 +13499,8 @@ function getDocumentsDb() {
     // Migration: add columns if missing on older DB
     try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
     try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
+    // K1: Vietnamese chunk search schema (idempotent — safe on fresh install + upgrade)
+    try { ensureKnowledgeChunksSchema(db); } catch {}
     return db;
   } catch (e) {
     // ABI mismatch → try to self-heal once. If the fix script succeeds, the
@@ -13295,6 +13531,7 @@ function getDocumentsDb() {
           `);
           try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
           try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
+          try { ensureKnowledgeChunksSchema(db); } catch {}
           console.log('[documents] DB now working after auto-fix');
           return db;
         } catch (e2) {
@@ -13577,17 +13814,29 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     let dbWarning = null;
     const db = getDocumentsDb();
     if (db) {
+      let insertedDocId = null;
       try {
         const insertBoth = db.transaction(() => {
-          db.prepare(
+          const info = db.prepare(
             'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
           ).run(finalName, dst, content, filetype, stat.size, wordCount, category, summary);
+          insertedDocId = Number(info.lastInsertRowid);
           db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(finalName, content);
         });
         insertBoth();
       } catch (e) {
         console.error('[knowledge] db insert error:', e.message);
         dbWarning = 'DB insert failed (file vẫn lưu trên disk): ' + e.message;
+      }
+      // K1: chunk + index for Vietnamese FTS5 search. Non-fatal if it fails —
+      // the full document is still in documents_fts, just not snippet-retrievable.
+      if (insertedDocId && content) {
+        try {
+          const res = indexDocumentChunks(db, insertedDocId, category, content);
+          if (res && res.chunks > 0) {
+            console.log(`[knowledge] indexed ${res.chunks} chunks for ${finalName}`);
+          }
+        } catch (e) { console.error('[knowledge] chunk index error:', e.message); }
       }
       try { db.close(); } catch {}
     } else {
@@ -13721,6 +13970,194 @@ ipcMain.handle('list-knowledge-folders', async () => {
     label: KNOWLEDGE_LABELS[cat] || cat.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     isDefault: DEFAULT_KNOWLEDGE_CATEGORIES.includes(cat),
   }));
+});
+
+// ============================================
+//  KNOWLEDGE SEARCH — query + FTS5 MATCH builder
+//  (K3 of v2.3.0: query expansion via synonyms + BM25 rank + fallback)
+//  TODO(v2.3.1): wire as openclaw tool via plugins/knowledge-search-tool
+// ============================================
+
+// Lazy-load + cache Vietnamese synonym dictionary (K2 ships
+// electron/data/synonyms-vi.json). Shape: { "<normalized-key>": ["syn1", ...] }.
+// Missing file is non-fatal — expansion just becomes a pass-through.
+let _synonymsCache = null;
+function loadSynonyms() {
+  if (_synonymsCache) return _synonymsCache;
+  try {
+    const p = path.join(__dirname, 'data', 'synonyms-vi.json');
+    _synonymsCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch (e) {
+    console.warn('[knowledge-search] synonyms-vi.json not found, using empty dict');
+    _synonymsCache = {};
+  }
+  return _synonymsCache;
+}
+
+// Escape FTS5 token — drop everything that isn't alnum or underscore.
+// Returns '' if nothing usable left (caller should skip that token).
+function _ftsEscapeToken(tok) {
+  if (!tok) return '';
+  // Already diacritic-stripped + lowercased by normalizeForSearch upstream.
+  return String(tok).replace(/[^a-z0-9_]/g, '');
+}
+
+// Build an FTS5 MATCH expression from a normalized Vietnamese query.
+// Strategy:
+//   - token-by-token scan, but also probe 2-word phrases (bigrams) against
+//     synonyms dict so multi-word keys like "bao nhieu" resolve before the
+//     unigram pass consumes them.
+//   - each (token OR synonyms...) group becomes a single FTS5 OR-subexpr.
+//   - groups joined with AND so BM25 still ranks by density of matches.
+// Dedupe expansion across the whole query so noisy synonym lists don't blow up
+// the MATCH string.
+function expandSynonyms(normalizedQuery) {
+  const syn = loadSynonyms();
+  const tokens = String(normalizedQuery || '')
+    .split(/[^a-z0-9]+/)
+    .filter(t => t.length > 0 && !VI_STOPWORDS.has(t));
+  if (tokens.length === 0) return '';
+
+  const groups = [];
+  const seenExpansions = new Set();
+
+  let i = 0;
+  while (i < tokens.length) {
+    // Try bigram synonym first (e.g. "bao nhieu" → ["bao nhieu","gia"]).
+    let matchedKey = null;
+    let consume = 1;
+    if (i + 1 < tokens.length) {
+      const bigram = tokens[i] + ' ' + tokens[i + 1];
+      if (syn[bigram]) { matchedKey = bigram; consume = 2; }
+    }
+    if (!matchedKey && syn[tokens[i]]) matchedKey = tokens[i];
+
+    const base = matchedKey || tokens[i];
+    const variants = matchedKey ? (Array.isArray(syn[matchedKey]) ? syn[matchedKey] : [base]) : [base];
+
+    const ftsParts = [];
+    for (const v of variants) {
+      // Each synonym may itself be multi-word — split, escape, join as phrase.
+      const subtoks = String(v).toLowerCase().split(/[^a-z0-9]+/).map(_ftsEscapeToken).filter(Boolean);
+      if (subtoks.length === 0) continue;
+      const expr = subtoks.length === 1 ? subtoks[0] : `"${subtoks.join(' ')}"`;
+      if (!seenExpansions.has(expr)) {
+        seenExpansions.add(expr);
+        ftsParts.push(expr);
+      }
+    }
+    if (ftsParts.length > 0) {
+      groups.push(ftsParts.length === 1 ? ftsParts[0] : `(${ftsParts.join(' OR ')})`);
+    }
+    i += consume;
+  }
+  return groups.join(' AND ');
+}
+
+// Core search — returns top-N chunks ordered by BM25 (lower = better).
+// Graceful degradation: (a) DB unavailable → throw 'DB unavailable',
+// (b) FTS5 MATCH syntax error → retry word-chars-only, (c) empty FTS result →
+// LIKE on documents.content last-resort.
+function searchKnowledge(opts) {
+  const { query, category, limit } = opts || {};
+  const lim = Math.max(1, Math.min(50, Number(limit) || 5));
+  if (!query || !String(query).trim()) return [];
+
+  const normalized = normalizeForSearch(query);
+  const matchExpr = expandSynonyms(normalized);
+
+  const db = getDocumentsDb();
+  if (!db) {
+    const err = new Error('DB unavailable');
+    err.code = 'DB_UNAVAILABLE';
+    throw err;
+  }
+  try { ensureKnowledgeChunksSchema(db); } catch {}
+
+  const baseSelect = `
+    SELECT dc.id AS chunk_id, dc.document_id, dc.category, dc.chunk_index,
+           dc.char_start, dc.char_end, d.filename, d.title,
+           bm25(documents_chunks_fts) AS score,
+           highlight(documents_chunks_fts, 0, '<b>', '</b>') AS snippet
+    FROM documents_chunks_fts
+    JOIN documents_chunks dc ON dc.id = documents_chunks_fts.rowid
+    JOIN documents d ON d.id = dc.document_id
+    WHERE documents_chunks_fts MATCH ?
+  `;
+  const catClause = category ? ' AND dc.category = ?' : '';
+  const orderLimit = ' ORDER BY bm25(documents_chunks_fts) LIMIT ?';
+
+  function tryMatch(expr) {
+    const sql = baseSelect + catClause + orderLimit;
+    const args = category ? [expr, category, lim] : [expr, lim];
+    return db.prepare(sql).all(...args);
+  }
+
+  let results = [];
+  let usedExpr = matchExpr;
+
+  // Tier 1: full synonym-expanded MATCH.
+  if (matchExpr) {
+    try { results = tryMatch(matchExpr); } catch (e) {
+      console.warn('[knowledge-search] tier1 MATCH failed:', e.message);
+      results = [];
+    }
+  }
+
+  // Tier 2: bare tokens (no synonyms, no quotes) — safer if tier1 hit
+  // FTS5 tokenizer edge cases (quoted phrase w/ stopword, etc).
+  if (results.length === 0) {
+    const bare = String(normalized).split(/[^a-z0-9]+/)
+      .filter(t => t.length >= 2 && !VI_STOPWORDS.has(t))
+      .map(_ftsEscapeToken).filter(Boolean);
+    if (bare.length > 0) {
+      const expr2 = bare.join(' OR ');
+      usedExpr = expr2;
+      try { results = tryMatch(expr2); } catch (e) {
+        console.warn('[knowledge-search] tier2 MATCH failed:', e.message);
+        results = [];
+      }
+    }
+  }
+
+  // Tier 3: LIKE scan on documents.content — slow, last-resort.
+  if (results.length === 0) {
+    try {
+      const like = '%' + String(normalized).replace(/[%_]/g, '') + '%';
+      const sql3 = `
+        SELECT NULL AS chunk_id, d.id AS document_id, d.category, 0 AS chunk_index,
+               0 AS char_start, 0 AS char_end, d.filename, d.title,
+               999.0 AS score,
+               substr(d.content, 1, 300) AS snippet
+        FROM documents d
+        WHERE (d.content LIKE ? OR d.filename LIKE ?)
+        ${category ? 'AND d.category = ?' : ''}
+        LIMIT ?
+      `;
+      const args3 = category ? [like, like, category, lim] : [like, like, lim];
+      results = db.prepare(sql3).all(...args3);
+      usedExpr = 'LIKE:' + like;
+    } catch (e) {
+      console.warn('[knowledge-search] tier3 LIKE failed:', e.message);
+      results = [];
+    }
+  }
+
+  try { db.close(); } catch {}
+  try {
+    console.log(`[knowledge-search] query="${String(query).slice(0, 80)}" expanded="${String(usedExpr).slice(0, 120)}" results=${results.length}`);
+  } catch {}
+  return results;
+}
+
+ipcMain.handle('knowledge-search', async (_event, payload) => {
+  const { query, category, limit } = payload || {};
+  try {
+    const results = searchKnowledge({ query, category, limit });
+    return { success: true, results };
+  } catch (e) {
+    return { success: false, error: e.message || String(e) };
+  }
 });
 
 // Create custom knowledge folder
@@ -15338,6 +15775,11 @@ app.whenReady().then(async () => {
   // (e.g. uploaded while better-sqlite3 was broken). Non-blocking.
   try { ensureKnowledgeFolders(); } catch {}
   backfillKnowledgeFromDisk().catch(e => console.error('[knowledge] backfill error:', e.message));
+  // K1: chunk-level backfill — fire-and-forget 10s after boot so gateway warmup
+  // takes priority. Non-blocking; safe no-op if DB still broken.
+  setTimeout(() => {
+    backfillDocumentChunks().catch(e => console.error('[knowledge] chunk backfill error:', e.message));
+  }, 10000);
   // Security Layer 5: enforce log rotation + memory retention policies.
   // Non-blocking, runs once at boot.
   try { enforceRetentionPolicies(); } catch (e) { console.warn('[retention] boot call failed:', e?.message); }
