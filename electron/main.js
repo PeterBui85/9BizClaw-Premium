@@ -12158,10 +12158,10 @@ function startChannelStatusBroadcast() {
 //  Separate from cron heartbeat (runs every 10-30 min).
 // ============================================
 let _fastWatchdogInterval = null;
+let _fastWatchdogBootTimeout = null;
+let _fwTickInFlight = false; // C6: prevent overlapping ticks
 let _fwGatewayFailCount = 0;
 let _fwZaloMissCount = 0;
-let _fw9routerRestartCount = 0;
-let _fwGatewayRestartCount = 0;
 const FW_INTERVAL_MS = 20000;
 const FW_RECHECK_MS = 3000;
 const FW_MAX_RESTARTS_PER_HOUR = 5;
@@ -12175,8 +12175,10 @@ function _fwCanRestart() {
 
 function startFastWatchdog() {
   if (_fastWatchdogInterval) clearInterval(_fastWatchdogInterval);
-  // Delay first tick 30s to let boot complete
-  setTimeout(() => {
+  if (_fastWatchdogBootTimeout) clearTimeout(_fastWatchdogBootTimeout);
+  // Delay first tick 30s to let boot complete (C8: store timeout for cleanup)
+  _fastWatchdogBootTimeout = setTimeout(() => {
+    _fastWatchdogBootTimeout = null;
     _fastWatchdogInterval = setInterval(fastWatchdogTick, FW_INTERVAL_MS);
   }, 30000);
 }
@@ -12184,12 +12186,12 @@ function startFastWatchdog() {
 async function fastWatchdogTick() {
   if (_appIsQuitting || !botRunning) return;
   if (_startOpenClawInFlight || _gatewayRestartInFlight) return;
+  if (_fwTickInFlight) return; // C6: skip if previous tick still running
+  _fwTickInFlight = true;
 
   try {
     // --- 9Router watchdog ---
     if (!routerProcess) {
-      // Process gone — check if port is also dead
-      const https = require('https');
       const routerAlive = await new Promise(r => {
         const req = require('http').get('http://127.0.0.1:20128/v1/models', { timeout: 3000 }, (res) => {
           res.resume(); r(res.statusCode === 200);
@@ -12200,7 +12202,6 @@ async function fastWatchdogTick() {
       if (!routerAlive && _fwCanRestart()) {
         console.log('[fast-watchdog] 9Router dead — restarting');
         _fwRestartTimestamps.push(Date.now());
-        _fw9routerRestartCount++;
         try { start9Router(); } catch (e) { console.error('[fast-watchdog] 9Router restart error:', e.message); }
       }
     }
@@ -12214,42 +12215,55 @@ async function fastWatchdogTick() {
         await new Promise(r => setTimeout(r, FW_RECHECK_MS));
         const gwAlive2 = await isGatewayAlive(4000);
         if (gwAlive2) {
-          _fwGatewayFailCount = 0; // recovered
+          _fwGatewayFailCount = 0;
           return;
         }
       }
-      // 2 consecutive fails — restart
+      // 2 consecutive fails — restart (C2: set _gatewayRestartInFlight)
       if (_fwGatewayFailCount >= 2 && _fwCanRestart()) {
         console.log('[fast-watchdog] Gateway dead (' + _fwGatewayFailCount + ' fails) — restarting');
         _fwGatewayFailCount = 0;
         _fwRestartTimestamps.push(Date.now());
-        _fwGatewayRestartCount++;
+        _gatewayRestartInFlight = true;
         try {
           await stopOpenClaw();
           await startOpenClaw();
-        } catch (e) { console.error('[fast-watchdog] gateway restart error:', e.message); }
+        } catch (e) {
+          console.error('[fast-watchdog] gateway restart error:', e.message);
+        } finally {
+          _gatewayRestartInFlight = false;
+        }
       }
     } else {
       _fwGatewayFailCount = 0;
       // --- Zalo listener sub-check (only when gateway alive) ---
-      const zlPid = findOpenzcaListenerPid();
-      if (!zlPid) {
-        _fwZaloMissCount++;
-        if (_fwZaloMissCount >= 2 && _fwCanRestart()) {
-          console.log('[fast-watchdog] Zalo listener missing (' + _fwZaloMissCount + ' misses) — restarting gateway');
+      try {
+        const zlPid = findOpenzcaListenerPid();
+        if (!zlPid) {
+          _fwZaloMissCount++;
+          if (_fwZaloMissCount >= 2 && _fwCanRestart()) {
+            console.log('[fast-watchdog] Zalo listener missing (' + _fwZaloMissCount + ' misses) — restarting gateway');
+            _fwZaloMissCount = 0;
+            _fwRestartTimestamps.push(Date.now());
+            _gatewayRestartInFlight = true;
+            try {
+              await stopOpenClaw();
+              await startOpenClaw();
+            } catch (e) {
+              console.error('[fast-watchdog] Zalo restart error:', e.message);
+            } finally {
+              _gatewayRestartInFlight = false;
+            }
+          }
+        } else {
           _fwZaloMissCount = 0;
-          _fwRestartTimestamps.push(Date.now());
-          try {
-            await stopOpenClaw();
-            await startOpenClaw();
-          } catch (e) { console.error('[fast-watchdog] Zalo restart error:', e.message); }
         }
-      } else {
-        _fwZaloMissCount = 0;
-      }
+      } catch {} // findOpenzcaListenerPid can throw on execSync timeout
     }
   } catch (e) {
     console.warn('[fast-watchdog] tick error:', e.message);
+  } finally {
+    _fwTickInFlight = false;
   }
 }
 
@@ -16379,6 +16393,7 @@ function _beforeQuitCleanup() {
   try { if (_watchPollerInterval) { clearInterval(_watchPollerInterval); _watchPollerInterval = null; } } catch (e2) { console.warn('[before-quit] _watchPollerInterval:', e2?.message); }
   try { if (global._telegramCmdInterval) { clearInterval(global._telegramCmdInterval); global._telegramCmdInterval = null; } } catch (e2) { console.warn('[before-quit] _telegramCmdInterval:', e2?.message); }
   try { if (_fastWatchdogInterval) { clearInterval(_fastWatchdogInterval); _fastWatchdogInterval = null; } } catch (e2) { console.warn('[before-quit] _fastWatchdogInterval:', e2?.message); }
+  try { if (_fastWatchdogBootTimeout) { clearTimeout(_fastWatchdogBootTimeout); _fastWatchdogBootTimeout = null; } } catch {}
 
   // (2) Clear boot-phase timeouts + close fs.watch handles
   try {
