@@ -56,7 +56,7 @@ function section(label) { console.log(`\n[${label}]`); }
 // PINNED VERSIONS — must match prebuild-vendor.js + main.js install handler
 // =========================================================================
 const PINNED = {
-  openclaw: '2026.4.5',
+  openclaw: '2026.4.14',
   '9router': '0.3.82',
   openzca: '0.1.57',
   '@tuyenhx/openzalo': '2026.3.31',

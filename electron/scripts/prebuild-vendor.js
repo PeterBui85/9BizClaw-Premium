@@ -263,7 +263,7 @@ function npmInstallVendorPackages() {
     try { return require(path.resolve(pkgPath)).version || ''; } catch { return ''; }
   }
   const expectedVersions = {
-    openclaw: '2026.4.5',
+    openclaw: '2026.4.14',
     '9router': '0.3.82',
     openzca: '0.1.57',
     '@tuyenhx/openzalo': '2026.3.31',
@@ -323,7 +323,7 @@ function npmInstallVendorPackages() {
   // wizard + cron + Zalo + Telegram still work, THEN ship a build.
   // See PINNING.md (root of repo) for the full upgrade procedure.
   const PINNED = [
-    'openclaw@2026.4.5',
+    'openclaw@2026.4.14',
     '9router@0.3.82',
     'openzca@0.1.57',
     '@tuyenhx/openzalo@2026.3.31',
@@ -619,7 +619,7 @@ function packVendorForWindows() {
 
   // Bundle version: commit hash would be ideal but not always available during
   // local dev builds. Use timestamp + pinned package versions as fingerprint.
-  const bundleVersion = `${NODE_VERSION}_openclaw-2026.4.5_${Date.now()}`;
+  const bundleVersion = `${NODE_VERSION}_openclaw-2026.4.14_${Date.now()}`;
 
   const meta = {
     version: 1,

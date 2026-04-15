@@ -3387,7 +3387,7 @@ async function ensureDefaultConfig() {
       // DEFENSIVE CLEANUP: remove `streaming` if it crept in from a prior buggy
       // version of this function (2026-04-08 regression). Schema rejects it.
       if ('streaming' in oz) { delete oz.streaming; changed = true; }
-      // Whitelist-based strip: openzalo 2026.4.5 schema is strict
+      // Whitelist-based strip: openzalo schema is strict
       // (additionalProperties:false). CEOs upgrading from older openclaw CLI
       // installs may have fields like `messages` (seen in real customer
       // workspace 2026-04-15) or other legacy keys that make the gateway
@@ -3510,6 +3510,14 @@ async function ensureDefaultConfig() {
     if (!config.tools.message.crossContext) config.tools.message.crossContext = {};
     if (config.tools.message.crossContext.allowAcrossProviders !== true) {
       config.tools.message.crossContext.allowAcrossProviders = true;
+      changed = true;
+    }
+
+    // Enable DuckDuckGo web search (built-in from openclaw 2026.4.14, no API key needed)
+    if (!config.tools.web) config.tools.web = {};
+    if (!config.tools.web.search) config.tools.web.search = {};
+    if (!config.tools.web.search.provider) {
+      config.tools.web.search.provider = 'duckduckgo';
       changed = true;
     }
 
@@ -15357,7 +15365,7 @@ ipcMain.handle('install-openclaw', async (event) => {
     // plugin auto-install path, so an upstream breaking change in openzalo
     // would silently break Zalo for every new VIP installing that day.
     const PINNED_VERSIONS = [
-      'openclaw@2026.4.5',
+      'openclaw@2026.4.14',
       '9router@0.3.82',
       'openzca@0.1.57',
       '@tuyenhx/openzalo@2026.3.31',
