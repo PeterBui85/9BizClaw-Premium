@@ -14406,6 +14406,17 @@ ipcMain.handle('get-overview-data', async () => {
 
 ipcMain.handle('wizard-complete', async () => {
   if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
+  // GUARANTEE navigation: even if anything below throws/hangs, force-navigate
+  // to dashboard.html on a short timer so CEO never sees forever-spinner.
+  const navGuard = setTimeout(() => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        console.warn('[wizard-complete] nav-guard fired — forcing dashboard load');
+        mainWindow.loadFile(path.join(__dirname, 'ui', 'dashboard.html'));
+        try { mainWindow.maximize(); } catch {}
+      }
+    } catch (e) { console.error('[wizard-complete nav-guard] error:', e && e.message); }
+  }, 5000);
   // Fresh install: seed workspace files with defaults + cleanup any stale listener
   try { seedWorkspace(); } catch (e) { console.error('[wizard-complete seed] error:', e.message); }
   // F-3 + U3: Detect whether user completed Zalo QR login in wizard.
@@ -14459,8 +14470,9 @@ ipcMain.handle('wizard-complete', async () => {
   } catch {}
   try { cleanupOrphanZaloListener(); } catch {}
   try { markOnboardingComplete('wizard-complete'); } catch {}
-  mainWindow.loadFile(path.join(__dirname, 'ui', 'dashboard.html'));
-  mainWindow.maximize();
+  clearTimeout(navGuard);
+  try { mainWindow.loadFile(path.join(__dirname, 'ui', 'dashboard.html')); } catch (e) { console.error('[wizard-complete loadFile] error:', e && e.message); }
+  try { mainWindow.maximize(); } catch {}
   // CRIT #2: Return IMMEDIATELY. Previously this awaited ensureZaloPlugin +
   // startOpenClaw sequentially → UI froze 30-180s on fresh Windows install.
   // Non-tech CEOs force-quit. Dashboard channel-status broadcast (every 45s

@@ -2133,7 +2133,30 @@
     async function launchDashboard() {
       const btn = document.getElementById('dashboard-btn');
       btn.disabled = true; btn.classList.add('loading');
-      await window.claw.wizardComplete();
+      // Fallback: if main doesn't navigate within 6s (wizard-complete typically ≤3s),
+      // force client-side nav so CEO never sees forever-spinner.
+      const fallbackTimer = setTimeout(() => {
+        try { window.location.href = 'dashboard.html'; } catch {}
+      }, 6000);
+      try {
+        await Promise.race([
+          window.claw.wizardComplete(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('wizard-complete timeout')), 8000))
+        ]);
+      } catch (e) {
+        // Main-side failed or timed out. Force-nav and log.
+        try { console.error('[wizard] launch error:', e && e.message); } catch {}
+        try { window.location.href = 'dashboard.html'; } catch {}
+        return;
+      }
+      // IPC resolved. Main should navigate via mainWindow.loadFile, but if it
+      // didn't for any reason, the fallbackTimer above will catch it.
+      clearTimeout(fallbackTimer);
+      setTimeout(() => {
+        if (document && document.body && document.getElementById('dashboard-btn')) {
+          try { window.location.href = 'dashboard.html'; } catch {}
+        }
+      }, 2000);
     }
 
     // ===== Business description auto-assembly =====
