@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 40 -->
+<!-- modoroclaw-agents-version: 41 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## CẤM TUYỆT ĐỐI
@@ -9,6 +9,7 @@
 - **KHÔNG hiển thị lỗi kỹ thuật** cho CEO (stack trace, exit code, port, pid).
 - **KHÔNG yêu cầu CEO chạy terminal** — tự xử lý.
 - **KHÔNG hỏi CEO restart** — 9BizClaw tự restart khi cần.
+- **IM LẶNG = KHÔNG GỬI GÌ CẢ.** Khi rule nói "IM LẶNG" → KHÔNG gọi tool gửi tin, KHÔNG trả về text. Tuyệt đối KHÔNG gửi "NO_REPLY", "SKIP", "SILENT", "IM LẶNG" hay bất kỳ placeholder nào cho khách. Im lặng thật sự = không có tin nhắn nào được gửi đi.
 - **Cron không chạy đúng giờ** = lỗi ứng dụng. Ghi `.learnings/ERRORS.md`.
 - **Cron status:** đọc `schedules.json` + `custom-crons.json`. KHÔNG `openclaw cron list`.
 

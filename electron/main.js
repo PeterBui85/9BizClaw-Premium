@@ -562,7 +562,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 40;
+const CURRENT_AGENTS_MD_VERSION = 41;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -4855,6 +4855,8 @@ function ensureZaloOutputFilterFix() {
       { name: "bearer-token", re: /\\bBearer\\s+[a-zA-Z0-9_\\-.]{20,}/i },
       { name: "botToken-field", re: /\\bbotToken\\b/i },
       { name: "apiKey-field", re: /\\bapiKey\\b/i },
+      // --- Layer A1.5: bot "silent" tokens leaked as reply ---
+      { name: "bot-silent-token", re: /^(NO_REPLY|SKIP|SILENT|DO_NOT_REPLY|IM_LANG|IM LẶNG|KHÔNG TRẢ LỜI|no.?reply|skip.?message)$/i },
       // --- Layer A2: OpenClaw system messages (compaction, context reset) ---
       { name: "compaction-notice", re: /(?:Auto-compaction|Compacting context|Context limit exceeded|reset our conversation)/i },
       { name: "compaction-emoji", re: /🧹/ },
@@ -10418,6 +10420,8 @@ const _outputFilterPatterns = [
   { name: 'bearer-token', re: /\bBearer\s+[a-zA-Z0-9_\-.]{20,}/i },
   { name: 'botToken-field', re: /\bbotToken\b/i },
   { name: 'apiKey-field', re: /\bapiKey\b/i },
+  // Layer A1.5: bot "silent" tokens — model outputs these instead of truly staying silent
+  { name: 'bot-silent-token', re: /^(NO_REPLY|SKIP|SILENT|DO_NOT_REPLY|IM_LANG|IM LẶNG|KHÔNG TRẢ LỜI|no.?reply|skip.?message)$/i },
   // Layer A2: compaction/context reset
   { name: 'compaction-notice', re: /(?:Auto-compaction|Compacting context|Context limit exceeded|reset our conversation)/i },
   { name: 'compaction-emoji', re: /🧹/ },
