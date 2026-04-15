@@ -7399,6 +7399,12 @@ async function _ensureZaloPluginImpl() {
           try { ensureZaloFriendCheckFix(); } catch (e) { console.warn('[ensureZaloPlugin] friend check fix failed:', e?.message); }
           try { ensureZaloOwnerFix(); } catch (e) { console.warn('[ensureZaloPlugin] zalo owner fix failed:', e?.message); }
           try { ensureZaloOutputFilterFix(); } catch (e) { console.warn('[ensureZaloPlugin] output filter fix failed:', e?.message); }
+          // Order matters: SYSTEM-MSG must come before SENDER-DEDUP which must come
+          // before GROUP-SETTINGS (anchor dependency — same ordering as _startOpenClawImpl).
+          // Idempotent via marker check, safe on double-call with _startOpenClawImpl.
+          try { ensureZaloSystemMsgFix(); } catch (e) { console.warn('[ensureZaloPlugin] SystemMsg patch error:', e?.message); }
+          try { ensureZaloSenderDedupFix(); } catch (e) { console.warn('[ensureZaloPlugin] SenderDedup patch error:', e?.message); }
+          try { ensureZaloGroupSettingsFix(); } catch (e) { console.warn('[ensureZaloPlugin] GroupSettings patch error:', e?.message); }
           _zaloReady = true;
           return;
         } catch (e) {
@@ -8640,6 +8646,13 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     // own restart attempt if it fires while we're mid-sequence. Clear in the
     // IIFE's finally only.
     if (enabledChanged) {
+      // [zalo-watchdog rearm] CEO toggling Zalo enabled/disabled rearms the
+      // listener watchdog. Config flip means CEO has deliberately changed
+      // channel state — prior gave-up / restart streak is stale. Reset all 3.
+      global._zaloListenerGaveUp = false;
+      global._zaloListenerRestartHistory = [];
+      global._zaloListenerMissStreak = 0;
+      console.log('[zalo-watchdog] reset gave-up / streak by CEO action');
       if (_startOpenClawInFlight) {
         console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — gateway spawn in progress, skip restart (will read new config)`);
       } else if (_gatewayRestartInFlight) {
@@ -8655,6 +8668,9 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
             try { await stopOpenClaw(); } catch (e1) { console.warn('[save-zalo-manager] stop failed:', e1?.message); }
             await new Promise(r => setTimeout(r, 5000));
             try { await startOpenClaw(); } catch (e2) { console.warn('[save-zalo-manager] start failed:', e2?.message); }
+            // [zalo-watchdog rearm] Post-restart: wipe any pre-restart miss
+            // streak so next heartbeat miss doesn't immediately re-trip cap.
+            global._zaloListenerMissStreak = 0;
             console.log('[restart-guard] save-zalo-manager: hard-restart end');
           } finally {
             _gatewayRestartInFlight = false;
@@ -11500,6 +11516,14 @@ ipcMain.handle('resume-zalo', async () => {
   try {
     return await withOpenClawConfigLock(async () => {
       console.log('[config-lock] resume-zalo acquired');
+      // [zalo-watchdog rearm] CEO's manual Resume rearms the listener watchdog.
+      // Without this, once _zaloListenerGaveUp flipped true (3 restarts in 2h),
+      // it stuck until app restart — CEO fixing the root cause + pressing
+      // Resume wouldn't re-enable auto-restart. Reset all 3 counters.
+      global._zaloListenerGaveUp = false;
+      global._zaloListenerRestartHistory = [];
+      global._zaloListenerMissStreak = 0;
+      console.log('[zalo-watchdog] reset gave-up / streak by CEO action');
       // Detect if enabled was previously false — transitioning false→true needs
       // a hard gateway restart so openclaw loads the openzalo plugin + spawns
       // openzca listener (both skipped at boot when enabled=false).
@@ -11536,6 +11560,9 @@ ipcMain.handle('resume-zalo', async () => {
               try { await stopOpenClaw(); } catch (e1) { console.warn('[resume-zalo] stop failed:', e1?.message); }
               await new Promise(r => setTimeout(r, 5000));
               try { await startOpenClaw(); } catch (e2) { console.warn('[resume-zalo] start failed:', e2?.message); }
+              // [zalo-watchdog rearm] Post-restart: wipe any pre-restart miss
+              // streak so next heartbeat miss doesn't immediately re-trip cap.
+              global._zaloListenerMissStreak = 0;
               console.log('[restart-guard] resume-zalo: hard-restart end');
             } finally {
               _gatewayRestartInFlight = false;
@@ -12385,6 +12412,10 @@ function writeFollowUpQueue(queue) {
 async function processFollowUpQueue() {
   if (_followUpQueueLock) return; // skip if already processing
   _followUpQueueLock = true;
+  // Count toward IPC in-flight so before-quit drain (waitForIpcDrain) actually waits for
+  // follow-up processing to complete. Without this, a quit mid-flush would lose firedAt
+  // stamps and cause duplicate customer messages on next boot.
+  _ipcInFlightCount++;
   try {
     let queue = readFollowUpQueue();
     if (queue.length === 0) return;
@@ -12405,10 +12436,29 @@ async function processFollowUpQueue() {
         item.firedAt = 'error:' + e.message;
       }
       changed = true;
+      // Per-item persistence (R2): persist firedAt stamp IMMEDIATELY after each fire so a
+      // mid-loop quit/crash only loses the in-progress item, not the whole batch.
+      // Merge with any IPC-added entries (IPC may have appended during the await above).
+      try {
+        const freshQueue = readFollowUpQueue();
+        const ourById = new Map(queue.map(q => [q.id, q]));
+        const merged = [];
+        const seenIds = new Set();
+        for (const fresh of freshQueue) {
+          // Our in-memory updates (firedAt stamps) win for items we know about.
+          merged.push(ourById.get(fresh.id) || fresh);
+          seenIds.add(fresh.id);
+        }
+        // Defensive: our items missing from disk (shouldn't normally happen)
+        for (const ours of queue) {
+          if (!seenIds.has(ours.id)) merged.push(ours);
+        }
+        writeFollowUpQueue(merged);
+      } catch (persistErr) {
+        console.error('[follow-up] per-item persist error:', persistErr.message);
+      }
     }
-    // Re-read before writing: IPC handler may have added entries while runCronAgentPrompt
-    // was awaited (lock held for up to 600s). Merge by id: IPC-written entries that are
-    // not in our in-memory queue get appended; our in-memory updates (firedAt stamps) win.
+    // Final reconcile: pick up any IPC-added entries since last per-item persist.
     if (changed) {
       const freshQueue = readFollowUpQueue();
       const ourIds = new Set(queue.map(q => q.id));
@@ -12427,6 +12477,7 @@ async function processFollowUpQueue() {
     console.error('[follow-up] processQueue error:', e.message);
   } finally {
     _followUpQueueLock = false;
+    _ipcInFlightCount = Math.max(0, _ipcInFlightCount - 1);
   }
 }
 
@@ -13220,7 +13271,10 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     }
     if (!fs.existsSync(filepath)) return { success: false, error: 'File không tồn tại' };
     const stat = fs.statSync(filepath);
-    if (stat.size > 20 * 1024 * 1024) return { success: false, error: 'File quá lớn (max 20MB)' };
+    // 100MB cap: CEO brochures/catalogs/handbooks routinely 20-80MB. pdf-parse 1.1.1 loads full buffer in memory,
+    // but 100MB peak is fine on 8GB-RAM laptop (parsed briefly, GC'd after). summarizeKnowledgeContent slices
+    // content before LLM + DB row, so steady-state memory footprint remains small.
+    if (stat.size > 100 * 1024 * 1024) return { success: false, error: 'File quá lớn (tối đa 100MB). Vui lòng tách PDF thành nhiều phần nhỏ hơn.' };
 
     ensureKnowledgeFolders();
     const filesDir = path.join(getKnowledgeDir(category), 'files');

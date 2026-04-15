@@ -2346,7 +2346,7 @@
 
           <div class="know-col">
             <h4>Thêm tài liệu</h4>
-            <div class="know-drop-zone" id="know-drop-zone" onclick="pickKnowledgeFiles()" data-tooltip="Kéo thả hoặc bấm để thêm file. PDF, Word, Excel, TXT">
+            <div class="know-drop-zone" id="know-drop-zone" data-max-mb="100" onclick="pickKnowledgeFiles()" data-tooltip="Kéo thả hoặc bấm để thêm file. PDF, Word, Excel, TXT. Tối đa 100MB/file.">
               <div class="upload-icon" data-icon="upload" data-icon-size="36"></div>
               <strong>Click để chọn file</strong>
               <div>hoặc kéo thả vào đây</div>
@@ -2356,7 +2356,7 @@
               <strong>Định dạng hỗ trợ:</strong><br>
               PDF, Word, Excel, TXT, CSV<br>
               Ảnh (JPG, PNG)<br><br>
-              <strong>Tối đa:</strong> 20MB / file
+              <strong>Tối đa:</strong> 100MB / file
             </div>
           </div>
         </div>
@@ -4104,11 +4104,15 @@
             addActivity(`Đã thêm: ${r.filename}`);
           } else {
             failed++;
-            addActivity(`Lỗi: ${filename} — ${r?.error || 'unknown'}`);
+            const errMsg = r?.error || 'unknown';
+            addActivity(`Lỗi: ${filename} — ${errMsg}`);
+            // Surface upload errors as toast so CEO doesn't miss them in activity feed
+            showToast(`${filename}: ${errMsg}`, 'error');
           }
         } catch (e) {
           failed++;
           addActivity(`Lỗi: ${filename} — ${e.message}`);
+          showToast(`${filename}: ${e.message}`, 'error');
         }
       }
       progressEl.textContent = `Xong! Thành công: ${success}, lỗi: ${failed}`;
