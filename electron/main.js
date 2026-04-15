@@ -15537,7 +15537,7 @@ ipcMain.handle('toggle-bot', async () => {
 //  Flow: /releases/latest only returns non-prerelease → CEO controls
 //  which version customers see by toggling pre-release flag.
 //  Windows: download .exe → shell open → user runs installer
-//  Mac: open release page in browser (no code signing = manual DMG)
+//  Mac: download correct DMG (arm64/x64) → mount → admin cp → xattr → relaunch
 // ============================================
 
 const UPDATE_REPO = 'modoro-digital/MODOROClaw';
@@ -15698,6 +15698,118 @@ async function downloadUpdate(assetUrl, filename, expectedSize) {
   return followRedirect(assetUrl, 0);
 }
 
+// --- Mac DMG auto-install helper ---
+// Mount DMG → mv old .app → cp new .app → xattr → unmount → relaunch
+// C1: shell script file (no inline osascript injection risk)
+// C2: async exec (no main-thread blocking)
+// C3: atomic mv swap (never a moment with no .app)
+async function installDmgUpdate(dmgPath) {
+  const { exec } = require('child_process');
+  const execAsync = (cmd, opts = {}) => new Promise((resolve, reject) => {
+    exec(cmd, { encoding: 'utf8', timeout: 120000, ...opts }, (err, stdout, stderr) => {
+      if (err) { err.stdout = stdout; err.stderr = stderr; reject(err); }
+      else resolve(stdout);
+    });
+  });
+
+  function sendInstallStatus(status) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-install-status', { status });
+    }
+  }
+
+  const tmpDir = path.dirname(dmgPath);
+
+  // 1. Detach any stale mount from previous failed update (I5)
+  try { await execAsync('hdiutil detach "/Volumes/9BizClaw"* -force 2>/dev/null || true', { timeout: 10000 }); } catch {}
+
+  // 2. Mount DMG (async — doesn't block main thread)
+  sendInstallStatus('Dang mo DMG...');
+  let mountPoint = null;
+  try {
+    const out = await execAsync(`hdiutil attach "${dmgPath}" -nobrowse -noautoopen -readonly`, { timeout: 90000 });
+    const lines = out.trim().split('\n').filter(l => l.trim());
+    for (const line of lines) {
+      const match = line.match(/\t(\/Volumes\/.+)$/);
+      if (match) { mountPoint = match[1].trim(); break; }
+    }
+    if (!mountPoint) {
+      const fallback = out.match(/(\/Volumes\/[^\t\n]+)/);
+      if (fallback) mountPoint = fallback[1].trim();
+    }
+    if (!mountPoint) throw new Error('Could not determine mount point');
+    console.log('[update] DMG mounted at:', mountPoint);
+  } catch (e) {
+    throw new Error('Khong mount duoc DMG: ' + e.message);
+  }
+
+  // 3. Find .app inside mounted volume (I2: validate name)
+  const EXPECTED_APP = '9BizClaw.app';
+  let appName = null;
+  try {
+    const items = fs.readdirSync(mountPoint);
+    appName = items.find(i => i === EXPECTED_APP);
+    if (!appName) appName = items.find(i => i.endsWith('.app') && !i.startsWith('.'));
+    if (!appName) throw new Error('Khong tim thay .app trong DMG');
+  } catch (e) {
+    try { await execAsync(`hdiutil detach "${mountPoint}" -force`, { timeout: 15000 }); } catch {}
+    throw new Error('Khong doc duoc DMG: ' + e.message);
+  }
+
+  const srcApp = path.join(mountPoint, appName);
+  const destApp = '/Applications/' + appName;
+  const backupApp = '/Applications/' + appName + '.old';
+
+  // 4. Write install script to temp file (C1: no shell injection via osascript inline)
+  //    C3: atomic mv swap — old app moved to .old, never deleted before copy completes
+  const sq = s => s.replace(/'/g, "'\\''"); // single-quote escape for shell
+  const scriptPath = path.join(tmpDir, 'update-install.sh');
+  const scriptContent = [
+    '#!/bin/bash',
+    'set -e',
+    `rm -rf '${sq(backupApp)}'`,
+    `if [ -d '${sq(destApp)}' ]; then mv '${sq(destApp)}' '${sq(backupApp)}'; fi`,
+    `cp -R '${sq(srcApp)}' '${sq(destApp)}'`,
+    `xattr -dr com.apple.quarantine '${sq(destApp)}'`,
+    `rm -rf '${sq(backupApp)}'`,
+  ].join('\n');
+  fs.writeFileSync(scriptPath, scriptContent, 'utf-8');
+  fs.chmodSync(scriptPath, 0o755);
+
+  // 5. Run install with admin privileges (C2: async, doesn't block main thread)
+  sendInstallStatus('Dang cai dat... (can mat khau admin)');
+  try {
+    await execAsync(`osascript -e 'do shell script "${sq(scriptPath)}" with administrator privileges'`);
+    console.log('[update] App installed to', destApp);
+  } catch (e) {
+    try { await execAsync(`hdiutil detach "${mountPoint}" -force`, { timeout: 15000 }); } catch {}
+    try { fs.unlinkSync(scriptPath); } catch {}
+    if (e.message && (e.message.includes('User canceled') || e.message.includes('(-128)'))) {
+      // Restore backup if user cancelled after mv but before cp
+      try { await execAsync(`[ -d '${sq(backupApp)}' ] && mv '${sq(backupApp)}' '${sq(destApp)}' || true`, { timeout: 10000 }); } catch {}
+      throw new Error('Da huy nhap mat khau admin');
+    }
+    // Restore backup on any failure
+    try { await execAsync(`[ -d '${sq(backupApp)}' ] && mv '${sq(backupApp)}' '${sq(destApp)}' || true`, { timeout: 10000 }); } catch {}
+    throw new Error('Loi cai dat: ' + e.message);
+  }
+
+  // 6. Cleanup
+  sendInstallStatus('Dang don dep...');
+  try { await execAsync(`hdiutil detach "${mountPoint}" -force`, { timeout: 15000 }); } catch (e) {
+    console.warn('[update] DMG unmount failed (non-fatal):', e.message);
+  }
+  try { fs.unlinkSync(dmgPath); } catch {}
+  try { fs.unlinkSync(scriptPath); } catch {}
+
+  // 7. Relaunch (I1: app.exit instead of app.quit to avoid before-quit deadlock)
+  sendInstallStatus('Khoi dong lai...');
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 1500);
+}
+
 // H4: validate URL is a safe GitHub URL before opening externally
 function openGitHubUrl(url) {
   const { shell } = require('electron');
@@ -15730,28 +15842,51 @@ ipcMain.handle('download-and-install-update', async () => {
     if (platform === 'win32') {
       asset = _latestRelease.assets.find(a => a.name.endsWith('.exe'));
     } else if (platform === 'darwin') {
-      // Mac: open release page in browser (no code signing → manual install)
-      openGitHubUrl(_latestRelease.html_url);
-      return { success: true, method: 'browser' };
+      // Mac: download correct DMG (arm64 vs x64) → mount → install → relaunch
+      const arch = process.arch; // 'arm64' or 'x64'
+      // Asset naming: 9BizClaw-2.3.4-arm64.dmg (Apple Silicon), 9BizClaw-2.3.4.dmg (Intel x64)
+      asset = _latestRelease.assets.find(a => {
+        if (!a.name.endsWith('.dmg')) return false;
+        if (arch === 'arm64') return a.name.includes('arm64');
+        // x64: pick DMG that does NOT have 'arm64' in name
+        return !a.name.includes('arm64');
+      });
+      if (!asset) {
+        // Fallback: open release page in browser
+        console.warn('[update] No matching DMG for arch:', arch);
+        openGitHubUrl(_latestRelease.html_url);
+        return { success: true, method: 'browser' };
+      }
     }
     if (!asset) {
       // Fallback: open release page
       openGitHubUrl(_latestRelease.html_url);
       return { success: true, method: 'browser' };
     }
-    // Windows: download EXE then launch installer
+    // Download asset (EXE on Windows, DMG on Mac)
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-download-progress', { received: 0, total: asset.size, percent: 0 });
     }
     const localPath = await downloadUpdate(asset.url, asset.name, asset.size);
-    // Launch installer and quit
+
+    if (platform === 'darwin') {
+      // Mac: mount DMG → copy .app → remove quarantine → relaunch
+      await installDmgUpdate(localPath);
+      return { success: true, method: 'dmg-install' };
+    }
+    // Windows: launch EXE installer and quit
     const { shell } = require('electron');
     shell.openPath(localPath);
     // Give installer 2s to start then quit app
     setTimeout(() => { app.quit(); }, 2000);
     return { success: true, method: 'installer', path: localPath };
   } catch (e) {
-    console.error('[update] download error:', e.message);
+    console.error('[update] download/install error:', e.message);
+    // Mac fallback: if DMG install fails, open release page in browser
+    if (process.platform === 'darwin' && _latestRelease && _latestRelease.html_url) {
+      openGitHubUrl(_latestRelease.html_url);
+      return { success: false, error: e.message, fallback: 'browser' };
+    }
     return { success: false, error: e.message };
   } finally {
     _updateDownloadInFlight = false;
