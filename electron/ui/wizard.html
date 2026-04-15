@@ -1979,33 +1979,22 @@
 
       // Build summary
       const summary = document.getElementById('summary');
-      const teamSizeLabel = { solo: 'Solo founder', small: '2-10 người', medium: '11-50 người', large: '51+ người' }[document.getElementById('team-size').value || 'small'];
       const zaloLabel = zaloMode === 'auto' ? 'Tự động trả lời' : zaloMode === 'read' ? 'Chỉ đọc' : 'Tóm tắt cuối ngày';
       summary.innerHTML = `
         <div class="wz-summary-row">
           <div class="wz-summary-icon">${icon('user',16)}</div>
-          <div class="wz-summary-label">Người dùng</div>
+          <div class="wz-summary-label">Nguoi dung</div>
           <div class="wz-summary-value">${esc(name)}${company ? ' — ' + esc(company) : ''}</div>
-        </div>
-        <div class="wz-summary-row">
-          <div class="wz-summary-icon">${icon('users',16)}</div>
-          <div class="wz-summary-label">Quy mô</div>
-          <div class="wz-summary-value">${esc(teamSizeLabel)}</div>
         </div>
         <div class="wz-summary-row">
           <div class="wz-summary-icon">${icon('send',16)}</div>
           <div class="wz-summary-label">Telegram</div>
-          <div class="wz-summary-value">Đã kết nối</div>
+          <div class="wz-summary-value">Da ket noi</div>
         </div>
         <div class="wz-summary-row">
           <div class="wz-summary-icon">${icon('message-circle',16)}</div>
           <div class="wz-summary-label">Zalo</div>
           <div class="wz-summary-value">${esc(zaloLabel)}</div>
-        </div>
-        <div class="wz-summary-row">
-          <div class="wz-summary-icon">${icon('clock',16)}</div>
-          <div class="wz-summary-label">Giờ làm việc</div>
-          <div class="wz-summary-value">${document.getElementById('work-start').value} — ${document.getElementById('work-end').value}</div>
         </div>
       `;
       showStep(5);
