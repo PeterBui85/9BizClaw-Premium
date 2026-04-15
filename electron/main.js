@@ -562,7 +562,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 38;
+const CURRENT_AGENTS_MD_VERSION = 40;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -5502,6 +5502,20 @@ async function startOpenClaw() {
         console.warn('[group-history-seed] auto-run dispatch error:', e && e.message ? e.message : String(e));
       }
     }, 5000);
+    // One-shot index.md upgrade for existing installs: re-embed FULL PDF content
+    // into knowledge/<cat>/index.md so bot can answer questions grounded in real
+    // document text (not just 200-char summary). Fire-and-forget; never blocks.
+    setTimeout(() => {
+      try {
+        for (const cat of KNOWLEDGE_CATEGORIES) {
+          try { rewriteKnowledgeIndex(cat); } catch (e) {
+            console.warn('[knowledge-index] boot rewrite', cat, 'err:', e && e.message ? e.message : String(e));
+          }
+        }
+      } catch (e) {
+        console.warn('[knowledge-index] boot rewrite dispatch error:', e && e.message ? e.message : String(e));
+      }
+    }, 12000);
     return r;
   }
   finally { _startOpenClawInFlight = false; }
@@ -13748,6 +13762,28 @@ async function summarizeKnowledgeContent(content, filename) {
   return result ? result.substring(0, 300) : fallback();
 }
 
+// Clean extracted PDF/doc text for safe embedding into markdown index.md:
+//  - strip control chars (except \n \r \t) that pdf-parse sometimes leaks
+//  - collapse 3+ consecutive newlines → 2
+//  - escape any line that begins with "# " so it doesn't break our section headings
+//  - neutralize horizontal rules "---" on their own line → "- - -" so markdown
+//    doesn't treat PDF content as a section separator (we use --- as our own)
+function sanitizeKnowledgeContentForIndex(raw) {
+  if (!raw) return '';
+  let s = String(raw);
+  // Drop NUL + most C0 controls, keep \t \n \r
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  // Normalize CRLF → LF
+  s = s.replace(/\r\n?/g, '\n');
+  // Escape lines that start with "# ", "## ", etc. so they don't become headings
+  s = s.replace(/^(#{1,6} )/gm, '\\$1');
+  // Neutralize bare horizontal rules
+  s = s.replace(/^[ \t]*---+[ \t]*$/gm, '- - -');
+  // Collapse excessive blank lines
+  s = s.replace(/\n{3,}/g, '\n\n');
+  return s.trim();
+}
+
 function rewriteKnowledgeIndex(category) {
   const ws = getWorkspace();
   const indexFile = path.join(ws, 'knowledge', category, 'index.md');
@@ -13756,7 +13792,7 @@ function rewriteKnowledgeIndex(category) {
   if (db) {
     try {
       rows = db.prepare(
-        'SELECT filename, summary, filesize, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        'SELECT filename, summary, content, filesize, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
       ).all(category);
     } catch (e) { console.error('[knowledge] rewrite index db query:', e.message); }
     try { db.close(); } catch {}
@@ -13767,23 +13803,58 @@ function rewriteKnowledgeIndex(category) {
   const dbNames = new Set(rows.map(r => r.filename));
   for (const f of listKnowledgeFilesFromDisk(category)) {
     if (!dbNames.has(f.filename)) {
-      rows.push({ filename: f.filename, summary: null, filesize: f.filesize, created_at: f.created_at });
+      rows.push({ filename: f.filename, summary: null, content: null, filesize: f.filesize, created_at: f.created_at });
     }
   }
   try {
+    // Per-file cap (chars) — ~2k tokens worth; keeps 1 giant PDF from eating
+    // the whole index.md context budget.
+    const PER_FILE_CAP = 8000;
+    // Per-category cap (chars) total across all "Nội dung đầy đủ" sections.
+    // Files are already ordered by created_at DESC (newest first) so we fill
+    // top-down; when budget exhausted, remaining files get summary only.
+    const PER_CATEGORY_BUDGET = 50000;
+
     let md = `# Knowledge — ${KNOWLEDGE_LABELS[category]}\n\n`;
     if (rows.length === 0) {
       md += '*Chưa có tài liệu nào. CEO upload file qua Dashboard → Knowledge.*\n';
-    } else {
-      md += `Tổng: ${rows.length} tài liệu.\n\n`;
-      for (const r of rows) {
-        md += `## ${r.filename}\n`;
-        md += `*Uploaded: ${r.created_at} · ${((r.filesize || 0) / 1024).toFixed(1)} KB*\n\n`;
-        md += `${r.summary || '(không có tóm tắt)'}\n\n`;
-        md += `---\n\n`;
+      fs.writeFileSync(indexFile, md, 'utf-8');
+      console.log(`[knowledge-index] ${category}: 0 files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
+      return;
+    }
+    md += `Tổng: ${rows.length} tài liệu.\n\n`;
+    let budgetLeft = PER_CATEGORY_BUDGET;
+    for (const r of rows) {
+      md += `## ${r.filename}\n`;
+      md += `*Uploaded: ${r.created_at} · ${((r.filesize || 0) / 1024).toFixed(1)} KB*\n\n`;
+      md += `**Tóm tắt:** ${r.summary || '(không có tóm tắt)'}\n\n`;
+      // Full content section
+      const rawContent = r.content && typeof r.content === 'string' ? r.content : '';
+      if (rawContent && budgetLeft > 500) {
+        const cleaned = sanitizeKnowledgeContentForIndex(rawContent);
+        // Cap at min(PER_FILE_CAP, remaining budget)
+        const cap = Math.min(PER_FILE_CAP, budgetLeft);
+        let slice;
+        let truncated = false;
+        if (cleaned.length > cap) {
+          slice = cleaned.substring(0, cap);
+          truncated = true;
+        } else {
+          slice = cleaned;
+        }
+        md += `**Nội dung đầy đủ:**\n${slice}`;
+        if (truncated) md += `\n\n*... (còn tiếp, xem full trong file)*`;
+        md += `\n\n`;
+        budgetLeft -= slice.length;
+      } else if (!rawContent) {
+        md += `**Nội dung đầy đủ:** *(DB chưa index file này — CEO upload lại qua Dashboard để hiện full content)*\n\n`;
+      } else {
+        md += `**Nội dung đầy đủ:** *(đã cắt — hết budget category 50KB, xem full trong file hoặc ưu tiên hỏi file mới hơn)*\n\n`;
       }
+      md += `---\n\n`;
     }
     fs.writeFileSync(indexFile, md, 'utf-8');
+    console.log(`[knowledge-index] ${category}: ${rows.length} files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
   } catch (e) { console.error('[knowledge] rewrite index write:', e.message); }
 }
 

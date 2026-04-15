@@ -14,6 +14,9 @@
 
 ## Giờ làm việc
 
+> **Lưu ý:** Đây là **giờ công ty mở cửa phục vụ khách** — bot dùng để trả lời khách "Shop mở cửa mấy giờ?". KHÔNG phải giờ cron báo cáo (giờ cron trong `schedules.json`).
+
+- **Giờ mở cửa:** (VD: Thứ 2 - Thứ 7, 8:00-18:00. Chủ nhật nghỉ. CEO điền thông tin này)
 - **Thứ 2 - Thứ 6:** [Điền giờ, VD: 8:00 - 17:30]
 - **Thứ 7:** [Điền giờ hoặc "Nghỉ"]
 - **Chủ nhật:** [Điền giờ hoặc "Nghỉ"]
