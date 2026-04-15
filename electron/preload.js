@@ -180,4 +180,8 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.removeAllListeners('bot-status');
     ipcRenderer.on('bot-status', (_, data) => callback(data));
   },
+  onGatewayBooting: (cb) => {
+    ipcRenderer.removeAllListeners('gateway-booting');
+    ipcRenderer.on('gateway-booting', (_event, data) => cb(data));
+  },
 });

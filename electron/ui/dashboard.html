@@ -39,7 +39,41 @@
     .sidebar-nav a:hover { background:var(--surface); color:var(--text); }
 
     /* Main content */
-    .main-content { flex:1; padding:20px 24px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
+    .main-content { flex:1; padding:20px 24px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; position:relative; }
+
+    /* Gateway boot chip — passive indicator during gateway startup */
+    .gw-boot-chip {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      z-index: 9000;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      color: var(--zs-text-muted, #6b7280);
+      background: var(--zs-surface-alt, #f5f5f7);
+      border: 1px solid var(--zs-border, rgba(0,0,0,0.08));
+      border-radius: 999px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
+      backdrop-filter: saturate(180%) blur(10px);
+      -webkit-backdrop-filter: saturate(180%) blur(10px);
+      pointer-events: none;
+      user-select: none;
+    }
+    .gw-boot-chip[hidden] { display: none; }
+    .gw-boot-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--zs-brand, #dc2626);
+      margin-right: 8px;
+      animation: gw-pulse 1.2s infinite ease-in-out;
+    }
+    @keyframes gw-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 
     /* Activity panel */
     .activity-panel { width:300px; background:var(--bg); border-left:1px solid var(--border); display:none; flex-direction:column; flex-shrink:0; }
@@ -1824,6 +1858,7 @@
 
     <!-- MAIN CONTENT -->
     <div class="main-content">
+      <div id="gateway-boot-chip" class="gw-boot-chip" hidden><span class="gw-boot-dot"></span>Trợ lý đang khởi động…</div>
 
       <!-- PAGE: Overview -->
       <div class="page active" id="page-overview">
@@ -2730,7 +2765,8 @@
         <strong>Không thể khôi phục sau khi xóa.</strong> Sau khi reset, app sẽ restart và chạy lại wizard onboarding từ đầu.
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Nhập <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:#e06666">xóa</code> để xác nhận:</div>
-      <input type="text" id="factory-reset-confirm-input" placeholder="Nhập xóa" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px" oninput="_updateFactoryResetBtn()">
+      <input type="text" id="factory-reset-confirm-input" placeholder="Nhập xóa (hoặc xoa)" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px" oninput="_updateFactoryResetBtn()">
+      <div style="font-size: 12px; color: var(--zs-muted); margin-top: 6px; margin-bottom: 16px;">Gõ "xóa" (hoặc "xoa" nếu không gõ được dấu)</div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-secondary btn-small" onclick="hideFactoryResetModal()">Hủy</button>
         <button class="btn btn-small" id="factory-reset-confirm-btn" onclick="doFactoryReset()" disabled style="background:#e06666;color:#fff;opacity:0.5;cursor:not-allowed">Xóa sạch</button>
@@ -4616,7 +4652,29 @@
     window.claw.onBotStatus((data) => {
       updateBotStatus(data.running, data.error);
       setTimeout(checkChannels, 2000);
+      // Hide gateway boot chip when bot is confirmed running
+      if (data && data.running) {
+        const chip = document.getElementById('gateway-boot-chip');
+        if (chip) chip.hidden = true;
+      }
     });
+
+    // Gateway-booting passive indicator — show chip while main.js emits boot events
+    if (window.claw && window.claw.onGatewayBooting) {
+      window.claw.onGatewayBooting((payload) => {
+        const chip = document.getElementById('gateway-boot-chip');
+        if (!chip) return;
+        chip.hidden = false;
+        if (payload && typeof payload.elapsedMs !== 'undefined') {
+          chip.setAttribute('data-elapsed', String(payload.elapsedMs));
+        }
+      });
+    }
+    // Safety: always hide after 60s regardless of IPC flow
+    setTimeout(() => {
+      const chip = document.getElementById('gateway-boot-chip');
+      if (chip) chip.hidden = true;
+    }, 60000);
 
     // ============================================
     //  CHANNEL READINESS — real probes (Telegram getMe + Zalo listener check)
@@ -6094,7 +6152,8 @@
       const inp = document.getElementById('factory-reset-confirm-input');
       const btn = document.getElementById('factory-reset-confirm-btn');
       if (!inp || !btn) return;
-      const ok = (inp.value || '').trim().toLowerCase() === 'xóa';
+      const raw = (inp.value || '').normalize('NFC').trim().toLowerCase();
+      const ok = raw === 'xóa'.normalize('NFC') || raw === 'xoa'; // accept ASCII fallback
       btn.disabled = !ok;
       btn.style.opacity = ok ? '1' : '0.5';
       btn.style.cursor = ok ? 'pointer' : 'not-allowed';

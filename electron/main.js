@@ -569,6 +569,24 @@ function seedWorkspace() {
   const ws = getWorkspace();
   try { fs.mkdirSync(ws, { recursive: true }); } catch {}
 
+  // Stale tmp sweep (H8): writeJsonAtomic leaves `<name>.tmp.<pid>.<ms>.<n>`
+  // files if the process crashed mid-rename or AV killed the rename outright.
+  // Clean anything older than 5 minutes at boot. Non-fatal on error.
+  try {
+    const now = Date.now();
+    const entries = fs.readdirSync(ws);
+    for (const f of entries) {
+      if (!/\.tmp\.\d+\.\d+(?:\.\d+)?$/.test(f)) continue;
+      const full = path.join(ws, f);
+      try {
+        const st = fs.statSync(full);
+        if (now - st.mtimeMs > 300000) {
+          try { fs.unlinkSync(full); } catch {}
+        }
+      } catch {}
+    }
+  } catch {}
+
   const copyDirRecursive = (src, dst) => {
     if (!fs.existsSync(src)) return;
     fs.mkdirSync(dst, { recursive: true });
@@ -2928,9 +2946,13 @@ function sanitizeOpenClawConfigInPlace(config) {
 // writeOpenClawConfigIfChanged (rename would change inode and wake
 // openclaw's external-write detector → spurious "Gateway is restarting").
 // =====================================================================
+// Module-level counter guarantees tmp-file uniqueness even when two calls
+// land in the same millisecond (same PID, same Date.now()). Without this,
+// concurrent writers under Windows AV hold can collide on the tmp path.
+let _atomicWriteCounter = 0;
 function writeJsonAtomic(filePath, data) {
   const serialized = JSON.stringify(data, null, 2) + '\n';
-  const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}.${++_atomicWriteCounter}`;
   try {
     try { fs.mkdirSync(path.dirname(filePath), { recursive: true }); } catch {}
     fs.writeFileSync(tmp, serialized, 'utf-8');
@@ -2938,27 +2960,39 @@ function writeJsonAtomic(filePath, data) {
       fs.renameSync(tmp, filePath);
     } catch (e1) {
       // Windows + antivirus can transiently hold the target and make
-      // renameSync throw EBUSY/EPERM/EACCES. One retry after 100ms covers
-      // the vast majority of real-world flakes without blocking the caller.
-      const wait = Date.now() + 100;
-      while (Date.now() < wait) { /* short sync spin — 100ms */ }
+      // renameSync throw EBUSY/EPERM/EACCES. Real-world AV release is
+      // typically 10-30ms; we spin 10ms max so we never block heartbeat
+      // long enough to trip the "gateway dead" watchdog (previously 100ms
+      // busy-wait caused false-positives under AV scan).
+      const wait = Date.now() + 10;
+      while (Date.now() < wait) { /* short sync spin — 10ms */ }
       try {
         fs.renameSync(tmp, filePath);
       } catch (e2) {
         try {
-          const msg = `[writeJsonAtomic] rename fail: ${filePath} — ${e2.message}`;
+          const msg = `[writeJsonAtomic] rename fail: ${filePath} — ${e2.message} (tmp=${tmp})`;
           if (typeof console !== 'undefined') console.error(msg);
           try { logToFile && logToFile(msg); } catch {}
         } catch {}
         // Cleanup tmp before throwing so we don't leak tmp files.
         try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
-        throw e2;
+        const err = new Error(
+          `[writeJsonAtomic] failed to rename ${tmp} -> ${filePath}: ${e2.message}`
+        );
+        err.code = e2.code;
+        err.original = e2;
+        throw err;
       }
     }
     return true;
   } catch (e) {
-    // Ensure tmp cleanup on any path
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+    // Ensure tmp cleanup on any path. Each unlink in its own try/catch
+    // so a stat/unlink failure on one doesn't mask the underlying throw.
+    try {
+      if (fs.existsSync(tmp)) {
+        try { fs.unlinkSync(tmp); } catch {}
+      }
+    } catch {}
     throw e;
   }
 }
@@ -3658,7 +3692,7 @@ function ensureZaloGroupSettingsFix() {
 `;
     content = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, content, 'utf-8');
-    console.log('[zalo-group-settings-fix] Injected v3 group settings check (off + tight-mention modes)');
+    console.log('[zalo-group-settings-fix] Injected v4 group settings check (off + tight-mention modes)');
   } catch (e) {
     console.error('[zalo-group-settings-fix] error:', e?.message || e);
   }
@@ -14884,6 +14918,35 @@ app.whenReady().then(async () => {
     powerMonitor.on('resume', () => {
       console.log('[power] system resume detected — node-cron may have skipped firings during sleep');
       try { auditLog('system_resume', { ts: new Date().toISOString() }); } catch {}
+      // After wake, channel-status broadcast cadence is 45s → CEO can see stale
+      // "đang kiểm tra" for up to 45s. Kick a fast-poll schedule mirroring the
+      // boot pattern (see _channelStatusBootTimers) so UI feels instant post-wake.
+      console.log('[power] resume — triggering fast channel-status refresh');
+      try {
+        const resumeTimers = [];
+        // 2s: give network/mDNS a moment to stabilize, then refresh probe caches
+        // directly BEFORE the broadcast fires so the broadcast sees fresh data.
+        resumeTimers.push(setTimeout(() => {
+          Promise.allSettled([
+            (async () => { try { await probeTelegramReady(); } catch {} })(),
+            (async () => { try { await probeZaloReady(); } catch {} })(),
+          ]).finally(() => {
+            try { broadcastChannelStatusOnce(); } catch {}
+          });
+        }, 2000));
+        // Fast-poll series mirroring boot pattern (A6)
+        for (const delay of [3000, 6000, 10000, 15000]) {
+          resumeTimers.push(setTimeout(() => {
+            try { broadcastChannelStatusOnce(); } catch {}
+          }, delay));
+        }
+        // Push to boot-timers array so before-quit cleanup also clears these.
+        if (Array.isArray(_channelStatusBootTimers)) {
+          for (const t of resumeTimers) _channelStatusBootTimers.push(t);
+        }
+      } catch (e) {
+        console.warn('[power] resume fast-refresh failed:', e?.message);
+      }
     });
     powerMonitor.on('suspend', () => {
       console.log('[power] system suspend detected');
