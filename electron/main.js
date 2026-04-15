@@ -8132,13 +8132,23 @@ function isKnownZaloTarget(targetId, { isGroup = false, profile } = {}) {
   }
 }
 
+// PERF: cache friends list for 60s — avoids re-reading ~3767 entries from disk
+// on every 120s auto-refresh. Invalidated on save-zalo-manager-config and login.
+let _zaloFriendsCache = null;
+let _zaloFriendsCacheAt = 0;
+const ZALO_FRIENDS_CACHE_TTL_MS = 60 * 1000;
+function invalidateZaloFriendsCache() { _zaloFriendsCache = null; _zaloFriendsCacheAt = 0; }
 ipcMain.handle('list-zalo-friends', async () => {
   try {
+    const now = Date.now();
+    if (_zaloFriendsCache && (now - _zaloFriendsCacheAt) < ZALO_FRIENDS_CACHE_TTL_MS) {
+      return _zaloFriendsCache;
+    }
     const p = path.join(getZcaCacheDir(), 'friends.json');
     if (!fs.existsSync(p)) return [];
     const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
     // Normalize — only return fields the UI needs
-    return (Array.isArray(data) ? data : []).map(f => ({
+    const result = (Array.isArray(data) ? data : []).map(f => ({
       userId: String(f.userId || f.userKey || ''),
       displayName: f.displayName || f.zaloName || f.username || '(không tên)',
       avatar: f.avatar || '',
@@ -8146,6 +8156,9 @@ ipcMain.handle('list-zalo-friends', async () => {
       isFriend: f.isFr === 1,
       isBlocked: f.isBlocked === 1,
     })).filter(f => f.userId);
+    _zaloFriendsCache = result;
+    _zaloFriendsCacheAt = now;
+    return result;
   } catch (e) {
     console.error('[zalo] list friends error:', e.message);
     return [];
@@ -8209,6 +8222,7 @@ async function runZaloCacheRefresh({ source = 'manual', force = false } = {}) {
       await execFilePromise(cmd, args, opts);
       _zaloCacheRefreshCooldownUntil = 0;
       console.log(`[zalo-cache] refresh ok (source=${source})`);
+      invalidateZaloFriendsCache(); // PERF: bust friends cache after successful refresh
       return { ok: true };
     } catch (e) {
       const msg = e?.message || String(e);
@@ -8898,6 +8912,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
 
 let _saveZaloManagerInFlight = false;
 ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, groupSettings, strangerPolicy }) => {
+  invalidateZaloFriendsCache(); // PERF: bust friends cache on config save
   const booting = rejectIfBooting('save-zalo-manager-config');
   if (booting) return booting;
   // Double-click guard: a rapid 2nd save before the 1st completes would
@@ -12014,9 +12029,18 @@ let _channelStatusBootTimers = [];
 let _lastChannelState = { telegram: null, zalo: null };
 let _lastChannelAlertAt = { telegram: 0, zalo: 0 };
 let _channelStatusBroadcastInFlight = false;
+let _channelStatusTickCount = 0;
 async function broadcastChannelStatusOnce() {
   if (_channelStatusBroadcastInFlight) return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // PERF: skip expensive probes when window is not visible/focused, but still
+  // run every 5th tick (~3.75min) so dots aren't completely stale when user opens app.
+  _channelStatusTickCount++;
+  try {
+    if (!mainWindow.isVisible() || mainWindow.isMinimized()) {
+      if (_channelStatusTickCount % 5 !== 0) return;
+    }
+  } catch {} // isVisible/isMinimized can throw if window is mid-destruction
   _channelStatusBroadcastInFlight = true;
   try {
     // OPTIM: skip expensive network probe if gateway recently emitted a

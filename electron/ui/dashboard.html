@@ -2718,8 +2718,8 @@
             <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:20128/')">Mở trong browser ↗</button>
           </div>
         </div>
-        <div class="embed-wrap">
-          <webview id="iframe-9router" class="embed-frame" src="about:blank" partition="persist:embed-9router" allowpopups></webview>
+        <div class="embed-wrap" id="embed-wrap-9router">
+          <!-- webview created lazily by ensureEmbedLoaded('9router') to save ~50-100MB RAM -->
         </div>
       </div>
 
@@ -2734,8 +2734,8 @@
             <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:18789/')">Mở trong browser ↗</button>
           </div>
         </div>
-        <div class="embed-wrap">
-          <webview id="iframe-openclaw" class="embed-frame" src="about:blank" partition="persist:embed-openclaw" allowpopups></webview>
+        <div class="embed-wrap" id="embed-wrap-openclaw">
+          <!-- webview created lazily by ensureEmbedLoaded('openclaw') to save ~50-100MB RAM -->
         </div>
       </div>
 
@@ -3509,6 +3509,9 @@
       }
       if (page === 'overview') {
         loadOverview();
+        startOverviewAutoRefresh();
+      } else {
+        stopOverviewAutoRefresh();
       }
       if (page === 'shop-state') {
         loadShopState();
@@ -3863,6 +3866,9 @@
         if (currentPage === 'overview') loadOverview();
       }, 30000);
     }
+    function stopOverviewAutoRefresh() {
+      if (_overviewTimer) { clearInterval(_overviewTimer); _overviewTimer = null; }
+    }
 
     // Initial load — fire on DOM ready (overview is the active page on first launch)
     document.addEventListener('DOMContentLoaded', () => {
@@ -3899,10 +3905,25 @@
       '9router': 'http://127.0.0.1:20128/',
       'openclaw': 'http://127.0.0.1:18789/',
     };
+    const EMBED_PARTITIONS = {
+      '9router': 'persist:embed-9router',
+      'openclaw': 'persist:embed-openclaw',
+    };
     function ensureEmbedLoaded(name) {
       if (embedLoaded[name]) return;
-      const wv = document.getElementById('iframe-' + name);
-      if (!wv) return;
+      let wv = document.getElementById('iframe-' + name);
+      // Lazy-create webview element on first tab visit (saves ~50-100MB RAM per webview)
+      if (!wv) {
+        const wrap = document.getElementById('embed-wrap-' + name);
+        if (!wrap) return;
+        wv = document.createElement('webview');
+        wv.id = 'iframe-' + name;
+        wv.className = 'embed-frame';
+        wv.setAttribute('partition', EMBED_PARTITIONS[name]);
+        wv.setAttribute('allowpopups', '');
+        wv.src = 'about:blank';
+        wrap.appendChild(wv);
+      }
       // Intercept new-window events (OAuth popups, external links) → open in
       // default browser instead of Electron. Without this, 9Router's ChatGPT
       // OAuth flow opens inside Electron's restricted webview → freezes on Mac.
@@ -4343,6 +4364,62 @@
       document.getElementById('zalo-mgr-blocked-count').textContent = (zaloMgrConfig.userBlocklist || []).length;
     }
 
+    const ZALO_GROUPS_PAGE_SIZE = 30;
+    let _zaloGroupsSorted = [];
+    let _zaloGroupsRendered = 0;
+    function _renderGroupItem(g) {
+      const openMode = isOpenGroupMode();
+      const checked = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(g.groupId);
+      const gSettings = (zaloMgrConfig.groupSettings || {})[g.groupId] || {};
+      const mode = gSettings.mode || (checked ? 'mention' : 'off');
+      const avatarHtml = g.avatar
+        ? `<img class="zc-avatar" src="${esc(g.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('users', 16)}</span>`
+        : `<span class="zc-avatar-fallback">${icon('users', 16)}</span>`;
+      const stateClass = mode === 'off' ? 'zc-state-off' : mode === 'all' ? 'zc-state-on' : 'zc-state-mention';
+      const badgeLabel = mode === 'all' ? 'Mọi tin' : mode === 'mention' ? '@mention' : 'Tắt';
+      const summary = zaloGroupSummaries[g.groupId];
+      const metaParts = [`${g.memberCount} thành viên`];
+      if (g.desc) metaParts.push(g.desc);
+      if (summary?.topics) metaParts.push(summary.topics);
+      return `<div class="zc ${stateClass}">
+          ${avatarHtml}
+          <div class="zc-body">
+            <div class="zc-name"><span class="zc-name-text" title="${escAttr(g.name)}">${esc(g.name)}</span><span class="zc-badge">${badgeLabel}</span></div>
+            <div class="zc-meta">${esc(metaParts.join(' · '))}</div>
+          </div>
+          <div class="zc-actions">
+            <select class="zc-select" onchange="setGroupMode('${escAttr(g.groupId)}', this.value)">
+              <option value="mention" ${mode === 'mention' ? 'selected' : ''}>@mention</option>
+              <option value="all" ${mode === 'all' ? 'selected' : ''}>Mọi tin</option>
+              <option value="off" ${mode === 'off' ? 'selected' : ''}>Tắt</option>
+            </select>
+          </div>
+        </div>`;
+    }
+    function _renderMoreGroups() {
+      const list = document.getElementById('zalo-mgr-groups-list');
+      const nextBatch = _zaloGroupsSorted.slice(_zaloGroupsRendered, _zaloGroupsRendered + ZALO_GROUPS_PAGE_SIZE);
+      // Remove existing "load more" button before appending
+      const oldBtn = document.getElementById('zalo-groups-load-more');
+      if (oldBtn) oldBtn.remove();
+      const fragment = document.createDocumentFragment();
+      const tmp = document.createElement('div');
+      tmp.innerHTML = nextBatch.map(g => _renderGroupItem(g)).join('');
+      while (tmp.firstChild) fragment.appendChild(tmp.firstChild);
+      _zaloGroupsRendered += nextBatch.length;
+      // Add "load more" button if there are remaining groups
+      if (_zaloGroupsRendered < _zaloGroupsSorted.length) {
+        const remaining = _zaloGroupsSorted.length - _zaloGroupsRendered;
+        const btn = document.createElement('button');
+        btn.id = 'zalo-groups-load-more';
+        btn.className = 'btn btn-secondary';
+        btn.style.cssText = 'width:100%;margin-top:8px;padding:10px';
+        btn.textContent = `Xem them ${Math.min(remaining, ZALO_GROUPS_PAGE_SIZE)} / ${remaining} nhom con lai`;
+        btn.onclick = _renderMoreGroups;
+        fragment.appendChild(btn);
+      }
+      list.appendChild(fragment);
+    }
     function renderZaloGroups() {
       const list = document.getElementById('zalo-mgr-groups-list');
       const q = (document.getElementById('zalo-mgr-group-search').value || '').toLowerCase();
@@ -4352,50 +4429,21 @@
         return;
       }
       const openMode = isOpenGroupMode();
-      // Resolve each group's current mode (same logic as render below)
-      // then sort by PRIORITY: all → mention → off. Within same mode,
-      // alphabetical. User sees active groups (answering "Mọi tin") first,
-      // then @mention-only, then disabled at bottom.
       const modeOf = (g) => {
         const checked = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(g.groupId);
         const gs = (zaloMgrConfig.groupSettings || {})[g.groupId] || {};
         return gs.mode || (checked ? 'mention' : 'off');
       };
       const priority = { all: 0, mention: 1, off: 2 };
-      const sorted = [...filtered].sort((a, b) => {
+      _zaloGroupsSorted = [...filtered].sort((a, b) => {
         const pa = priority[modeOf(a)] ?? 3;
         const pb = priority[modeOf(b)] ?? 3;
         if (pa !== pb) return pa - pb;
         return (a.name || '').localeCompare(b.name || '');
       });
-      list.innerHTML = sorted.map(g => {
-        const checked = openMode || (zaloMgrConfig.groupAllowFrom || []).includes(g.groupId);
-        const gSettings = (zaloMgrConfig.groupSettings || {})[g.groupId] || {};
-        const mode = gSettings.mode || (checked ? 'mention' : 'off');
-        const avatarHtml = g.avatar
-          ? `<img class="zc-avatar" src="${esc(g.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('users', 16)}</span>`
-          : `<span class="zc-avatar-fallback">${icon('users', 16)}</span>`;
-        const stateClass = mode === 'off' ? 'zc-state-off' : mode === 'all' ? 'zc-state-on' : 'zc-state-mention';
-        const badgeLabel = mode === 'all' ? 'Mọi tin' : mode === 'mention' ? '@mention' : 'Tắt';
-        const summary = zaloGroupSummaries[g.groupId];
-        const metaParts = [`${g.memberCount} thành viên`];
-        if (g.desc) metaParts.push(g.desc);
-        if (summary?.topics) metaParts.push(summary.topics);
-        return `<div class="zc ${stateClass}">
-            ${avatarHtml}
-            <div class="zc-body">
-              <div class="zc-name"><span class="zc-name-text" title="${escAttr(g.name)}">${esc(g.name)}</span><span class="zc-badge">${badgeLabel}</span></div>
-              <div class="zc-meta">${esc(metaParts.join(' · '))}</div>
-            </div>
-            <div class="zc-actions">
-              <select class="zc-select" onchange="setGroupMode('${escAttr(g.groupId)}', this.value)">
-                <option value="mention" ${mode === 'mention' ? 'selected' : ''}>@mention</option>
-                <option value="all" ${mode === 'all' ? 'selected' : ''}>Mọi tin</option>
-                <option value="off" ${mode === 'off' ? 'selected' : ''}>Tắt</option>
-              </select>
-            </div>
-          </div>`;
-      }).join('');
+      _zaloGroupsRendered = 0;
+      list.innerHTML = '';
+      _renderMoreGroups();
     }
 
     function toggleGroupAllow(groupId, checked) {
@@ -5076,10 +5124,15 @@
         } else if (r && r.method === 'installer') {
           if (text) text.innerHTML = '&#272;ang c&#224;i... &#272;&#7907;i kh&#7903;i &#273;&#7897;ng l&#7841;i';
           showToast('Installer &#273;ang ch&#7841;y — app s&#7869; t&#7921; t&#7855;t', 'success', 10000);
+        } else if (r && r.method === 'dmg-install') {
+          if (text) text.innerHTML = 'Khoi dong lai...';
+          showToast('Cap nhat thanh cong — dang khoi dong lai', 'success', 10000);
         } else if (r && !r.success) {
-          if (text) text.textContent = 'Loi: ' + (r.error || '');
-          showToast('C&#7853;p nh&#7853;t th&#7845;t b&#7841;i: ' + esc(r.error || ''), 'error', 5000);
-          setTimeout(() => { if (banner) banner.style.display = 'none'; }, 5000);
+          const errMsg = r.error || '';
+          const fallbackNote = r.fallback === 'browser' ? ' (da mo trang tai ve)' : '';
+          if (text) text.textContent = 'Loi: ' + errMsg + fallbackNote;
+          showToast('C&#7853;p nh&#7853;t th&#7845;t b&#7841;i: ' + esc(errMsg) + (r.fallback === 'browser' ? ' — &#273;&#227; m&#7903; trang t&#7843;i v&#7873;' : ''), 'error', 6000);
+          setTimeout(() => { if (banner) banner.style.display = 'none'; }, 6000);
         }
       } catch (e) {
         if (text) text.textContent = 'Loi: ' + e.message;
@@ -5113,6 +5166,13 @@
       window.claw.onUpdateDownloadProgress((p) => {
         const text = document.getElementById('update-banner-text');
         if (text && p) text.innerHTML = '&#272;ang t&#7843;i... ' + (p.percent || 0) + '%';
+      });
+    }
+    // Install status (Mac DMG install phases)
+    if (window.claw.onUpdateInstallStatus) {
+      window.claw.onUpdateInstallStatus((data) => {
+        const text = document.getElementById('update-banner-text');
+        if (text && data && data.status) text.textContent = data.status;
       });
     }
 
