@@ -5319,6 +5319,17 @@ function rejectIfBooting(handlerName) {
   }
   return null;
 }
+// [restart-guard A1] Set while a hard-restart sequence (stopOpenClaw → wait →
+// startOpenClaw) is in progress. Heartbeat watchdog checks this and skips its
+// own restart attempt — otherwise save-zalo-manager / resume-zalo can kick off
+// a restart, heartbeat fires mid-sequence, both try to restart, cascade.
+// Cleared inside the IIFE's finally, NOT by any individual startOpenClaw /
+// stopOpenClaw caller.
+let _gatewayRestartInFlight = false;
+// [restart-guard A1] Timestamp (ms since epoch) of the last _startOpenClawImpl
+// completion. Heartbeat requires >= 60s since last start before attempting its
+// own restart — otherwise a slow boot looks dead.
+let _gatewayLastStartedAt = 0;
 async function startOpenClaw() {
   if (botRunning) return;
   // Prevent re-entrant start while a previous start is still spawning. Without
@@ -5329,7 +5340,11 @@ async function startOpenClaw() {
     return;
   }
   _startOpenClawInFlight = true;
-  try { return await _startOpenClawImpl(); }
+  try {
+    const r = await _startOpenClawImpl();
+    _gatewayLastStartedAt = Date.now();
+    return r;
+  }
   finally { _startOpenClawInFlight = false; }
 }
 function backupWorkspace() {
@@ -6051,7 +6066,17 @@ async function _startOpenClawImpl() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bot-status', { running: false, error: 'Đang khởi động lại... vui lòng đợi 30 giây.' });
       }
-      setTimeout(() => startOpenClaw(), 2000);
+      // [restart-guard] Don't kick off a relaunch if another start is already
+      // in flight or a hard-restart sequence (save-zalo-manager / resume-zalo)
+      // already owns the restart. Otherwise two startOpenClaw calls race and
+      // one fails with EADDRINUSE, leaving gateway dead.
+      setTimeout(() => {
+        if (botRunning || _startOpenClawInFlight || _gatewayRestartInFlight) {
+          console.log('[restart-guard] exit-handler relaunch skipped — another start in progress');
+          return;
+        }
+        startOpenClaw();
+      }, 2000);
       return;
     }
 
@@ -6075,19 +6100,58 @@ async function _startOpenClawImpl() {
   });
 }
 
-function stopOpenClaw() {
+// [restart-guard] stopOpenClaw is now async and waits for the gateway process
+// to ACTUALLY exit before resolving. Without this, a caller that does
+// `await stopOpenClaw(); await new Promise(r => setTimeout(r, 2000)); await startOpenClaw();`
+// could race: the old process still holds port 18789 → new gateway fails to
+// bind → we're back to the restart-loop situation. On Windows especially,
+// mDNS/port cleanup after taskkill takes 1-3s.
+//
+// Resolution order:
+//   1. Send SIGINT (Unix) or fire taskkill /f /t (Windows) — does not block.
+//   2. Race the process' 'exit' event against a 5000ms deadline.
+//   3. If deadline hit on Windows, fire taskkill again (belt-and-suspenders).
+//   4. Poll isGatewayAlive(500) up to 10×500ms until it returns false so the
+//      port is actually free before we resolve.
+async function stopOpenClaw() {
   botRunning = false;
-  if (openclawProcess) {
-    const proc = openclawProcess;
-    openclawProcess = null;
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' });
-    } else {
-      proc.kill('SIGINT');
-    }
+  const proc = openclawProcess;
+  openclawProcess = null;
+  const startedAt = Date.now();
+  if (proc) {
+    try {
+      if (process.platform === 'win32') {
+        try { spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' }); } catch {}
+      } else {
+        try { proc.kill('SIGINT'); } catch {}
+      }
+    } catch {}
+    // Await actual exit — or give up after 5s and force-kill again.
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; resolve(); };
+      try { proc.once('exit', finish); } catch { return finish(); }
+      setTimeout(() => {
+        if (done) return;
+        if (process.platform === 'win32') {
+          try { spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' }); } catch {}
+        } else {
+          try { proc.kill('SIGKILL'); } catch {}
+        }
+        // Wait one more tick, then resolve regardless.
+        setTimeout(finish, 500);
+      }, 5000);
+    });
   }
-  // Also kill adopted/orphan gateway
-  killPort(18789);
+  // Also kill adopted/orphan gateway on the port.
+  try { killPort(18789); } catch {}
+  // Poll the port to confirm it's actually free. Max 10 × 500ms = 5s.
+  for (let i = 0; i < 10; i++) {
+    const alive = await isGatewayAlive(500);
+    if (!alive) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
+  console.log(`[stopOpenClaw] exited in ${Date.now() - startedAt}ms`);
 }
 
 // ============================================
@@ -8432,19 +8496,31 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     //             → Dashboard shows green but customers get silence
     // Proper restart pattern: stopOpenClaw + wait + startOpenClaw.
     // startOpenClaw alone is a no-op when botRunning=true, so we MUST stop first.
+    //
+    // [restart-guard A1] Set _gatewayRestartInFlight BEFORE the IIFE starts so
+    // the heartbeat watchdog (which also polls every N minutes) will skip its
+    // own restart attempt if it fires while we're mid-sequence. Clear in the
+    // IIFE's finally only.
     if (enabledChanged) {
       if (_startOpenClawInFlight) {
         console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — gateway spawn in progress, skip restart (will read new config)`);
+      } else if (_gatewayRestartInFlight) {
+        console.log('[restart-guard] save-zalo-manager: restart already in-flight — skipping duplicate');
       } else {
+        _gatewayRestartInFlight = true;
         console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — hard-restart gateway (bg)`);
         // Fire-and-forget so IPC returns fast — UI sidebar dots will flip
         // to checking→ready via channel-status broadcast as gateway boots.
         (async () => {
           try {
-            stopOpenClaw();
-            await new Promise(r => setTimeout(r, 2000));
-            await startOpenClaw();
-          } catch (e2) { console.warn('[save-zalo-manager] restart failed:', e2.message); }
+            console.log('[restart-guard] save-zalo-manager: hard-restart begin');
+            try { await stopOpenClaw(); } catch (e1) { console.warn('[save-zalo-manager] stop failed:', e1?.message); }
+            await new Promise(r => setTimeout(r, 5000));
+            try { await startOpenClaw(); } catch (e2) { console.warn('[save-zalo-manager] start failed:', e2?.message); }
+            console.log('[restart-guard] save-zalo-manager: hard-restart end');
+          } finally {
+            _gatewayRestartInFlight = false;
+          }
         })();
       }
     } else {
@@ -11290,22 +11366,31 @@ ipcMain.handle('resume-zalo', async () => {
   const enabled = setZaloChannelEnabled(true);
   const cleared = clearChannelPermanentPause('zalo');
   if (enabled && cleared) markOnboardingComplete('resume-zalo');
+  // [restart-guard A1] Flipping enabled/permanent-pause doesn't reach the running
+  // gateway (config is read at boot). Kick off a hard-restart in the
+  // background so Zalo actually comes back. Only restart if disabled→enabled
+  // transition (HEAD's smart check) AND not in-flight already (A1 guard).
   if (wasDisabled) {
     // Defer restart if gateway spawn is already in progress (wizard just
     // finished, boot path still spawning). Killing mid-spawn causes 240s
-    // WS timeout → null.stdout crash → gateway dead permanently. Instead
-    // let the in-flight spawn finish — it will read our freshly-written
-    // enabled=true config itself.
+    // WS timeout → null.stdout crash → gateway dead permanently.
     if (_startOpenClawInFlight) {
       console.log('[resume-zalo] gateway spawn in progress — skip restart, config change will apply on its own');
+    } else if (_gatewayRestartInFlight) {
+      console.log('[restart-guard] resume-zalo: restart already in-flight — skipping duplicate');
     } else {
+      _gatewayRestartInFlight = true;
       console.log('[resume-zalo] transitioning disabled→enabled — hard-restart gateway (bg)');
       (async () => {
         try {
-          stopOpenClaw();
-          await new Promise(r => setTimeout(r, 2000));
-          await startOpenClaw();
-        } catch (e) { console.warn('[resume-zalo] restart failed:', e?.message); }
+          console.log('[restart-guard] resume-zalo: hard-restart begin');
+          try { await stopOpenClaw(); } catch (e1) { console.warn('[resume-zalo] stop failed:', e1?.message); }
+          await new Promise(r => setTimeout(r, 5000));
+          try { await startOpenClaw(); } catch (e2) { console.warn('[resume-zalo] start failed:', e2?.message); }
+          console.log('[restart-guard] resume-zalo: hard-restart end');
+        } finally {
+          _gatewayRestartInFlight = false;
+        }
       })();
     }
   }
@@ -12318,16 +12403,72 @@ function startCronJobs() {
               // Listener can die silently if openzca crashes; gateway stays
               // up but Zalo channel is dead. Only restart gateway if
               // Zalo is enabled in config.
+              //
+              // [zalo-watchdog] Single transient "no listener pid found"
+              // used to trigger a restart → cascade loop. Now we require
+              // 3 consecutive misses with backoff.
               try {
                 const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
                 const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
                 if (cfg?.channels?.openzalo?.enabled === true && !isChannelPaused('zalo')) {
                   const lpid = findOpenzcaListenerPid();
-                  if (!lpid) {
-                    console.log('[heartbeat] gateway alive but Zalo listener dead — restarting gateway to respawn listener');
-                    try { stopOpenClaw(); } catch {}
-                    await new Promise(r => setTimeout(r, 2000));
-                    try { await startOpenClaw(); } catch (e) { console.error('[heartbeat] zalo restart failed:', e.message); }
+                  if (lpid) {
+                    // Listener healthy — reset streak, stay calm.
+                    global._zaloListenerMissStreak = 0;
+                  } else {
+                    global._zaloListenerMissStreak = (global._zaloListenerMissStreak || 0) + 1;
+                    const streak = global._zaloListenerMissStreak;
+                    console.log(`[zalo-watchdog] listener missing — streak=${streak}`);
+                    // Gate 1: need 3 misses in a row.
+                    if (streak < 3) { return; }
+                    // Gate 2: skip if another restart sequence is in-flight
+                    // (save-zalo-manager, resume-zalo, or recent startOpenClaw).
+                    if (_gatewayRestartInFlight || _startOpenClawInFlight) {
+                      console.log('[zalo-watchdog] restart already in-flight — skipping');
+                      return;
+                    }
+                    // Gate 3: gateway must have finished booting at least 60s
+                    // ago — slow boots on Windows can leave the listener
+                    // momentarily absent while openzca is still spawning.
+                    const sinceBoot = Date.now() - (_gatewayLastStartedAt || 0);
+                    if (sinceBoot < 60_000) {
+                      console.log(`[zalo-watchdog] gateway only ${sinceBoot}ms old — too fresh to restart`);
+                      return;
+                    }
+                    // Gate 4: 10-minute cooldown since last watchdog restart.
+                    const lastRestart = global._zaloListenerLastRestartAt || 0;
+                    const sinceRestart = Date.now() - lastRestart;
+                    if (lastRestart > 0 && sinceRestart < 10 * 60_000) {
+                      console.log(`[zalo-watchdog] last restart ${Math.round(sinceRestart/1000)}s ago — waiting out 10min cooldown`);
+                      return;
+                    }
+                    // Gate 5: 3 restarts in 2h ⇒ stop auto-restarting and
+                    // alert CEO. Wait for manual Save/resume to reset.
+                    global._zaloListenerRestartHistory = (global._zaloListenerRestartHistory || []).filter(ts => (Date.now() - ts) < 2 * 60 * 60_000);
+                    if (global._zaloListenerGaveUp) {
+                      console.log('[zalo-watchdog] already gave up after 3 restarts in 2h — waiting for manual Save/resume');
+                      return;
+                    }
+                    if (global._zaloListenerRestartHistory.length >= 3) {
+                      console.log('[zalo-watchdog] 3 restarts in 2h — giving up, alerting CEO');
+                      global._zaloListenerGaveUp = true;
+                      try { await sendCeoAlert('Listener Zalo đang không ổn định, vui lòng kiểm tra kết nối mạng'); } catch {}
+                      return;
+                    }
+                    // All gates passed — do the restart.
+                    console.log('[zalo-watchdog] gateway alive but Zalo listener dead (3 misses) — hard-restart');
+                    global._zaloListenerLastRestartAt = Date.now();
+                    global._zaloListenerRestartHistory.push(Date.now());
+                    global._zaloListenerMissStreak = 0;
+                    if (_gatewayRestartInFlight) return;
+                    _gatewayRestartInFlight = true;
+                    try {
+                      try { await stopOpenClaw(); } catch {}
+                      await new Promise(r => setTimeout(r, 5000));
+                      try { await startOpenClaw(); } catch (e) { console.error('[zalo-watchdog] zalo restart failed:', e.message); }
+                    } finally {
+                      _gatewayRestartInFlight = false;
+                    }
                   }
                 }
               } catch {}
@@ -12339,11 +12480,22 @@ function startCronJobs() {
               console.log('[heartbeat] gateway slow but alive — skipping restart');
               return;
             }
+            // [restart-guard] Don't cascade a restart if save/resume or another
+            // watchdog pass already owns the restart.
+            if (_gatewayRestartInFlight || _startOpenClawInFlight) {
+              console.log('[heartbeat] restart already in-flight — skipping gateway-dead restart');
+              return;
+            }
             console.log('[heartbeat] Gateway not responding (2 consecutive failures) — auto-restarting');
-            try { stopOpenClaw(); } catch {}
-            await new Promise(r => setTimeout(r, 2000));
-            try { await startOpenClaw(); } catch (e) {
-              console.error('[heartbeat] restart failed:', e.message);
+            _gatewayRestartInFlight = true;
+            try {
+              try { await stopOpenClaw(); } catch {}
+              await new Promise(r => setTimeout(r, 5000));
+              try { await startOpenClaw(); } catch (e) {
+                console.error('[heartbeat] restart failed:', e.message);
+              }
+            } finally {
+              _gatewayRestartInFlight = false;
             }
           } catch (e) { console.error('[heartbeat] error:', e.message); }
         };
