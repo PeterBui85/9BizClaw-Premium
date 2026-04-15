@@ -3611,10 +3611,12 @@ function ensureZaloGroupSettingsFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    // Marker v3: tightened mention detection (only matches @botName, not any @).
-    if (content.includes('9BizClaw GROUP-SETTINGS PATCH v4')) return;
+    // Marker v5: mode="all" now bypasses plugin's default requireMention=true
+    // by injecting botUserId into message.mentionIds (plugin sees bot mentioned
+    // → gate passes → every group message reaches AI as user intended).
+    if (content.includes('9BizClaw GROUP-SETTINGS PATCH v5')) return;
 
-    // Strip ANY old v1/v2 block before re-injecting v3 so the regex update applies.
+    // Strip ANY old v1-v4 block before re-injecting v5 so the mode=all bypass applies.
     if (content.includes('9BizClaw GROUP-SETTINGS PATCH')) {
       const oldStart = content.indexOf('  // === 9BizClaw GROUP-SETTINGS PATCH');
       const oldEnd = content.indexOf('  // === END 9BizClaw GROUP-SETTINGS PATCH ===');
@@ -3631,11 +3633,15 @@ function ensureZaloGroupSettingsFix() {
     }
 
     // CRIT #5: Single source of truth = zalo-group-settings.json.
-    // 'off' → drop. 'mention' → require @bot in rawBody else drop. 'all' → pass.
-    // Missing entry → openzalo default (which we keep permissive via
-    // groupPolicy=open + groupAllowFrom=['*']).
+    // 'off' → drop. 'mention' → require @bot in rawBody else drop.
+    // 'all' → force-pass plugin's requireMention gate by injecting botUserId
+    //   into message.mentionIds (plugin defaults requireMention=true when
+    //   unset — so falling through was NOT enough; policy.ts resolveOpenzalo-
+    //   RequireMention returns true if groupConfig.requireMention undefined).
+    // Missing entry → openzalo default mention-gated behavior (safer — bot
+    //   just added to unknown group shouldn't auto-reply to everything).
     const injection = `
-  // === 9BizClaw GROUP-SETTINGS PATCH v4 ===
+  // === 9BizClaw GROUP-SETTINGS PATCH v5 ===
   if (message.isGroup) {
     try {
       const __gsFs = require("node:fs");
@@ -3683,6 +3689,24 @@ function ensureZaloGroupSettingsFix() {
               return;
             }
           }
+          if (__gsEntry && __gsEntry.mode === "all") {
+            // Dashboard user chose "reply to every message" for this group.
+            // Plugin's default requireMention=true would drop non-mention
+            // messages downstream (inbound.ts:1126). Force-pass by injecting
+            // botUserId into message.mentionIds so wasMentionedById=true.
+            try {
+              const __gsAllBotId = String(botUserId || "").trim();
+              if (__gsAllBotId) {
+                if (!Array.isArray((message as any).mentionIds)) {
+                  (message as any).mentionIds = [];
+                }
+                if (!(message as any).mentionIds.includes(__gsAllBotId)) {
+                  (message as any).mentionIds.push(__gsAllBotId);
+                  runtime.log?.(\`openzalo: group \${__gsThreadId} mode=all — force bot mention bypass\`);
+                }
+              }
+            } catch {}
+          }
           break;
         } catch {}
       }
@@ -3692,7 +3716,7 @@ function ensureZaloGroupSettingsFix() {
 `;
     content = content.replace(anchor, anchor + injection);
     fs.writeFileSync(pluginFile, content, 'utf-8');
-    console.log('[zalo-group-settings-fix] Injected v4 group settings check (off + tight-mention modes)');
+    console.log('[zalo-group-settings-fix] Injected v5 group settings check (off + tight-mention + mode=all bypass)');
   } catch (e) {
     console.error('[zalo-group-settings-fix] error:', e?.message || e);
   }
