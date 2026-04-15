@@ -4230,7 +4230,7 @@
       stopZaloAutoRefresh();
       _zaloRefreshTimer = setInterval(() => {
         if (currentPage === 'zalo') loadZaloManagerData({ preserveDraft: true });
-      }, 30000);
+      }, 120000);
     }
     function stopZaloAutoRefresh() {
       if (_zaloRefreshTimer) { clearInterval(_zaloRefreshTimer); _zaloRefreshTimer = null; }

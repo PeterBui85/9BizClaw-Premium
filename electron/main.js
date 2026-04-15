@@ -5737,6 +5737,23 @@ async function _startOpenClawImpl() {
       botRunning = true;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bot-status', { running: true });
       createTray();
+      // Auto-confirm channel readiness when adopting — gateway is already
+      // running so no new stdout markers will be emitted for scanForReadiness.
+      // Without this, dots stay grey forever after a steady-state restart.
+      if (!global._readyNotifyState) global._readyNotifyState = {};
+      for (const ch of ['telegram', 'zalo']) {
+        if (!global._readyNotifyState[ch]) global._readyNotifyState[ch] = {};
+        const st = global._readyNotifyState[ch];
+        if (!st.confirmedAt) {
+          st.confirmedAt = Date.now();
+          st.confirmedBy = 'adopt';
+          st.markerSeen = true;
+          st.markerSeenAt = Date.now();
+          st.awaitingConfirmation = false;
+          st.lastError = '';
+        }
+      }
+      setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 500);
       return;
     }
   }
@@ -6261,6 +6278,21 @@ async function _startOpenClawImpl() {
           botRunning = true;
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bot-status', { running: true });
           createTray();
+          // Auto-confirm channels on adopt (same as steady-state restart)
+          if (global._readyNotifyState) {
+            for (const ch of ['telegram', 'zalo']) {
+              const st = global._readyNotifyState[ch];
+              if (st && !st.confirmedAt) {
+                st.confirmedAt = Date.now();
+                st.confirmedBy = 'adopt';
+                st.markerSeen = true;
+                st.markerSeenAt = Date.now();
+                st.awaitingConfirmation = false;
+                st.lastError = '';
+              }
+            }
+            setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 500);
+          }
           return;
         }
         const errMsg = code !== 0 ? `Mã lỗi: ${code}${lastError ? '\n' + lastError : ''}` : null;
