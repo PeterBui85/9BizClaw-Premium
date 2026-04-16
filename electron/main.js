@@ -15933,6 +15933,13 @@ async function downloadUpdate(assetUrl, filename, expectedSize) {
               try { fs.unlinkSync(dest); } catch {}
               return reject(new Error('Download incomplete: ' + received + '/' + expectedSize + ' bytes'));
             }
+            // Hard minimum: EXE/DMG must be >50MB. Catches truncated downloads
+            // when GitHub doesn't return content-length (asset.size=0 on redirects).
+            const MIN_INSTALLER_SIZE = 50 * 1024 * 1024;
+            if (received < MIN_INSTALLER_SIZE) {
+              try { fs.unlinkSync(dest); } catch {}
+              return reject(new Error('Download too small (' + Math.round(received / 1024) + 'KB) — likely truncated. Retry.'));
+            }
             resolve(dest);
           });
         });
