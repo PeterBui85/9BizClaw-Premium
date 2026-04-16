@@ -3464,6 +3464,29 @@ async function ensureDefaultConfig() {
       if (tg.requireMention !== true) { tg.requireMention = true; changed = true; }
       // History limit: prevent context bloat for CEO who chats 100+ msg/day
       if (!tg.historyLimit || tg.historyLimit > 50) { tg.historyLimit = 50; changed = true; }
+      // DEFENSIVE CLEANUP: strip keys that are NOT in the Telegram schema.
+      // A prior config or openclaw version may have left `messages`, `configWrites`
+      // or other top-level keys nested under channels.telegram by mistake.
+      // openclaw 2026.4.14 uses strict() → any unknown key = "must NOT have
+      // additional properties" → gateway refuses to start.
+      const TELEGRAM_VALID_FIELDS = new Set([
+        'name', 'capabilities', 'execApprovals', 'enabled', 'markdown',
+        'commands', 'customCommands', 'configWrites', 'dmPolicy', 'botToken',
+        'tokenFile', 'replyToMode', 'groups', 'allowFrom', 'defaultTo',
+        'groupAllowFrom', 'groupPolicy', 'contextVisibility', 'historyLimit',
+        'dmHistoryLimit', 'dms', 'direct', 'textChunkLimit', 'streaming',
+        'mediaMaxMb', 'timeoutSeconds', 'retry', 'network', 'webhookUrl',
+        'webhookSecret', 'webhookPath', 'webhookHost', 'webhookPort',
+        'webhookCertPath', 'requireMention', 'accounts', 'defaultAccount',
+        'profile', 'sendTypingIndicators',
+      ]);
+      for (const k of Object.keys(tg)) {
+        if (!TELEGRAM_VALID_FIELDS.has(k)) {
+          console.log('[config] stripped unknown telegram field: ' + k);
+          delete tg[k];
+          changed = true;
+        }
+      }
     }
     // Global default: openclaw 2026.4.x removed `agents.defaults.blockStreaming`
     // (boolean) and replaced it with `agents.defaults.blockStreamingDefault`
