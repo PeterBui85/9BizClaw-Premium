@@ -1,46 +1,71 @@
-# WhatsApp Integration — Design Spec (Revision 2)
+# WhatsApp Integration — Design Spec (Revision 3 — MVP scope)
 
 **Version target:** MODOROClaw v2.4.0
 **Branch:** `feat/whatsapp-optional` (from `main` @ v2.3.44)
-**Est:** 3-4 tuần dev + 1 tuần test + ship
+**Est:** 2 tuần dev + 3 ngày test + ship
 **Author:** devops@modoro.com.vn
 **Date:** 2026-04-16
-**Revision:** 2 (post-review — corrected architecture assumptions)
+**Revision:** 3 (MVP scope — drop all source patches, native config only)
 
 ## Revision history
 
-- **R1 (2026-04-16):** Initial spec. Rejected by reviewer. 3 HIGH issues: assumed TS source patching (plugin ships compiled JS), fabricated HTTP endpoints, wrong auth path.
-- **R2 (2026-04-16):** Rewritten. Hybrid approach combining native plugin config + selective JS patches. Actual plugin API verified from unpacked tarball.
+- **R1:** Rejected. Assumed TS source patching (plugin ships JS).
+- **R2:** Rejected. 4 new HIGH: fake CLI commands, wrong patch target, `allowFrom=[]` semantic conflict with `dmPolicy`.
+- **R3:** MVP scope cut. Drop all JS patches (blocklist/dedup/system-msg/output-filter). Native plugin config only. LLM rule fallback for 3 edge cases.
 
 ## 1. Goal
 
-Tích hợp WhatsApp làm kênh tùy chọn cho MODOROClaw, Zalo-parity UX (DM + group, 2-mode auto/read, pause, blocklist, per-user memory, group memory view, triple-channel CEO alert), KHÔNG ép khách kết nối khi onboard.
+Ship WhatsApp channel (optional) trong v2.4.0 với minimum viable feature set — chỉ dùng **native plugin config**, KHÔNG patch source. Scope cắt để ship trong 2 tuần, chấp nhận 3 filter edge cases qua LLM rule thay vì code gate.
 
-## 2. Non-Goals
+## 2. Scope
 
-- Facebook Messenger (phase sau, không có plugin built-in)
-- Lark/Feishu (enterprise model, sai fit thị trường VN)
-- Multi-account WhatsApp (chỉ 1 account/install, giống Zalo)
-- WhatsApp Business Cloud API (có plugin `openclaw-whatsapp-cloud-api@1.1.0` alternative, nhưng require webhook tunnel → defer v2.5.0 cho khách enterprise)
+### 2.1. IN (v2.4.0)
 
-## 3. Foundation — đã verify từ tarball
+- Wizard optional step "Kết nối WhatsApp" (QR scan)
+- Dashboard sidebar + tab WhatsApp (clone Zalo structure)
+- 2-mode: Tự động trả lời (auto) | Chỉ đọc + tóm tắt cuối ngày (read)
+- Group mode toggle: mention-only | reply-all | off
+- Pause/resume toggle
+- Outbound `sendWhatsApp()` + triple-channel `sendCeoAlert()`
+- Per-user + per-group memory (clone Zalo `memory/`)
+- Memory view modal
+- Phone-ban mitigation: random delay 2-5s, rate cap 100/giờ, SIM warning trong wizard
+- AGENTS.md rules mở rộng cho WhatsApp (Vietnamese diacritics, first-greeting, bot-vs-bot, pause honor, system event drop, blocklist check)
 
-`openclaw@2026.4.14` ship sẵn `@openclaw/whatsapp` plugin:
+### 2.2. OUT (defer v2.5.0+)
 
-- Dùng `@whiskeysockets/baileys@7.0.0-rc.9` (WhatsApp Web unofficial, QR scan)
-- Plugin ship dưới dạng **compiled JS (ESM)** tại `dist/extensions/whatsapp/*.js`
-- JS **KHÔNG minified** — tên biến + import preserved → regex patch khả thi
-- **Auth persistence**: `resolveWhatsAppAuthDir()` → dir phụ thuộc env `OPENCLAW_OAUTH_DIR` fallback ~/.openclaw/oauth/whatsapp/<accountId>/
-- **Readiness check**: `hasAnyWhatsAppAuth()` exported function từ `accounts-*.js`
-- **Native features phát hiện**:
-  - `normalizeWhatsAppAllowFromEntries` — native `allowFrom` whitelist
-  - `resolveWhatsAppGroupRequireMention` — native mention-only gate
-  - `resolveWhatsAppGroupToolPolicy` — native group tool policy
-  - `whatsappCommandPolicy` — built-in command policy
-  - `DEFAULT_WHATSAPP_MEDIA_MAX_MB` — native media limit
-  - `jidToE164`, `normalizeE164` — phone number helpers
-- **Multi-account schema**: `channels.whatsapp.accounts[<accountId>]` + `defaultAccount` (single-account install vẫn phải dùng schema này)
-- **Outbound API**: `sendMessageWhatsApp(to, body, options)` trong `send-*.js` — direct JS function call inside gateway process (KHÔNG phải HTTP endpoint). MODOROClaw gọi qua openclaw CLI hoặc internal hook.
+- Code-level blocklist gate (LLM rule in AGENTS.md only)
+- Code-level sender dedup (LLM rule in AGENTS.md only)
+- Code-level system-msg filter (LLM rule in AGENTS.md only)
+- Output filter plugin-side patch (plugin already calls `sanitizeAssistantVisibleText`; MODOROClaw `filterSensitiveOutput` runs on bot-initiated sends via `sendWhatsApp` wrapper)
+- Facebook Messenger (no plugin built-in)
+- Lark/Feishu (wrong fit)
+- Multi-account WhatsApp
+- WhatsApp Cloud API (defer v2.5.0+ cho enterprise khách)
+
+### 2.3. Accepted risks
+
+- **LLM có thể lách blocklist rule**: CEO add JID vào `whatsapp-blocklist.json`, nhưng bot đọc file qua AGENTS.md rule, không phải code gate. Risk: 1-5% LLM forget rule và reply. Mitigation: wizard UX hiển thị rule cho CEO "blocklist effectiveness: depends on AI compliance, not guaranteed".
+- **LLM có thể reply system event**: group add/remove/rename → AGENTS.md rule nhắc bot im lặng. Risk similar.
+- **Duplicate message 3s window**: plugin có dedup internal hay không chưa verify (O-3). Nếu không có → AGENTS.md rule "nếu thấy 2 tin giống hệt trong 5s, chỉ reply 1 lần".
+
+## 3. Foundation — verified from tarball
+
+- `openclaw@2026.4.14` ship sẵn `@openclaw/whatsapp` plugin (baileys 7.0.0-rc.9)
+- Plugin ship compiled JS ESM, KHÔNG minified (tên biến preserved)
+- **Auth path**: `resolveWhatsAppAuthDir({cfg, accountId:'default'}).authDir` — gọi in-process, không hardcode
+- **Readiness**: `hasAnyWhatsAppAuth()` exported từ `accounts-*.js`
+- **Native features used**:
+  - `dmPolicy: "open"|"disabled"|"pairing"` — chính thức gate cho DM
+  - `allowFrom` whitelist (leave empty for all-allow default)
+  - `groupRequireMention: true|false` — mention-only gate group
+  - `groupAllowFrom` — whitelist group JIDs
+  - `DEFAULT_WHATSAPP_MEDIA_MAX_MB = 50` (default OK, không override)
+  - `sanitizeAssistantVisibleText` — plugin tự sanitize output khi reply
+- **Multi-account schema (bắt buộc)**: `channels.whatsapp.accounts.<id>` + `defaultAccount`
+- **Outbound**: `openclaw message send --channel whatsapp --account default -t <jid> -m <text> --json`
+- **Status**: `openclaw channels status --probe --json` (parse WhatsApp section)
+- **Login**: `openclaw channels login --channel whatsapp` (spawn subprocess, capture QR từ stdout — cần verify TTY requirement)
 
 ## 4. Architecture
 
@@ -49,183 +74,224 @@ Tích hợp WhatsApp làm kênh tùy chọn cho MODOROClaw, Zalo-parity UX (DM +
 ```
 Electron main (MODOROClaw)
   └── Gateway subprocess (openclaw.mjs gateway run)
-        ├── telegram plugin (built-in)
-        ├── openzalo plugin (custom fork, TS source ta own)
-        └── @openclaw/whatsapp plugin (built-in, JS compiled)
+        ├── telegram plugin
+        ├── openzalo plugin (custom fork)
+        └── @openclaw/whatsapp plugin (built-in) — native config only
               └── baileys WebSocket → WhatsApp servers
 ```
-
-Không có subprocess riêng cho WhatsApp. Plugin chạy trong gateway process, giống Telegram.
 
 ### 4.2. Directory layout
 
 ```
 ~/.openclaw/
-├── openclaw.json                    # thêm channels.whatsapp.accounts.default
-└── oauth/whatsapp/default/          # baileys session (plugin tự manage)
+├── openclaw.json                    # channels.whatsapp.accounts.default
+└── oauth/whatsapp/default/          # baileys session — plugin tự manage
 
 <workspace>/
 ├── memory/
-│   ├── whatsapp-users/              ← MỚI
-│   └── whatsapp-groups/             ← MỚI
-├── config/
-│   ├── whatsapp-mode.txt            ← MỚI (auto|read)
-│   ├── whatsapp-blocklist.json      ← MỚI
-│   ├── whatsapp-group-settings.json ← MỚI (có __default)
-│   └── whatsapp-paused.json         ← MỚI
+│   ├── whatsapp-users/
+│   └── whatsapp-groups/
+└── config/
+    ├── whatsapp-mode.txt            # auto | read
+    ├── whatsapp-blocklist.json      # LLM rule reads this
+    ├── whatsapp-group-settings.json # __default + per-group override
+    ├── whatsapp-paused.json
+    └── whatsapp-saved-dmpolicy.json # save original when pause/read, restore on resume/auto
 ```
 
-### 4.3. Data flow inbound
+### 4.3. Data flow inbound (native gate only)
 
 ```
-WhatsApp server → baileys WS → plugin inbound handler (JS)
-  → native allowFrom check (whitelist) — plugin tự drop nếu không match
-  → native groupRequireMention check — plugin tự drop group non-mention
-  → MODOROClaw PATCHES (3 patches inject):
-      1. blocklist filter (drop senderId trong whatsapp-blocklist.json)
-      2. sender dedup (drop duplicate trong 3s window)
-      3. system-msg filter (drop messageStubType = group add/remove/rename)
-  → dispatch to agent runtime → reply
-  → output filter apply on outbound (wrapper tại deliver callback, patch JS)
-  → sendMessageWhatsApp → baileys send → khách
+WhatsApp server → baileys WS → plugin inbound
+  → dmPolicy check (native) — if "disabled" → drop before dispatch
+  → allowFrom check (native) — if set + not match → drop
+  → groupRequireMention check (native) — if true + no mention → drop
+  → dispatch to agent runtime
+  → agent reads AGENTS.md rules (mode, blocklist, pause, system-event rules)
+  → agent reply (or silent per rule)
+  → plugin sanitizeAssistantVisibleText → baileys send
 ```
 
-### 4.4. Data flow outbound (bot-initiated, cron/alert)
+### 4.4. Data flow outbound (bot-initiated)
 
 ```
 sendCeoAlert(msg) → Promise.allSettled([
-  sendTelegram(msg),     # existing
-  sendZalo(msg),         # existing
-  sendWhatsApp(msg)      # NEW — spawn openclaw CLI: openclaw msg send whatsapp <jid> <text>
+  sendTelegram(msg),
+  sendZalo(msg),
+  sendWhatsApp(msg)  # NEW
 ])
-```
 
-`sendWhatsApp()` dùng openclaw CLI subprocess (pattern đã dùng cho openzca), KHÔNG call HTTP. Lookup owner JID từ `~/.openclaw/oauth/whatsapp/default/creds.json` (baileys persist).
+sendWhatsApp(msg):
+  isChannelPaused check
+  filterSensitiveOutput (19 shared patterns)
+  split into chunks (2000 char cap)
+  for each chunk:
+    random delay 2-5s (ban mitigation)
+    spawnOpenClawSafe(['message', 'send', '--channel', 'whatsapp',
+                       '--account', 'default', '-t', ownerJid,
+                       '-m', chunk, '--json'])
+```
 
 ## 5. Components
 
 ### 5.1. Plugin enablement — `ensureDefaultConfig()`
 
+Config default (heal mỗi boot):
+
 ```js
-// trong ensureDefaultConfig(), sau block zalo
 if (!config.channels.whatsapp) {
   config.channels.whatsapp = {
-    enabled: false,                   // default OFF — không chiếm resource khi khách không dùng
+    enabled: false,            // default OFF — không load plugin khi khách không dùng
     defaultAccount: "default",
     accounts: {
       default: {
         enabled: false,
-        allowFrom: [],                // empty = read-only mode (native drop)
+        dmPolicy: "open",      // chính thức gate; "disabled" khi mode=read/pause
+        allowFrom: [],         // empty = allow all (plugin semantics verified)
         groupRequireMention: false,
+        groupAllowFrom: [],    // empty = allow all groups
         groupPolicy: "open"
       }
     }
   };
   changed = true;
 }
+
+// Migration guard — nếu user có config từ R1/R2 với shape cũ
+const waAcc = config.channels.whatsapp?.accounts?.default;
+if (waAcc && waAcc.dmPolicy === undefined) {
+  waAcc.dmPolicy = "open";
+  changed = true;
+}
 ```
 
-Field `enabled: false` mặc định → plugin không load, không chiếm resource cho CEO không dùng.
+**IMPORTANT (from O-7):** TẤT CẢ config mutations trong runtime (mode toggle, pause/resume) PHẢI đi qua `writeOpenClawConfigIfChanged()` helper IN-PROCESS, KHÔNG shell out `openclaw config set`. Lý do: CLI subprocess = external write → trigger gateway reload cascade (bug đã thấy trong openzalo v2.3.x "Gateway is restarting" loop). Pattern đã có sẵn trong `main.js`.
 
-### 5.2. Wizard — optional step mới
+### 5.2. Wizard — optional step
 
 File: `electron/ui/wizard.html`
 
-Thêm step 5 (giữa Zalo step 4 và Done step 6): **"Kết nối kênh khác (không bắt buộc)"**
+Thêm step 5 (sau Zalo, trước Done): **"Kết nối kênh khác (không bắt buộc)"**
 
-UI:
 ```
-[Tiêu đề] Kênh khác (không bắt buộc)
-[Mô tả]   Bạn có thể bỏ qua. Kết nối sau từ Dashboard.
+Kênh khác (không bắt buộc)
+Bạn có thể bỏ qua. Kết nối sau từ Dashboard.
 
-⚠️ Lưu ý WhatsApp: Nên dùng SIM có lịch sử >3 tháng. Có thể dùng
-số phụ nếu lo ngại. Không khuyến nghị broadcast, chỉ reply khách.
+Lưu ý WhatsApp:
+ - Nên dùng SIM có lịch sử >3 tháng
+ - Có thể dùng số phụ nếu lo ngại
+ - Không broadcast, chỉ reply khách đến
+ - Filter blocklist/system-event phụ thuộc AI, không đảm bảo 100%
 
-[ ] WhatsApp          [Kết nối]
-[ ] Facebook Messenger (sắp có...)  ← disabled
+[ ] WhatsApp              [Kết nối]
+[ ] Facebook (sắp có...)   disabled
 
 [Bỏ qua] [Tiếp tục]
 ```
 
-Click "Kết nối" → expand inline QR modal (spawn `openclaw channels login whatsapp` subprocess, capture QR từ stdout) → scan xong → state saved → next.
+**QR flow (O-8 block):**
+- Click "Kết nối" → spawn `openclaw channels login --channel whatsapp` subprocess với `shell:false`
+- Monitor stdout stream → detect QR ASCII / base64 / image hint
+- Nếu plugin require TTY (likely vì `qrcode-terminal` in deps) → use `node-pty` to spawn with pseudo-TTY, capture terminal output, convert ASCII QR block → `<pre>` trong modal HTML
+- Verify QR refresh cadence (default ~20s baileys)
+
+**Verification test for O-8 (do first in impl phase):**
+```bash
+openclaw channels login --channel whatsapp --account default
+# Capture: does it emit QR bytes to stdout? Require TTY? Exit when done?
+```
 
 ### 5.3. Dashboard tab
 
 File: `electron/ui/dashboard.html`
 
-**Sidebar item** sau Zalo:
-```
-WhatsApp  [dot-xám "chưa kết nối"] / [dot-xanh "+84xxx"]
-```
-
-**Page `page-whatsapp`** clone structure từ `page-zalo`:
-- Header: tên account (JID normalized E.164) + pause toggle
+Clone `page-zalo` structure:
+- Sidebar item "WhatsApp" với dot state
+- Page header: account name (E.164 from `jidToE164`) + connected since + pause toggle
 - 4 sub-tabs: Liên hệ | Nhóm | Cài đặt | Bộ nhớ
-- Mode selector (Tự động trả lời | Chỉ đọc + tóm tắt cuối ngày)
-- Group default mode dropdown (mention-only | reply-all | off)
-- Blocklist manager + group list với per-group mode override
-- Bộ nhớ tab: list user + group với view modal (icon tài liệu)
+- Mode radio: Tự động trả lời | Chỉ đọc + tóm tắt cuối ngày
+- Group default dropdown: mention-only | reply-all | off
+- Blocklist UI: add/remove JIDs (writes `whatsapp-blocklist.json`, AGENTS.md reads)
+- Group list với per-group mode override
+- Bộ nhớ tab: list user + group files với view modal
 
-Khi `enabled: false` hoặc chưa login → page hiện CTA "Kết nối WhatsApp" → modal QR.
+Khi `enabled: false` hoặc chưa login → CTA "Kết nối WhatsApp" → QR modal.
 
 ### 5.4. Channel readiness probe
-
-File: `electron/main.js`
 
 ```js
 async function probeWhatsAppReady() {
   try {
-    // spawn openclaw CLI: openclaw status --channel whatsapp --json
-    const res = await spawnOpenClawSafe(['status', '--channel', 'whatsapp', '--json'], {
-      timeout: 5000
-    });
+    const res = await spawnOpenClawSafe(
+      ['channels', 'status', '--probe', '--json'],
+      { timeout: 6000 }
+    );
     if (res.exitCode !== 0) return { ready: false, error: 'cli-failed' };
     const data = JSON.parse(res.stdout);
+    const wa = (data.channels || []).find(c => c.id === 'whatsapp');
+    if (!wa) return { ready: false, error: 'not-registered' };
     return {
-      ready: data.connected === true,
-      jid: data.jid,
-      phone: data.phone,
-      lastSeen: data.lastSeen,
-      error: data.connected ? null : data.error
+      ready: wa.connected === true,
+      jid: wa.jid,
+      phone: wa.phone,
+      accountId: wa.accountId || 'default',
+      error: wa.error || null
     };
   } catch (e) {
-    return { ready: false, error: 'probe-failed: ' + e.message };
+    // Fallback: filesystem check
+    try {
+      const authDir = path.join(os.homedir(), '.openclaw', 'oauth', 'whatsapp', 'default');
+      const credsPath = path.join(authDir, 'creds.json');
+      if (fs.existsSync(credsPath)) {
+        const mtime = fs.statSync(credsPath).mtime;
+        if (Date.now() - mtime.getTime() < 7 * 24 * 60 * 60 * 1000) {
+          return { ready: true, error: 'probe-fallback-fs' };
+        }
+      }
+    } catch {}
+    return { ready: false, error: 'probe-failed' };
   }
 }
 ```
 
-Fallback: nếu CLI không có `status` subcommand (khả năng plugin chưa expose), check `hasAnyWhatsAppAuth()` via tiny Node script spawn với plugin require. Third fallback: check `~/.openclaw/oauth/whatsapp/default/creds.json` exist + mtime < 7 ngày.
-
-**OPEN QUESTION O-1:** `openclaw status --channel <x>` có được plugin support không → cần test manual sau khi plugin installed.
-
-Broadcast vào `startChannelStatusBroadcast()` mở rộng từ Telegram+Zalo → triple channel.
+Broadcast extends `startChannelStatusBroadcast()` từ dual → triple channel.
 
 ### 5.5. `sendWhatsApp()` outbound
 
 ```js
 async function sendWhatsApp(text) {
   if (isChannelPaused('whatsapp')) return false;
-  const filtered = filterSensitiveOutput(text);  // 19 shared patterns
+  const filtered = filterSensitiveOutput(text);
   if (!filtered) return false;
 
-  const ownerJid = await getWhatsAppOwnerJid();  // từ creds.json
+  const ownerJid = await getWhatsAppOwnerJid();
   if (!ownerJid) {
-    fs.appendFileSync(path.join(workspace, 'logs', 'ceo-alerts-missed.log'),
-      `${new Date().toISOString()} WhatsApp no owner: ${text.slice(0,200)}\n`);
+    await appendMissedAlert('whatsapp', text);
     return false;
   }
 
-  // WhatsApp text limit ~4096 chars, ta cap 2000 cho an toàn
+  // Rate cap: 100 outbound/hour
+  if (checkWhatsAppRateCap()) {
+    log('[sendWhatsApp] rate cap hit — skip');
+    await appendMissedAlert('whatsapp-rate-capped', text);
+    return false;
+  }
+
   const chunks = splitLongMessage(filtered, 2000);
 
   for (let i = 0; i < chunks.length; i++) {
     try {
-      // random 2-5s delay giữa messages (ban mitigation)
       if (i > 0) await sleep(2000 + Math.random() * 3000);
       const res = await spawnOpenClawSafe([
-        'msg', 'send', 'whatsapp', ownerJid, chunks[i]
-      ], { timeout: 10000 });
-      if (res.exitCode !== 0) throw new Error(res.stderr);
+        'message', 'send',
+        '--channel', 'whatsapp',
+        '--account', 'default',
+        '-t', ownerJid,
+        '-m', chunks[i],
+        '--json'
+      ], { timeout: 10000, allowCmdShellFallback: false });
+      if (res.exitCode !== 0) throw new Error(res.stderr || 'send failed');
+      incrementWhatsAppRateCounter();
     } catch (e) {
       log('[sendWhatsApp] send failed:', e.message);
       return false;
@@ -233,11 +299,32 @@ async function sendWhatsApp(text) {
   }
   return true;
 }
+
+async function getWhatsAppOwnerJid() {
+  // Tier 1: cached from last successful probe
+  if (global._waOwnerJidCache && Date.now() - global._waOwnerJidCache.at < 3600_000) {
+    return global._waOwnerJidCache.jid;
+  }
+  // Tier 2: parse creds.json from auth dir
+  try {
+    const authDir = path.join(os.homedir(), '.openclaw', 'oauth', 'whatsapp', 'default');
+    const credsPath = path.join(authDir, 'creds.json');
+    const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+    const jid = creds.me?.id || creds.account?.details?.accountNumber;
+    if (jid) {
+      global._waOwnerJidCache = { jid, at: Date.now() };
+      return jid;
+    }
+  } catch {}
+  // Tier 3: probe
+  const status = await probeWhatsAppReady();
+  if (status.ready && status.jid) {
+    global._waOwnerJidCache = { jid: status.jid, at: Date.now() };
+    return status.jid;
+  }
+  return null;
+}
 ```
-
-Dùng `spawnOpenClawSafe` (đã có trong main.js) → absolute node path → shell:false → multi-line safe.
-
-**OPEN QUESTION O-2:** `openclaw msg send whatsapp <jid> <text>` — confirm subcommand + args qua `openclaw msg send --help`.
 
 ### 5.6. `sendCeoAlert()` triple channel
 
@@ -246,105 +333,107 @@ async function sendCeoAlert(text) {
   const results = await Promise.allSettled([
     sendTelegram(text),
     sendZalo(text),
-    sendWhatsApp(text)  // NEW
+    sendWhatsApp(text)
   ]);
   const anyOk = results.some(r => r.status === 'fulfilled' && r.value === true);
   if (!anyOk) {
-    fs.appendFileSync(path.join(workspace, 'logs', 'ceo-alerts-missed.log'),
-      `${new Date().toISOString()} ALL CHANNELS FAILED: ${text}\n`);
+    await appendMissedAlert('all-channels-failed', text);
   }
   return anyOk;
 }
 ```
 
-Cron delivery tự hưởng.
+### 5.7. Mode / pause (in-process config mutation)
 
-### 5.7. Native config gates (KHÔNG patch source)
-
-Các filter dưới đây dùng **native plugin config** qua `openclaw config set`:
-
-- **Mode auto/read**: `allowFrom = ["*"]` (auto) hoặc `allowFrom = []` (read, native drop all)
-- **Pause**: tạm thời `allowFrom = []`, resume → restore từ saved state
-- **Group mention-only**: `groupRequireMention = true` (native)
-- **Group reply-all**: `groupRequireMention = false`
-- **Media size limit**: `DEFAULT_WHATSAPP_MEDIA_MAX_MB` native (default 10MB OK)
-
-**Config update flow:**
+**Mode switching:**
 ```js
 async function setWhatsAppMode(mode) {  // 'auto' | 'read'
+  const config = readOpenClawConfig();
+  const acc = config.channels?.whatsapp?.accounts?.default;
+  if (!acc) return false;
+
   if (mode === 'read') {
-    await spawnOpenClawSafe(['config', 'set', 'channels.whatsapp.accounts.default.allowFrom', '[]']);
+    // Save current dmPolicy if not already saved
+    if (!existsSavedDmPolicy('whatsapp')) {
+      saveDmPolicy('whatsapp', acc.dmPolicy || 'open');
+    }
+    acc.dmPolicy = 'disabled';
   } else {
-    await spawnOpenClawSafe(['config', 'set', 'channels.whatsapp.accounts.default.allowFrom', '["*"]']);
+    const saved = loadSavedDmPolicy('whatsapp');
+    acc.dmPolicy = saved || 'open';
+    clearSavedDmPolicy('whatsapp');
   }
+
+  writeOpenClawConfigIfChanged(config);  // byte-equal helper — skip if unchanged
   fs.writeFileSync(path.join(workspace, 'config', 'whatsapp-mode.txt'), mode);
+
+  // Trigger gateway in-process reload via existing heal pattern
+  // (do NOT shell out config set)
 }
 ```
 
-**Reload concern:** `openclaw config set` CLI subprocess = external write → trigger gateway reload (pattern đã thấy trong openzalo bug). Mitigation: batch config updates, wrap trong heal function gọi TRƯỚC gateway start (giống `ensureDefaultConfig`).
+**Pause:**
+```js
+async function pauseWhatsApp(minutes) {
+  // Dual protection:
+  // 1. File-based pause (existing pattern, sendWhatsApp checks)
+  fs.writeFileSync(
+    path.join(workspace, 'config', 'whatsapp-paused.json'),
+    JSON.stringify({ until: Date.now() + minutes * 60000 })
+  );
+  // 2. dmPolicy flip (stops plugin from dispatching inbound to agent at all)
+  //    Save current, set disabled — mirrors setWhatsAppMode('read')
+  const config = readOpenClawConfig();
+  const acc = config.channels?.whatsapp?.accounts?.default;
+  if (acc) {
+    if (!existsSavedDmPolicy('whatsapp-pause')) {
+      saveDmPolicy('whatsapp-pause', acc.dmPolicy || 'open');
+    }
+    acc.dmPolicy = 'disabled';
+    writeOpenClawConfigIfChanged(config);
+  }
+}
 
-### 5.8. JS patches (3 patches only)
-
-Plugin JS không minified → regex anchor matching khả thi. Patches inject code vào `dist/extensions/whatsapp/*.js` files, idempotent qua markers.
-
-**5.8.1. `ensureWhatsAppBlocklistFix()`**
-- Target file: primary inbound handler trong `dist/extensions/whatsapp/*.js` (cần identify exactly — check `action-runtime.runtime.js` hoặc `runtime-api.js`)
-- Inject block ĐẦU inbound handler: đọc `<workspace>/config/whatsapp-blocklist.json`, nếu `senderId` match → return sớm
-- Marker: `// === MODOROClaw WHATSAPP BLOCKLIST PATCH v1 ===`
-
-**5.8.2. `ensureWhatsAppSenderDedupFix()`**
-- Per-sender Map `global.__waSenderDedup` với TTL 3s, pruned 500 entries / 60s
-- Inject ngay sau blocklist patch → chainable
-- Marker: `// === MODOROClaw WHATSAPP DEDUP PATCH v1 ===`
-
-**5.8.3. `ensureWhatsAppSystemMsgFix()`**
-- Check `message.messageStubType` (baileys enum) cho group system events
-- Drop if stubType matches: GROUP_PARTICIPANT_ADD, GROUP_PARTICIPANT_REMOVE, GROUP_PARTICIPANT_LEAVE, GROUP_CHANGE_SUBJECT, GROUP_CHANGE_ICON
-- Marker: `// === MODOROClaw WHATSAPP SYSTEM-MSG PATCH v1 ===`
-
-**5.8.4. Output filter at deliver boundary** (NOT a separate patch, part of sendWhatsApp wrapper)
-- `filterSensitiveOutput(text)` gọi trong `sendWhatsApp()` trước spawn CLI
-- Để pass-through cho inbound reply (khi agent reply trả qua plugin), patch `deliver` callback trong action-runtime.runtime.js tương tự openzalo v4
-- Marker: `// === MODOROClaw WHATSAPP OUTPUT-FILTER PATCH v1 ===`
-
-**Patch locations TBD — cần tarball inspection chi tiết trong plan phase.**
-
-**OPEN QUESTION O-3:** Xác định exact file + anchor string cho 3 patches. Dispatch agent đọc `action-runtime.runtime.js` và inbound handler trong impl plan phase.
-
-### 5.9. Per-user + per-group memory
-
-Clone Zalo implementation:
-- `appendWhatsAppUserSummary(userId, summary)` — pattern `appendPerCustomerSummaries`, trim 50KB cap
-- `appendWhatsAppGroupSummary(groupId, summary)` — trim 50KB cap
-- `seedWorkspace()` tạo `memory/whatsapp-users/`, `memory/whatsapp-groups/`
-
-File content pattern giống Zalo:
-```markdown
----
-id: 84901234567
-name: Nguyễn Văn A
-firstSeen: 2026-04-20
----
-
-## 2026-04-20
-Khách hỏi giá iPhone 15, đã báo 25.9M...
+async function resumeWhatsApp() {
+  try { fs.unlinkSync(path.join(workspace, 'config', 'whatsapp-paused.json')); } catch {}
+  const saved = loadSavedDmPolicy('whatsapp-pause');
+  if (saved) {
+    const config = readOpenClawConfig();
+    const acc = config.channels?.whatsapp?.accounts?.default;
+    if (acc) {
+      acc.dmPolicy = saved;
+      writeOpenClawConfigIfChanged(config);
+      clearSavedDmPolicy('whatsapp-pause');
+    }
+  }
+}
 ```
 
-### 5.10. Watchdog + auto-reconnect
+Persistence files (`whatsapp-saved-dmpolicy.json`) used để save+restore original policy khi unpause/un-read-mode.
 
-Extend existing watchdog loop:
+### 5.8. Memory
+
+Clone Zalo pattern:
+- `appendWhatsAppUserSummary(jid, summary)` → `memory/whatsapp-users/<jid>.md`, trim 50KB
+- `appendWhatsAppGroupSummary(groupJid, summary)` → `memory/whatsapp-groups/<groupJid>.md`, trim 50KB
+- `seedWorkspace()` tạo dirs (both fresh install AND upgrade — `seedWorkspace()` re-run on version bump)
+- Group memory view modal clone từ Zalo
+
+### 5.9. Watchdog + auto-reconnect
+
+Extend watchdog loop (existing pattern, NO cascade kill):
 
 ```js
 const waStatus = await probeWhatsAppReady();
 if (!waStatus.ready && global._waWasConnected) {
   if (!global._waReconnectStartedAt) {
     global._waReconnectStartedAt = Date.now();
-    log('[watchdog] WhatsApp disconnected — silent auto-reconnect...');
+    log('[watchdog] WhatsApp disconnected — silent reconnect');
   }
   const downMs = Date.now() - global._waReconnectStartedAt;
   if (downMs > 5 * 60 * 1000 && !global._waAlertSent) {
     global._waAlertSent = true;
-    await sendTelegram('[Cảnh báo WhatsApp] Kết nối đã mất >5 phút. Có thể cần scan QR lại.');
+    await sendTelegram('[Cảnh báo WhatsApp] Kết nối đã mất >5 phút. Có thể cần scan QR lại. Mở Dashboard > WhatsApp.');
   }
 } else if (waStatus.ready) {
   global._waWasConnected = true;
@@ -353,122 +442,148 @@ if (!waStatus.ready && global._waWasConnected) {
 }
 ```
 
-**KHÔNG kill gateway** khi WhatsApp down (learning từ Zalo watchdog cascade v2.3.43). Log + alert only.
-
-### 5.11. Preload + IPC bridges
-
-File: `electron/preload.js` — 10 bridges mới:
+### 5.10. Preload + IPC (10 bridges)
 
 - `probeWhatsAppReady()`
 - `pauseWhatsApp(minutes)` / `resumeWhatsApp()` / `getWhatsAppPauseStatus()`
-- `getWhatsAppContacts()` / `getWhatsAppGroups()` / `getWhatsAppGroupMemory(groupId)` / `getWhatsAppUserMemory(jid)`
 - `setWhatsAppMode(mode)` / `getWhatsAppMode()`
-- `updateWhatsAppDefaultGroupMode(mode)` / `updateWhatsAppGroupMode(groupId, mode)`
-- `updateWhatsAppBlocklist(jids)`
+- `getWhatsAppContacts()` / `getWhatsAppGroups()` / `getWhatsAppGroupMemory(jid)` / `getWhatsAppUserMemory(jid)`
+- `updateWhatsAppBlocklist(jids)` / `updateWhatsAppGroupMode(jid, mode)` / `updateWhatsAppDefaultGroupMode(mode)`
 - `openWhatsAppQrLogin()` / `logoutWhatsApp()`
 
-### 5.12. AGENTS.md rules
+### 5.11. AGENTS.md rules (v44 → v45)
 
-Extend v44 → v45:
+Section "Kênh WhatsApp":
 
-- Section "Kênh WhatsApp" — rules y hệt Zalo: Vietnamese diacritics, anti-citation, first-greeting idempotency (write-then-send), bot-vs-bot detection (6 signals), pause honoring, system event drop (prose backup to code filter)
-- **Phone-ban mitigation rules**: không gửi duplicate template cho nhiều người trong cùng 5 phút; random delay 2-5s đã handle code-level nhưng AGENTS.md cũng nhắc LLM để vary text tự nhiên
+**Common rules (y hệt Zalo):**
+- Vietnamese có dấu bắt buộc
+- Không trích dẫn "theo tài liệu"
+- First-greeting idempotency (write-then-send)
+- Bot-vs-bot detection (6 signals)
+- Pause: đọc `whatsapp-paused.json`, nếu chưa expire → im lặng
 
-### 5.13. Phone-ban mitigation summary
+**MVP-specific rules (vì không có code gate):**
+- **Blocklist**: đọc `config/whatsapp-blocklist.json`, nếu sender JID trong list → im lặng
+- **System events**: nếu message có hint "X đã được thêm vào nhóm" / "X đã rời nhóm" / group subject/icon changed → im lặng
+- **Duplicate**: nếu thấy tin giống hệt từ cùng sender trong 5 giây gần nhất → chỉ reply 1 lần
+- **Mode read**: đọc `config/whatsapp-mode.txt`, nếu "read" → im lặng (backup to native `dmPolicy: disabled`)
 
-1. Wizard hiển thị warning về SIM history (>3 tháng khuyến nghị, số phụ được accept)
-2. `sendWhatsApp()` random delay 2-5s giữa multi-chunk
-3. Rate limit: max 100 outbound tin/giờ per account (hard cap enforced in sendWhatsApp)
-4. AGENTS.md vary response text tự nhiên, không boilerplate
-5. Plugin `blurb` đã warn "recommend a separate phone + eSIM" — giữ nguyên hiển thị
+### 5.12. Phone-ban mitigation
 
-## 6. Reliability — Rule #1 compliance
+1. Wizard warning card về SIM history
+2. `sendWhatsApp()` random delay 2-5s multi-chunk
+3. Rate cap hard limit 100 outbound/hour/account
+4. AGENTS.md: vary response wording
+5. Plugin `blurb` built-in: "recommend a separate phone + eSIM"
+6. Rate cap overflow → `sendCeoAlert` warn CEO "WhatsApp rate limit approached — consider dedicated number"
 
-- `ensureDefaultConfig()` heal `channels.whatsapp.accounts.default` mỗi boot
-- `ensureWhatsAppBlocklistFix/SenderDedupFix/SystemMsgFix/OutputFilterFix` x4 patches re-apply mỗi `startOpenClaw()`, idempotent qua markers
-- Patches target specific version — khi openclaw update, smoke test check anchor match
-- `seedWorkspace()` tạo `memory/whatsapp-*/`, `config/whatsapp-*` templates
+## 6. Reliability (Rule #1 compliance)
+
+- `ensureDefaultConfig()` heal `channels.whatsapp` mỗi boot (migration guard included)
+- `seedWorkspace()` tạo `memory/whatsapp-*`, `config/whatsapp-*` templates — **re-run on version bump for existing installs** (confirmed in main.js — seedWorkspace idempotent)
+- Runtime config mutations via in-process `writeOpenClawConfigIfChanged` only — NEVER shell out `openclaw config set`
 - `RESET.bat` xóa runtime → `seedWorkspace()` re-seed
-- Smoke test extends: verify plugin version match + anchor strings còn exist trong compiled JS
-- **Pin `@openclaw/whatsapp` version** bằng cách pin openclaw core (đã có trong PINNING.md) — không cho upgrade openclaw mà không re-test WhatsApp
+- Smoke test extends: verify openclaw version pin (existing mechanism via PINNING.md), verify `hasAnyWhatsAppAuth` export exists trong installed plugin (sanity check plugin API intact)
+- **NO patches** in R3 → no anchor fragility, no file discovery, no version drift risk from openclaw upgrades
 
-## 7. Testing strategy
+## 7. Testing
 
-### 7.1. Unit (dev machine)
-- Patch injection idempotency: run each ensure*Fix() 5 lần → file không phình, markers count = 1
-- `sendWhatsApp` split logic: messages 500 / 2500 / 6000 chars → chunk đúng, delay enforced
-- `sendCeoAlert` với 3 channels, simulate 1/2/3 failures
-- Mode switcher: setWhatsAppMode('read') → allowFrom becomes [], restore OK
+### 7.1. Unit
+- `sendWhatsApp` split logic (500/2500/6000 chars) + delay enforcement
+- Rate cap enforcement (100 in 60min → 101st fails)
+- `sendCeoAlert` 3-channel with 0/1/2/3 failures
+- `setWhatsAppMode('read')` → config dmPolicy becomes disabled, saved state correct
+- `setWhatsAppMode('auto')` after read → dmPolicy restored từ saved
+- `pauseWhatsApp(10)` → dmPolicy disabled + file written; `resumeWhatsApp()` → dmPolicy restored + file deleted
 
-### 7.2. Integration (dev WhatsApp test number)
-- Fresh install + skip WhatsApp → onboard OK, sidebar dot "chưa kết nối"
-- Fresh install + tick WhatsApp → scan QR → login → nhắn bot → reply OK
-- Existing install → dashboard click "Kết nối" → modal QR → login → tab populate
-- Mode gate: set read → khách nhắn → bot im lặng, `openclaw.log` show `dropped by allowFrom`
-- Pause: 10 min pause → khách nhắn → bot im → resume → reply
-- Blocklist: add jid → khách nhắn → bot im (JS patch drops)
-- Group: add bot vào group → default mode off → im → đổi mention → chỉ reply khi @ → đổi all → reply mọi tin
-- System event: kick/invite group member → bot KHÔNG reply (JS patch)
+### 7.2. Integration (dev test number)
+- Fresh install skip WhatsApp → onboard OK, sidebar "chưa kết nối"
+- Fresh install connect WhatsApp → QR → login → nhắn bot → reply OK
+- Existing install → click sidebar "Kết nối" → modal QR → login → tab populates
+- Mode read: khách nhắn → bot im lặng; openclaw.log shows plugin dropped via dmPolicy
+- Pause 10m: khách nhắn → bot im; auto-resume sau 10m → reply
+- Group mention-only: @mention → reply; no mention → im (native)
+- Blocklist (LLM rule): add JID → khách nhắn → test bot có respect rule không (known 1-5% FP rate)
 
-### 7.3. Soak test (7 ngày, 1 dev account)
-- Chạy 7 ngày liên tục, restart Electron daily
-- Session persist (không rescan QR)
-- Patches re-apply zero error
-- Memory files không phình >50KB
-- Watchdog false-positive rate <1%
+### 7.3. Soak test (3 ngày, dev account)
+- Continuous 72h, daily Electron restart
+- Session persist OK
+- Memory files ≤50KB
+- No gateway restart storms (verify `openclaw.json.bak*` không spawn)
+- Watchdog alert fires khi manually kill WA session
 
-### 7.4. E2E (1 CEO volunteer — 48h dry run trước public ship)
-- CEO có WhatsApp SIM >6 tháng history
-- Monitor: `ceo-alerts-missed.log`, `security-output-filter.jsonl`, `openclaw.log`
-- Verify triple alert đúng (Telegram + Zalo + WhatsApp cùng nhận boot ping)
-- Ban check: WhatsApp account status sau 48h OK
+### 7.4. E2E (1 CEO volunteer — 48h dry run)
+- CEO có SIM >6 tháng
+- Monitor: `ceo-alerts-missed.log`, `security-output-filter.jsonl`, `openclaw.log`, WhatsApp account status
+- Triple alert verify: Telegram + Zalo + WhatsApp cùng nhận boot ping
 
 ## 8. Rollback
 
 - Branch `feat/whatsapp-optional` từ main
-- Critical bug post-ship:
-  - Soft rollback: auto config patch `channels.whatsapp.enabled = false` → disable WhatsApp, app running
-  - Hard rollback: v2.4.1 revert WhatsApp code
-- Cherry-pick main hotfixes vào branch khi branch đang dev (default pattern)
+- Soft rollback: `ensureDefaultConfig()` patch `channels.whatsapp.enabled = false` qua auto-update
+- Hard rollback: v2.4.1 revert WhatsApp code
+- Cherry-pick main hotfixes vào branch
 
-## 9. Migration — existing installs
+## 9. Migration
 
-- Fresh install: no migration
-- v2.3.x → v2.4.0 upgrade:
+- Fresh install: none needed
+- v2.3.44 → v2.4.0 upgrade:
   1. Auto-update fires
-  2. Restart → `ensureDefaultConfig()` thêm `channels.whatsapp.accounts.default` (enabled:false)
-  3. `seedWorkspace()` tạo `memory/whatsapp-*`, `config/whatsapp-*`
-  4. Dashboard sidebar thêm WhatsApp item "chưa kết nối"
-  5. CEO click khi sẵn sàng, không bị ép
-- Zero disruption Zalo/Telegram existing flow
+  2. Restart → `ensureDefaultConfig()` adds `channels.whatsapp.accounts.default` (enabled:false, dmPolicy:open)
+  3. `seedWorkspace()` adds `memory/whatsapp-*`, `config/whatsapp-*` templates
+  4. Dashboard shows sidebar item "chưa kết nối"
+  5. Zero disruption Zalo/Telegram
 
-## 10. Open questions
+## 10. Open questions (reduced from R2)
 
-**O-1:** `openclaw status --channel whatsapp --json` có support không? Check `openclaw status --help` sau plugin installed. Fallback plan đã có (hasAnyWhatsAppAuth → filesystem check).
+**Must close before impl plan:**
 
-**O-2:** `openclaw msg send whatsapp <jid> <text>` command format + escape rule? Check `openclaw msg send --help` in impl phase.
+**O-A:** `openclaw channels login --channel whatsapp` stdout QR capture — require TTY? Test:
+```bash
+# Run inside Electron-spawned subprocess (not terminal) and check if QR appears
+openclaw channels login --channel whatsapp --account default --json 2>&1
+```
+Outcomes:
+- QR in stdout as ASCII → capture + render in `<pre>` modal
+- QR requires TTY → use `node-pty` with PTY handle
+- QR as PNG file written to disk → read file + convert base64
 
-**O-3:** Exact file location + anchor strings cho 3 patches (blocklist, dedup, system-msg) trong `dist/extensions/whatsapp/*.js`. Dispatch agent đọc `action-runtime.runtime.js`, `runtime-api.js`, `channel-plugin-api.js` trong impl phase.
+**O-B:** `openclaw channels status --probe --json` output format — verify field names (`connected`, `jid`, `phone`, `accountId`) match what my probe code expects. Test:
+```bash
+openclaw channels status --probe --json
+```
 
-**O-4:** `messageStubType` enum values cho group events — reverse từ baileys source (`@whiskeysockets/baileys/lib/Types/Message.ts`).
+**O-C:** Does plugin fire sync/async reload when `dmPolicy` changes in-process vs shell-out? If `writeOpenClawConfigIfChanged()` write triggers file-watcher → reload. Need verification that in-process writes do NOT cascade like CLI subprocess did (pattern từ openzalo v2.3.x fix).
 
-**O-5:** `openclaw config set channels.whatsapp.accounts.default.allowFrom '[]'` array-type CLI syntax OK? Check CLI grammar.
-
-**O-6:** QR refresh cadence khi login (baileys default 20s). Expose trong UI hay chấp nhận baileys default.
-
-**Block impl plan cho đến khi O-1 qua O-5 resolve** (O-6 có default acceptable).
+**Can defer:**
+- Blocklist LLM rule FP rate tuning (observed in production)
+- Per-group allowFrom whitelist UI (v2.4.1 polish)
 
 ## 11. Success criteria
 
-1. Fresh install CEO không dùng WhatsApp → onboard <3 phút, không thấy WhatsApp UI interrupt
-2. Fresh install CEO dùng WhatsApp → scan QR → bot reply trong <5 phút total
-3. Existing v2.3.44 → v2.4.0 upgrade → zero disruption Zalo/Telegram 24h observation
-4. Customer test concurrent WhatsApp + Zalo + Telegram 1 giờ → 0 cross-talk, 0 leak, 0 output filter FP
-5. Watchdog test: kill WhatsApp session → auto-reconnect 30s-5min → KHÔNG kill gateway, KHÔNG disrupt Zalo/Telegram
-6. `ceo-alerts-missed.log` trống sau 7 ngày soak
-7. Smoke test pass fresh + existing install (patch anchors match, openclaw version pinned)
-8. Ban check: 1 CEO 48h dry run → account vẫn OK
+1. Fresh install skip WhatsApp → onboard <3 phút, zero WhatsApp UI interrupt
+2. Fresh install connect WhatsApp → QR → bot reply in <5 min total
+3. v2.3.44 → v2.4.0 upgrade → 24h zero disruption Zalo/Telegram
+4. Concurrent 3-channel (Telegram+Zalo+WhatsApp) 1h → 0 cross-talk, 0 leak
+5. Watchdog kill WhatsApp → auto-reconnect 30s-5min → no gateway kill
+6. `ceo-alerts-missed.log` empty after 72h soak
+7. Smoke test pass (openclaw pin + WhatsApp plugin API intact)
+8. CEO 48h ban check → account remains active
+
+## 12. Timeline
+
+**Week 1 (3 ngày kỹ thuật + 2 ngày UI):**
+- Day 1: `ensureDefaultConfig` schema + wizard step HTML + in-process config mutation helpers
+- Day 2: `probeWhatsAppReady` + `sendWhatsApp` + `sendCeoAlert` triple + rate cap
+- Day 3: Close O-A, O-B, O-C via manual testing; fix findings
+- Day 4-5: Dashboard page + sidebar + 4 sub-tabs (Liên hệ, Nhóm, Cài đặt, Bộ nhớ)
+
+**Week 2 (2 ngày feature + 3 ngày test + ship):**
+- Day 6: AGENTS.md v45 rules + memory handlers + view modal
+- Day 7: Watchdog integration + preload bridges + pause/mode toggle UI
+- Day 8-9: Integration tests + E2E dev account
+- Day 10: Ship v2.4.0 (EXE + Mac DMG)
 
 ---
 
-**Next step:** dispatch spec-document-reviewer subagent lần 2. Fix tất cả HIGH/MED/LOW còn lại. Khi approved, invoke `writing-plans` skill để tạo impl plan.
+**Next step:** close O-A, O-B, O-C qua manual test → dispatch reviewer R3 → approve → invoke writing-plans skill.
