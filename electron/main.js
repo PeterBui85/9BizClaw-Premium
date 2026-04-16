@@ -3792,6 +3792,43 @@ function ensureZaloGroupSettingsFix() {
 // Code-level gate is more reliable than AGENTS.md LLM rule alone.
 // Idempotent via "9BizClaw SYSTEM-MSG PATCH" marker.
 // Injection anchor: RIGHT AFTER blocklist END marker, so it runs FIRST among the post-blocklist
+// Patch openclaw to enable vision for ninerouter provider.
+// 9Router's /v1/models response doesn't include `input: ["image"]` field →
+// openclaw's resolveGatewayModelSupportsImages returns false → images never
+// sent to model. Fix: change the two `return false` to `return true` in the
+// function, making vision default-ON for unknown models. Safe because modern
+// models (GPT 5.x, Qwen, Gemini) all support vision — false negatives are
+// worse than false positives (bot hallucinating vs bot saying "can't see image").
+function ensureVisionFix() {
+  try {
+    const distDir = path.join(getBundledVendorDir() || '', 'node_modules', 'openclaw', 'dist');
+    if (!fs.existsSync(distDir)) return;
+    // Find session-utils-*.js (hash suffix varies per version)
+    const files = fs.readdirSync(distDir).filter(f => f.startsWith('session-utils-') && f.endsWith('.js'));
+    for (const file of files) {
+      const fp = path.join(distDir, file);
+      let src = fs.readFileSync(fp, 'utf-8');
+      if (src.includes('// MODOROClaw VISION PATCH')) continue; // already patched
+      const marker = 'async function resolveGatewayModelSupportsImages(params) {';
+      if (!src.includes(marker)) continue;
+      // Replace the function: default to true for unknown models
+      const patched = src.replace(
+        marker,
+        '// MODOROClaw VISION PATCH — default vision ON for unknown models (9Router proxy)\n' + marker
+      ).replace(
+        /if \(modelEntry\) \{[\s\S]*?return false;\s*\}\s*return false;/,
+        (match) => match.replace(/return false;/g, 'return true;')
+      );
+      if (patched !== src) {
+        fs.writeFileSync(fp, patched, 'utf-8');
+        console.log('[vision-fix] patched', file, '— vision default ON for unknown models');
+      }
+    }
+  } catch (e) {
+    console.warn('[vision-fix] non-fatal:', e?.message);
+  }
+}
+
 // early-exit checks (ensureZaloSystemMsgFix must be called AFTER other ensure* calls so it
 // appears physically FIRST in the file — `replace(anchor, anchor+code)` inserts at top each time).
 function ensureZaloSystemMsgFix() {
@@ -5729,6 +5766,8 @@ async function _startOpenClawImpl() {
   ensureZaloSenderDedupFix();
   // Group settings: read zalo-group-settings.json realtime so Dashboard toggle works instantly.
   ensureZaloGroupSettingsFix();
+  // Vision: patch openclaw to enable image input for ninerouter provider
+  ensureVisionFix();
   // Force-one-message: hardcode disableBlockStreaming=true in openzalo inbound.ts
   // so "Dạ" word never gets split between messages regardless of config drift.
   ensureOpenzaloForceOneMessageFix();
