@@ -12468,10 +12468,19 @@ async function fastWatchdogTick() {
       }
     } else {
       _fwGatewayFailCount = 0;
-      // --- Zalo listener sub-check (only when gateway alive) ---
+      // --- Zalo listener sub-check (only when gateway alive AND Zalo enabled) ---
+      // Skip entirely if openzalo is not enabled — customer may only use Telegram.
+      // Without this guard, watchdog kills a healthy gateway just because there's
+      // no Zalo listener process, causing a restart loop on Telegram-only installs.
+      const _fwZaloEnabled = (() => { try {
+        const _cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
+        return _cfg?.plugins?.entries?.openzalo?.enabled === true || _cfg?.channels?.openzalo?.enabled === true;
+      } catch { return false; } })();
       try {
-        const zlPid = findOpenzcaListenerPid();
-        if (!zlPid) {
+        const zlPid = _fwZaloEnabled ? findOpenzcaListenerPid() : 'skip';
+        if (zlPid === 'skip') {
+          _fwZaloMissCount = 0; // Zalo not enabled, don't accumulate misses
+        } else if (!zlPid) {
           _fwZaloMissCount++;
           if (_fwZaloMissCount >= 2 && _fwCanRestart()) {
             console.log('[fast-watchdog] Zalo listener missing (' + _fwZaloMissCount + ' misses) — restarting gateway');
