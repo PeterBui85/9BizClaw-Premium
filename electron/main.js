@@ -3461,7 +3461,12 @@ async function ensureDefaultConfig() {
       if (tg.groupPolicy !== 'open') { tg.groupPolicy = 'open'; changed = true; }
       // Require @mention in groups so bot only replies when explicitly called.
       // Otherwise bot would forward every group message to AI → huge token waste.
-      if (tg.requireMention !== true) { tg.requireMention = true; changed = true; }
+      // NOTE: requireMention is NOT a valid Telegram schema field in openclaw
+      // 2026.4.14 (it exists for Discord/Slack/Matrix only). Telegram groups
+      // use per-group config via `groups.<id>.requireMention` instead. Writing
+      // it at top level causes "must NOT have additional properties" → gateway
+      // refuses to start. DELETE if present from prior versions.
+      if ('requireMention' in tg) { delete tg.requireMention; changed = true; }
       // History limit: prevent context bloat for CEO who chats 100+ msg/day
       if (!tg.historyLimit || tg.historyLimit > 50) { tg.historyLimit = 50; changed = true; }
       // DEFENSIVE CLEANUP: strip keys that are NOT in the Telegram schema.
@@ -3477,7 +3482,7 @@ async function ensureDefaultConfig() {
         'dmHistoryLimit', 'dms', 'direct', 'textChunkLimit', 'streaming',
         'mediaMaxMb', 'timeoutSeconds', 'retry', 'network', 'webhookUrl',
         'webhookSecret', 'webhookPath', 'webhookHost', 'webhookPort',
-        'webhookCertPath', 'requireMention', 'accounts', 'defaultAccount',
+        'webhookCertPath', 'accounts', 'defaultAccount',
         'profile', 'sendTypingIndicators',
       ]);
       for (const k of Object.keys(tg)) {
