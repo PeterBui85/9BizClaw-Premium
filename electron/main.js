@@ -6115,6 +6115,7 @@ async function _startOpenClawImpl() {
   if (gwReady) {
     const elapsedMs = Date.now() - gwStartMs;
     console.log(`[startOpenClaw] gateway WS ready on :18789 after ${elapsedMs}ms (${probeAttempts} probes)`);
+    global._gatewayStartedAt = Date.now(); // fast watchdog skips first 90s
     auditLog('gateway_ready', { elapsedMs, probeAttempts });
   } else {
     console.log(`[startOpenClaw] gateway WS still not responding after 240s (${probeAttempts} probes). Spawning background monitor.`);
@@ -12312,7 +12313,7 @@ function startFastWatchdog() {
 async function fastWatchdogTick() {
   if (_appIsQuitting || !botRunning) return;
   if (_startOpenClawInFlight || _gatewayRestartInFlight) return;
-  if (_fwTickInFlight) return; // C6: skip if previous tick still running
+  if (_fwTickInFlight) return;
   _fwTickInFlight = true;
 
   try {
@@ -12333,20 +12334,29 @@ async function fastWatchdogTick() {
     }
 
     // --- Gateway watchdog ---
-    const gwAlive = await isGatewayAlive(4000);
+    // Timeout 10s (was 4s — gateway busy with AI completion can take 5-8s
+    // to respond to HTTP probe, causing false-positive "dead" → restart loop).
+    // Also skip if gateway started <90s ago (cold boot takes 30-60s for
+    // plugins + openzca + Telegram long-poll to initialize).
+    if (global._gatewayStartedAt && (Date.now() - global._gatewayStartedAt) < 90000) {
+      // Gateway still booting — skip watchdog this tick
+      return;
+    }
+    const gwAlive = await isGatewayAlive(10000);
     if (!gwAlive) {
       _fwGatewayFailCount++;
       if (_fwGatewayFailCount === 1) {
         // First fail — recheck after 3s
         await new Promise(r => setTimeout(r, FW_RECHECK_MS));
-        const gwAlive2 = await isGatewayAlive(4000);
+        const gwAlive2 = await isGatewayAlive(10000);
         if (gwAlive2) {
           _fwGatewayFailCount = 0;
           return;
         }
       }
-      // 2 consecutive fails — restart (C2: set _gatewayRestartInFlight)
-      if (_fwGatewayFailCount >= 2 && _fwCanRestart()) {
+      // 3 consecutive fails — restart (was 2, but gateway busy with AI
+      // completion can timeout 2 probes in a row without being dead)
+      if (_fwGatewayFailCount >= 3 && _fwCanRestart()) {
         console.log('[fast-watchdog] Gateway dead (' + _fwGatewayFailCount + ' fails) — restarting');
         _fwGatewayFailCount = 0;
         _fwRestartTimestamps.push(Date.now());
