@@ -3370,14 +3370,12 @@ async function ensureDefaultConfig() {
       if (!oz.allowFrom) { oz.allowFrom = ['*']; changed = true; }
       if (!oz.groupPolicy) { oz.groupPolicy = 'open'; changed = true; }
       if (!oz.groupAllowFrom) { oz.groupAllowFrom = ['*']; changed = true; }
-      // Disable BLOCK streaming — prevents coalesce idleMs flush mid-word (the
-      // root cause of "Dạ" → "D" + "ạ" split). Note: openzalo schema does NOT
-      // have a `streaming` field (only Telegram/Slack/Discord do). Adding it
-      // breaks validation: `channels.openzalo: must NOT have additional
-      // properties`. Openzalo's one-message guarantee comes from the source
-      // patch in ensureOpenzaloForceOneMessageFix (hardcoded
-      // disableBlockStreaming:true in inbound.ts).
-      if (oz.blockStreaming !== false) { oz.blockStreaming = false; changed = true; }
+      // DELETE legacy streaming keys — openclaw 2026.4.14 rejects them.
+      // Openzalo one-message guarantee comes from ensureOpenzaloForceOneMessageFix
+      // (hardcoded disableBlockStreaming:true in inbound.ts), not config.
+      for (const legacyKey of ['blockStreaming', 'streamMode', 'draftChunk', 'blockStreamingCoalesce']) {
+        if (legacyKey in oz) { delete oz[legacyKey]; changed = true; }
+      }
       // History limits: prevent context window bloat over weeks of chat.
       // historyLimit = max messages kept per group thread (default unlimited → OOM after weeks)
       // dmHistoryLimit = max messages kept per DM thread
@@ -3398,8 +3396,8 @@ async function ensureDefaultConfig() {
         'name', 'enabled', 'profile', 'zcaBinary', 'acpx', 'markdown',
         'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom', 'groups',
         'historyLimit', 'dmHistoryLimit', 'textChunkLimit', 'chunkMode',
-        'blockStreaming', 'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
-        'threadBindings', 'actions', 'accounts', 'defaultAccount',
+        'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
+        'threadBindings', 'actions', 'accounts', 'defaultAccount', 'streaming',
       ]);
       for (const k of Object.keys(oz)) {
         if (!OPENZALO_VALID_FIELDS.has(k)) {
@@ -3434,14 +3432,28 @@ async function ensureDefaultConfig() {
         }
       }
     } catch (e) { console.warn('[config] plugin hard-off sync failed:', e?.message); }
-    // Telegram — disable both block streaming AND preview streaming so bot
-    // replies arrive as exactly 1 complete message, never split. Telegram
-    // schema DOES support `streaming` field ("off"|"partial"|"block"|"progress").
+    // Telegram — disable streaming so bot replies arrive as exactly 1 complete
+    // message, never split. openclaw 2026.4.14 moved streaming config from scalar
+    // keys (blockStreaming, streaming:"off") to nested object:
+    //   streaming.mode = "off"
+    //   streaming.block.enabled = false
+    // Old scalar keys are REJECTED by validator ("must NOT have additional properties").
     if (!config.channels.telegram) config.channels.telegram = {};
     {
       const tg = config.channels.telegram;
-      if (tg.blockStreaming !== false) { tg.blockStreaming = false; changed = true; }
-      if (tg.streaming !== 'off') { tg.streaming = 'off'; changed = true; }
+      // DELETE legacy keys that cause "invalid config" rejection
+      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce']) {
+        if (legacyKey in tg) { delete tg[legacyKey]; changed = true; }
+      }
+      // Migrate scalar `streaming: "off"` → nested object
+      if (typeof tg.streaming === 'string' || tg.streaming === undefined) {
+        tg.streaming = { mode: 'off', block: { enabled: false } };
+        changed = true;
+      } else if (tg.streaming && typeof tg.streaming === 'object') {
+        if (tg.streaming.mode !== 'off') { tg.streaming.mode = 'off'; changed = true; }
+        if (!tg.streaming.block) tg.streaming.block = {};
+        if (tg.streaming.block.enabled !== false) { tg.streaming.block.enabled = false; changed = true; }
+      }
       // Group policy: "open" lets bot reply in ANY group it's added to (no
       // allowlist gate). Default openclaw is "allowlist" which blocks all groups
       // until manually configured → CEO adds bot to group, @mentions, bot
@@ -11850,6 +11862,15 @@ async function probeZaloReady() {
     const listenerPid = processPid || ownerPid || null;
 
     if (!processPid && !ownerPid) {
+      // BOOT GRACE: During the first 60s after gateway start, openzca hasn't
+      // spawned yet. Don't show scary "session expired" — show "đang khởi động".
+      // Without this, boot fast-poll at 500ms hits this path, sees cookie maxAge
+      // expired (Zalo session cookie has maxAge=3600 but openzca keeps it alive
+      // via WebSocket without rewriting the file), and flashes "hết hạn" briefly.
+      const bootGraceMs = 60000;
+      const gatewayStartedAt = global._gatewayStartedAt || 0;
+      const inBootGrace = gatewayStartedAt && (Date.now() - gatewayStartedAt < bootGraceMs);
+
       // Listener is not running. Check WHY and return the most actionable
       // error message. Credentials/expiry checks go HERE (fallback
       // diagnostics), not at the top — they previously caused false-positive
@@ -11859,9 +11880,22 @@ async function probeZaloReady() {
         return {
           ready: false,
           reason: 'no-credentials',
-          error: 'Chưa đăng nhập Zalo. Vào tab Zalo bấm "Đổi tài khoản" để quét QR.',
+          error: inBootGrace
+            ? 'Zalo đang khởi động...'
+            : 'Chưa đăng nhập Zalo. Vào tab Zalo bấm "Đổi tài khoản" để quét QR.',
         };
       }
+
+      // During boot grace, skip cookie expiry check entirely — just say "đang khởi động"
+      if (inBootGrace) {
+        return {
+          ready: false,
+          reason: 'boot-grace',
+          error: 'Zalo đang khởi động...',
+          cacheAgeMin,
+        };
+      }
+
       // Parse cookie for expiry as a hint, but only if listener is NOT running.
       // If cookies are expired AND listener is down, user must re-login.
       // If cookies are expired BUT listener is up, we already returned ready above.
