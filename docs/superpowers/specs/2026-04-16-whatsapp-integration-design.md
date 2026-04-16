@@ -5,13 +5,20 @@
 **Est:** 2 tuần dev + 3 ngày test + ship
 **Author:** devops@modoro.com.vn
 **Date:** 2026-04-16
-**Revision:** 3 (MVP scope — drop all source patches, native config only)
+**Revision:** 3.1 (R3 review corrections — probe shape + dmPolicy enum)
 
 ## Revision history
 
 - **R1:** Rejected. Assumed TS source patching (plugin ships JS).
 - **R2:** Rejected. 4 new HIGH: fake CLI commands, wrong patch target, `allowFrom=[]` semantic conflict with `dmPolicy`.
 - **R3:** MVP scope cut. Drop all JS patches (blocklist/dedup/system-msg/output-filter). Native plugin config only. LLM rule fallback for 3 edge cases.
+- **R3.1:** R3 review corrections applied:
+  - Probe output shape: `channelAccounts.whatsapp[]` (NOT top-level `channels[]`)
+  - DmPolicy enum values: `"pairing" | "allowlist" | "open" | "disabled"` (no `"all"`)
+  - `dmPolicy: "open"` REQUIRES `allowFrom: ["*"]` (validator `requireOpenAllowFrom` rejects empty)
+  - Default `groupPolicy` is `"allowlist"`, not `"open"`
+  - QR capture: plain stdout works — `connection-controller-*.js` sets `printQRInTerminal:false`, QR flows through `opts.onQr?.(qr)` callback, no TTY needed. `node-pty` dropped.
+  - O-C priority bumped: concrete pause-queue test required Day 1 (does `dmPolicy: "disabled"` prevent inbound dispatch, or just defer with queued burst on resume?)
 
 ## 1. Goal
 
@@ -146,11 +153,11 @@ if (!config.channels.whatsapp) {
     accounts: {
       default: {
         enabled: false,
-        dmPolicy: "open",      // chính thức gate; "disabled" khi mode=read/pause
-        allowFrom: [],         // empty = allow all (plugin semantics verified)
+        dmPolicy: "pairing",       // plugin default; flip to "open" post-login if CEO wants open-DM
+        allowFrom: ["*"],          // REQUIRED when dmPolicy="open" (validator requireOpenAllowFrom)
         groupRequireMention: false,
-        groupAllowFrom: [],    // empty = allow all groups
-        groupPolicy: "open"
+        groupAllowFrom: ["*"],     // mirror allowFrom pattern
+        groupPolicy: "allowlist"   // plugin default (NOT "open" — would trigger validator)
       }
     }
   };
@@ -228,15 +235,18 @@ async function probeWhatsAppReady() {
     );
     if (res.exitCode !== 0) return { ready: false, error: 'cli-failed' };
     const data = JSON.parse(res.stdout);
-    const wa = (data.channels || []).find(c => c.id === 'whatsapp');
-    if (!wa) return { ready: false, error: 'not-registered' };
+    // Gateway payload shape: { channelAccounts: { whatsapp: [{ accountId, connected, ... }] } }
+    const accounts = data.channelAccounts?.whatsapp || [];
+    const acc = accounts.find(a => (a.accountId || 'default') === 'default');
+    if (!acc) return { ready: false, error: 'not-configured' };
     return {
-      ready: wa.connected === true,
-      jid: wa.jid,
-      phone: wa.phone,
-      accountId: wa.accountId || 'default',
-      error: wa.error || null
+      ready: acc.connected === true,
+      accountId: acc.accountId || 'default',
+      probe: acc.probe,          // plugin-specific sub-fields live here
+      dmPolicy: acc.dmPolicy,
+      error: acc.lastError || null
     };
+    // jid/phone derived separately from creds.json (see getWhatsAppOwnerJid, Tier 2)
   } catch (e) {
     // Fallback: filesystem check
     try {
@@ -538,22 +548,30 @@ Section "Kênh WhatsApp":
 
 **Must close before impl plan:**
 
-**O-A:** `openclaw channels login --channel whatsapp` stdout QR capture — require TTY? Test:
+**O-A (LOW after R3.1):** `openclaw channels login --channel whatsapp` stdout QR capture.
+
+Evidence from `connection-controller-*.js`: `printQRInTerminal: false`, QR emitted via `opts.onQr?.(qr)` callback, CLI path uses plain `console.log` + `qrcode-terminal.generate`. Plain stdout pipe should work — no TTY needed. Verify:
 ```bash
-# Run inside Electron-spawned subprocess (not terminal) and check if QR appears
-openclaw channels login --channel whatsapp --account default --json 2>&1
+# From Electron subprocess (spawn with shell:false, stdio piped)
+openclaw channels login --channel whatsapp --account default
 ```
-Outcomes:
-- QR in stdout as ASCII → capture + render in `<pre>` modal
-- QR requires TTY → use `node-pty` with PTY handle
-- QR as PNG file written to disk → read file + convert base64
+Expected: ASCII QR block in stdout, refresh ~20s. Capture → render in `<pre>` modal.
+Fallback only if surprise: PNG file in auth dir.
 
 **O-B:** `openclaw channels status --probe --json` output format — verify field names (`connected`, `jid`, `phone`, `accountId`) match what my probe code expects. Test:
 ```bash
 openclaw channels status --probe --json
 ```
 
-**O-C:** Does plugin fire sync/async reload when `dmPolicy` changes in-process vs shell-out? If `writeOpenClawConfigIfChanged()` write triggers file-watcher → reload. Need verification that in-process writes do NOT cascade like CLI subprocess did (pattern từ openzalo v2.3.x fix).
+**O-C (HIGH — MUST close Day 1):** Two sub-questions:
+
+1. **Reload cascade**: Does `writeOpenClawConfigIfChanged()` in-process trigger gateway file-watcher reload? If yes, every mode/pause toggle cascades restart (bug pattern openzalo v2.3.x). Verify: instrument gateway logs, toggle `dmPolicy` in-process 3 times, confirm no `restart-pending` / `gateway-reload` events fire. If cascade exists, need to batch updates inside `startOpenClaw()` pre-spawn instead of hot-toggle.
+
+2. **dmPolicy=disabled pre-dispatch vs post-dispatch**: Does plugin block inbound BEFORE dispatch to agent (clean pause), or queue + deliver on resume (burst-reply risk)? Concrete test:
+   - Set `dmPolicy: "disabled"` (pause)
+   - Send 3 inbound messages from test number → verify zero agent activity in logs
+   - Set `dmPolicy: "open"` (resume) with allowFrom=["*"]
+   - Verify: NO burst reply to the 3 queued messages (clean pause) OR burst fires (need alternate pause mechanism via AGENTS.md file + file-based pause check in sendWhatsApp wrapper only, accept that inbound reaches agent but agent stays silent per rule)
 
 **Can defer:**
 - Blocklist LLM rule FP rate tuning (observed in production)
