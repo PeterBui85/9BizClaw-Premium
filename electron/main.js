@@ -3739,9 +3739,9 @@ function ensureZaloGroupSettingsFix() {
     // Marker v5: mode="all" now bypasses plugin's default requireMention=true
     // by injecting botUserId into message.mentionIds (plugin sees bot mentioned
     // → gate passes → every group message reaches AI as user intended).
-    if (content.includes('9BizClaw GROUP-SETTINGS PATCH v5')) return;
+    if (content.includes('9BizClaw GROUP-SETTINGS PATCH v6')) return;
 
-    // Strip ANY old v1-v4 block before re-injecting v5 so the mode=all bypass applies.
+    // Strip ANY old v1-v5 block before re-injecting v6 so __default fallback applies.
     if (content.includes('9BizClaw GROUP-SETTINGS PATCH')) {
       const oldStart = content.indexOf('  // === 9BizClaw GROUP-SETTINGS PATCH');
       const oldEnd = content.indexOf('  // === END 9BizClaw GROUP-SETTINGS PATCH ===');
@@ -3766,7 +3766,7 @@ function ensureZaloGroupSettingsFix() {
     // Missing entry → openzalo default mention-gated behavior (safer — bot
     //   just added to unknown group shouldn't auto-reply to everything).
     const injection = `
-  // === 9BizClaw GROUP-SETTINGS PATCH v5 ===
+  // === 9BizClaw GROUP-SETTINGS PATCH v6 ===
   if (message.isGroup) {
     try {
       const __gsFs = require("node:fs");
@@ -3791,7 +3791,7 @@ function ensureZaloGroupSettingsFix() {
         try {
           if (!__gsFs.existsSync(__gp)) continue;
           const __gsRaw = JSON.parse(__gsFs.readFileSync(__gp, "utf-8"));
-          const __gsEntry = __gsRaw[__gsThreadId];
+          const __gsEntry = __gsRaw[__gsThreadId] || __gsRaw.__default;
           if (__gsEntry && __gsEntry.mode === "off") {
             runtime.log?.(\`openzalo: group \${__gsThreadId} disabled via dashboard settings\`);
             return;
@@ -3841,7 +3841,7 @@ function ensureZaloGroupSettingsFix() {
 `;
     content = content.replace(anchor, anchor + injection);
     _writeInboundTs(pluginFile, content);
-    console.log('[zalo-group-settings-fix] Injected v5 group settings check (off + tight-mention + mode=all bypass)');
+    console.log('[zalo-group-settings-fix] Injected v6 group settings check (off + tight-mention + mode=all bypass + __default fallback)');
   } catch (e) {
     console.error('[zalo-group-settings-fix] error:', e?.message || e);
   }
@@ -4225,6 +4225,87 @@ function ensureZaloPauseFix() {
     console.log('[zalo-pause-fix] Injected pause check into inbound.ts');
   } catch (e) {
     console.error('[zalo-pause-fix] error:', e.message);
+  }
+}
+
+// 9BizClaw ZALO-MODE PATCH: Code-level enforcement of the 3 Zalo modes
+// (auto/read/daily). Previously mode was only an AGENTS.md prompt instruction
+// which the LLM could ignore. Now: if mode is "read" or "daily", inbound.ts
+// returns early BEFORE the message reaches the AI pipeline. Bot literally
+// cannot reply — it's not a suggestion, it's a hard gate.
+//
+// "auto" = normal behavior (reply to customers)
+// "read" = drop message silently (CEO reads via Telegram escalation/logs)
+// "daily" = drop message silently (CEO gets summary via cron, not per-message)
+//
+// Reads config/zalo-mode.txt at runtime. File missing or "auto" = pass through.
+// Anchor: after PAUSE PATCH end marker.
+function ensureZaloModeFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = _readInboundTs(pluginFile);
+    const MARKER = '9BizClaw ZALO-MODE PATCH v1';
+    if (content.includes(MARKER)) return;
+    // Strip old version if exists
+    if (content.includes('9BizClaw ZALO-MODE PATCH')) {
+      content = content.replace(/\n\n  \/\/ === 9BizClaw ZALO-MODE PATCH ===[\s\S]*?\/\/ === END 9BizClaw ZALO-MODE PATCH ===/m, '');
+    }
+    const anchor = '  // === END 9BizClaw PAUSE PATCH ===';
+    if (!content.includes(anchor)) {
+      console.warn('[zalo-mode-fix] pause patch anchor missing — skipping');
+      return;
+    }
+    const injection = `
+
+  // === 9BizClaw ZALO-MODE PATCH === ${MARKER}
+  // Code-level enforcement: if CEO set mode to "read" or "daily",
+  // drop ALL inbound Zalo messages before AI pipeline. Not a prompt hint.
+  if (!message.isGroup || message.isGroup) {
+    try {
+      const __zmFs = require("node:fs");
+      const __zmPath = require("node:path");
+      const __zmOs = require("node:os");
+      const __zmHome = __zmOs.homedir();
+      const __zmAppDir = "9bizclaw";
+      const __zmCandidates: string[] = [];
+      if (process.env['9BIZ_WORKSPACE']) {
+        __zmCandidates.push(__zmPath.join(process.env['9BIZ_WORKSPACE'], "config", "zalo-mode.txt"));
+      }
+      if (process.platform === "darwin") {
+        __zmCandidates.push(__zmPath.join(__zmHome, "Library", "Application Support", __zmAppDir, "config", "zalo-mode.txt"));
+      } else if (process.platform === "win32") {
+        const __zmAd = process.env.APPDATA || __zmPath.join(__zmHome, "AppData", "Roaming");
+        __zmCandidates.push(__zmPath.join(__zmAd, __zmAppDir, "config", "zalo-mode.txt"));
+      } else {
+        const __zmCfg = process.env.XDG_CONFIG_HOME || __zmPath.join(__zmHome, ".config");
+        __zmCandidates.push(__zmPath.join(__zmCfg, __zmAppDir, "config", "zalo-mode.txt"));
+      }
+      __zmCandidates.push(__zmPath.join(__zmHome, ".openclaw", "workspace", "config", "zalo-mode.txt"));
+      let __zmMode = "auto";
+      for (const __zmP of __zmCandidates) {
+        try {
+          if (__zmFs.existsSync(__zmP)) {
+            __zmMode = __zmFs.readFileSync(__zmP, "utf-8").trim() || "auto";
+            break;
+          }
+        } catch {}
+      }
+      if (__zmMode === "read" || __zmMode === "daily") {
+        runtime.log?.(\`openzalo: zalo-mode=\${__zmMode} — dropping message (code-level gate)\`);
+        return;
+      }
+    } catch (__zmErr) {
+      runtime.log?.(\`openzalo: zalo-mode check error: \${String(__zmErr)}\`);
+    }
+  }
+  // === END 9BizClaw ZALO-MODE PATCH ===`;
+
+    content = content.replace(anchor, anchor + injection);
+    _writeInboundTs(pluginFile, content);
+    console.log('[zalo-mode-fix] Injected zalo-mode code-level gate into inbound.ts');
+  } catch (e) {
+    console.error('[zalo-mode-fix] error:', e?.message);
   }
 }
 
@@ -5863,6 +5944,7 @@ async function _startOpenClawImpl() {
   }
   ensureZaloBlocklistFix();
   ensureZaloPauseFix();
+  ensureZaloModeFix(); // code-level gate: read/daily mode → drop message before AI
   ensureZaloFriendCheckFix();
   ensureZaloOwnerFix();
   ensureZaloSystemMsgFix();

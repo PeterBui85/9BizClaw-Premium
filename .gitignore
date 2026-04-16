@@ -62,11 +62,43 @@ modoroclaw-mac.zip
 modoroclaw-mac-portable*.zip
 Huong-dan-cai-MODOROClaw-Mac.docx
 
-# Screenshots — keep out of repo (app icons exempted)
+# Screenshots + non-code files
 dashboard-*.png
 wizard-*.png
 screenshot-*.png
+*.png
+!electron/build/icon.png
+!electron/ui/tray-icon.png
 *.xlsx
-make-features-xlsx.py
-scripts/update-features-xlsx.py
-tools/security/*.py
+*.dmp
+*.py
+
+# Dev scripts — not part of app
+RESET.bat
+RESET.command
+RUN.bat
+RUN.command
+SOFT-RESET.bat
+USER-RESET.bat
+push-to-mac-repo.bat
+release-windows.bat
+scripts/backup.sh
+scripts/setup.sh
+
+# Dev docs — not part of app
+DESIGN-SYSTEM.md
+RELEASE-STRATEGY.md
+SECURITY-PLAN.md
+README-MAC.md
+Hierarchical-Memory-System.txt
+reflections/
+
+# Tool caches
+graphify-out/
+.graphify_python
+.graphifyignore
+.playwright-mcp/
+
+# Root package.json (app is in electron/)
+/package.json
+/package-lock.json

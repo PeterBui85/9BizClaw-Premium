@@ -54,12 +54,10 @@
       font-weight: 500;
       letter-spacing: 0.01em;
       color: var(--zs-text-muted, #6b7280);
-      background: var(--zs-surface-alt, #f5f5f7);
+      background: var(--zs-surface-alt, rgba(245,245,247,0.85));
       border: 1px solid var(--zs-border, rgba(0,0,0,0.08));
       border-radius: 999px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
-      backdrop-filter: saturate(180%) blur(10px);
-      -webkit-backdrop-filter: saturate(180%) blur(10px);
       pointer-events: none;
       user-select: none;
     }
@@ -71,8 +69,8 @@
       border-radius: 50%;
       background: var(--zs-brand, #dc2626);
       margin-right: 8px;
-      animation: gw-pulse 1.2s infinite ease-in-out;
     }
+    .gw-active .gw-boot-dot { animation: gw-pulse 1.2s infinite ease-in-out; }
     @keyframes gw-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 
     /* Activity panel */
@@ -2251,9 +2249,8 @@
             <div class="zs-section">
               <label class="zs-label">Chế độ trả lời</label>
               <select id="zalo-mode-select" class="zs-select" onchange="changeZaloMode(this.value)">
-                <option value="auto">Tự động trả lời</option>
-                <option value="read">Chỉ đọc — báo Telegram</option>
-                <option value="daily">Tóm tắt cuối ngày</option>
+                <option value="auto">T\u1EF1 \u0111\u1ED9ng tr\u1EA3 l\u1EDDi</option>
+                <option value="read">Ch\u1EC9 \u0111\u1ECDc + t\u00F3m t\u1EAFt cu\u1ED1i ng\u00E0y</option>
               </select>
               <div id="zalo-mode-status" style="display:none;margin-top:4px"><div class="test-result success" style="margin:0;font-size:11px">Đã cập nhật</div></div>
             </div>
@@ -2297,6 +2294,14 @@
                   <button class="btn btn-secondary btn-small" style="padding:4px 10px;font-size:11px" onclick="setAllGroupsMode('mention')">Bật tất cả</button>
                   <button class="btn btn-secondary btn-small" style="padding:4px 10px;font-size:11px" onclick="setAllGroupsMode('off')">Tắt tất cả</button>
                 </div>
+              </div>
+              <div style="margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;gap:10px">
+                <span style="font-size:12px;font-weight:600;white-space:nowrap">Nh\u00F3m m\u1EDBi:</span>
+                <select id="zalo-default-group-mode" onchange="updateDefaultGroupMode(this.value)" style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px;background:var(--bg);color:var(--text)">
+                  <option value="mention">@mention</option>
+                  <option value="all">M\u1ECDi tin</option>
+                  <option value="off">T\u1EAFt</option>
+                </select>
               </div>
               <input type="text" class="zalo-mgr-search" id="zalo-mgr-group-search" placeholder="Tìm nhóm..." oninput="renderZaloGroups()" style="flex-shrink:0">
               <div class="zalo-list-container">
@@ -4326,6 +4331,8 @@
       document.getElementById('zalo-mgr-enabled').checked = zaloMgrConfig.enabled !== false;
       const spEl = document.getElementById('zalo-stranger-policy');
       if (spEl) spEl.value = zaloMgrConfig.strangerPolicy || 'reply';
+      const defModeEl = document.getElementById('zalo-default-group-mode');
+      if (defModeEl) defModeEl.value = (zaloMgrConfig.groupSettings && zaloMgrConfig.groupSettings.__default && zaloMgrConfig.groupSettings.__default.mode) || 'mention';
       updateBlockedCount();
       renderZaloGroups();
       renderZaloFriends();
@@ -4335,11 +4342,12 @@
       const preserveDraft = !!opts.preserveDraft;
       try {
         const draft = preserveDraft && zaloDataLoaded ? getCurrentZaloManagerDraft() : null;
+        const _zTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
         const [friends, groups, config, groupSums] = await Promise.all([
-          window.claw.listZaloFriends(),
-          window.claw.listZaloGroups(),
-          window.claw.getZaloManagerConfig(),
-          window.claw.getZaloGroupSummaries().catch(() => ({})),
+          _zTimeout(window.claw.listZaloFriends(), 3000).catch(() => []),
+          _zTimeout(window.claw.listZaloGroups(), 3000).catch(() => []),
+          _zTimeout(window.claw.getZaloManagerConfig(), 3000).catch(() => null),
+          _zTimeout(window.claw.getZaloGroupSummaries(), 3000).catch(() => ({})),
         ]);
         zaloFriends = friends || [];
         zaloGroups = groups || [];
@@ -4554,6 +4562,12 @@
       }
     }
 
+    function updateDefaultGroupMode(mode) {
+      if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
+      zaloMgrConfig.groupSettings.__default = { mode };
+      autoSaveZaloManager();
+    }
+
     function setGroupMode(groupId, mode) {
       if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
       zaloMgrConfig.groupSettings[groupId] = { mode };
@@ -4606,6 +4620,62 @@
       renderZaloGroups();
     }
 
+    const ZALO_FRIENDS_PAGE_SIZE = 30;
+    let _zaloFriendsSorted = [];
+    let _zaloFriendsRendered = 0;
+    function _renderFriendItem(f) {
+      const blocked = (zaloMgrConfig.userBlocklist || []).includes(f.userId);
+      const checked = !blocked;
+      const avatarHtml = f.avatar
+        ? `<img class="zc-avatar" src="${esc(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
+        : `<span class="zc-avatar-fallback">${icon('user', 16)}</span>`;
+      const stateClass = blocked ? 'zc-state-off' : 'zc-state-on';
+      const badgeLabel = blocked ? 'T\u1EAFt' : 'B\u1EADt';
+      const lastAct = f.lastActionTime ? new Date(f.lastActionTime) : null;
+      const lastActLabel = lastAct ? (() => {
+        const diff = Date.now() - lastAct.getTime();
+        if (diff < 3600000) return Math.floor(diff/60000) + ' ph\u00FAt tr\u01B0\u1EDBc';
+        if (diff < 86400000) return Math.floor(diff/3600000) + ' gi\u1EDD tr\u01B0\u1EDBc';
+        if (diff < 604800000) return Math.floor(diff/86400000) + ' ng\u00E0y tr\u01B0\u1EDBc';
+        return lastAct.toLocaleDateString('vi');
+      })() : '';
+      const metaParts = [];
+      if (f.phoneNumber) metaParts.push(f.phoneNumber);
+      if (lastActLabel) metaParts.push(lastActLabel);
+      return `<div class="zc ${stateClass}">
+          ${avatarHtml}
+          <div class="zc-body">
+            <div class="zc-name">${esc(f.displayName)}<span class="zc-badge">${badgeLabel}</span></div>
+            ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' \u00B7 '))}</div>` : ''}
+          </div>
+          <div class="zc-actions">
+            <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem h\u1ED3 s\u01A1">${icon('file-text', 14)}</button>
+            <label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
+          </div>
+        </div>`;
+    }
+    function _renderMoreFriends() {
+      const list = document.getElementById('zalo-mgr-friends-list');
+      const nextBatch = _zaloFriendsSorted.slice(_zaloFriendsRendered, _zaloFriendsRendered + ZALO_FRIENDS_PAGE_SIZE);
+      const oldBtn = document.getElementById('zalo-friends-load-more');
+      if (oldBtn) oldBtn.remove();
+      const fragment = document.createDocumentFragment();
+      const tmp = document.createElement('div');
+      tmp.innerHTML = nextBatch.map(f => _renderFriendItem(f)).join('');
+      while (tmp.firstChild) fragment.appendChild(tmp.firstChild);
+      _zaloFriendsRendered += nextBatch.length;
+      if (_zaloFriendsRendered < _zaloFriendsSorted.length) {
+        const remaining = _zaloFriendsSorted.length - _zaloFriendsRendered;
+        const btn = document.createElement('button');
+        btn.id = 'zalo-friends-load-more';
+        btn.className = 'btn btn-secondary';
+        btn.style.cssText = 'width:100%;margin-top:8px;padding:10px';
+        btn.textContent = 'Xem th\u00EAm ' + Math.min(remaining, ZALO_FRIENDS_PAGE_SIZE) + ' / ' + remaining + ' user c\u00F2n l\u1EA1i';
+        btn.onclick = _renderMoreFriends;
+        fragment.appendChild(btn);
+      }
+      list.appendChild(fragment);
+    }
     function renderZaloFriends() {
       const list = document.getElementById('zalo-mgr-friends-list');
       const q = (document.getElementById('zalo-mgr-friend-search').value || '').toLowerCase();
@@ -4613,50 +4683,18 @@
         (f.displayName || '').toLowerCase().includes(q)
       );
       if (filtered.length === 0) {
-        list.innerHTML = '<div class="zalo-mgr-empty">Không tìm thấy user.</div>';
+        list.innerHTML = '<div class="zalo-mgr-empty">Kh\u00F4ng t\u00ECm th\u1EA5y user.</div>';
         return;
       }
-      // Sort: blocked users sink to bottom, rest alphabetical
-      const sorted = [...filtered].sort((a, b) => {
+      _zaloFriendsSorted = [...filtered].sort((a, b) => {
         const aBlocked = (zaloMgrConfig.userBlocklist || []).includes(a.userId);
         const bBlocked = (zaloMgrConfig.userBlocklist || []).includes(b.userId);
         if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
         return (a.displayName || '').localeCompare(b.displayName || '');
       });
-      list.innerHTML = sorted.slice(0, 500).map(f => {
-        const blocked = (zaloMgrConfig.userBlocklist || []).includes(f.userId);
-        const checked = !blocked;
-        const avatarHtml = f.avatar
-          ? `<img class="zc-avatar" src="${esc(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
-          : `<span class="zc-avatar-fallback">${icon('user', 16)}</span>`;
-        const stateClass = blocked ? 'zc-state-off' : 'zc-state-on';
-        const badgeLabel = blocked ? 'Tắt' : 'Bật';
-        const lastAct = f.lastActionTime ? new Date(f.lastActionTime) : null;
-        const lastActLabel = lastAct ? (() => {
-          const diff = Date.now() - lastAct.getTime();
-          if (diff < 3600000) return Math.floor(diff/60000) + ' phút trước';
-          if (diff < 86400000) return Math.floor(diff/3600000) + ' giờ trước';
-          if (diff < 604800000) return Math.floor(diff/86400000) + ' ngày trước';
-          return lastAct.toLocaleDateString('vi');
-        })() : '';
-        const metaParts = [];
-        if (f.phoneNumber) metaParts.push(f.phoneNumber);
-        if (lastActLabel) metaParts.push(lastActLabel);
-        return `<div class="zc ${stateClass}">
-            ${avatarHtml}
-            <div class="zc-body">
-              <div class="zc-name">${esc(f.displayName)}<span class="zc-badge">${badgeLabel}</span></div>
-              ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' · '))}</div>` : ''}
-            </div>
-            <div class="zc-actions">
-              <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>
-              <label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
-            </div>
-          </div>`;
-      }).join('');
-      if (filtered.length > 500) {
-        list.innerHTML += `<div class="zalo-mgr-empty">... còn ${filtered.length - 500} user. Dùng tìm kiếm để lọc.</div>`;
-      }
+      _zaloFriendsRendered = 0;
+      list.innerHTML = '';
+      _renderMoreFriends();
     }
 
     // Checked = bot replies; unchecked = add to blocklist
@@ -4834,6 +4872,7 @@
         const chip = document.getElementById('gateway-boot-chip');
         if (!chip) return;
         chip.hidden = false;
+        chip.classList.add('gw-active');
         if (payload && typeof payload.elapsedMs !== 'undefined') {
           chip.setAttribute('data-elapsed', String(payload.elapsedMs));
         }
@@ -4939,23 +4978,8 @@
       applyChannelStatus('zalo', payload.zalo, payload.checkedAt);
     }
     if (window.claw.onChannelStatus) window.claw.onChannelStatus(handleChannelStatus);
-    // Re-render every 1s during boot phase so the "Xs/~25s" countdown ticks
-    // even when no new probe data arrives. Stops once both channels ready or
-    // we're well past the expected window.
-    const _statusRefreshInterval = setInterval(() => {
-      const elapsed = elapsedSec();
-      const tg = _lastChannelStatus.telegram;
-      const zl = _lastChannelStatus.zalo;
-      const tgReady = tg && tg.ready;
-      const zlReady = zl && zl.ready;
-      // Stop ticking once both ready OR past 60s (well past expected window)
-      if ((tgReady && zlReady) || elapsed > 60) {
-        clearInterval(_statusRefreshInterval);
-        return;
-      }
-      if (tg) applyChannelStatus('telegram', tg, _lastChannelStatus.checkedAt);
-      if (zl) applyChannelStatus('zalo', zl, _lastChannelStatus.checkedAt);
-    }, 1000);
+    // Boot broadcast probes (deferred to T+15s in main.js) + 30s polling
+    // + file watchers are sufficient — no need for 1s boot-phase interval.
     // Inbound debounce sliders — debounced save to avoid spamming IPC on drag
     let _dbSaveTimer = null;
     function onDebounceInput(channel, valueMs) {
@@ -5103,34 +5127,41 @@
     refreshPauseUI();
     setInterval(refreshPauseUI, 30000);
 
-    refreshDashboard();
-    loadZaloMode();
-    loadSchedules();
+    // --- Deferred dashboard data loading (wait for PIN unlock to reduce input lag) ---
+    let _dashboardStarted = false;
+    function startDashboardAfterUnlock() {
+      if (_dashboardStarted) return;
+      _dashboardStarted = true;
+      Promise.all([refreshDashboard(), loadZaloMode(), loadSchedules()]).catch(() => {});
+      addActivity('Dashboard \u0111\u00E3 t\u1EA3i');
+      (async () => {
+        try {
+          const v = await window.claw.getAppVersion();
+          const el = document.getElementById('sidebar-version');
+          if (el && v) el.textContent = 'v' + v;
+        } catch {}
+      })();
+      setTimeout(() => loadDashboardZaloOwner(), 2000);
+      checkChannels();
+      setTimeout(checkChannels, 5000);
+      setInterval(refreshDashboard, 30000);
+      setInterval(checkChannels, 30000);
+    }
     // Real-time: auto-refresh when bot creates/edits custom crons or fixed schedules
     if (window.claw.onCustomCronsUpdated) {
       window.claw.onCustomCronsUpdated((data) => {
         customCrons = data || [];
         renderSchedules();
-        addActivity('Custom cron đã cập nhật');
+        addActivity('Custom cron \u0111\u00E3 c\u1EADp nh\u1EADt');
       });
     }
     if (window.claw.onSchedulesUpdated) {
       window.claw.onSchedulesUpdated((data) => {
         currentSchedules = data || [];
         renderSchedules();
-        addActivity('Lịch cố định đã cập nhật');
+        addActivity('L\u1ECBch c\u1ED1 \u0111\u1ECBnh \u0111\u00E3 c\u1EADp nh\u1EADt');
       });
     }
-    addActivity('Dashboard đã tải');
-
-    // Show app version in sidebar
-    (async () => {
-      try {
-        const v = await window.claw.getAppVersion();
-        const el = document.getElementById('sidebar-version');
-        if (el && v) el.textContent = 'v' + v;
-      } catch {}
-    })();
 
     // Auto-update UI
     let _pendingUpdate = null;
@@ -5338,13 +5369,6 @@
     if (window.claw.onZaloCacheRefreshed) {
       window.claw.onZaloCacheRefreshed(() => { if (currentPage === 'zalo') loadDashboardZaloOwner(); });
     }
-    // Load when Zalo tab opens (call from switchPage if zalo) — also load once at boot
-    setTimeout(() => loadDashboardZaloOwner(), 2000);
-    checkChannels();
-    setTimeout(checkChannels, 5000);
-    setInterval(refreshDashboard, 30000);
-    setInterval(checkChannels, 30000);
-
     // === Dashboard PIN lock (Security Layer 4) ===
     let _pinUnlocked = false;
     let _pinLockedUntilMs = 0;
@@ -5370,6 +5394,8 @@
         focusFirstPinBox();
       } catch (e) {
         console.error('initPinLock error:', e);
+        // PIN system unavailable — load dashboard anyway
+        startDashboardAfterUnlock();
       }
     }
 
@@ -5487,6 +5513,7 @@
       lock.dataset.mode = 'verify';
       hidePinResetForm();
       resetIdleTimer();
+      startDashboardAfterUnlock();
     }
 
     function lockDashboard() {
