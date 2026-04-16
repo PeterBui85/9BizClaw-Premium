@@ -61,3 +61,12 @@ zalo-qr*.png
 modoroclaw-mac.zip
 modoroclaw-mac-portable*.zip
 Huong-dan-cai-MODOROClaw-Mac.docx
+
+# Screenshots — keep out of repo (app icons exempted)
+dashboard-*.png
+wizard-*.png
+screenshot-*.png
+*.xlsx
+make-features-xlsx.py
+scripts/update-features-xlsx.py
+tools/security/*.py
