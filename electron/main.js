@@ -4175,13 +4175,13 @@ function ensureZaloFriendCheckFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = fs.readFileSync(pluginFile, 'utf-8');
-    // Version pin: V3 = fix vendor CLI path on Mac (was APPDATA fallback = wrong dir)
-    const FRIEND_CHECK_VERSION = 'FRIEND-CHECK-V4';
+    // Version pin: V5 = respect zalo-stranger-policy.json (ignore/greet-only/reply)
+    const FRIEND_CHECK_VERSION = 'FRIEND-CHECK-V5';
     if (content.includes(FRIEND_CHECK_VERSION)) return; // already patched with latest version
     // Strip old patch if exists (V1 blocked messages, V2 had Mac path bug)
     if (content.includes('9BizClaw FRIEND-CHECK PATCH')) {
       content = content.replace(/\n\s*\/\/ === 9BizClaw FRIEND-CHECK PATCH ===[\s\S]*?\/\/ === END 9BizClaw FRIEND-CHECK PATCH ===/g, '');
-      console.log('[zalo-friend-check] stripped old patch — re-injecting V3');
+      console.log('[zalo-friend-check] stripped old patch — re-injecting V5');
     }
 
     // Anchor: right after the blocklist patch's END marker. Ensures friend
@@ -4196,10 +4196,12 @@ function ensureZaloFriendCheckFix() {
 
     const injection = `
 
-  // === 9BizClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V4
-  // For DM messages from non-friends, send a one-time "please add friend"
-  // reply and short-circuit. Reads openzca's friend cache to determine
-  // friend status. Groups skip this check. See main.js ensureZaloFriendCheckFix.
+  // === 9BizClaw FRIEND-CHECK PATCH === FRIEND-CHECK-V5
+  // For DM messages from non-friends, behavior depends on zalo-stranger-policy.json:
+  //   "ignore"     → drop message silently, no greeting, no AI dispatch
+  //   "greet-only" → send friend-request greeting once per 10min, then drop (no AI)
+  //   "reply"      → send greeting + rate-limited AI dispatch (1/10min)
+  // Groups skip this check. See main.js ensureZaloFriendCheckFix.
   if (!message.isGroup) {
     try {
       const __fcFs = require("node:fs");
@@ -4231,6 +4233,40 @@ function ensureZaloFriendCheckFix() {
         // FAIL-SAFE: if cache doesn't exist or is empty, treat as disabled.
         // Only enforce friend check when cache has been populated by openzca.
         if (__fcCacheExists && __fcFriendsCount > 0 && !__fcIsFriend) {
+          // --- V5: Read stranger policy from workspace ---
+          let __fcPolicy = "reply"; // default: reply normally
+          try {
+            const __fcAppDir = "9bizclaw";
+            const __fcPolicyCandidates: string[] = [];
+            if (process.env['9BIZ_WORKSPACE']) {
+              __fcPolicyCandidates.push(__fcPath.join(process.env['9BIZ_WORKSPACE'], "zalo-stranger-policy.json"));
+            }
+            if (process.platform === "darwin") {
+              __fcPolicyCandidates.push(__fcPath.join(__fcHome, "Library", "Application Support", __fcAppDir, "zalo-stranger-policy.json"));
+            } else if (process.platform === "win32") {
+              const __fcAd = process.env.APPDATA || __fcPath.join(__fcHome, "AppData", "Roaming");
+              __fcPolicyCandidates.push(__fcPath.join(__fcAd, __fcAppDir, "zalo-stranger-policy.json"));
+            } else {
+              const __fcCfg = process.env.XDG_CONFIG_HOME || __fcPath.join(__fcHome, ".config");
+              __fcPolicyCandidates.push(__fcPath.join(__fcCfg, __fcAppDir, "zalo-stranger-policy.json"));
+            }
+            __fcPolicyCandidates.push(__fcPath.join(__fcHome, ".openclaw", "workspace", "zalo-stranger-policy.json"));
+            for (const __fcPp of __fcPolicyCandidates) {
+              try {
+                if (__fcFs.existsSync(__fcPp)) {
+                  const __fcPolicyRaw = JSON.parse(__fcFs.readFileSync(__fcPp, "utf-8"));
+                  if (__fcPolicyRaw.mode) { __fcPolicy = String(__fcPolicyRaw.mode); break; }
+                }
+              } catch {}
+            }
+          } catch {}
+
+          // --- POLICY: "ignore" → drop immediately, no greeting, no AI ---
+          if (__fcPolicy === "ignore") {
+            runtime.log?.(\`openzalo: non-friend \${__fcSender} — policy=ignore — dropping message\`);
+            return;
+          }
+
           const __fcGlobal = globalThis as any;
           if (!__fcGlobal.__modoroFriendReqDedupe) {
             __fcGlobal.__modoroFriendReqDedupe = new Map();
@@ -4240,23 +4276,17 @@ function ensureZaloFriendCheckFix() {
           const __fcLast = __fcMap.get(__fcSender) || 0;
           const __fcWindow = 10 * 60 * 1000;
           if (__fcNow - __fcLast < __fcWindow) {
-            runtime.log?.(\`openzalo: non-friend \${__fcSender} (friend-request already sent <10min ago — skip re-send, continue to AI)\`);
-            // Don't return — still process message through AI pipeline.
-            // Only skip the friend request re-send.
+            runtime.log?.(\`openzalo: non-friend \${__fcSender} (friend-request already sent <10min ago — skip re-send)\`);
           } else {
           __fcMap.set(__fcSender, __fcNow);
           for (const [__fcK, __fcTs] of __fcMap.entries()) {
             if (__fcNow - __fcTs > 60 * 60 * 1000) __fcMap.delete(__fcK);
           }
           runtime.log?.(\`openzalo: non-friend \${__fcSender} — sending friend request proactively\`);
-          // PROACTIVE: send friend request via openzca CLI spawn.
-          // The old approach used globalThis.__openzcaApi which was never set.
-          // CLI spawn is reliable and matches the cross-channel send pattern.
           let __fcFriendReqSent = false;
           try {
             const __fcExec = require("node:child_process").execFileSync;
             const __fcHome2 = require("node:os").homedir();
-            // Find openzca CLI — check bundled vendor first, then PATH
             const __fcAppDir = "9bizclaw";
             let __fcAppBase;
             if (process.env['9BIZ_WORKSPACE']) {
@@ -4275,7 +4305,6 @@ function ensureZaloFriendCheckFix() {
               runtime.log?.(\`openzalo: friend request sent via CLI to \${__fcSender}\`);
               __fcFriendReqSent = true;
             } else {
-              // Fallback: try openzca from PATH
               try {
                 const __fcCmd = process.platform === "win32" ? "openzca.cmd" : "openzca";
                 __fcExec(__fcCmd, ["friend", "request", __fcSender, "--message", "Xin chao, minh la tro ly AI. Ket ban de minh ho tro ban nhe!"], { timeout: 10000, windowsHide: true, stdio: "ignore", shell: process.platform === "win32" });
@@ -4288,23 +4317,23 @@ function ensureZaloFriendCheckFix() {
           } catch (__fcFrErr) {
             runtime.log?.(\`openzalo: friend request CLI failed: \${String(__fcFrErr)}\`);
           }
-          // Always tell customer to send friend request — don't depend on bot's
-          // request succeeding. Bot tries silently but text always says customer should add.
-          let __fcText = 'Dạ em chào anh/chị! Anh/chị bấm "Thêm bạn" để em hỗ trợ tốt hơn nhé.\\n\\nTrong lúc đó em vẫn trả lời được ạ.';
+          let __fcText = __fcPolicy === "greet-only"
+            ? 'D\u1EA1 em ch\u00E0o anh/ch\u1ECB! Anh/ch\u1ECB b\u1EA5m "Th\u00EAm b\u1EA1n" \u0111\u1EC3 em h\u1ED7 tr\u1EE3 t\u1ED1t h\u01A1n nh\u00E9.'
+            : 'D\u1EA1 em ch\u00E0o anh/ch\u1ECB! Anh/ch\u1ECB b\u1EA5m "Th\u00EAm b\u1EA1n" \u0111\u1EC3 em h\u1ED7 tr\u1EE3 t\u1ED1t h\u01A1n nh\u00E9.\\n\\nTrong l\u00FAc \u0111\u00F3 em v\u1EABn tr\u1EA3 l\u1EDDi \u0111\u01B0\u1EE3c \u1EA1.';
           try {
-            const __fcAppDir = "9bizclaw";
-            const __fcCustomPaths = [];
+            const __fcAppDir2 = "9bizclaw";
+            const __fcCustomPaths: string[] = [];
             if (process.env['9BIZ_WORKSPACE']) {
               __fcCustomPaths.push(__fcPath.join(process.env['9BIZ_WORKSPACE'], "zalo-friend-request-message.txt"));
             }
             if (process.platform === "darwin") {
-              __fcCustomPaths.push(__fcPath.join(__fcHome, "Library", "Application Support", __fcAppDir, "zalo-friend-request-message.txt"));
+              __fcCustomPaths.push(__fcPath.join(__fcHome, "Library", "Application Support", __fcAppDir2, "zalo-friend-request-message.txt"));
             } else if (process.platform === "win32") {
               const __fcAppData = process.env.APPDATA || __fcPath.join(__fcHome, "AppData", "Roaming");
-              __fcCustomPaths.push(__fcPath.join(__fcAppData, __fcAppDir, "zalo-friend-request-message.txt"));
+              __fcCustomPaths.push(__fcPath.join(__fcAppData, __fcAppDir2, "zalo-friend-request-message.txt"));
             } else {
               const __fcConfig = process.env.XDG_CONFIG_HOME || __fcPath.join(__fcHome, ".config");
-              __fcCustomPaths.push(__fcPath.join(__fcConfig, __fcAppDir, "zalo-friend-request-message.txt"));
+              __fcCustomPaths.push(__fcPath.join(__fcConfig, __fcAppDir2, "zalo-friend-request-message.txt"));
             }
             __fcCustomPaths.push(__fcPath.join(__fcHome, ".openclaw", "workspace", "zalo-friend-request-message.txt"));
             for (const __fcCp of __fcCustomPaths) {
@@ -4327,9 +4356,14 @@ function ensureZaloFriendCheckFix() {
             runtime.log?.(\`openzalo: friend-request send error: \${String(__fcSendErr)}\`);
           }
           } // end else (dedup check)
-          // CRIT #6: Rate-limit AI dispatch for non-friends to 1/10min (distinct
-          // from friend-request dedupe above). Stranger spamming 20 DMs used to
-          // burn 20x 9router tokens; now we reply once every 10min max.
+
+          // --- POLICY: "greet-only" → greeting sent above, now drop (no AI) ---
+          if (__fcPolicy === "greet-only") {
+            runtime.log?.(\`openzalo: non-friend \${__fcSender} — policy=greet-only — greeting sent, dropping message\`);
+            return;
+          }
+
+          // --- POLICY: "reply" → rate-limited AI dispatch ---
           if (!__fcGlobal.__modoroStrangerAiDedupe) {
             __fcGlobal.__modoroStrangerAiDedupe = new Map();
           }
@@ -4345,7 +4379,7 @@ function ensureZaloFriendCheckFix() {
           for (const [__fcAk, __fcAts] of __fcAiMap.entries()) {
             if (__fcAiNow - __fcAts > 60 * 60 * 1000) __fcAiMap.delete(__fcAk);
           }
-          runtime.log?.(\`openzalo: non-friend \${__fcSender} — AI dispatch allowed (first msg in window)\`);
+          runtime.log?.(\`openzalo: non-friend \${__fcSender} — policy=reply — AI dispatch allowed (first msg in window)\`);
         }
       }
     } catch (__fcErr) {

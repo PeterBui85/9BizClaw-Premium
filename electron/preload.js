@@ -197,4 +197,8 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.removeAllListeners('update-download-progress');
     ipcRenderer.on('update-download-progress', (_event, data) => cb(data));
   },
+  onUpdateInstallStatus: (cb) => {
+    ipcRenderer.removeAllListeners('update-install-status');
+    ipcRenderer.on('update-install-status', (_event, data) => cb(data));
+  },
 });
