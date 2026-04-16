@@ -5104,26 +5104,25 @@
       const banner = document.getElementById('update-banner');
       const text = document.getElementById('update-banner-text');
       if (!banner || !text) return;
-      text.innerHTML = 'v' + esc(info.version) + ' &mdash; Nh&#7845;n &#273;&#7875; c&#7853;p nh&#7853;t';
+      text.innerHTML = 'v' + esc(info.version) + ' &mdash; Nh\u1EA5n \u0111\u1EC3 c\u1EADp nh\u1EADt';
       banner.style.display = 'block';
-      // Prominent toast so user can't miss it
-      showToast('B&#7843;n m&#7899;i v' + esc(info.version) + ' — nh&#7845;n banner xanh trong sidebar &#273;&#7875; c&#7853;p nh&#7853;t', 'success', 8000);
+      showToast('B\u1EA3n m\u1EDBi v' + info.version + ' \u2014 nh\u1EA5n banner xanh trong sidebar \u0111\u1EC3 c\u1EADp nh\u1EADt', 'success', 8000);
     }
     async function startUpdate() {
       if (!_pendingUpdate) return;
       const banner = document.getElementById('update-banner');
       const text = document.getElementById('update-banner-text');
-      if (text) text.innerHTML = '&#272;ang t&#7843;i... 0%';
+      if (text) text.textContent = '\u0110ang t\u1EA3i... 0%';
       if (banner) banner.style.animation = 'none';
-      showToast('B&#7855;t &#273;&#7847;u t&#7843;i b&#7843;n c&#7853;p nh&#7853;t...', 'info', 3000);
+      showToast('B\u1EAFt \u0111\u1EA7u t\u1EA3i b\u1EA3n c\u1EADp nh\u1EADt...', 'info', 3000);
       try {
         const r = await window.claw.downloadAndInstallUpdate();
         if (r && r.method === 'browser') {
-          if (text) text.innerHTML = '&#272;&#227; m&#7903; trang t&#7843;i v&#7873;';
-          showToast('&#272;&#227; m&#7903; trang t&#7843;i v&#7873; trong tr&#236;nh duy&#7879;t', 'success', 5000);
+          if (text) text.textContent = '\u0110\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1';
+          showToast('\u0110\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1 trong tr\u00ECnh duy\u1EC7t', 'success', 5000);
         } else if (r && r.method === 'installer') {
-          if (text) text.innerHTML = '&#272;ang c&#224;i... &#272;&#7907;i kh&#7903;i &#273;&#7897;ng l&#7841;i';
-          showToast('Installer &#273;ang ch&#7841;y — app s&#7869; t&#7921; t&#7855;t', 'success', 10000);
+          if (text) text.textContent = '\u0110ang c\u00E0i... \u0110\u1EE3i kh\u1EDFi \u0111\u1ED9ng l\u1EA1i';
+          showToast('Installer \u0111ang ch\u1EA1y \u2014 app s\u1EBD t\u1EF1 t\u1EAFt', 'success', 10000);
         } else if (r && r.method === 'dmg-install') {
           if (text) text.innerHTML = 'Khoi dong lai...';
           showToast('Cap nhat thanh cong — dang khoi dong lai', 'success', 10000);
@@ -5131,30 +5130,30 @@
           const errMsg = r.error || '';
           const fallbackNote = r.fallback === 'browser' ? ' (da mo trang tai ve)' : '';
           if (text) text.textContent = 'Loi: ' + errMsg + fallbackNote;
-          showToast('C&#7853;p nh&#7853;t th&#7845;t b&#7841;i: ' + esc(errMsg) + (r.fallback === 'browser' ? ' — &#273;&#227; m&#7903; trang t&#7843;i v&#7873;' : ''), 'error', 6000);
+          showToast('C\u1EADp nh\u1EADt th\u1EA5t b\u1EA1i: ' + errMsg + (r.fallback === 'browser' ? ' \u2014 \u0111\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1' : ''), 'error', 6000);
           setTimeout(() => { if (banner) banner.style.display = 'none'; }, 6000);
         }
       } catch (e) {
         if (text) text.textContent = 'Loi: ' + e.message;
-        showToast('L&#7895;i: ' + esc(e.message), 'error', 5000);
+        showToast('L\u1ED7i: ' + e.message, 'error', 5000);
         setTimeout(() => { if (banner) banner.style.display = 'none'; }, 5000);
       }
     }
     async function manualCheckUpdate() {
       const label = document.getElementById('check-update-label');
-      if (label) label.innerHTML = '&#272;ang ki&#7875;m tra...';
+      if (label) label.textContent = '\u0110ang ki\u1EC3m tra...';
       try {
         const r = await window.claw.checkForUpdates();
         if (r && r.available) {
           showUpdateBanner(r);
-          if (label) label.innerHTML = 'C&#243; b&#7843;n m&#7899;i!';
+          if (label) label.textContent = 'C\u00F3 b\u1EA3n m\u1EDBi!';
         } else {
-          if (label) label.innerHTML = '&#272;&#227; m&#7899;i nh&#7845;t';
-          setTimeout(() => { if (label) label.innerHTML = 'Ki&#7875;m tra c&#7853;p nh&#7853;t'; }, 3000);
+          if (label) label.textContent = '\u0110\u00E3 m\u1EDBi nh\u1EA5t';
+          setTimeout(() => { if (label) label.textContent = 'Ki\u1EC3m tra c\u1EADp nh\u1EADt'; }, 3000);
         }
       } catch {
-        if (label) label.innerHTML = 'L&#7895;i k&#7871;t n&#7889;i';
-        setTimeout(() => { if (label) label.innerHTML = 'Ki&#7875;m tra c&#7853;p nh&#7853;t'; }, 3000);
+        if (label) label.textContent = 'L\u1ED7i k\u1EBFt n\u1ED1i';
+        setTimeout(() => { if (label) label.textContent = 'Ki\u1EC3m tra c\u1EADp nh\u1EADt'; }, 3000);
       }
     }
     // Listen for auto-check result from main process
@@ -5165,7 +5164,7 @@
     if (window.claw.onUpdateDownloadProgress) {
       window.claw.onUpdateDownloadProgress((p) => {
         const text = document.getElementById('update-banner-text');
-        if (text && p) text.innerHTML = '&#272;ang t&#7843;i... ' + (p.percent || 0) + '%';
+        if (text && p) text.textContent = '\u0110ang t\u1EA3i... ' + (p.percent || 0) + '%';
       });
     }
     // Install status (Mac DMG install phases)
