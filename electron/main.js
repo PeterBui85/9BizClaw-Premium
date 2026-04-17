@@ -6592,6 +6592,14 @@ async function _startOpenClawImpl() {
       return;
     }
 
+    const isTransientNetwork =
+      String(lastError || '').includes('pricing bootstrap failed') ||
+      String(lastError || '').includes('TimeoutError');
+    if (isTransientNetwork && !isBonjourConflict) {
+      global._networkCooldownUntil = Date.now() + 60_000;
+      console.log('[restart-guard] transient network exit — waiting 60s before restart');
+    }
+
     if (isRestart) {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('bot-status', { running: false, error: 'Đang khởi động lại... vui lòng đợi 30 giây.' });
