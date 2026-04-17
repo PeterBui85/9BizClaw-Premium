@@ -603,6 +603,11 @@ function packVendorForWindows() {
   // Use Windows native tar.exe (BSD tar) — same binary prebuild uses for extract.
   // Create uncompressed tar (no -z) — NSIS LZMA will compress better at build time.
   // -C ROOT, archive just "vendor" subdir so extract restores as vendor/ cleanly.
+  // NOTE: archiving the entire vendor/ directory recursively pulls in everything
+  // under it, including vendor/models/Xenova/... (produced by prebuild-models.js,
+  // chained before prebuild-vendor in package.json). No extra include list needed
+  // — if prebuild-models ran, models ship in the tar; if it didn't, tar just has
+  // node/ + node_modules/ and RAG smoke will warn+skip instead of fail.
   const tarBin = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
   const tarArgs = ['-cf', tarPath, '-C', ROOT, 'vendor'];
   log(`  running: ${tarBin} ${tarArgs.join(' ')}`);

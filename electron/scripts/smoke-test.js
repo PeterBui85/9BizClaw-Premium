@@ -429,6 +429,31 @@ if (fs.existsSync(agentsPath)) {
 }
 
 // =========================================================================
+// TEST 8: RAG accuracy (gated — only if vendor/models exists)
+// =========================================================================
+// Skips silently during pre-prebuild:models states (e.g. standalone smoke,
+// fresh checkout before model download). When models are present, runs the
+// 40-query canonical probe — hard-gates Top-3 >= 85%. Cold model load
+// adds ~10-15s to the smoke; still hermetic (no network, no external state).
+section('RAG accuracy');
+const modelsDir = path.join(__dirname, '..', 'vendor', 'models', 'Xenova');
+if (fs.existsSync(modelsDir)) {
+  console.log('  running smoke-rag-test.js (40-query probe)...');
+  try {
+    require('child_process').execFileSync(
+      'node',
+      [path.join(__dirname, 'smoke-rag-test.js')],
+      { stdio: 'inherit' }
+    );
+    pass('RAG smoke (Top-3 >= 85%)');
+  } catch (e) {
+    fail('RAG smoke', `smoke-rag-test.js exited non-zero — Top-3 below 85% gate or runtime error`);
+  }
+} else {
+  warn('RAG smoke', 'vendor/models/ not present — run `npm run prebuild:models` first. Skipped.');
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
