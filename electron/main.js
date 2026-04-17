@@ -15380,6 +15380,11 @@ function startKnowledgeSearchServer() {
   _knowledgeHttpServer = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://127.0.0.1:${KNOWLEDGE_HTTP_PORT}`);
+      if (url.pathname === '/audit-rag-degraded' && req.method === 'POST') {
+        try { auditLog('rag_degraded', { at: Date.now() }); } catch {}
+        res.writeHead(204); res.end();
+        return;
+      }
       if (url.pathname !== '/search') {
         res.writeHead(404, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'not found' }));
@@ -16048,6 +16053,25 @@ ipcMain.handle('get-overview-data', async () => {
         kind: 'bot-stopped',
       });
     }
+
+    // 4e. RAG circuit breaker — recent rag_degraded audit entry within 10min
+    try {
+      const nowMs = Date.now();
+      const recentRag = rawAudit.filter(e => {
+        if (e.event !== 'rag_degraded') return false;
+        const tMs = e.t ? Date.parse(e.t) : 0;
+        return tMs && (nowMs - tMs) < 10 * 60 * 1000;
+      });
+      if (recentRag.length > 0) {
+        actions.push({
+          severity: 'medium',
+          text: 'Tìm kiếm tài liệu tạm dừng (lỗi giao tiếp). Tự khôi phục sau 5 phút.',
+          cta: null,
+          ctaPage: null,
+          kind: 'rag-degraded',
+        });
+      }
+    } catch {}
 
     // 5. STATS — count of audit events today (rough proxy for "bot was busy")
     let eventsToday = 0;
