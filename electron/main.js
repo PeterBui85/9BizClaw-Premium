@@ -3973,25 +3973,28 @@ function ensureVisionFix() {
   try {
     const distDir = path.join(getBundledVendorDir() || '', 'node_modules', 'openclaw', 'dist');
     if (!fs.existsSync(distDir)) return;
-    // Find session-utils-*.js (hash suffix varies per version)
     const files = fs.readdirSync(distDir).filter(f => f.startsWith('session-utils-') && f.endsWith('.js'));
+    // V2: inject early `return true` at function entry. Bulletproof regardless of
+    // how openclaw restructures the function body on future upgrades. V1 regex-based
+    // approach broke silently when openclaw added a new claude-cli branch between `}`
+    // and the fallback `return false;` — images were accepted by UI but never sent to model.
+    const MARKER_V1 = '// MODOROClaw VISION PATCH — default vision ON for unknown models (9Router proxy)';
+    const MARKER_V2 = '// 9BizClaw VISION PATCH V2 — unconditional vision ON';
+    const FUNC_SIG = 'async function resolveGatewayModelSupportsImages(params) {';
     for (const file of files) {
       const fp = path.join(distDir, file);
       let src = fs.readFileSync(fp, 'utf-8');
-      if (src.includes('// MODOROClaw VISION PATCH')) continue; // already patched
-      const marker = 'async function resolveGatewayModelSupportsImages(params) {';
-      if (!src.includes(marker)) continue;
-      // Replace the function: default to true for unknown models
-      const patched = src.replace(
-        marker,
-        '// MODOROClaw VISION PATCH — default vision ON for unknown models (9Router proxy)\n' + marker
-      ).replace(
-        /if \(modelEntry\) \{[\s\S]*?return false;\s*\}\s*return false;/,
-        (match) => match.replace(/return false;/g, 'return true;')
-      );
+      if (src.includes(MARKER_V2)) continue;
+      if (!src.includes(FUNC_SIG)) continue;
+      // Strip stale V1 marker line if present (regex may have silently no-op'd on old installs)
+      if (src.includes(MARKER_V1)) {
+        src = src.split('\n').filter(l => !l.includes(MARKER_V1)).join('\n');
+      }
+      const injected = `${FUNC_SIG}\n\treturn true; ${MARKER_V2}`;
+      const patched = src.replace(FUNC_SIG, injected);
       if (patched !== src) {
         fs.writeFileSync(fp, patched, 'utf-8');
-        console.log('[vision-fix] patched', file, '— vision default ON for unknown models');
+        console.log('[vision-fix] V2 applied to', file, '— vision unconditionally ON');
       }
     }
   } catch (e) {
@@ -14304,7 +14307,10 @@ async function getEmbedder() {
     // Point to bundled model dir (NOT Hugging Face CDN at runtime).
     env.allowLocalModels = true;
     env.allowRemoteModels = false;
-    env.localModelPath = path.join(getBundledVendorDir() || '', 'models');
+    // Packaged: userData/vendor/models. Dev (npm start): electron/vendor/models.
+    // Unpackaged fallback prevents relative-cwd breakage when launched from unknown cwd.
+    const modelsBase = getBundledVendorDir() || path.join(__dirname, 'vendor');
+    env.localModelPath = path.join(modelsBase, 'models');
     env.cacheDir = env.localModelPath;
     const extractor = await pipeline(
       'feature-extraction',
@@ -15360,86 +15366,108 @@ async function rewriteQueryViaAI(query, model) {
 
 // Primary search entry point. Tier 1 (vector / cosine sim on BLOB embeddings)
 // when chunks have embeddings; falls back to FTS5 + BM25 when none do.
-// Async because embedText() is async.
-//
-// NOTE: intentionally does NOT call db.close() inside this function. Tier 2
-// (Chunk 4 task) will re-read `rows` after the first score pass to re-rank
-// with a rewritten query, and reviewer flagged closing the handle mid-way
-// would corrupt the Tier 2 path. Let GC reclaim when handle loses references.
+// Each call opens its own db handle (via getDocumentsDb) and MUST close it
+// on every exit path. Skipping close leaks handles under busy shops (Zalo
+// inbound HTTP hits this 50-100×/day) → eventual EMFILE on macOS.
 async function searchKnowledge({ query, category, limit } = {}) {
   limit = Math.min(Math.max(parseInt(limit, 10) || 3, 1), 10);
   const db = getDocumentsDb();
   if (!db) return [];
 
-  // `rows` + `scored` hoisted outside try block so Tier 2 (Chunk 4) can
-  // access them after the initial score pass succeeds. Do not close `db`.
-  let rows = [];
-  let scored = [];
   try {
-    const qvec = await embedText(String(query || '').slice(0, 500), true);
-    rows = category
-      ? db.prepare(
-          `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
-           FROM documents_chunks c JOIN documents d ON d.id = c.document_id
-           WHERE c.category = ? AND c.embedding IS NOT NULL`
-        ).all(category)
-      : db.prepare(
-          `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
-           FROM documents_chunks c JOIN documents d ON d.id = c.document_id
-           WHERE c.embedding IS NOT NULL`
-        ).all();
+    let rows = [];
+    let scored = [];
+    try {
+      const qvec = await embedText(String(query || '').slice(0, 500), true);
+      rows = category
+        ? db.prepare(
+            `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
+             FROM documents_chunks c JOIN documents d ON d.id = c.document_id
+             WHERE c.category = ? AND c.embedding IS NOT NULL`
+          ).all(category)
+        : db.prepare(
+            `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
+             FROM documents_chunks c JOIN documents d ON d.id = c.document_id
+             WHERE c.embedding IS NOT NULL`
+          ).all();
 
-    if (rows.length === 0) {
-      console.log('[knowledge-search] no embeddings — falling back to FTS5');
+      if (rows.length === 0) {
+        console.log('[knowledge-search] no embeddings — falling back to FTS5');
+        return searchKnowledgeFTS5({ query, category, limit });
+      }
+
+      scored = rows.map(r => {
+        const vec = blobToVec(r.embedding);
+        return {
+          id: r.id,
+          document_id: r.document_id,
+          chunk_index: r.chunk_index,
+          filename: r.filename,
+          snippet: (r.content || '').substring(r.char_start, r.char_end),
+          score: cosineSim(qvec, vec),
+        };
+      }).sort((a, b) => b.score - a.score);
+    } catch (e) {
+      console.warn('[knowledge-search] vector search error, falling back to FTS5:', e.message);
       return searchKnowledgeFTS5({ query, category, limit });
     }
 
-    scored = rows.map(r => {
-      const vec = blobToVec(r.embedding);
-      return {
-        id: r.id,
-        document_id: r.document_id,
-        chunk_index: r.chunk_index,
-        filename: r.filename,
-        snippet: (r.content || '').substring(r.char_start, r.char_end),
-        score: cosineSim(qvec, vec),
-      };
-    }).sort((a, b) => b.score - a.score);
-  } catch (e) {
-    console.warn('[knowledge-search] vector search error, falling back to FTS5:', e.message);
-    return searchKnowledgeFTS5({ query, category, limit });
-  }
-
-  // Tier 2 fallback — 2-signal OR gate (no raw threshold per spec).
-  // Fires only if user opts in via Settings. Triggers: no-diacritic query
-  // OR low margin between top-1/top-2 (<0.03). Rewrite via 9Router, re-embed,
-  // re-score. Only swap in rewritten ranking if its top-1 score exceeds
-  // original top-1 (avoid regression on good queries).
-  const cfg = getRagConfig();
-  if (cfg.tier2Enabled && scored.length >= 2) {
-    const top1 = scored[0].score;
-    const top2 = scored[1].score;
-    const noDiacritic = /[a-z]{3,}/i.test(query) && !/[\u00C0-\u1EF9]/.test(query);
-    const lowMargin = (top1 - top2) < 0.03;
-    if (noDiacritic || lowMargin) {
-      try {
-        const rewritten = await rewriteQueryViaAI(String(query), cfg.rewriteModel);
-        if (rewritten && rewritten !== query) {
-          console.log(`[knowledge-search] tier2 rewrite: "${query}" → "${rewritten}"`);
-          const qvec2 = await embedText(rewritten.slice(0, 500), true);
-          const rescored = rows.map(r => ({
-            id: r.id, document_id: r.document_id, chunk_index: r.chunk_index,
-            filename: r.filename,
-            snippet: (r.content || '').substring(r.char_start, r.char_end),
-            score: cosineSim(qvec2, blobToVec(r.embedding)),
-          })).sort((a, b) => b.score - a.score);
-          if (rescored[0].score > scored[0].score) return rescored.slice(0, limit);
+    // Tier 2 — 2-signal OR gate (opt-in via Settings).
+    // Triggers: Vietnamese-looking no-diacritic query OR low top1/top2 margin (<0.03).
+    // Brand-name guard: real Vietnamese queries without diacritics are typically
+    // full sentences (3+ tokens, 15+ chars). Short Latin queries like "iPhone 15"
+    // or "XIAOMI" are brand names — don't trigger rewrite (avoids every-query cost).
+    // Circuit breaker: 3 fails in 60s → 5min cooldown (prevents 3s latency tax
+    // when 9Router is down).
+    const cfg = getRagConfig();
+    if (cfg.tier2Enabled && scored.length >= 2) {
+      const now = Date.now();
+      if (!(global.__tier2CooldownUntil && now < global.__tier2CooldownUntil)) {
+        const top1 = scored[0].score;
+        const top2 = scored[1].score;
+        const tokenCount = String(query).trim().split(/\s+/).length;
+        const noDiacritic = /[a-z]{3,}/i.test(query)
+          && !/[\u00C0-\u1EF9]/.test(query)
+          && tokenCount >= 3
+          && String(query).length >= 15;
+        const lowMargin = (top1 - top2) < 0.03;
+        if (noDiacritic || lowMargin) {
+          try {
+            const rewritten = await rewriteQueryViaAI(String(query), cfg.rewriteModel);
+            global.__tier2FailCount = 0;  // success resets breaker
+            if (rewritten && rewritten !== query) {
+              console.log(`[knowledge-search] tier2 rewrite: "${query}" → "${rewritten}"`);
+              const qvec2 = await embedText(rewritten.slice(0, 500), true);
+              const rescored = rows.map(r => ({
+                id: r.id, document_id: r.document_id, chunk_index: r.chunk_index,
+                filename: r.filename,
+                snippet: (r.content || '').substring(r.char_start, r.char_end),
+                score: cosineSim(qvec2, blobToVec(r.embedding)),
+              })).sort((a, b) => b.score - a.score);
+              if (rescored[0].score > scored[0].score) return rescored.slice(0, limit);
+            }
+          } catch (e) {
+            console.warn('[knowledge-search] tier2 rewrite skipped:', e.message);
+            const window = 60_000;
+            if (!global.__tier2FailWindowStart || now - global.__tier2FailWindowStart > window) {
+              global.__tier2FailWindowStart = now;
+              global.__tier2FailCount = 1;
+            } else {
+              global.__tier2FailCount = (global.__tier2FailCount || 0) + 1;
+            }
+            if (global.__tier2FailCount >= 3) {
+              global.__tier2CooldownUntil = now + 5 * 60_000;
+              console.warn('[knowledge-search] tier2 circuit breaker tripped — 5min cooldown');
+            }
+          }
         }
-      } catch (e) { console.warn('[knowledge-search] tier2 rewrite skipped:', e.message); }
+      }
     }
-  }
 
-  return scored.slice(0, limit);
+    return scored.slice(0, limit);
+  } finally {
+    try { db.close(); } catch {}
+  }
 }
 
 ipcMain.handle('knowledge-search', async (_event, payload) => {
@@ -15516,6 +15544,9 @@ function startKnowledgeSearchServer() {
   });
   _knowledgeHttpServer.on('error', (err) => {
     console.warn('[knowledge-http] server error:', err?.message);
+    // Clear slot so a later startKnowledgeSearchServer() call (e.g. after orphan
+    // process dies) can retry instead of being silently guarded out forever.
+    _knowledgeHttpServer = null;
   });
 }
 
