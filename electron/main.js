@@ -5521,31 +5521,41 @@ function ensureOpenclawPricingFix() {
     const distDir = path.join(vendorDir, 'node_modules', 'openclaw', 'dist');
     if (!fs.existsSync(distDir)) return;
 
-    const files = fs.readdirSync(distDir).filter(f => /^usage-format-[A-Za-z0-9_-]+\.js$/.test(f));
-    if (files.length === 0) {
-      console.warn('[openclaw-pricing-fix] no usage-format-*.js found in vendor — skipping');
-      return;
-    }
+    // Scan ALL .js files in dist/ for openrouter.ai references. v2.3.46 only
+    // patched usage-format-*.js but observed LINH-BABY log shows 4:22 wait
+    // after pricing fix landed — meaning there are OTHER openrouter.ai fetches
+    // still stuck on Windows TCP retries. Grep found 5 additional files:
+    // models-*.js, provider-catalog-*.js (x2), provider-stream-*.js,
+    // perplexity-web-search-provider-*.js. Patch them all.
+    //
+    // Replace any "https://openrouter.ai/api/v1..." URL with fast-fail
+    // "http://127.0.0.1:1/disabled...". Node fetch refuses TCP connect
+    // in <100ms instead of waiting for DNS + SYN retry (3-5min).
+    //
+    // Marker file-level: 9BIZCLAW_OPENROUTER_DISABLED (append to end of file
+    // as comment). Skip if already patched. Re-applied each boot to survive
+    // vendor tar re-extraction.
+    const urlPattern = /"https:\/\/openrouter\.ai\/api\/v1([^"]*)"/g;
+    const markerStr = '// 9BIZCLAW_OPENROUTER_DISABLED';
 
+    const allFiles = fs.readdirSync(distDir).filter(f => f.endsWith('.js'));
     let patchedCount = 0;
-    for (const fname of files) {
+    let scannedCount = 0;
+
+    for (const fname of allFiles) {
       const filePath = path.join(distDir, fname);
       let content;
       try { content = fs.readFileSync(filePath, 'utf-8'); }
-      catch (e) { console.warn(`[openclaw-pricing-fix] read failed ${fname}: ${e.message}`); continue; }
+      catch { continue; }
 
-      if (content.includes('9BIZCLAW_PRICING_DISABLED')) continue;
+      if (!urlPattern.test(content)) continue;
+      scannedCount++;
+      urlPattern.lastIndex = 0; // reset regex state after test()
 
-      const urlRegex = /const OPENROUTER_MODELS_URL = "https:\/\/openrouter\.ai\/api\/v1\/models";/;
-      if (!urlRegex.test(content)) {
-        console.warn(`[openclaw-pricing-fix] URL constant not found in ${fname} — openclaw refactored?`);
-        continue;
-      }
+      if (content.includes(markerStr)) continue;
 
-      const patched = content.replace(
-        urlRegex,
-        'const OPENROUTER_MODELS_URL = "http://127.0.0.1:1/disabled"; // 9BIZCLAW_PRICING_DISABLED'
-      );
+      const patched = content.replace(urlPattern, '"http://127.0.0.1:1/disabled$1"')
+        + `\n${markerStr}\n`;
 
       try {
         fs.writeFileSync(filePath, patched, 'utf-8');
@@ -5557,7 +5567,9 @@ function ensureOpenclawPricingFix() {
     }
 
     if (patchedCount > 0) {
-      console.log(`[openclaw-pricing-fix] ${patchedCount} file(s) patched — pricing bootstrap will fail-fast`);
+      console.log(`[openclaw-pricing-fix] ${patchedCount}/${scannedCount} file(s) with openrouter.ai URLs patched — fetches will fail-fast`);
+    } else if (scannedCount > 0) {
+      console.log(`[openclaw-pricing-fix] ${scannedCount} file(s) with openrouter.ai URLs already patched — skipping`);
     }
   } catch (e) {
     console.warn('[openclaw-pricing-fix] error:', e?.message);
