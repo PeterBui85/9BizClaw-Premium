@@ -15108,11 +15108,12 @@ function expandSynonyms(normalizedQuery) {
   return groups.join(' AND ');
 }
 
-// Core search — returns top-N chunks ordered by BM25 (lower = better).
+// FTS5 + BM25 + synonym-expanded search. Used as fallback below when vectors
+// unavailable (fresh install before backfill, or embed pipeline broken).
 // Graceful degradation: (a) DB unavailable → throw 'DB unavailable',
 // (b) FTS5 MATCH syntax error → retry word-chars-only, (c) empty FTS result →
 // LIKE on documents.content last-resort.
-function searchKnowledge(opts) {
+function searchKnowledgeFTS5(opts) {
   const { query, category, limit } = opts || {};
   const lim = Math.max(1, Math.min(50, Number(limit) || 5));
   if (!query || !String(query).trim()) return [];
@@ -15204,10 +15205,66 @@ function searchKnowledge(opts) {
   return results;
 }
 
+// Primary search entry point. Tier 1 (vector / cosine sim on BLOB embeddings)
+// when chunks have embeddings; falls back to FTS5 + BM25 when none do.
+// Async because embedText() is async.
+//
+// NOTE: intentionally does NOT call db.close() inside this function. Tier 2
+// (Chunk 4 task) will re-read `rows` after the first score pass to re-rank
+// with a rewritten query, and reviewer flagged closing the handle mid-way
+// would corrupt the Tier 2 path. Let GC reclaim when handle loses references.
+async function searchKnowledge({ query, category, limit } = {}) {
+  limit = Math.min(Math.max(parseInt(limit, 10) || 3, 1), 10);
+  const db = getDocumentsDb();
+  if (!db) return [];
+
+  // `rows` + `scored` hoisted outside try block so Tier 2 (Chunk 4) can
+  // access them after the initial score pass succeeds. Do not close `db`.
+  let rows = [];
+  let scored = [];
+  try {
+    const qvec = await embedText(String(query || '').slice(0, 500), true);
+    rows = category
+      ? db.prepare(
+          `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
+           FROM documents_chunks c JOIN documents d ON d.id = c.document_id
+           WHERE c.category = ? AND c.embedding IS NOT NULL`
+        ).all(category)
+      : db.prepare(
+          `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
+           FROM documents_chunks c JOIN documents d ON d.id = c.document_id
+           WHERE c.embedding IS NOT NULL`
+        ).all();
+
+    if (rows.length === 0) {
+      console.log('[knowledge-search] no embeddings — falling back to FTS5');
+      return searchKnowledgeFTS5({ query, category, limit });
+    }
+
+    scored = rows.map(r => {
+      const vec = blobToVec(r.embedding);
+      return {
+        id: r.id,
+        document_id: r.document_id,
+        chunk_index: r.chunk_index,
+        filename: r.filename,
+        snippet: (r.content || '').substring(r.char_start, r.char_end),
+        score: cosineSim(qvec, vec),
+      };
+    }).sort((a, b) => b.score - a.score);
+  } catch (e) {
+    console.warn('[knowledge-search] vector search error, falling back to FTS5:', e.message);
+    return searchKnowledgeFTS5({ query, category, limit });
+  }
+
+  // Tier 2 rescore path (Chunk 4) inserts here, uses `rows` + `scored`.
+  return scored.slice(0, limit);
+}
+
 ipcMain.handle('knowledge-search', async (_event, payload) => {
   const { query, category, limit } = payload || {};
   try {
-    const results = searchKnowledge({ query, category, limit });
+    const results = await searchKnowledge({ query, category, limit });
     return { success: true, results };
   } catch (e) {
     return { success: false, error: e.message || String(e) };
@@ -15225,7 +15282,7 @@ function startKnowledgeSearchServer() {
   if (_knowledgeHttpServer) return;
   const http = require('http');
   const { URL } = require('url');
-  _knowledgeHttpServer = http.createServer((req, res) => {
+  _knowledgeHttpServer = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://127.0.0.1:${KNOWLEDGE_HTTP_PORT}`);
       if (url.pathname !== '/search') {
@@ -15241,7 +15298,7 @@ function startKnowledgeSearchServer() {
         res.end(JSON.stringify({ results: [] }));
         return;
       }
-      const results = searchKnowledge({ query, category, limit: Math.min(Math.max(limit, 1), 8) });
+      const results = await searchKnowledge({ query, category, limit: Math.min(Math.max(limit, 1), 8) });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ results }));
     } catch (e) {
