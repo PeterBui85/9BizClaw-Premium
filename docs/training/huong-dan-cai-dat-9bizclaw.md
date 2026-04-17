@@ -83,7 +83,6 @@ Khi đến nơi, installer phải có sẵn:
 ### 2.4. Mang theo
 
 - [ ] USB có sẵn installer `9BizClaw Setup X.X.X.exe` hoặc `.dmg` (phòng trường hợp mạng khách chậm)
-- [ ] Giấy ghi token + chatId Telegram (ghi tay, tránh chụp màn hình lộ)
 - [ ] Tài liệu này (in ra hoặc iPad)
 
 ---
