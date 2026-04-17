@@ -3174,6 +3174,12 @@ function ensure9RouterProviderKeys() {
 function start9Router() {
   if (routerProcess) return;
   try {
+    // Kill any foreign process occupying port 20128 before spawning ours.
+    // A pre-installed global 9Router (from manual install) squats on the port →
+    // our spawn fails EADDRINUSE → waitFor9RouterReady sees the foreign process
+    // respond 200 → gateway routes through wrong 9Router → 401 on first chat.
+    try { killPort(20128); } catch {}
+
     ensure9RouterDefaultPassword();
     ensure9RouterProviderKeys();
     const logsDir = path.join(userDataDir, 'logs');
@@ -6592,9 +6598,14 @@ async function _startOpenClawImpl() {
       return;
     }
 
+    // Match only the specific openclaw pricing-bootstrap error observed in
+    // LINH-BABY logs. Bare `TimeoutError` is too broad — openclaw emits it
+    // from plugin init, openzca handshake, WS handshake too, and those are
+    // NOT network-transient (restart won't help). The observed case logs
+    // `pricing bootstrap failed: TimeoutError: ...` so this string alone
+    // matches without false-positives.
     const isTransientNetwork =
-      String(lastError || '').includes('pricing bootstrap failed') ||
-      String(lastError || '').includes('TimeoutError');
+      String(lastError || '').includes('pricing bootstrap failed');
     if (isTransientNetwork && !isBonjourConflict) {
       global._networkCooldownUntil = Date.now() + 60_000;
       console.log('[restart-guard] transient network exit — waiting 60s before restart');
