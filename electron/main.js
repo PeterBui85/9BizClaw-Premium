@@ -308,10 +308,18 @@ async function ensureVendorExtracted({ onProgress } = {}) {
         // install, version stamp still matches, old code would skip re-extract
         // → embedder throws at load → RAG permanently broken until manual
         // reinstall. Now: any sentinel missing → re-extract from tar.
+        // cold-F1: expanded sentinel list. Power-fail during extract could
+        // leave stamp valid but any of these missing/truncated. Each is
+        // load-bearing — missing one = broken feature down the line.
+        const e5 = path.join(targetDir, 'models', 'Xenova', 'multilingual-e5-small');
         const sentinels = [
           path.join(targetDir, 'node_modules', 'openclaw', 'openclaw.mjs'),
-          path.join(targetDir, 'models', 'Xenova', 'multilingual-e5-small', 'onnx', 'model_quantized.onnx'),
-          path.join(targetDir, 'models', 'Xenova', 'multilingual-e5-small', 'tokenizer.json'),
+          path.join(targetDir, 'node_modules', 'openclaw', 'package.json'),
+          path.join(targetDir, 'node_modules', '9router', 'app', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
+          path.join(targetDir, 'node_modules', 'pdf-parse', 'index.js'),
+          path.join(e5, 'onnx', 'model_quantized.onnx'),
+          path.join(e5, 'tokenizer.json'),
+          path.join(e5, 'config.json'),
         ];
         const missing = sentinels.find(p => !fs.existsSync(p) || fs.statSync(p).size === 0);
         if (!missing) {
@@ -504,9 +512,19 @@ async function ensureVendorExtracted({ onProgress } = {}) {
       if (!fs.existsSync(nodeBin)) {
         return reject(new Error(`Extract succeeded but vendor/node/node.exe missing at ${nodeBin}. Archive may be damaged.`));
       }
-      // Write version stamp
+      // cold-F1: 2-phase stamp write. Previous single writeFileSync could
+      // commit small stamp sector to disk BEFORE tar data pages flush (in
+      // write-back cache) → power-fail leaves valid stamp + incomplete
+      // vendor. Now: write to .staging, fsync, rename. Rename is atomic on
+      // NTFS + ext4. Combined with expanded sentinel list in the skip-check
+      // path above, this closes the partial-install window.
       try {
-        fs.writeFileSync(versionStamp, meta.bundle_version, 'utf8');
+        const stagingPath = versionStamp + '.staging';
+        const fd = fs.openSync(stagingPath, 'w');
+        fs.writeSync(fd, Buffer.from(meta.bundle_version, 'utf8'));
+        try { fs.fsyncSync(fd); } catch {}
+        fs.closeSync(fd);
+        fs.renameSync(stagingPath, versionStamp);
       } catch (e) {
         console.warn('[vendor-extract] could not write version stamp:', e.message);
       }
@@ -14354,9 +14372,51 @@ function chunkVietnameseText(text, opts) {
 // Implementation lives in lib/embedder.js so smoke-rag-test.js can import the
 // SAME code path as production (E1 fix — previously smoke had its own inline
 // embed() function → bugs in main.js embedText() would pass smoke silently).
+// F10 fix: ONNX Runtime on Windows has documented bugs with non-ASCII paths
+// (microsoft/onnxruntime#15388). Vietnamese Windows usernames like "Bùi",
+// "Đức" would break embedder load silently. Resolve to short-name (8.3) if
+// the original path contains non-ASCII — `fs.realpathSync.native` returns
+// the canonical NT path which on NTFS can yield short names.
+function _toNonAsciiSafePath(p) {
+  if (!p || process.platform !== 'win32') return p;
+  // Fast path: all ASCII → return as-is
+  if (/^[\x00-\x7F]*$/.test(p)) return p;
+  try {
+    // Try fs.realpathSync.native — may yield NTFS short name
+    const real = fs.realpathSync.native(p);
+    if (/^[\x00-\x7F]*$/.test(real)) {
+      console.log('[path-short] rewritten for non-ASCII safety:', p, '→', real);
+      return real;
+    }
+    // Fallback: cmd /c for /f with 8.3 name. Only works if NTFS short-name
+    // generation is enabled (default on Windows 10/11).
+    try {
+      const short = require('child_process').execFileSync(
+        'cmd', ['/c', 'for', '%I', 'in', '("' + p + '")', 'do', '@echo', '%~sI'],
+        { encoding: 'utf8', windowsHide: true }
+      ).trim();
+      if (short && /^[\x00-\x7F]*$/.test(short)) {
+        console.log('[path-short] 8.3 name:', p, '→', short);
+        return short;
+      }
+    } catch {}
+  } catch {}
+  // Return original if can't shorten — may still work on Windows 11 with UTF-8 ANSI.
+  return p;
+}
+
 const _embedderModule = require('./lib/embedder');
-_embedderModule.setModelsRoot(getBundledVendorDir() || path.join(__dirname, 'vendor'));
-const { getEmbedder, embedText, cosineSim, vecToBlob, blobToVec, E5_DIM } = _embedderModule;
+const _rawModelsRoot = getBundledVendorDir() || path.join(__dirname, 'vendor');
+_embedderModule.setModelsRoot(_toNonAsciiSafePath(_rawModelsRoot));
+// Platform-F5: cacheDir MUST be writable. Mac .app bundle is read-only when
+// installed to /Applications — keep transformers.js tokenizer cache in
+// userData where we always have write permission.
+try {
+  const cacheDir = path.join(app.getPath('userData'), 'transformers-cache');
+  try { fs.mkdirSync(cacheDir, { recursive: true }); } catch {}
+  _embedderModule.setCacheRoot(_toNonAsciiSafePath(cacheDir));
+} catch {}
+const { getEmbedder, embedText, cosineSim, vecToBlob, blobToVec, E5_DIM, getEmbedderState } = _embedderModule;
 
 // H7 FIX: runtime SHA256 check on bundled model .onnx. Build-time prebuild
 // verified the HuggingFace download; runtime extracted files land in user-
@@ -14364,8 +14424,11 @@ const { getEmbedder, embedText, cosineSim, vecToBlob, blobToVec, E5_DIM } = _emb
 // hash doesn't match, force re-extract by invalidating version stamp. Mac
 // vendor lives in SIP-protected .app bundle so skip there.
 async function verifyEmbedderModelSha() {
-  if (process.platform !== 'win32' || !app.isPackaged) return;
+  if (!app.isPackaged) return;
   if (global.__embedderShaVerified) return;
+  // Previously gated on win32 assuming Mac vendor was SIP-protected. Wrong:
+  // unsigned .app installed to ~/Applications (not /Applications) is user-
+  // writable on Mac too. Run SHA verify on both platforms.
   const resDir = process.resourcesPath;
   const metaPath = path.join(resDir, 'vendor-meta.json');
   if (!fs.existsSync(metaPath)) return;
@@ -14388,13 +14451,22 @@ async function verifyEmbedderModelSha() {
     const actual = hash.digest('hex');
     const expected = meta.modelSha['model_quantized.onnx'];
     if (actual !== expected) {
-      console.warn(`[embedder-sha] model_quantized.onnx hash mismatch — expected ${expected.slice(0, 16)}..., got ${actual.slice(0, 16)}... → invalidating vendor stamp`);
+      console.warn(`[embedder-sha] model_quantized.onnx hash mismatch — expected ${expected.slice(0, 16)}..., got ${actual.slice(0, 16)}...`);
+      if (process.platform === 'win32') {
+        // Win: invalidate tar stamp → next boot auto-re-extracts from bundled tar.
+        try {
+          fs.unlinkSync(path.join(app.getPath('userData'), 'vendor-version.txt'));
+          console.warn('[embedder-sha] vendor stamp removed — next launch will re-extract from tar');
+        } catch {}
+      }
+      // Mac: no tar to re-extract from — tell CEO to reinstall the app.
       try {
-        const stampPath = path.join(app.getPath('userData'), 'vendor-version.txt');
-        fs.unlinkSync(stampPath);
-        console.warn('[embedder-sha] vendor stamp removed — next launch will re-extract from tar');
+        const msg = process.platform === 'win32'
+          ? '[Bảo mật] Model RAG bị sửa đổi — khởi động lại app để cài lại từ bản gốc.'
+          : '[Bảo mật] Model RAG bị sửa đổi — vui lòng cài lại 9BizClaw từ file DMG gốc.';
+        sendCeoAlert(msg);
       } catch {}
-      try { sendCeoAlert('[Bảo mật] Model RAG bị sửa đổi — khởi động lại app để cài lại từ bản gốc.'); } catch {}
+      try { auditLog('rag_model_tamper', { platform: process.platform, expected, actual }); } catch {}
     } else {
       console.log('[embedder-sha] model_quantized.onnx verified');
     }
@@ -14440,18 +14512,30 @@ async function backfillKnowledgeEmbeddings() {
     );
     const MODEL_STAMP = 'multilingual-e5-small-q';
     let done = 0;
+    let diskFullHits = 0;
     for (const row of missing) {
       const text = (row.content || '').substring(row.char_start, row.char_end);
-      if (!text || text.length < 5) continue;
+      // F5: skip chunks under 50 chars (matches chunker's minChunk). E5 on
+      // 3-char "abc" produces arbitrary-direction vectors that dominate cosine
+      // against short queries. Previous threshold (5) let 6-40 char junk through.
+      if (!text || text.length < 50) continue;
       try {
         const vec = await embedText(text, false);
         upsert.run(vecToBlob(vec), MODEL_STAMP, row.id);
         done++;
       } catch (e) {
-        console.warn('[knowledge-backfill] chunk failed:', row.id, e?.message);
+        const msg = String(e?.message || e);
+        if (/SQLITE_FULL|ENOSPC|disk I\/O|no space/i.test(msg)) diskFullHits++;
+        console.warn('[knowledge-backfill] chunk failed:', row.id, msg);
       }
     }
     console.log(`[knowledge-backfill] done ${done}/${missing.length}`);
+    // R3 cold-F2: if backfill failed wholesale due to disk-full, alert CEO.
+    // Without this, RAG silently falls back to FTS5 forever — investment lost.
+    if (done === 0 && diskFullHits >= 10) {
+      try { sendCeoAlert('[RAG] Ổ đĩa đầy — không lưu được chỉ mục tìm kiếm. Giải phóng 500MB rồi khởi động lại.'); } catch {}
+      try { auditLog('rag_backfill_disk_full', { attempted: missing.length, diskFullHits }); } catch {}
+    }
   } catch (e) {
     console.warn('[knowledge-backfill] error:', e.message);
   } finally {
@@ -14680,7 +14764,7 @@ function getDocumentsDb() {
     // next call to getDocumentsDb() will succeed (we don't recurse here to keep
     // semantics simple — Knowledge tab uses the disk-fallback for the current
     // call and the DB starts working on the next IPC).
-    if (/NODE_MODULE_VERSION/.test(e.message) && !_documentsDbAutoFixAttempted) {
+    if (/NODE_MODULE_VERSION|incompatible architecture|mach-o.*arch|invalid ELF header|dlopen.*Mach-O/i.test(e.message) && !_documentsDbAutoFixAttempted) {
       console.error('[documents] DB error (ABI mismatch):', e.message);
       const fixed = autoFixBetterSqlite3();
       if (fixed) {
@@ -14715,7 +14799,7 @@ function getDocumentsDb() {
     const now = Date.now();
     if (now - _documentsDbLastErrorAt >= DOCUMENTS_DB_ERROR_LOG_INTERVAL_MS) {
       console.error('[documents] DB error:', e.message);
-      if (/NODE_MODULE_VERSION/.test(e.message)) {
+      if (/NODE_MODULE_VERSION|incompatible architecture|mach-o.*arch|invalid ELF header|dlopen.*Mach-O/i.test(e.message)) {
         console.error('[documents] better-sqlite3 ABI mismatch persists — using disk-only fallback for Knowledge tab.');
         console.error('[documents] Manual fix: cd electron && rm -rf node_modules/better-sqlite3/build && npm install');
       }
@@ -15010,6 +15094,21 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     fs.copyFileSync(filepath, dst);
 
     const content = await extractTextFromFile(dst, finalName);
+    // R3-F7: reject mostly-binary / OCR-garbage content. Scanned receipts
+    // extracted by pdf-parse often return strings like "¶▶Ω≈∑ I p h O N e"
+    // — embedding that pollutes the vector corpus. Require ≥30% printable
+    // ASCII chars (digits/letters/punct/space) OR Vietnamese letter chars.
+    if (content && content.length > 50) {
+      const printable = (content.match(/[\x20-\x7E\u00C0-\u1EF9]/g) || []).length;
+      const ratio = printable / content.length;
+      if (ratio < 0.30) {
+        try { fs.unlinkSync(dst); } catch {}
+        return {
+          success: false,
+          error: `File có vẻ là scan/ảnh chưa OCR (chỉ ${Math.round(ratio * 100)}% ký tự đọc được). Vui lòng OCR trước khi upload.`,
+        };
+      }
+    }
     const wordCount = content ? content.split(/\s+/).length : 0;
     const filetype = path.extname(finalName).toLowerCase().replace('.', '');
     const summary = await summarizeKnowledgeContent(content, finalName);
@@ -15056,7 +15155,7 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
           let embedded = 0;
           for (const row of chunkRows) {
             const chunkText = content.substring(row.char_start, row.char_end);
-            if (!chunkText || chunkText.length < 5) continue;
+            if (!chunkText || chunkText.length < 50) continue;
             const vec = await embedText(chunkText, false);
             upsert.run(vecToBlob(vec), MODEL_STAMP, row.id);
             embedded++;
@@ -15505,6 +15604,12 @@ async function searchKnowledge({ query, category, limit } = {}) {
   limit = Math.min(Math.max(parseInt(limit, 10) || 3, 1), 10);
   const db = getDocumentsDb();
   if (!db) return [];
+  const _ragSearchStart = Date.now();
+  // Obs-H3: collect per-search telemetry. Hash the query so audit.jsonl
+  // doesn't leak PII but we can still dedup/correlate.
+  const _queryHash = require('crypto').createHash('sha1').update(String(query || '')).digest('hex').slice(0, 10);
+  let _ragTier = 'unknown';
+  let _top1 = 0, _top2 = 0, _tier2Fired = false, _tier2Reason = null;
 
   // C2 FIX: while backfill is writing embeddings, force FTS5 fallback — the
   // vector query would only see the chunks embedded so far (filter IS NOT NULL)
@@ -15533,8 +15638,10 @@ async function searchKnowledge({ query, category, limit } = {}) {
 
       if (rows.length === 0) {
         console.log('[knowledge-search] no embeddings — falling back to FTS5');
+        _ragTier = 'fts5-no-embed';
         return searchKnowledgeFTS5({ query, category, limit }, db);
       }
+      _ragTier = 'vector';
 
       scored = rows.map(r => {
         const vec = blobToVec(r.embedding);
@@ -15549,8 +15656,11 @@ async function searchKnowledge({ query, category, limit } = {}) {
       }).sort((a, b) => b.score - a.score);
     } catch (e) {
       console.warn('[knowledge-search] vector search error, falling back to FTS5:', e.message);
+      _ragTier = 'fts5-error';
       return searchKnowledgeFTS5({ query, category, limit }, db);
     }
+    _top1 = scored[0]?.score || 0;
+    _top2 = scored[1]?.score || 0;
 
     // Tier 2 — 2-signal OR gate (opt-in via Settings).
     // Triggers: Vietnamese-looking no-diacritic query OR low top1/top2 margin (<0.03).
@@ -15604,6 +15714,8 @@ async function searchKnowledge({ query, category, limit } = {}) {
           _tier2SaveCounter(todayKey, global.__tier2CallsToday);
           // F6: preserve both signals when both fire (higher-confidence trigger).
           const reason = [noDiacritic && 'no-diacritic', lowMargin && 'low-margin'].filter(Boolean).join('+');
+          _tier2Fired = true;
+          _tier2Reason = reason;
           try {
             const rewritten = await rewriteQueryViaAI(qStr, cfg.rewriteModel);
             if (rewritten && typeof rewritten === 'string' && rewritten.trim() && rewritten !== qStr) {
@@ -15660,6 +15772,23 @@ async function searchKnowledge({ query, category, limit } = {}) {
     return scored.slice(0, limit);
   } finally {
     try { db.close(); } catch {}
+    // Obs-H3: one structured audit event per search — support can grep
+    // audit.jsonl for this single event kind to reconstruct the decision
+    // tree without reading 3 different log lines across 2 files.
+    try {
+      auditLog('rag_search', {
+        queryHash: _queryHash,
+        queryLen: String(query || '').length,
+        tier: _ragTier,
+        top1: Number(_top1.toFixed(4)),
+        top2: Number(_top2.toFixed(4)),
+        margin: Number((_top1 - _top2).toFixed(4)),
+        tier2Fired: _tier2Fired,
+        tier2Reason: _tier2Reason,
+        durationMs: Date.now() - _ragSearchStart,
+        cat: category || null,
+      });
+    } catch {}
   }
 }
 
@@ -15781,6 +15910,40 @@ function startKnowledgeSearchServer() {
       if (url.pathname === '/audit-rag-degraded' && req.method === 'POST') {
         try { auditLog('rag_degraded', { at: Date.now() }); } catch {}
         res.writeHead(204); res.end();
+        return;
+      }
+      // Obs-CRIT-1: /health endpoint so support can diagnose RAG state via
+      // one curl call. Returns: HTTP ok, embedder state, Tier 2 counters,
+      // embedding coverage. Requires same bearer auth as /search.
+      if (url.pathname === '/health') {
+        let coverage = null;
+        try {
+          const db2 = getDocumentsDb();
+          if (db2) {
+            try {
+              const row = db2.prepare(
+                "SELECT COUNT(*) AS total, COUNT(embedding) AS embedded FROM documents_chunks"
+              ).get();
+              coverage = { total: row.total, embedded: row.embedded, pct: row.total ? Math.round(row.embedded / row.total * 100) : 100 };
+            } finally { try { db2.close(); } catch {} }
+          }
+        } catch {}
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({
+          ragHttp: 'ok',
+          version: require('./package.json').version,
+          embedder: getEmbedderState(),
+          tier2: {
+            callsToday: global.__tier2CallsToday || 0,
+            dayKey: global.__tier2DayKey || null,
+            failCount: global.__tier2FailCount || 0,
+            cooldownUntil: global.__tier2CooldownUntil || 0,
+            consecutiveTrips: global.__tier2ConsecutiveTrips || 0,
+            cap: 500,
+          },
+          backfillInProgress: _backfillInProgress,
+          coverage,
+        }, null, 2));
         return;
       }
       if (url.pathname !== '/search') {
@@ -17734,6 +17897,28 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     userDataDir = app.getPath('userData');
     invalidateWorkspaceCache(); // Force getWorkspace() to re-evaluate with new userDataDir
+  }
+
+  // Platform-F3: strip quarantine xattr from bundled vendor on Mac first boot.
+  // DMG drag triggers Gatekeeper quarantine on nested files. Spawning
+  // vendor/node/bin/node for autoFix* can silently fail with "cannot be opened
+  // because it is from an unidentified developer" until xattr is cleared.
+  // Idempotent marker prevents repeating work.
+  if (process.platform === 'darwin' && app.isPackaged) {
+    try {
+      const markerPath = path.join(app.getPath('userData'), '.xattr-stripped');
+      if (!fs.existsSync(markerPath)) {
+        const vendorPath = path.join(process.resourcesPath, 'vendor');
+        if (fs.existsSync(vendorPath)) {
+          require('child_process').spawn('xattr', ['-dr', 'com.apple.quarantine', vendorPath], {
+            stdio: 'ignore', detached: true,
+          }).on('exit', () => {
+            try { fs.writeFileSync(markerPath, new Date().toISOString()); } catch {}
+          });
+          console.log('[mac-xattr] stripping quarantine from vendor/ (background)');
+        }
+      }
+    } catch (e) { console.warn('[mac-xattr] strip failed:', e.message); }
   }
 
   // Windows packaged FIRST LAUNCH: extract vendor-bundle.tar → userData/vendor

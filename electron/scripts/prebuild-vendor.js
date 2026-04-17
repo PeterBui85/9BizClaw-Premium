@@ -717,6 +717,26 @@ async function main() {
     packVendorForWindows();
     log('vendor archive ready at', path.join(ROOT, 'vendor-bundle.tar'));
   } else {
+    // Platform-F1: emit vendor-meta.json for Mac too so verifyEmbedderModelSha
+    // on Mac has a baseline to compare against. No tar on Mac — just the
+    // modelSha map.
+    const modelDir = path.join(VENDOR, 'models', 'Xenova', 'multilingual-e5-small');
+    const modelSha = {};
+    try {
+      const onnx = path.join(modelDir, 'onnx', 'model_quantized.onnx');
+      if (fs.existsSync(onnx)) modelSha['model_quantized.onnx'] = sha256File(onnx);
+      const tok = path.join(modelDir, 'tokenizer.json');
+      if (fs.existsSync(tok)) modelSha['tokenizer.json'] = sha256File(tok);
+    } catch (e) { warn('Mac model SHA collection failed:', e.message); }
+    const macMetaPath = path.join(ROOT, 'vendor-meta.json');
+    fs.writeFileSync(macMetaPath, JSON.stringify({
+      version: 1,
+      target_platform: 'darwin',
+      target_arch: arch,
+      modelSha,
+      created_at: new Date().toISOString(),
+    }, null, 2) + '\n');
+    log(`  ✓ vendor-meta.json written (Mac: modelSha only)`);
     log('vendor ready at', VENDOR);
   }
 }

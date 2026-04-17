@@ -20,7 +20,26 @@ let _embedderInFlight = 0;  // E3 fix: reference count — never unload while >0
 // Caller must provide the models root (packaged: userData/vendor; dev: electron/vendor).
 // Passing explicitly avoids coupling this module to Electron app.getPath.
 let _modelsRoot = null;
+let _cacheRoot = null;  // writable cache dir; distinct from read-only _modelsRoot
 function setModelsRoot(dir) { _modelsRoot = dir; }
+function setCacheRoot(dir) { _cacheRoot = dir; }
+
+// Platform-F5 fix: on Mac with .app in /Applications, vendor dir is READ-ONLY.
+// transformers.js may try to write tokenizer cache to cacheDir at load time
+// → EROFS → embedder load throws → RAG broken forever. Route cacheDir to a
+// writable location (caller passes userData path via setCacheRoot).
+
+function getEmbedderState() {
+  return {
+    loaded: !!_embedder,
+    loading: !!_embedderLoadPromise,
+    lastUsedAt: _embedderLastUsedAt,
+    inFlight: _embedderInFlight,
+    nextUnloadInMs: _embedderUnloadTimer ? EMBEDDER_UNLOAD_MS : null,
+    modelsRoot: _modelsRoot,
+    cacheRoot: _cacheRoot,
+  };
+}
 
 function armUnloadTimer() {
   if (_embedderUnloadTimer) clearTimeout(_embedderUnloadTimer);
@@ -51,7 +70,9 @@ async function getEmbedder() {
     env.allowRemoteModels = false;
     const base = _modelsRoot || path.join(__dirname, '..', 'vendor');
     env.localModelPath = path.join(base, 'models');
-    env.cacheDir = env.localModelPath;
+    // Platform-F5: cacheDir MUST be writable; vendor dir inside .app bundle
+    // on Mac /Applications/ is read-only → EROFS would brick embedder load.
+    env.cacheDir = _cacheRoot || env.localModelPath;
     const extractor = await pipeline(
       'feature-extraction',
       'Xenova/multilingual-e5-small',
@@ -109,9 +130,11 @@ module.exports = {
   E5_DIM,
   EMBEDDER_UNLOAD_MS,
   setModelsRoot,
+  setCacheRoot,
   getEmbedder,
   embedText,
   cosineSim,
   vecToBlob,
   blobToVec,
+  getEmbedderState,
 };
