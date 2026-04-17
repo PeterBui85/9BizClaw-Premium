@@ -4,6 +4,7 @@ dist/
 *.log
 electron/logs/
 electron/vendor/
+electron/vendor/models/
 electron/vendor-bundle.tar
 electron/vendor-meta.json
 modoro-claw-plugin/dist/
