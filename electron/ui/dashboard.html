@@ -2296,11 +2296,11 @@
                 </div>
               </div>
               <div style="margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;gap:10px">
-                <span style="font-size:12px;font-weight:600;white-space:nowrap">Nh\u00F3m m\u1EDBi:</span>
+                <span style="font-size:12px;font-weight:600;white-space:nowrap">Nhóm mới:</span>
                 <select id="zalo-default-group-mode" onchange="updateDefaultGroupMode(this.value)" style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px;background:var(--bg);color:var(--text)">
                   <option value="mention">@mention</option>
-                  <option value="all">M\u1ECDi tin</option>
-                  <option value="off">T\u1EAFt</option>
+                  <option value="all">Mọi tin</option>
+                  <option value="off">Tắt</option>
                 </select>
               </div>
               <input type="text" class="zalo-mgr-search" id="zalo-mgr-group-search" placeholder="Tìm nhóm..." oninput="renderZaloGroups()" style="flex-shrink:0">
@@ -4350,11 +4350,11 @@
             <div class="zc-meta">${esc(metaParts.join(' · '))}</div>
           </div>
           <div class="zc-actions">
-            ${summary?.hasContent ? `<button class="zc-summary-btn" onclick="viewGroupMemory('${escAttr(g.groupId)}', '${escAttr(g.name)}')" title="Xem t\u00F3m t\u1EAFt nh\u00F3m">${icon('file-text', 14)}</button>` : ''}
+            ${summary?.hasContent ? `<button class="zc-summary-btn" onclick="viewGroupMemory('${escAttr(g.groupId)}', '${escAttr(g.name)}')" title="Xem tóm tắt nhóm">${icon('file-text', 14)}</button>` : ''}
             <select class="zc-select" onchange="setGroupMode('${escAttr(g.groupId)}', this.value)">
               <option value="mention" ${mode === 'mention' ? 'selected' : ''}>@mention</option>
               <option value="all" ${mode === 'all' ? 'selected' : ''}>Mọi tin</option>
-              <option value="off" ${mode === 'off' ? 'selected' : ''}>T\u1EAFt</option>
+              <option value="off" ${mode === 'off' ? 'selected' : ''}>Tắt</option>
             </select>
           </div>
         </div>`;
@@ -4486,7 +4486,7 @@
       try {
         const result = await window.claw.getZaloGroupMemory(groupId);
         if (!result.exists || !result.content.trim()) {
-          showToast('Ch\u01B0a c\u00F3 t\u00F3m t\u1EAFt cho nh\u00F3m n\u00E0y', 'info');
+          showToast('Chưa có tóm tắt cho nhóm này', 'info');
           return;
         }
         // Remove existing modal
@@ -4498,13 +4498,13 @@
         modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
         const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         modal.innerHTML = `<div class="group-memory-content">
-          <button class="group-memory-close" onclick="document.getElementById('group-memory-modal').remove()">\u00D7</button>
+          <button class="group-memory-close" onclick="document.getElementById('group-memory-modal').remove()">×</button>
           <h3>${esc(groupName)}</h3>
           <pre>${esc(result.content)}</pre>
         </div>`;
         document.body.appendChild(modal);
       } catch (e) {
-        showToast('L\u1ED7i: ' + (e.message || e), 'error');
+        showToast('Lỗi: ' + (e.message || e), 'error');
       }
     }
 
@@ -4576,13 +4576,13 @@
         ? `<img class="zc-avatar" src="${esc(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
         : `<span class="zc-avatar-fallback">${icon('user', 16)}</span>`;
       const stateClass = blocked ? 'zc-state-off' : 'zc-state-on';
-      const badgeLabel = blocked ? 'T\u1EAFt' : 'B\u1EADt';
+      const badgeLabel = blocked ? 'Tắt' : 'Bật';
       const lastAct = f.lastActionTime ? new Date(f.lastActionTime) : null;
       const lastActLabel = lastAct ? (() => {
         const diff = Date.now() - lastAct.getTime();
-        if (diff < 3600000) return Math.floor(diff/60000) + ' ph\u00FAt tr\u01B0\u1EDBc';
-        if (diff < 86400000) return Math.floor(diff/3600000) + ' gi\u1EDD tr\u01B0\u1EDBc';
-        if (diff < 604800000) return Math.floor(diff/86400000) + ' ng\u00E0y tr\u01B0\u1EDBc';
+        if (diff < 3600000) return Math.floor(diff/60000) + ' phút trước';
+        if (diff < 86400000) return Math.floor(diff/3600000) + ' giờ trước';
+        if (diff < 604800000) return Math.floor(diff/86400000) + ' ngày trước';
         return lastAct.toLocaleDateString('vi');
       })() : '';
       const metaParts = [];
@@ -4592,10 +4592,10 @@
           ${avatarHtml}
           <div class="zc-body">
             <div class="zc-name">${esc(f.displayName)}<span class="zc-badge">${badgeLabel}</span></div>
-            ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' \u00B7 '))}</div>` : ''}
+            ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' · '))}</div>` : ''}
           </div>
           <div class="zc-actions">
-            <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem h\u1ED3 s\u01A1">${icon('file-text', 14)}</button>
+            <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>
             <label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
           </div>
         </div>`;
@@ -4616,7 +4616,7 @@
         btn.id = 'zalo-friends-load-more';
         btn.className = 'btn btn-secondary';
         btn.style.cssText = 'width:100%;margin-top:8px;padding:10px';
-        btn.textContent = 'Xem th\u00EAm ' + Math.min(remaining, ZALO_FRIENDS_PAGE_SIZE) + ' / ' + remaining + ' user c\u00F2n l\u1EA1i';
+        btn.textContent = 'Xem thêm ' + Math.min(remaining, ZALO_FRIENDS_PAGE_SIZE) + ' / ' + remaining + ' user còn lại';
         btn.onclick = _renderMoreFriends;
         fragment.appendChild(btn);
       }
@@ -4629,7 +4629,7 @@
         (f.displayName || '').toLowerCase().includes(q)
       );
       if (filtered.length === 0) {
-        list.innerHTML = '<div class="zalo-mgr-empty">Kh\u00F4ng t\u00ECm th\u1EA5y user.</div>';
+        list.innerHTML = '<div class="zalo-mgr-empty">Không tìm thấy user.</div>';
         return;
       }
       _zaloFriendsSorted = [...filtered].sort((a, b) => {
@@ -5079,7 +5079,7 @@
       if (_dashboardStarted) return;
       _dashboardStarted = true;
       Promise.all([refreshDashboard(), loadZaloMode(), loadSchedules()]).catch(() => {});
-      addActivity('Dashboard \u0111\u00E3 t\u1EA3i');
+      addActivity('Dashboard đã tải');
       (async () => {
         try {
           const v = await window.claw.getAppVersion();
@@ -5098,14 +5098,14 @@
       window.claw.onCustomCronsUpdated((data) => {
         customCrons = data || [];
         renderSchedules();
-        addActivity('Custom cron \u0111\u00E3 c\u1EADp nh\u1EADt');
+        addActivity('Custom cron đã cập nhật');
       });
     }
     if (window.claw.onSchedulesUpdated) {
       window.claw.onSchedulesUpdated((data) => {
         currentSchedules = data || [];
         renderSchedules();
-        addActivity('L\u1ECBch c\u1ED1 \u0111\u1ECBnh \u0111\u00E3 c\u1EADp nh\u1EADt');
+        addActivity('Lịch cố định đã cập nhật');
       });
     }
 
@@ -5116,56 +5116,56 @@
       const banner = document.getElementById('update-banner');
       const text = document.getElementById('update-banner-text');
       if (!banner || !text) return;
-      text.innerHTML = 'v' + esc(info.version) + ' &mdash; Nh\u1EA5n \u0111\u1EC3 c\u1EADp nh\u1EADt';
+      text.innerHTML = 'v' + esc(info.version) + ' &mdash; Nhấn để cập nhật';
       banner.style.display = 'block';
-      showToast('B\u1EA3n m\u1EDBi v' + info.version + ' \u2014 nh\u1EA5n banner xanh trong sidebar \u0111\u1EC3 c\u1EADp nh\u1EADt', 'success', 8000);
+      showToast('Bản mới v' + info.version + ' — nhấn banner xanh trong sidebar để cập nhật', 'success', 8000);
     }
     async function startUpdate() {
       if (!_pendingUpdate) return;
       const banner = document.getElementById('update-banner');
       const text = document.getElementById('update-banner-text');
-      if (text) text.textContent = '\u0110ang t\u1EA3i... 0%';
+      if (text) text.textContent = 'Đang tải... 0%';
       if (banner) banner.style.animation = 'none';
-      showToast('B\u1EAFt \u0111\u1EA7u t\u1EA3i b\u1EA3n c\u1EADp nh\u1EADt...', 'info', 3000);
+      showToast('Bắt đầu tải bản cập nhật...', 'info', 3000);
       try {
         const r = await window.claw.downloadAndInstallUpdate();
         if (r && r.method === 'browser') {
-          if (text) text.textContent = '\u0110\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1';
-          showToast('\u0110\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1 trong tr\u00ECnh duy\u1EC7t', 'success', 5000);
+          if (text) text.textContent = 'Đã mở trang tải về';
+          showToast('Đã mở trang tải về trong trình duyệt', 'success', 5000);
         } else if (r && r.method === 'installer') {
-          if (text) text.textContent = '\u0110ang c\u00E0i... \u0110\u1EE3i kh\u1EDFi \u0111\u1ED9ng l\u1EA1i';
-          showToast('Installer \u0111ang ch\u1EA1y \u2014 app s\u1EBD t\u1EF1 t\u1EAFt', 'success', 10000);
+          if (text) text.textContent = 'Đang cài... Đợi khởi động lại';
+          showToast('Installer đang chạy — app sẽ tự tắt', 'success', 10000);
         } else if (r && r.method === 'dmg-install') {
-          if (text) text.innerHTML = 'Kh\u1EDFi \u0111\u1ED9ng l\u1EA1i...';
-          showToast('C\u1EADp nh\u1EADt th\u00E0nh c\u00F4ng \u2014 \u0111ang kh\u1EDFi \u0111\u1ED9ng l\u1EA1i', 'success', 10000);
+          if (text) text.innerHTML = 'Khởi động lại...';
+          showToast('Cập nhật thành công — đang khởi động lại', 'success', 10000);
         } else if (r && !r.success) {
           const errMsg = r.error || '';
-          const fallbackNote = r.fallback === 'browser' ? ' (\u0111\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1)' : '';
-          if (text) text.textContent = 'L\u1ED7i: ' + errMsg + fallbackNote;
-          showToast('C\u1EADp nh\u1EADt th\u1EA5t b\u1EA1i: ' + errMsg + (r.fallback === 'browser' ? ' \u2014 \u0111\u00E3 m\u1EDF trang t\u1EA3i v\u1EC1' : ''), 'error', 6000);
+          const fallbackNote = r.fallback === 'browser' ? ' (đã mở trang tải về)' : '';
+          if (text) text.textContent = 'Lỗi: ' + errMsg + fallbackNote;
+          showToast('Cập nhật thất bại: ' + errMsg + (r.fallback === 'browser' ? ' — đã mở trang tải về' : ''), 'error', 6000);
           setTimeout(() => { if (banner) banner.style.display = 'none'; }, 6000);
         }
       } catch (e) {
-        if (text) text.textContent = 'L\u1ED7i: ' + e.message;
-        showToast('L\u1ED7i: ' + e.message, 'error', 5000);
+        if (text) text.textContent = 'Lỗi: ' + e.message;
+        showToast('Lỗi: ' + e.message, 'error', 5000);
         setTimeout(() => { if (banner) banner.style.display = 'none'; }, 5000);
       }
     }
     async function manualCheckUpdate() {
       const label = document.getElementById('check-update-label');
-      if (label) label.textContent = '\u0110ang ki\u1EC3m tra...';
+      if (label) label.textContent = 'Đang kiểm tra...';
       try {
         const r = await window.claw.checkForUpdates();
         if (r && r.available) {
           showUpdateBanner(r);
-          if (label) label.textContent = 'C\u00F3 b\u1EA3n m\u1EDBi!';
+          if (label) label.textContent = 'Có bản mới!';
         } else {
-          if (label) label.textContent = '\u0110\u00E3 m\u1EDBi nh\u1EA5t';
-          setTimeout(() => { if (label) label.textContent = 'Ki\u1EC3m tra c\u1EADp nh\u1EADt'; }, 3000);
+          if (label) label.textContent = 'Đã mới nhất';
+          setTimeout(() => { if (label) label.textContent = 'Kiểm tra cập nhật'; }, 3000);
         }
       } catch {
-        if (label) label.textContent = 'L\u1ED7i k\u1EBFt n\u1ED1i';
-        setTimeout(() => { if (label) label.textContent = 'Ki\u1EC3m tra c\u1EADp nh\u1EADt'; }, 3000);
+        if (label) label.textContent = 'Lỗi kết nối';
+        setTimeout(() => { if (label) label.textContent = 'Kiểm tra cập nhật'; }, 3000);
       }
     }
     // Listen for auto-check result from main process
@@ -5176,7 +5176,7 @@
     if (window.claw.onUpdateDownloadProgress) {
       window.claw.onUpdateDownloadProgress((p) => {
         const text = document.getElementById('update-banner-text');
-        if (text && p) text.textContent = '\u0110ang t\u1EA3i... ' + (p.percent || 0) + '%';
+        if (text && p) text.textContent = 'Đang tải... ' + (p.percent || 0) + '%';
       });
     }
     // Install status (Mac DMG install phases)

@@ -7767,6 +7767,10 @@ function seedZaloCustomersFromCache() {
     let seededUsers = 0, seededGroups = 0, skipped = 0;
     const stamp = new Date().toISOString().slice(0, 19);
 
+    // Collect all discovered IDs for default-deny blocklist seeding.
+    const allFriendIds = [];
+    const allGroupIds = [];
+
     // Friends → memory/zalo-users/<userId>.md
     const friendsPath = path.join(cacheDir, 'friends.json');
     if (fs.existsSync(friendsPath)) {
@@ -7776,6 +7780,7 @@ function seedZaloCustomersFromCache() {
         for (const f of friends) {
           const userId = f.userId || f.uid || f.id;
           if (!userId) continue;
+          allFriendIds.push(String(userId));
           const profilePath = path.join(usersDir, `${userId}.md`);
           if (fs.existsSync(profilePath)) { skipped++; continue; }
           const displayName = String(f.displayName || f.zaloName || f.name || 'Khách Zalo').trim();
@@ -7815,6 +7820,7 @@ ${statusText ? `**Trạng thái Zalo:** ${statusText}\n\n` : ''}---
         for (const g of groups) {
           const groupId = g.groupId || g.id;
           if (!groupId) continue;
+          allGroupIds.push(String(groupId));
           const profilePath = path.join(groupsDir, `${groupId}.md`);
           if (fs.existsSync(profilePath)) { skipped++; continue; }
           const name = String(g.name || g.groupName || 'Nhóm Zalo').trim();
@@ -7857,6 +7863,41 @@ memberCount: ${memberCount}
       console.log(`[seedZaloCustomers] ${skipped} profiles already exist, no new seeds`);
     } else {
       console.log('[seedZaloCustomers] cache is empty, nothing to seed');
+    }
+
+    // === Default-deny blocklist seeding (one-time, post-onboarding) ===
+    // User requirement: after wizard completes, bot must NOT reply to any
+    // friend/group by default. User must explicitly un-block from Dashboard
+    // to start replying. Prevents accidental spam to customers while user is
+    // still configuring bot.
+    //
+    // Trigger: first time we have cache content (friends OR groups > 0) AND
+    // the seed flag does NOT exist yet. Idempotent — after first seed, flag
+    // prevents re-seeding (user-unblocked senders stay unblocked on restart).
+    try {
+      const seedFlagPath = path.join(workspace, 'zalo-initial-blocklist-seeded.json');
+      const cacheHasContent = allFriendIds.length > 0 || allGroupIds.length > 0;
+      if (cacheHasContent && !fs.existsSync(seedFlagPath)) {
+        const blocklistPath = path.join(workspace, 'zalo-blocklist.json');
+        let existing = [];
+        if (fs.existsSync(blocklistPath)) {
+          try { existing = JSON.parse(fs.readFileSync(blocklistPath, 'utf-8')) || []; } catch {}
+          if (!Array.isArray(existing)) existing = [];
+        }
+        const merged = Array.from(new Set([...existing, ...allFriendIds, ...allGroupIds]));
+        fs.writeFileSync(blocklistPath, JSON.stringify(merged, null, 2), 'utf-8');
+        fs.writeFileSync(seedFlagPath, JSON.stringify({
+          seededAt: new Date().toISOString(),
+          friendCount: allFriendIds.length,
+          groupCount: allGroupIds.length,
+          totalBlocked: merged.length,
+          note: 'Default-deny policy: post-onboarding, bot blocks all discovered friends+groups until user explicitly un-blocks from Dashboard.',
+        }, null, 2), 'utf-8');
+        console.log(`[seed-blocklist] default-deny: blocked ${allFriendIds.length} friends + ${allGroupIds.length} groups (${merged.length} total after merge with existing)`);
+        try { auditLog('zalo_initial_blocklist_seeded', { friends: allFriendIds.length, groups: allGroupIds.length, total: merged.length }); } catch {}
+      }
+    } catch (e) {
+      console.warn('[seed-blocklist] error:', e.message);
     }
   } catch (e) {
     console.error('[seedZaloCustomers] error:', e.message);
