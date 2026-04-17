@@ -3435,6 +3435,14 @@ async function ensureDefaultConfig() {
       // augmentation in augmentPathWithBundledNode() prepends
       // vendor/node_modules/.bin so the bundled openzca shim is found.
     }
+    // Defense-in-depth: config layer in case env var fails to propagate (e.g.,
+    // cron-agent subprocess spawn that doesn't inherit enrichedEnv).
+    if (!config.discovery) config.discovery = {};
+    if (!config.discovery.mdns) config.discovery.mdns = {};
+    if (config.discovery.mdns.mode !== "off") {
+      config.discovery.mdns.mode = "off";
+      changed = true;
+    }
     // Sync plugin hard-off with the master Zalo enabled flag. If Zalo is off,
     // the gateway should not load openzalo at all.
     try {
@@ -6154,6 +6162,10 @@ async function _startOpenClawImpl() {
   } catch (e) {
     console.warn('[gateway] could not resolve 9BIZ_WORKSPACE:', e?.message);
   }
+  // Disable openclaw's mDNS/bonjour — causes crash loops on some Windows machines
+  // when mDNS watchdog sees its own stale record. openclaw 2026.4.14 official
+  // env var (verified at vendor server.impl-BbJvXoPb.js:20261).
+  enrichedEnv.OPENCLAW_DISABLE_BONJOUR = "1";
   try {
     const npmBinDirs = [];
     // HIGHEST PRIORITY: bundled vendor node dir. On packaged Windows installs,
@@ -6545,6 +6557,25 @@ async function _startOpenClawImpl() {
     if (app.isQuitting) return;
 
     const isRestart = lastError?.includes('restart') || lastError?.includes('SIGUSR1');
+    const isBonjourConflict = lastError?.includes('bonjour') && lastError?.includes('non-announced');
+
+    if (isBonjourConflict) {
+      // openclaw's mDNS watchdog detected its own stale record from the previous
+      // crash and exited. Restarting immediately causes a self-defeating 4-min loop.
+      // Wait 5min for the mDNS TTL to expire so the new instance sees a clean slate.
+      const BONJOUR_TTL_MS = 5 * 60 * 1000;
+      global._bonjourCooldownUntil = Date.now() + BONJOUR_TTL_MS;
+      console.log('[restart-guard] bonjour conflict exit — waiting 5min for mDNS TTL before restart');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('bot-status', { running: false, error: 'Đang chờ mạng ổn định... tự động khởi động lại sau 5 phút.' });
+      }
+      setTimeout(() => {
+        global._bonjourCooldownUntil = 0;
+        if (botRunning || _startOpenClawInFlight || _gatewayRestartInFlight) return;
+        startOpenClaw();
+      }, BONJOUR_TTL_MS);
+      return;
+    }
 
     if (isRestart) {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -12600,7 +12631,7 @@ async function fastWatchdogTick() {
       }
       // 3 consecutive fails — restart (was 2, but gateway busy with AI
       // completion can timeout 2 probes in a row without being dead)
-      if (_fwGatewayFailCount >= 3 && _fwCanRestart()) {
+      if (_fwGatewayFailCount >= 3 && _fwCanRestart() && !(global._bonjourCooldownUntil > Date.now())) {
         console.log('[fast-watchdog] Gateway dead (' + _fwGatewayFailCount + ' fails) — restarting');
         _fwGatewayFailCount = 0;
         _fwRestartTimestamps.push(Date.now());
