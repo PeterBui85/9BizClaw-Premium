@@ -3635,12 +3635,14 @@ async function ensureDefaultConfig() {
 }
 
 // Check if gateway is already running on port 18789
-function isGatewayAlive(timeoutMs = 8000) {
-  // Generous timeout (8s default) — gateway can be busy serving an AI completion
-  // and not return the index page in time. A 2s timeout used to false-positive
-  // every few minutes, causing the heartbeat watchdog to kill+respawn a healthy
-  // gateway → looked like an endless restart loop. Any 2xx/3xx/4xx status counts
-  // as alive (the connection itself is what we care about).
+function isGatewayAlive(timeoutMs = 15000) {
+  // Generous timeout (15s default) — gateway can be busy serving a cloud-model
+  // AI completion cold-start and not return the index page in time. An 8s
+  // timeout used to false-positive for cloud-model first-token latency, and a
+  // 2s timeout used to false-positive every few minutes, causing the heartbeat
+  // watchdog to kill+respawn a healthy gateway → looked like an endless
+  // restart loop. Any 2xx/3xx/4xx status counts as alive (the connection
+  // itself is what we care about).
   return new Promise((resolve) => {
     const req = require('http').get('http://127.0.0.1:18789', { timeout: timeoutMs }, (res) => {
       res.resume(); resolve(true);
@@ -12622,29 +12624,31 @@ async function fastWatchdogTick() {
     }
 
     // --- Gateway watchdog ---
-    // Timeout 10s (was 4s — gateway busy with AI completion can take 5-8s
+    // Timeout 15s (was 4s — gateway busy with AI completion can take 5-8s
     // to respond to HTTP probe, causing false-positive "dead" → restart loop).
-    // Also skip if gateway started <90s ago (cold boot takes 30-60s for
-    // plugins + openzca + Telegram long-poll to initialize).
-    if (global._gatewayStartedAt && (Date.now() - global._gatewayStartedAt) < 90000) {
+    // Also skip if gateway started <180s ago (slow SSDs + Windows Defender
+    // scan + cloud model cold start can push boot to 64-76s observed on
+    // customer machine LINH-BABY — 90s grace was too tight).
+    if (global._gatewayStartedAt && (Date.now() - global._gatewayStartedAt) < 180000) {
       // Gateway still booting — skip watchdog this tick
       return;
     }
-    const gwAlive = await isGatewayAlive(10000);
+    const gwAlive = await isGatewayAlive(15000);
     if (!gwAlive) {
       _fwGatewayFailCount++;
       if (_fwGatewayFailCount === 1) {
         // First fail — recheck after 3s
         await new Promise(r => setTimeout(r, FW_RECHECK_MS));
-        const gwAlive2 = await isGatewayAlive(10000);
+        const gwAlive2 = await isGatewayAlive(15000);
         if (gwAlive2) {
           _fwGatewayFailCount = 0;
           return;
         }
       }
-      // 3 consecutive fails — restart (was 2, but gateway busy with AI
-      // completion can timeout 2 probes in a row without being dead)
-      if (_fwGatewayFailCount >= 3 && _fwCanRestart() && !(global._bonjourCooldownUntil > Date.now())) {
+      // 5 consecutive fails — restart (was 3, but cloud model cold start
+      // can hold gateway 30-60s, causing multiple probes to timeout in a
+      // row without being dead).
+      if (_fwGatewayFailCount >= 5 && _fwCanRestart() && !(global._bonjourCooldownUntil > Date.now())) {
         console.log('[fast-watchdog] Gateway dead (' + _fwGatewayFailCount + ' fails) — restarting');
         _fwGatewayFailCount = 0;
         _fwRestartTimestamps.push(Date.now());
@@ -13467,7 +13471,7 @@ function startCronJobs() {
               console.log('[heartbeat] skipping — user-triggered restart in progress');
               return;
             }
-            const alive1 = await isGatewayAlive(8000);
+            const alive1 = await isGatewayAlive(15000);
             if (alive1) {
               // Gateway alive → also verify openzca listener is running.
               // Listener can die silently if openzca crashes; gateway stays
@@ -13545,9 +13549,17 @@ function startCronJobs() {
               return;
             }
             await new Promise(r => setTimeout(r, 5000));
-            const alive2 = await isGatewayAlive(8000);
+            const alive2 = await isGatewayAlive(15000);
             if (alive2) {
               console.log('[heartbeat] gateway slow but alive — skipping restart');
+              return;
+            }
+            // Third probe before restart — cloud model cold start can hold
+            // gateway 30-60s, tripping 2 probes in a row without being dead.
+            await new Promise(r => setTimeout(r, 5000));
+            const alive3 = await isGatewayAlive(15000);
+            if (alive3) {
+              console.log('[heartbeat] gateway slow but alive (3rd probe) — skipping restart');
               return;
             }
             // [restart-guard] Don't cascade a restart if save/resume or another
@@ -13556,7 +13568,7 @@ function startCronJobs() {
               console.log('[heartbeat] restart already in-flight — skipping gateway-dead restart');
               return;
             }
-            console.log('[heartbeat] Gateway not responding (2 consecutive failures) — auto-restarting');
+            console.log('[heartbeat] Gateway not responding (3 consecutive failures) — auto-restarting');
             _gatewayRestartInFlight = true;
             try {
               try { await stopOpenClaw(); } catch {}
