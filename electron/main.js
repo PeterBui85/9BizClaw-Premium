@@ -14181,6 +14181,77 @@ function chunkVietnameseText(text, opts) {
   }));
 }
 
+// === Knowledge RAG — embedder ===
+// Lazy-load transformers.js model. Auto-unload after 10min idle to save RAM.
+let _embedder = null;
+let _embedderLoadPromise = null;
+let _embedderLastUsedAt = 0;
+let _embedderUnloadTimer = null;
+const EMBEDDER_UNLOAD_MS = 10 * 60 * 1000;
+
+async function getEmbedder() {
+  _embedderLastUsedAt = Date.now();
+  // Reset unload timer
+  if (_embedderUnloadTimer) { clearTimeout(_embedderUnloadTimer); }
+  _embedderUnloadTimer = setTimeout(() => {
+    if (Date.now() - _embedderLastUsedAt >= EMBEDDER_UNLOAD_MS) {
+      console.log('[embedder] unloading — idle 10min');
+      _embedder = null;
+    }
+  }, EMBEDDER_UNLOAD_MS);
+
+  if (_embedder) return _embedder;
+  if (_embedderLoadPromise) return _embedderLoadPromise;
+
+  _embedderLoadPromise = (async () => {
+    const { pipeline, env } = await import('@xenova/transformers');
+    // Point to bundled model dir (NOT Hugging Face CDN at runtime).
+    env.allowLocalModels = true;
+    env.allowRemoteModels = false;
+    env.localModelPath = path.join(getBundledVendorDir() || '', 'models');
+    env.cacheDir = env.localModelPath;
+    const extractor = await pipeline(
+      'feature-extraction',
+      'Xenova/multilingual-e5-small',
+      { quantized: true, local_files_only: true }
+    );
+    console.log('[embedder] loaded — Xenova/multilingual-e5-small quantized');
+    _embedder = extractor;
+    return extractor;
+  })();
+
+  try { return await _embedderLoadPromise; }
+  finally { _embedderLoadPromise = null; }
+}
+
+async function embedText(text, isQuery = false) {
+  const extractor = await getEmbedder();
+  const prefix = isQuery ? 'query: ' : 'passage: ';
+  const out = await extractor(prefix + text, { pooling: 'mean', normalize: true });
+  return Array.from(out.data);  // Float32Array → regular array for BLOB storage
+}
+
+function cosineSim(a, b) {
+  // Vectors already normalized in embedText → dot product = cosine
+  let s = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) s += a[i] * b[i];
+  return s;
+}
+
+// Pack/unpack Float32Array ↔ BLOB for SQLite
+function vecToBlob(vec) {
+  const buf = Buffer.alloc(vec.length * 4);
+  for (let i = 0; i < vec.length; i++) buf.writeFloatLE(vec[i], i * 4);
+  return buf;
+}
+function blobToVec(blob) {
+  const n = blob.length / 4;
+  const vec = new Array(n);
+  for (let i = 0; i < n; i++) vec[i] = blob.readFloatLE(i * 4);
+  return vec;
+}
+
 // Idempotent schema migration for the chunk table + FTS5 mirror. Runs inside
 // getDocumentsDb() so every DB open catches fresh installs + upgrades. The
 // triggers keep documents_chunks_fts mirror in sync with documents_chunks
