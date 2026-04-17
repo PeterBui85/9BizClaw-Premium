@@ -440,8 +440,11 @@ const modelsDir = path.join(__dirname, '..', 'vendor', 'models', 'Xenova');
 if (fs.existsSync(modelsDir)) {
   console.log('  running smoke-rag-test.js (40-query probe)...');
   try {
+    // Use process.execPath instead of 'node' — binds to the exact Node
+    // binary running smoke-test.js. Guards against CI PATH quirks where
+    // `node` could resolve to a different version than our parent.
     require('child_process').execFileSync(
-      'node',
+      process.execPath,
       [path.join(__dirname, 'smoke-rag-test.js')],
       { stdio: 'inherit' }
     );
