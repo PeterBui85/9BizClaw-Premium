@@ -2383,6 +2383,34 @@
           </div>
         </div>
 
+        <!-- RAG Settings -->
+        <div class="ds-section" style="margin-top:24px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+          <h3 class="ds-section-title" style="margin:0 0 4px 0">Tìm kiếm tài liệu cho khách</h3>
+          <p class="ds-section-desc" style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted)">Khi khách hỏi gì đó, bot tra cứu tài liệu shop để trả lời chính xác.</p>
+
+          <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:not-allowed;opacity:0.7">
+            <input type="checkbox" id="rag-tier1" checked disabled>
+            <span><strong>Tìm kiếm thông minh</strong> (luôn bật) — local model, miễn phí, hoạt động offline.</span>
+          </label>
+
+          <label style="display:flex;align-items:center;gap:8px;margin:8px 0">
+            <input type="checkbox" id="rag-tier2" onchange="saveRagConfig()">
+            <span><strong>Tự chuẩn hoá câu hỏi khó qua AI</strong> — khi khách gõ thiếu dấu hoặc sai chính tả. Chi phí ~$0.10-3/tháng.</span>
+          </label>
+
+          <div id="rag-tier2-model-row" style="margin-left:26px;display:none">
+            <label style="display:block;margin:4px 0;font-size:12px;color:var(--text-muted)">Model dùng cho rewrite:</label>
+            <select id="rag-rewrite-model" class="zs-select" style="max-width:300px" onchange="saveRagConfig()">
+              <option value="ninerouter/main">main (khuyến nghị nếu anh/chị dùng ChatGPT Plus)</option>
+              <option value="ninerouter/fast">fast (khuyến nghị nếu dùng API key trả tiền)</option>
+            </select>
+          </div>
+
+          <p style="margin-top:12px;font-size:11px;color:var(--text-muted)">
+            Reranker (tăng thêm độ chính xác) — sẽ có ở bản 2.4.
+          </p>
+        </div>
+
       </div>
 
       <!-- PAGE: Tính cách bot (persona mix editor) -->
@@ -4093,6 +4121,33 @@
         });
       } catch (e) { console.warn('refreshKnowledgeCounts:', e); }
     }
+
+    // RAG settings — tier2 toggle + rewrite-model dropdown
+    async function loadRagConfig() {
+      try {
+        if (!window.claw || !window.claw.getRagConfig) return;
+        const cfg = await window.claw.getRagConfig();
+        const t2 = document.getElementById('rag-tier2');
+        const row = document.getElementById('rag-tier2-model-row');
+        const model = document.getElementById('rag-rewrite-model');
+        if (t2) t2.checked = !!cfg.tier2Enabled;
+        if (row) row.style.display = cfg.tier2Enabled ? 'block' : 'none';
+        if (model) model.value = cfg.rewriteModel || 'ninerouter/fast';
+      } catch (e) { console.warn('loadRagConfig:', e); }
+    }
+    async function saveRagConfig() {
+      try {
+        if (!window.claw || !window.claw.setRagConfig) return;
+        const t2El = document.getElementById('rag-tier2');
+        const modelEl = document.getElementById('rag-rewrite-model');
+        const row = document.getElementById('rag-tier2-model-row');
+        const tier2 = !!(t2El && t2El.checked);
+        const model = (modelEl && modelEl.value) || 'ninerouter/fast';
+        if (row) row.style.display = tier2 ? 'block' : 'none';
+        await window.claw.setRagConfig({ tier2Enabled: tier2, rewriteModel: model });
+      } catch (e) { console.warn('saveRagConfig:', e); }
+    }
+    document.addEventListener('DOMContentLoaded', loadRagConfig);
 
     async function refreshKnowledgeFiles() {
       const list = document.getElementById('know-files-list');

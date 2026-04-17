@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld('claw', {
   createKnowledgeFolder: (name) => ipcRenderer.invoke('create-knowledge-folder', { name }),
   deleteKnowledgeFolder: (id) => ipcRenderer.invoke('delete-knowledge-folder', { id }),
   knowledgeSearch: (query, category, limit) => ipcRenderer.invoke('knowledge-search', { query, category, limit }),
+  getRagConfig: () => ipcRenderer.invoke('get-rag-config'),
+  setRagConfig: (cfg) => ipcRenderer.invoke('set-rag-config', cfg),
 
   // Document Library
   indexDocument: (opts) => ipcRenderer.invoke('index-document', opts),

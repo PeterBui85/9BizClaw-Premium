@@ -15431,6 +15431,20 @@ ipcMain.handle('knowledge-search', async (_event, payload) => {
   }
 });
 
+// RAG config — read/write rag-config.json in workspace root
+ipcMain.handle('get-rag-config', async () => getRagConfig());
+ipcMain.handle('set-rag-config', async (_event, cfg) => {
+  try {
+    const p = path.join(getWorkspace(), 'rag-config.json');
+    writeJsonAtomic(p, {
+      tier2Enabled: !!(cfg && cfg.tier2Enabled),
+      rewriteModel: String((cfg && cfg.rewriteModel) || 'ninerouter/fast'),
+      updatedAt: new Date().toISOString(),
+    });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 // === KNOWLEDGE SEARCH HTTP SERVER (for gateway → inbound.ts RAG) ===
 // Gateway openzalo plugin (different process) needs to query our SQLite FTS5
 // to RAG-enrich messages before dispatch to AI. Expose a tiny localhost HTTP
