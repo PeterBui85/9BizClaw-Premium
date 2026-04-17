@@ -4080,6 +4080,20 @@
       } catch (e) { alert('Lỗi: ' + e.message); }
     }
 
+    // Update folder counts in-place (no flash). Called after upload/delete.
+    async function refreshKnowledgeCounts() {
+      try {
+        const counts = await window.claw.getKnowledgeCounts();
+        document.querySelectorAll('.know-folder').forEach(el => {
+          const cat = el.dataset.cat;
+          const countEl = el.querySelector('.count');
+          if (countEl && counts[cat] != null) {
+            countEl.textContent = counts[cat] + ' tài liệu';
+          }
+        });
+      } catch (e) { console.warn('refreshKnowledgeCounts:', e); }
+    }
+
     async function refreshKnowledgeFiles() {
       const list = document.getElementById('know-files-list');
       list.innerHTML = '<div class="know-empty">Đang tải...</div>';
