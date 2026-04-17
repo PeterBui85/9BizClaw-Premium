@@ -14288,6 +14288,25 @@ function ensureKnowledgeChunksSchema(db) {
   } catch (e) {
     console.error('[knowledge] chunk schema migrate error:', e.message);
   }
+
+  // v2.3.47 — add embedding column for Knowledge RAG
+  try {
+    // Idempotent: ALTER TABLE ADD COLUMN is a no-op if column exists on some SQLite
+    // versions; better-sqlite3 with old SQLite treats duplicate ADD as error.
+    const cols = db.prepare("PRAGMA table_info(documents_chunks)").all();
+    const hasEmbedding = cols.some(c => c.name === 'embedding');
+    const hasModelStamp = cols.some(c => c.name === 'embedding_model');
+    if (!hasEmbedding) {
+      db.exec('ALTER TABLE documents_chunks ADD COLUMN embedding BLOB');
+      console.log('[knowledge-schema] added embedding column');
+    }
+    if (!hasModelStamp) {
+      db.exec('ALTER TABLE documents_chunks ADD COLUMN embedding_model TEXT');
+      console.log('[knowledge-schema] added embedding_model column');
+    }
+  } catch (e) {
+    console.warn('[knowledge-schema] embedding migration warning:', e.message);
+  }
 }
 
 // Re-index a single document: delete existing chunks + FTS rows, run chunker,
