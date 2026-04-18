@@ -542,6 +542,52 @@ if (!modelCatalogFiles) {
 }
 
 // =========================================================================
+// openclaw vision serialization patch — LAYER 3+4 vision gates
+// ensureVisionSerializationFix patches supportsImageInput (outbound content
+// serializer) + supportsExplicitImageInput (tool-result image replay).
+// Without these, images survive gateway accept + capability skip but get
+// STRIPPED at the final OpenAI-compat serialization step → model never
+// sees the actual image data → hallucination.
+// =========================================================================
+section('openclaw vision-serialization patch anchors');
+function findFileWithFuncSig(distDirs, filenamePrefix, funcSig) {
+  for (const dir of distDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const files = fs.readdirSync(dir).filter(f => f.startsWith(filenamePrefix) && f.endsWith('.js'));
+      for (const f of files) {
+        const fp = path.join(dir, f);
+        const src = fs.readFileSync(fp, 'utf-8');
+        if (src.includes(funcSig)) return fp;
+      }
+    } catch {}
+  }
+  return null;
+}
+const visionSerializationDirs = [
+  path.join(__dirname, '..', 'vendor', 'node_modules', 'openclaw', 'dist'),
+  path.join(__dirname, '..', 'node_modules', 'openclaw', 'dist'),
+];
+const serializationTargets = [
+  { label: 'supportsImageInput', prefix: 'model-context-tokens-', sig: 'function supportsImageInput(modelOverride) {' },
+  { label: 'supportsExplicitImageInput', prefix: 'stream-', sig: 'function supportsExplicitImageInput(model) {' },
+];
+let serializationDistFound = false;
+for (const dir of visionSerializationDirs) if (fs.existsSync(dir)) { serializationDistFound = true; break; }
+if (!serializationDistFound) {
+  warn('vision-serialization anchors', 'openclaw dist not found in vendor or node_modules — skip (run prebuild:vendor first)');
+} else {
+  for (const target of serializationTargets) {
+    const hit = findFileWithFuncSig(visionSerializationDirs, target.prefix, target.sig);
+    if (!hit) {
+      fail('vision-serialization anchor', `${target.label} FUNC_SIG not found in any ${target.prefix}*.js — upstream refactor detected, ensureVisionSerializationFix will silently no-op → images stripped from outbound requests.`);
+    } else {
+      pass(`vision-serialization anchor: ${target.label} (${path.basename(hit)})`);
+    }
+  }
+}
+
+// =========================================================================
 // electron-builder files allowlist coverage
 // Every local `require('./xxx/...')` in main.js must have its prefix
 // covered by `build.files` in package.json, otherwise the shipped .exe

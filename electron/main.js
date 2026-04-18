@@ -4280,6 +4280,88 @@ function ensureVisionCatalogFix() {
   }
 }
 
+// LAYER 3 + 4 vision fix — patch outbound-request serializers.
+// User report after ensureVisionCatalogFix (layer 2) shipped: bot on Telegram
+// STILL hallucinating image content. Session jsonl trace revealed: openclaw
+// does NOT inline image_url parts on user-message turn 1; instead it attaches
+// `[media attached: <path>]` as TEXT and the model tool-calls `read` to get
+// the image. Tool result contains a `{type:"image", data:"base64..."}` part.
+// Then openclaw serializes the conversation for the next provider request.
+// At serialization time, TWO additional gates strip image content when the
+// provider/model hasn't declared `input:["image"]`:
+//
+//   model-context-tokens-*.js :: supportsImageInput(modelOverride)
+//     → used by contentToOpenAIParts; if false, drops `{type:"image"}` and
+//       `input_image` parts from user-role turn content going outbound.
+//
+//   stream-*.js (xAI compat wrapper) :: supportsExplicitImageInput(model)
+//     → used by normalizeXaiResponsesFunctionCallOutput; if false, replays
+//       tool-result image parts as "(see attached image)" text placeholder
+//       and drops the actual base64.
+//
+// 9Router's /v1/models response returns models without explicit
+// `input:["image"]` → both functions return false → model gets no visual
+// data → bot hallucinates ("em thấy biên lai... nhưng chưa có OCR").
+//
+// Fix: patch both to unconditionally return true. Under our deployment
+// (9Router → ChatGPT Plus OAuth → GPT-5 / Claude / Gemini), all upstreams
+// support vision — same safety reasoning as layers 1 + 2.
+function ensureVisionSerializationFix() {
+  try {
+    const distDir = path.join(getBundledVendorDir() || '', 'node_modules', 'openclaw', 'dist');
+    if (!fs.existsSync(distDir)) return;
+
+    // Targets: (filename_prefix, FUNC_SIG, marker_suffix). Filename is a prefix
+    // because openclaw dist emits hash-renamed chunks per release — we match
+    // on signature, not hash.
+    const targets = [
+      {
+        prefix: 'model-context-tokens-',
+        funcSig: 'function supportsImageInput(modelOverride) {',
+        marker: '9BizClaw VISION-SERIALIZE PATCH — supportsImageInput always-true',
+      },
+      {
+        prefix: 'stream-',
+        funcSig: 'function supportsExplicitImageInput(model) {',
+        marker: '9BizClaw VISION-STREAM PATCH — supportsExplicitImageInput always-true',
+      },
+    ];
+
+    const files = fs.readdirSync(distDir);
+    for (const target of targets) {
+      const candidates = files.filter(f => f.startsWith(target.prefix) && f.endsWith('.js'));
+      let patched = false;
+      for (const file of candidates) {
+        const fp = path.join(distDir, file);
+        let src = fs.readFileSync(fp, 'utf-8');
+        if (src.includes(target.marker)) { patched = true; continue; }
+        if (!src.includes(target.funcSig)) continue; // wrong chunk, try next
+        const injected = `${target.funcSig}\n\treturn true; // ${target.marker}`;
+        const out = src.replace(target.funcSig, injected);
+        if (out !== src) {
+          fs.writeFileSync(fp, out, 'utf-8');
+          console.log('[vision-serialize-fix] applied to', file, '—', target.marker);
+          patched = true;
+        }
+      }
+      if (!patched) {
+        // FUNC_SIG wasn't found in any candidate file → upstream refactored.
+        console.warn(`[vision-serialize-fix] WARNING: FUNC_SIG "${target.funcSig}" not found in any ${target.prefix}*.js — images may still be stripped from outbound requests.`);
+        try {
+          const auditDir = path.join(HOME, '.openclaw', 'logs');
+          fs.mkdirSync(auditDir, { recursive: true });
+          fs.appendFileSync(
+            path.join(auditDir, 'patch-failures.log'),
+            `${new Date().toISOString()} ensureVisionSerializationFix: FUNC_SIG "${target.funcSig}" missing\n`
+          );
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[vision-serialize-fix] non-fatal:', e?.message);
+  }
+}
+
 // early-exit checks (ensureZaloSystemMsgFix must be called AFTER other ensure* calls so it
 // appears physically FIRST in the file — `replace(anchor, anchor+code)` inserts at top each time).
 function ensureZaloSystemMsgFix() {
@@ -6523,6 +6605,7 @@ async function _startOpenClawImpl() {
   ensureZaloOutputFilterFix();   // patches send.ts
   ensureVisionFix();             // patches openclaw dist session-utils (layer 1: gateway accepts images)
   ensureVisionCatalogFix();      // patches openclaw dist model-catalog (layer 2: image-understanding capability is skipped → direct model pass-through)
+  ensureVisionSerializationFix();// patches model-context-tokens + stream-* (layer 3+4: image parts survive outbound request serialization)
 
   // Rebuild memory DB — use absolute node path so it works even if Electron's
   // PATH doesn't include the user's Node install (nvm/volta/scoop/etc.).
