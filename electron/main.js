@@ -4220,6 +4220,66 @@ function ensureVisionFix() {
   }
 }
 
+// LAYER 2 vision fix — patches model-catalog's modelSupportsVision().
+// ensureVisionFix() patched resolveGatewayModelSupportsImages (session-utils)
+// so the gateway ACCEPTS images from Zalo/Telegram plugins. But openclaw has
+// a SECOND gate in src/media-understanding/apply.ts: if modelSupportsVision()
+// returns false for the active model's catalog entry, openclaw does NOT pass
+// the image directly to the primary model. Instead it runs a separate
+// "image.description" capability that would call some other provider to
+// generate a text description, then append it to ctx.Body.
+//
+// Problem: 9Router's /v1/models response does NOT declare input:["image"],
+// so findModelInCatalog returns an entry WITHOUT the image input hint →
+// modelSupportsVision returns false → capability fires. If tools.media.image
+// is unconfigured (typical for our CEOs), the capability no-ops → ctx.Body
+// unchanged → main model receives "[media attached]" text only → bot
+// HALLUCINATES 100% of image content. User reported this symptom directly:
+// "cho nó đọc thử ảnh với chatgpt 5.4 mà nó bịa 100%, nó ko hề đọc đc".
+//
+// Fix: patch modelSupportsVision in model-catalog-*.js to return true for
+// ALL models unconditionally. Under our deployment (9Router → ChatGPT Plus
+// OAuth with GPT-5 family OR Claude models OR Gemini — all of which support
+// vision), this is safe. The apply.ts "skipped — primary model supports
+// vision natively" path fires → ctx.MediaUrls are left intact for the main
+// agent dispatch, which then builds an image_url content part and sends
+// the image directly to the model.
+function ensureVisionCatalogFix() {
+  try {
+    const distDir = path.join(getBundledVendorDir() || '', 'node_modules', 'openclaw', 'dist');
+    if (!fs.existsSync(distDir)) return;
+    const files = fs.readdirSync(distDir).filter(f => f.startsWith('model-catalog-') && f.endsWith('.js'));
+    // Use a distinct marker from ensureVisionFix (V2 was for session-utils).
+    const MARKER = '// 9BizClaw VISION-CATALOG PATCH — unconditional modelSupportsVision';
+    const FUNC_SIG = 'function modelSupportsVision(entry) {';
+    for (const file of files) {
+      const fp = path.join(distDir, file);
+      let src = fs.readFileSync(fp, 'utf-8');
+      if (src.includes(MARKER)) continue;
+      if (!src.includes(FUNC_SIG)) {
+        console.warn(`[vision-catalog-fix] WARNING: ${file} exists but FUNC_SIG missing — openclaw upstream refactor detected, image understanding may degrade. Update ensureVisionCatalogFix anchor.`);
+        try {
+          const auditDir = path.join(HOME, '.openclaw', 'logs');
+          fs.mkdirSync(auditDir, { recursive: true });
+          fs.appendFileSync(
+            path.join(auditDir, 'patch-failures.log'),
+            `${new Date().toISOString()} ensureVisionCatalogFix: FUNC_SIG missing in ${file}\n`
+          );
+        } catch {}
+        continue;
+      }
+      const injected = `${FUNC_SIG}\n\treturn true; ${MARKER}`;
+      const patched = src.replace(FUNC_SIG, injected);
+      if (patched !== src) {
+        fs.writeFileSync(fp, patched, 'utf-8');
+        console.log('[vision-catalog-fix] applied to', file, '— modelSupportsVision always-true, direct image pass-through');
+      }
+    }
+  } catch (e) {
+    console.warn('[vision-catalog-fix] non-fatal:', e?.message);
+  }
+}
+
 // early-exit checks (ensureZaloSystemMsgFix must be called AFTER other ensure* calls so it
 // appears physically FIRST in the file — `replace(anchor, anchor+code)` inserts at top each time).
 function ensureZaloSystemMsgFix() {
@@ -6461,7 +6521,8 @@ async function _startOpenClawImpl() {
   // Non-inbound patches (separate files, direct I/O):
   ensureOpenzcaFriendEventFix(); // patches openzca cli.js
   ensureZaloOutputFilterFix();   // patches send.ts
-  ensureVisionFix();             // patches openclaw dist session-utils
+  ensureVisionFix();             // patches openclaw dist session-utils (layer 1: gateway accepts images)
+  ensureVisionCatalogFix();      // patches openclaw dist model-catalog (layer 2: image-understanding capability is skipped → direct model pass-through)
 
   // Rebuild memory DB — use absolute node path so it works even if Electron's
   // PATH doesn't include the user's Node install (nvm/volta/scoop/etc.).

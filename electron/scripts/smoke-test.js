@@ -503,6 +503,45 @@ if (!sessionUtilsFiles) {
 }
 
 // =========================================================================
+// openclaw vision catalog patch — LAYER 2 vision gate
+// ensureVisionCatalogFix patches model-catalog-*.js `modelSupportsVision`.
+// Without this patch, image-understanding capability runs instead of direct
+// model pass-through → bot hallucinates image content.
+// =========================================================================
+section('openclaw vision-catalog patch anchor');
+function findOpenclawModelCatalog() {
+  const candidates = [
+    path.join(__dirname, '..', 'vendor', 'node_modules', 'openclaw', 'dist'),
+    path.join(__dirname, '..', 'node_modules', 'openclaw', 'dist'),
+  ];
+  for (const dir of candidates) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const files = fs.readdirSync(dir).filter(f => f.startsWith('model-catalog-') && f.endsWith('.js'));
+      if (files.length > 0) return files.map(f => path.join(dir, f));
+    } catch {}
+  }
+  return null;
+}
+const modelCatalogFiles = findOpenclawModelCatalog();
+if (!modelCatalogFiles) {
+  warn('vision-catalog-patch anchor', 'openclaw model-catalog not found in vendor or node_modules — skip (run prebuild:vendor first)');
+} else {
+  const FUNC_SIG_CATALOG = 'function modelSupportsVision(entry) {';
+  let anchorFoundCatalog = false;
+  let anchorFileCatalog = null;
+  for (const fp of modelCatalogFiles) {
+    const src = fs.readFileSync(fp, 'utf-8');
+    if (src.includes(FUNC_SIG_CATALOG)) { anchorFoundCatalog = true; anchorFileCatalog = fp; break; }
+  }
+  if (!anchorFoundCatalog) {
+    fail('vision-catalog-patch anchor', `openclaw model-catalog present but FUNC_SIG "${FUNC_SIG_CATALOG}" missing — upstream refactor detected. ensureVisionCatalogFix will silently no-op. Update patch anchor before ship.`);
+  } else {
+    pass(`vision-catalog-patch anchor (${path.basename(anchorFileCatalog)})`);
+  }
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
