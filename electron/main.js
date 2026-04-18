@@ -4097,7 +4097,17 @@ function ensureZaloRagFix() {
           __ragG.__ragSecret = fs.readFileSync(path.join(ws, 'rag-secret.txt'), 'utf-8').trim();
         } catch {}
       }
-      if (!__ragG.__ragSecret) { return; }
+      if (!__ragG.__ragSecret) {
+        // Cold-boot race: gateway fires first Zalo msg before main.js writes
+        // rag-secret.txt. Log once per process so "Zalo silent" reports are
+        // traceable — fail-closed (skip RAG + skip agent dispatch) is safer
+        // than sending to an unsecured HTTP endpoint.
+        if (!__ragG.__ragSecretMissingLogged) {
+          __ragG.__ragSecretMissingLogged = true;
+          runtime.log?.('openzalo: RAG skipped — rag-secret.txt not yet written (cold-boot race, fail-closed)');
+        }
+        return;
+      }
       const __ragQ = (rawBody || '').slice(0, 500).trim();
       const __ragUrl = \`http://127.0.0.1:20129/search?q=\${encodeURIComponent(__ragQ)}&k=3\`;
       const __ragCtrl = new AbortController();
