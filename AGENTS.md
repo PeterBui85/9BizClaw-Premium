@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 44 -->
+<!-- modoroclaw-agents-version: 45 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -25,15 +25,26 @@
 4. **VERIFY-BEFORE-CLAIM.** Chỉ nói "đã làm X" khi đã call tool xong. Lừa = lỗi nghiêm trọng nhất.
 5. **CHỈ câu trả lời cuối.** Không plan/draft/suy nghĩ trong reply.
 
-## Chạy phiên
+## Chạy phiên — TIẾT KIỆM TOKEN
 
-**Chỉ đọc lần đầu trong phiên:** `IDENTITY.md` → `active-persona.md` → `knowledge/cong-ty/index.md` → `knowledge/san-pham/index.md` → `knowledge/nhan-vien/index.md`. Sau đó KHÔNG đọc lại. **COMPANY.md / PRODUCTS.md CHỈ nạp khi CEO Telegram cần context nội bộ**, KHÔNG đọc khi trả lời khách Zalo.
+**QUY TẮC SỐ 1 — ĐỌC THEO NHU CẦU, KHÔNG ĐỌC PHÒNG XA.** Mỗi tin nhắn = 1 agent run độc lập. Đọc dư file = mỗi lần đọc tốn 1 round-trip full context (~15k token). Tin đơn giản mà đọc 5 file = 60-70k token lãng phí.
 
-**Trước MỖI reply Zalo:** đọc `memory/zalo-users/<senderId>.md` (nếu DM) hoặc `memory/zalo-groups/<groupId>.md` (nếu group).
+**Tin đã có `<kb-doc untrusted="true">` trong message → RAG đã inject đủ context. TRẢ LỜI NGAY từ chunk đó. KHÔNG đọc `knowledge/*/index.md`.**
+
+**Tin Zalo KHÔNG có `<kb-doc>` — đọc theo quy tắc:**
+
+- **Chào hỏi/xã giao/cảm ơn/đồng ý/từ chối/xác nhận ngắn** (vd: "xin chào", "ok", "cảm ơn", "ừ", "dạ", "ok anh", "được rồi") → **reply thẳng, KHÔNG đọc file nào.** 1 round-trip.
+- **Hỏi sản phẩm/giá/tình trạng hàng** → đọc DUY NHẤT `knowledge/san-pham/index.md`.
+- **Hỏi giờ mở cửa/địa chỉ/hotline/chi nhánh/giới thiệu công ty** → đọc DUY NHẤT `knowledge/cong-ty/index.md`.
+- **Hỏi nhân sự cụ thể** → đọc DUY NHẤT `knowledge/nhan-vien/index.md`.
+- Trả lời khách bình thường KHÔNG cần đọc `IDENTITY.md`, `active-persona.md` — persona mặc định = lễ phép tiếng Việt, xưng "em", gọi khách "anh/chị". CHỈ đọc `active-persona.md` khi CEO vừa update persona (hiếm).
+- Memory DM: đọc `memory/zalo-users/<senderId>.md` **CHỈ NẾU cần context cá nhân** (khách đang theo dõi đơn hàng, follow-up đã hứa). Chào hỏi lần đầu → không cần đọc.
+
+**CEO Telegram (không phải Zalo):** Lệnh admin/config/báo cáo → đọc files theo nhu cầu cụ thể trong câu lệnh. KHÔNG bootstrap 5 file.
 
 **CHỈ đọc khi CEO hỏi cụ thể:** `knowledge/sales-playbook.md`, `skills/INDEX.md`, `.learnings/LEARNINGS.md`, `SOUL.md`, `USER.md`, `HEARTBEAT.md`, `MEMORY.md`. KHÔNG đọc mặc định.
 
-**KHÔNG BAO GIỜ đọc:** `BOOTSTRAP.md` (chỉ dùng 1 lần đầu cài), `industry/*.md` (trừ khi CEO hỏi về ngành).
+**KHÔNG BAO GIỜ đọc:** `BOOTSTRAP.md` (chỉ dùng 1 lần đầu cài), `industry/*.md` (trừ khi CEO hỏi về ngành), `COMPANY.md`, `PRODUCTS.md` (auto-gen từ wizard, KHÔNG chính xác — dùng `knowledge/cong-ty/index.md` + `knowledge/san-pham/index.md` thay thế).
 
 Prompt cron có `--- LỊCH SỬ TIN NHẮN 24H ---`: data thật. Block rỗng → "Hôm qua không có hoạt động đáng chú ý."
 

@@ -607,7 +607,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 44;
+const CURRENT_AGENTS_MD_VERSION = 45;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -3889,7 +3889,7 @@ function ensureZaloGroupSettingsFix() {
 }
 
 // inbound.ts RAG enrichment: calls Electron main HTTP knowledge-search + prepends chunks.
-// Idempotent via "9BizClaw RAG PATCH v5" marker.
+// Idempotent via "9BizClaw RAG PATCH v6" marker.
 // Anchor: AFTER group-settings end marker (runs only for messages that passed all filters).
 // Fail-open: if HTTP fails or returns nothing, message dispatches as-is.
 // Circuit breaker: 3 consecutive fails within 60s → POST /audit-rag-degraded + stop calling for 5min.
@@ -3917,7 +3917,7 @@ function ensureZaloRagFix() {
       }
     }
 
-    if (content.includes('9BizClaw RAG PATCH v5')) return;
+    if (content.includes('9BizClaw RAG PATCH v6')) return;
 
     const anchor = '  // === END 9BizClaw GROUP-SETTINGS PATCH ===';
     if (!content.includes(anchor)) {
@@ -3926,7 +3926,7 @@ function ensureZaloRagFix() {
     }
 
     const injection = `
-  // === 9BizClaw RAG PATCH v5 ===
+  // === 9BizClaw RAG PATCH v6 ===
   // Enrich message with knowledge chunks via HTTP to Electron main.
   // v5: Hybrid RRF on server (v2.3.47.1) means keyword-dominant chunks have
   //     low cosine but high RRF score. Drop client-side >0.45 hard filter —
@@ -3982,9 +3982,16 @@ function ensureZaloRagFix() {
               // at 1500 chars (protects against oversized chunks + reduces
               // token spend).
               const __ragEsc = (s: string) => String(s || '').replace(/<\\/kb-doc>/gi, '[/kb-doc]');
+              // v6: sanitize filename in source= so echoed filenames don't trip
+              // the output filter's file-path regex. Strip path separators,
+              // colons, drive letters → safe for LLM echo without false-block.
+              const __ragSafeName = (s: string) => String(s || 'tài liệu')
+                .replace(/[\\\\/:*?"<>|]/g, '_')
+                .replace(/\\.(pdf|docx?|txt|xlsx?|csv|md)$/i, '')
+                .slice(0, 60);
               let __ragCtx = '';
               for (const r of __ragTop as any[]) {
-                const piece = \`<kb-doc id="\${r.chunk_index ?? '?'}" source="\${__ragEsc((r.filename || 'tài liệu')).slice(0, 80)}" untrusted="true">\n\${__ragEsc(r.snippet).slice(0, 500)}\n</kb-doc>\`;
+                const piece = \`<kb-doc id="\${r.chunk_index ?? '?'}" source="\${__ragSafeName(__ragEsc(r.filename || 'tài liệu'))}" untrusted="true">\n\${__ragEsc(r.snippet).slice(0, 500)}\n</kb-doc>\`;
                 if (__ragCtx.length + piece.length > 1500) break;
                 __ragCtx += (__ragCtx ? '\\n' : '') + piece;
               }
@@ -4020,11 +4027,11 @@ function ensureZaloRagFix() {
   } catch (__ragOuter) {
     runtime.log?.('openzalo: RAG outer error: ' + String(__ragOuter));
   }
-  // === END 9BizClaw RAG PATCH v5 ===
+  // === END 9BizClaw RAG PATCH v6 ===
 `;
     content = content.replace(anchor, anchor + injection);
     _writeInboundTs(pluginFile, content);
-    console.log('[zalo-rag] Injected RAG enrichment into inbound.ts (v5)');
+    console.log('[zalo-rag] Injected RAG enrichment into inbound.ts (v6)');
   } catch (e) {
     console.error('[zalo-rag] error:', e?.message || e);
   }
@@ -15123,7 +15130,11 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     // — embedding that pollutes the vector corpus. Require ≥30% printable
     // ASCII chars (digits/letters/punct/space) OR Vietnamese letter chars.
     if (content && content.length > 50) {
-      const printable = (content.match(/[\x20-\x7E\u00C0-\u1EF9]/g) || []).length;
+      // R4-F1: tighten OCR-garbage regex. Previous range \u00C0-\u1EF9 covers
+      // ~8000 chars incl. Greek/Cyrillic/Arabic/Armenian/Hebrew — an Arabic
+      // product catalog would pass the 30% gate. Narrow to Latin + Latin
+      // Extended-A/B + Latin Extended Additional (VN range = \u1E00-\u1EFF).
+      const printable = (content.match(/[\x20-\x7E\u00C0-\u024F\u1E00-\u1EFF]/g) || []).length;
       const ratio = printable / content.length;
       if (ratio < 0.30) {
         try { fs.unlinkSync(dst); } catch {}
@@ -15601,9 +15612,29 @@ function _tier2LoadCounter() {
   } catch { return { day: '', calls: 0 }; }
 }
 function _tier2SaveCounter(day, calls) {
+  // R4-F3: AV-lock drift protection. Previous version swallowed persist fails
+  // silently → in-memory counter kept incrementing but disk value stale →
+  // Electron heartbeat restart reloaded old count → over-budget fires.
+  // Fix: retry once after 60ms (Defender release window), track consecutive
+  // failures, alert CEO after 3 straight fails so broken AV config surfaces.
   try {
     writeJsonAtomic(_tier2CounterPath(), { day, calls, updatedAt: new Date().toISOString() });
-  } catch (e) { console.warn('[tier2] counter persist failed:', e.message); }
+    global.__tier2WriteFailCount = 0;
+  } catch (e1) {
+    try {
+      const wait = Date.now() + 60;
+      while (Date.now() < wait) { /* 60ms sync wait for AV release */ }
+      writeJsonAtomic(_tier2CounterPath(), { day, calls, updatedAt: new Date().toISOString() });
+      global.__tier2WriteFailCount = 0;
+    } catch (e2) {
+      global.__tier2WriteFailCount = (global.__tier2WriteFailCount || 0) + 1;
+      console.warn(`[tier2] counter persist failed (${global.__tier2WriteFailCount}x): ${e2.message}`);
+      if (global.__tier2WriteFailCount === 3 && !global.__tier2AlertSent) {
+        global.__tier2AlertSent = true;
+        try { sendCeoAlert(`[Cảnh báo Tier 2] Không ghi được tier2-counter.json 3 lần liên tiếp (AV lock?). Counter có thể drift, over-budget. Error: ${e2.message}`); } catch {}
+      }
+    }
+  }
 }
 
 // H4 FIX: exponential backoff for breaker re-trips. 9Router dying permanently
@@ -15765,7 +15796,14 @@ async function searchKnowledge({ query, category, limit } = {}) {
           const p = extractChunkPrice((r.content || '').substring(r.char_start, r.char_end));
           return p !== null;
         });
-        console.log(`[knowledge-search] price filter ${JSON.stringify(priceFilter)} → ${before} → ${rows.length} rows`);
+        // R4-F4: throttle — log only when filter actually dropped rows OR
+        // sampled 1/20 for volume observability. High-traffic shops would
+        // otherwise spam 1 line per query.
+        global.__priceFilterLogCounter = (global.__priceFilterLogCounter || 0) + 1;
+        const _dropped = before !== rows.length;
+        if (_dropped || global.__priceFilterLogCounter % 20 === 0) {
+          console.log(`[knowledge-search] price filter ${JSON.stringify(priceFilter)} → ${before} → ${rows.length} rows${_dropped ? '' : ' (sampled)'}`);
+        }
         // Only fire drop-all if the SOURCE had products AND we filtered them all out.
         if (hadPricedRows && !stillHasPricedRows) _priceFilterDropAll = true;
       }
@@ -15900,7 +15938,7 @@ async function searchKnowledge({ query, category, limit } = {}) {
         // always contain at least one of these high-frequency function words.
         const VI_FUNCWORDS = /\b(co|khong|ko|bao|nhieu|nao|gi|sao|lam|duoc|hay|the|cho|voi|cua|va|de|toi|ban|minh|ai|dau|khi|phai|may|gia|ban|chua|thi|muon|can|tim|mua|xem|hoi|shop|gui|nhan)\b/i;
         const noDiacritic = /[a-z]{3,}/i.test(qStr)
-          && !/[\u00C0-\u1EF9]/.test(qStr)
+          && !/[\u00C0-\u024F\u1E00-\u1EFF]/.test(qStr)
           && tokenCount >= 3
           && qStr.length >= 15
           && VI_FUNCWORDS.test(qStr);
