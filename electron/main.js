@@ -3424,6 +3424,24 @@ async function ensureDefaultConfig() {
         provider.baseUrl = provider.baseUrl.replace('localhost', '127.0.0.1');
         changed = true;
       }
+      // LAYER 5 vision fix — pi-ai's openai-completions.js filters out
+      // image_url parts from user messages AND tool results if
+      // `model.input.includes("image")` is false (node_modules/@mariozechner/
+      // pi-ai/dist/providers/openai-completions.js:461 + 574). 9Router's
+      // /v1/models response does NOT declare `input:["image"]` → pi-ai gate
+      // strips every image part at the final outbound serialization step →
+      // upstream gets only text → bot hallucinates. Declaring input:["image"]
+      // at the openclaw.json model level propagates through openclaw's model
+      // override chain into pi-ai, flipping the gate open.
+      if (Array.isArray(provider.models)) {
+        for (const m of provider.models) {
+          if (!m || typeof m !== 'object') continue;
+          if (!Array.isArray(m.input) || !m.input.includes('image')) {
+            m.input = Array.isArray(m.input) ? [...new Set([...m.input, 'image', 'text'])] : ['text', 'image'];
+            changed = true;
+          }
+        }
+      }
     }
 
     // Fix required fields OpenClaw validator demands
