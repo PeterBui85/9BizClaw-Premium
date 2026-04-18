@@ -1160,10 +1160,11 @@
                 <p>Nhấn nút bên dưới — Telegram tự mở thẳng chat với BotFather. Gửi <span class="wz-kbd">/newbot</span>.</p>
                 <p>Đặt tên cho bot (ví dụ: "Trợ Lý ABC"), BotFather sẽ trả về một dòng token dài (dạng 123456:ABC...). Copy toàn bộ.</p>
               </div>
-              <div style="margin-top:14px;padding-left:40px">
+              <div style="margin-top:14px;padding-left:40px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
                 <button class="wz-btn wz-btn-secondary" onclick="openBotFather()" type="button">
                   <span data-icon="send" data-icon-size="14"></span> Mở @BotFather trên Telegram
                 </button>
+                <a href="#" onclick="openBotFatherWeb(); return false;" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">Không có Telegram Desktop? Mở trình duyệt</a>
               </div>
             </div>
 
@@ -1181,10 +1182,11 @@
                 <p>Nhấn nút bên dưới — Telegram tự mở @userinfobot. Gửi <span class="wz-kbd">/start</span>.</p>
                 <p>Bot trả về một dãy số (ví dụ: 123456789). Copy dãy số đó.</p>
               </div>
-              <div style="margin-top:14px;padding-left:40px">
+              <div style="margin-top:14px;padding-left:40px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
                 <button class="wz-btn wz-btn-secondary" onclick="openUserInfoBot()" type="button">
                   <span data-icon="user" data-icon-size="14"></span> Mở @userinfobot trên Telegram
                 </button>
+                <a href="#" onclick="openUserInfoBotWeb(); return false;" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">Không có Telegram Desktop? Mở trình duyệt</a>
               </div>
             </div>
 
@@ -1703,6 +1705,11 @@
     // anyway — this wizard step requires Telegram. Fallback not needed.
     function openBotFather() { window.claw.openExternal('tg://resolve?domain=BotFather'); }
     function openUserInfoBot() { window.claw.openExternal('tg://resolve?domain=userinfobot'); }
+    // Browser fallback when Telegram Desktop not installed — t.me handles
+    // the protocol redirect to native app if available, else opens web
+    // version. Keeps CEO unblocked on fresh Win machine without Telegram.
+    function openBotFatherWeb() { window.claw.openExternal('https://t.me/BotFather'); }
+    function openUserInfoBotWeb() { window.claw.openExternal('https://t.me/userinfobot'); }
     async function autoSetup9Router() {
       const ollamaKey = document.getElementById('ollama-api-key').value.trim();
       if (!ollamaKey) return showError('Vui lòng dán Ollama API key trước.');
