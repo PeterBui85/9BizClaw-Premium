@@ -1092,15 +1092,15 @@
             <div class="wz-instruction">
               <div class="wz-instruction-head">
                 <div class="wz-instruction-num">1</div>
-                <div class="wz-instruction-title">Tạo tài khoản Ollama (miễn phí)</div>
+                <div class="wz-instruction-title">Đăng ký tài khoản Ollama (miễn phí)</div>
               </div>
               <div class="wz-instruction-body">
-                <p>Nhấn nút bên dưới — trang Ollama sẽ mở ra.</p>
-                <p>Nhấn <span class="wz-kbd">Sign In</span> rồi đăng nhập bằng Google hoặc GitHub.</p>
+                <p>Nhấn nút bên dưới — trang đăng ký Ollama sẽ mở ra.</p>
+                <p>Chọn <strong>Continue with Google</strong> hoặc <strong>Continue with GitHub</strong> để tạo tài khoản / đăng nhập.</p>
               </div>
               <div style="margin-top:14px;padding-left:40px">
                 <button class="wz-btn wz-btn-secondary" onclick="openOllama()" type="button">
-                  <span data-icon="zap" data-icon-size="14"></span> Mở trang Ollama
+                  <span data-icon="user-plus" data-icon-size="14"></span> Đăng ký / Đăng nhập Ollama
                 </button>
               </div>
             </div>
@@ -1685,7 +1685,7 @@
     }
 
     // ===== Step 2: AI setup =====
-    function openOllama() { window.claw.openExternal('https://ollama.com'); }
+    function openOllama() { window.claw.openExternal('https://ollama.com/signin'); }
     function openOllamaKeys() { window.claw.openExternal('https://ollama.com/settings/keys'); }
     async function autoSetup9Router() {
       const ollamaKey = document.getElementById('ollama-api-key').value.trim();
