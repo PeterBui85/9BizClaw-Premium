@@ -10113,10 +10113,24 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         if (fs.existsSync(gsPath)) existing = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {};
         if (typeof existing !== 'object' || Array.isArray(existing)) existing = {};
       } catch {}
+      // v2.4.0: detect internal-flag changes for audit trail
+      const oldFile = (() => { try { return JSON.parse(fs.readFileSync(gsPath, 'utf-8')); } catch { return {}; } })();
       for (const [gid, gs] of Object.entries(groupSettings)) {
         if (!gs || !gs.mode) continue;
         if (!['off', 'mention', 'all'].includes(gs.mode)) continue;
-        existing[gid] = gs;
+        // v2.4.0: whitelist visibility — store mode + (optionally) internal flag.
+        // Strict: only literal true elevates; anything else = customer group.
+        const sanitized = { mode: gs.mode };
+        if (gs.internal === true) sanitized.internal = true;
+        existing[gid] = sanitized;
+      }
+      // v2.4.0: audit any internal-flag changes
+      for (const gid of Object.keys({ ...oldFile, ...existing })) {
+        const wasInternal = !!(oldFile[gid]?.internal);
+        const isInternal = !!(existing[gid]?.internal);
+        if (wasInternal !== isInternal) {
+          try { auditLog('group-internal-flag-change', { groupId: gid, before: wasInternal, after: isInternal }); } catch {}
+        }
       }
       if (Object.keys(existing).length > 0) {
         writeJsonAtomic(gsPath, existing);
@@ -15814,6 +15828,7 @@ function listKnowledgeFilesFromDisk(category) {
           filesize: st ? st.size : 0,
           word_count: 0,
           summary: null,
+          visibility: 'public',
           created_at: st ? new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 19) : '',
           _source: 'disk',
         };
@@ -15838,7 +15853,7 @@ ipcMain.handle('list-knowledge-files', async (_event, { category }) => {
     let dbRows = [];
     try {
       dbRows = db.prepare(
-        'SELECT filename, filetype, filesize, word_count, summary, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        'SELECT filename, filetype, filesize, word_count, summary, visibility, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
       ).all(category);
     } catch (e) {
       console.error('[knowledge] db query error:', e.message);
