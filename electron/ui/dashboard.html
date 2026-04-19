@@ -2773,24 +2773,26 @@
 
   </div>
 
-  <!-- Activity FAB (shown on non-Overview pages) -->
-  <button class="activity-fab" id="activity-fab" onclick="toggleActivityDrawer()" title="Hoạt động gần đây">
-    <span data-icon="activity" data-icon-size="22"></span>
-    <span class="fab-badge" id="activity-fab-badge" style="display:none">0</span>
-  </button>
+  <!-- Activity FAB removed v2.3.48: duplicate corner button, overview drawer consolidated into support-fab menu. -->
+  <!-- Drawer markup below stays for overview page internal use. -->
+
 
   <!-- Support FAB + menu -->
   <button class="support-fab" id="support-fab" onclick="toggleSupportMenu()">
     <span data-icon="help-circle" data-icon-size="20"></span>
   </button>
   <div class="support-menu" id="support-menu" style="display:none">
+    <div class="support-menu-item" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')">
+      <span data-icon="message-circle" data-icon-size="16"></span>
+      Liên hệ hỗ trợ
+    </div>
+    <div class="support-menu-item" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')">
+      <span data-icon="star" data-icon-size="16"></span>
+      Nâng cấp Membership
+    </div>
     <div class="support-menu-item" onclick="window.claw.openExternal('https://youtube.com/@modoro')">
       <span data-icon="eye" data-icon-size="16"></span>
       Xem video hướng dẫn
-    </div>
-    <div class="support-menu-item" onclick="window.claw.openExternal('https://t.me/+qg8RQm1sq4AwODI1')">
-      <span data-icon="message-circle" data-icon-size="16"></span>
-      Liên hệ MODORO
     </div>
     <div class="support-menu-item" onclick="replayWalkthrough()">
       <span data-icon="play-circle" data-icon-size="16"></span>
@@ -3901,6 +3903,19 @@
           row.insertAdjacentHTML('beforeend', '<span class="prompt-copy-icon"></span>');
         }
       });
+      // Auto-trigger walkthrough ONCE for first-time users. Flag survives restart
+      // via localStorage. Bumping SEEN_KEY forces re-show for all users on upgrade.
+      try {
+        const SEEN_KEY = 'walkthrough-seen-v1';
+        if (!localStorage.getItem(SEEN_KEY)) {
+          setTimeout(() => {
+            try {
+              if (typeof walkthroughStart === 'function') walkthroughStart();
+              localStorage.setItem(SEEN_KEY, String(Date.now()));
+            } catch (_) {}
+          }, 1500);
+        }
+      } catch (_) {}
     });
 
     async function initAppPrefsToggle() {
