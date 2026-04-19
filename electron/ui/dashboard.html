@@ -3327,7 +3327,46 @@
       await gcalRefreshEvents();
     }
 
-    async function gcalOpenSettingsModal() { /* filled in Task 24 */ alert('TODO: settings'); }
+    // --- Settings submodal ---
+    async function gcalOpenSettingsModal() {
+      const cfg = (await window.claw.gcalGetConfig()) || {};
+      document.getElementById('gcal-st-wh-start').value = (cfg.workingHours && cfg.workingHours.start) || '08:00';
+      document.getElementById('gcal-st-wh-end').value = (cfg.workingHours && cfg.workingHours.end) || '18:00';
+      document.getElementById('gcal-st-slot').value = String(cfg.slotDurationMinutes || 30);
+      document.getElementById('gcal-st-reminder').value = String(cfg.reminderMinutes || 15);
+      // Load calendars
+      const calRes = await window.claw.gcalListCalendars();
+      const sel = document.getElementById('gcal-st-calendar');
+      sel.innerHTML = '';
+      if (calRes && calRes.success && Array.isArray(calRes.calendars)) {
+        for (const c of calRes.calendars) {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.summary + (c.primary ? ' (chính)' : '');
+          if (c.id === (cfg.calendarId || 'primary')) opt.selected = true;
+          sel.appendChild(opt);
+        }
+      }
+      document.getElementById('gcal-settings-modal').style.display = 'flex';
+    }
+
+    function gcalCloseSettings() {
+      document.getElementById('gcal-settings-modal').style.display = 'none';
+    }
+
+    async function gcalSaveSettings() {
+      const cfg = {
+        calendarId: document.getElementById('gcal-st-calendar').value,
+        workingHours: {
+          start: document.getElementById('gcal-st-wh-start').value,
+          end: document.getElementById('gcal-st-wh-end').value,
+        },
+        slotDurationMinutes: Number(document.getElementById('gcal-st-slot').value),
+        reminderMinutes: Number(document.getElementById('gcal-st-reminder').value),
+      };
+      await window.claw.gcalSaveConfig(cfg);
+      gcalCloseSettings();
+    }
 
     // --- Setup wizard (6 steps) ---
     let _gcalWizardStep = 0;
@@ -6282,6 +6321,36 @@
       window.__kbdPalette = { open: openPalette, close: closePalette, openHelp, closeHelp };
     })();
   </script>
+
+  <!-- Google Calendar: settings modal (Task 24) -->
+  <div id="gcal-settings-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="gcalCloseSettings()"></div>
+    <div class="modal-content" style="max-width:480px">
+      <div class="modal-header"><h3>Cài đặt Google Calendar</h3><button class="modal-close" onclick="gcalCloseSettings()">×</button></div>
+      <div class="modal-body">
+        <label style="font-size:12px;font-weight:600">Calendar mặc định</label>
+        <select id="gcal-st-calendar" style="width:100%;padding:8px;margin:4px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></select>
+        <label style="font-size:12px;font-weight:600">Giờ làm — bắt đầu</label>
+        <input type="time" id="gcal-st-wh-start" style="width:100%;padding:8px;margin:4px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+        <label style="font-size:12px;font-weight:600">Giờ làm — kết thúc</label>
+        <input type="time" id="gcal-st-wh-end" style="width:100%;padding:8px;margin:4px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+        <label style="font-size:12px;font-weight:600">Thời lượng slot mặc định (phút)</label>
+        <select id="gcal-st-slot" style="width:100%;padding:8px;margin:4px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <option value="15">15</option><option value="30" selected>30</option>
+          <option value="45">45</option><option value="60">60</option>
+        </select>
+        <label style="font-size:12px;font-weight:600">Nhắc trước (phút)</label>
+        <select id="gcal-st-reminder" style="width:100%;padding:8px;margin:4px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <option value="5">5</option><option value="10">10</option>
+          <option value="15" selected>15</option><option value="30">30</option><option value="60">60</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="gcalCloseSettings()">Hủy</button>
+        <button class="btn btn-primary" onclick="gcalSaveSettings()">Lưu</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Google Calendar: create/edit event modal (Task 23) -->
   <div id="gcal-event-modal" class="modal" style="display:none">
