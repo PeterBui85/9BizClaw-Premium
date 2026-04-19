@@ -15973,7 +15973,13 @@ function expandSynonyms(normalizedQuery) {
 // fd pressure on the hot Zalo inbound path). Standalone callers still pass
 // no db and we open/close our own.
 function searchKnowledgeFTS5(opts, sharedDb) {
-  const { query, category, limit } = opts || {};
+  const { query, category, limit, audience = 'customer' } = opts || {};
+  // v2.4.0: same visibility filter policy as searchKnowledge — see that fn
+  // for rationale on fail-closed default.
+  const allowedTiers = audience === 'ceo'      ? ['public', 'internal', 'private']
+                     : audience === 'internal' ? ['public', 'internal']
+                                               : ['public'];
+  const visPlaceholders = allowedTiers.map(() => '?').join(',');
   const lim = Math.max(1, Math.min(50, Number(limit) || 5));
   if (!query || !String(query).trim()) return [];
 
@@ -15999,13 +16005,16 @@ function searchKnowledgeFTS5(opts, sharedDb) {
     JOIN documents_chunks dc ON dc.id = documents_chunks_fts.rowid
     JOIN documents d ON d.id = dc.document_id
     WHERE documents_chunks_fts MATCH ?
+      AND d.visibility IN (${visPlaceholders})
   `;
   const catClause = category ? ' AND dc.category = ?' : '';
   const orderLimit = ' ORDER BY bm25(documents_chunks_fts) LIMIT ?';
 
   function tryMatch(expr) {
     const sql = baseSelect + catClause + orderLimit;
-    const args = category ? [expr, category, lim] : [expr, lim];
+    const args = category
+      ? [expr, ...allowedTiers, category, lim]
+      : [expr, ...allowedTiers, lim];
     return db.prepare(sql).all(...args);
   }
 
@@ -16046,11 +16055,14 @@ function searchKnowledgeFTS5(opts, sharedDb) {
                999.0 AS score,
                substr(d.content, 1, 300) AS snippet
         FROM documents d
-        WHERE (d.content LIKE ? OR d.filename LIKE ?)
+        WHERE d.visibility IN (${visPlaceholders})
+          AND (d.content LIKE ? OR d.filename LIKE ?)
         ${category ? 'AND d.category = ?' : ''}
         LIMIT ?
       `;
-      const args3 = category ? [like, like, category, lim] : [like, like, lim];
+      const args3 = category
+        ? [...allowedTiers, like, like, category, lim]
+        : [...allowedTiers, like, like, lim];
       results = db.prepare(sql3).all(...args3);
       usedExpr = 'LIKE:' + like;
     } catch (e) {
