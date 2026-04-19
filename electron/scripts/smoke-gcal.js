@@ -32,10 +32,29 @@ function testCredentialsRoundTrip() {
   ok('credentials round-trip: save / load / clear');
 }
 
+function testConfigRoundTrip() {
+  const config = require('../gcal/config');
+  const cfg = config.read(); // Fresh install — returns defaults
+  if (cfg.reminderMinutes !== 15) fail('config default reminderMinutes != 15');
+  if (cfg.workingHours.start !== '08:00') fail('config default workingHours.start != 08:00');
+  config.write({ workingHours: { start: '09:00', end: '17:00' }, reminderMinutes: 30 });
+  const reloaded = config.read();
+  if (reloaded.reminderMinutes !== 30) fail('reminderMinutes not persisted');
+  if (reloaded.workingHours.start !== '09:00') fail('workingHours.start not persisted');
+  if (reloaded.workingHours.end !== '17:00') fail('workingHours.end not persisted');
+  // Partial write preserves other fields
+  config.write({ slotDurationMinutes: 45 });
+  const merged = config.read();
+  if (merged.slotDurationMinutes !== 45) fail('partial write did not persist slotDurationMinutes');
+  if (merged.reminderMinutes !== 30) fail('partial write clobbered reminderMinutes');
+  ok('config round-trip: defaults, full write, partial write merge');
+}
+
 function main() {
   console.log('[gcal smoke] running...');
   try {
     testCredentialsRoundTrip();
+    testConfigRoundTrip();
   } finally {
     try { fs.rmSync(TMP_WS, { recursive: true, force: true }); } catch {}
   }
