@@ -18085,7 +18085,14 @@ ipcMain.handle('open-log-folder', async () => {
 ipcMain.handle('open-external', async (_event, url) => {
   try {
     const parsed = new URL(url);
-    const allowedOrigins = ['https://ollama.com', 'https://t.me', 'http://localhost:20128', 'http://127.0.0.1:20128', 'http://127.0.0.1:18789', 'http://localhost:18789', 'http://127.0.0.1:18791', 'http://localhost:18791'];
+    const allowedOrigins = [
+      'https://ollama.com',
+      'https://t.me',
+      'https://console.cloud.google.com',
+      'http://localhost:20128', 'http://127.0.0.1:20128',
+      'http://127.0.0.1:18789', 'http://localhost:18789',
+      'http://127.0.0.1:18791', 'http://localhost:18791',
+    ];
     // Telegram deep-link: tg://resolve?domain=<bot> opens native app directly.
     // Allow ONLY the resolve action (no msg_url, no join) to keep the surface
     // tight. Non-resolve tg:// URLs are rejected.
@@ -18093,8 +18100,12 @@ ipcMain.handle('open-external', async (_event, url) => {
     if (allowedOrigins.includes(parsed.origin) || isTelegramResolve) {
       const { shell } = require('electron');
       shell.openExternal(url);
+    } else {
+      console.warn('[open-external] rejected (not in allowlist):', parsed.origin);
     }
-  } catch {} // Invalid URL — ignore
+  } catch (e) {
+    console.warn('[open-external] invalid URL:', url, e?.message);
+  }
 });
 
 ipcMain.handle('get-gateway-token', async () => {
