@@ -15286,6 +15286,7 @@ function getDocumentsDb() {
           word_count INTEGER,
           category TEXT DEFAULT 'general',
           summary TEXT,
+          visibility TEXT NOT NULL DEFAULT 'public',
           created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -15294,6 +15295,7 @@ function getDocumentsDb() {
       `);
       try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
       try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
+      try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
       try { ensureKnowledgeChunksSchema(db); } catch (e) {
         console.warn('[documents] chunk schema init failed:', e.message);
       }
