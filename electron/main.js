@@ -12116,9 +12116,39 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
   // cron drop. We now send plain text (no parse_mode) — safe for all content.
   // Strip Markdown syntax since we send without parse_mode (plain text)
   text = stripTelegramMarkdown(text);
+  // v2.3.48: Telegram hard-rejects >4096 chars with HTTP 400. Before the split
+  // (and especially after Knowledge 3-tier internal docs landed), CEO queries
+  // that returned a long SOP via RAG would silently fail — single payload too
+  // long → 400 → this path just logged 'API error'. Split on paragraph, then
+  // sentence, then word boundary; budget 4000 to leave headroom for UTF-8
+  // multi-byte expansion. Chunks are sent unprefixed — CEO sees N consecutive
+  // messages, ordered by send time (Telegram preserves order for the same chat).
+  const TG_CHUNK = 4000;
+  const chunks = [];
+  if (text.length > TG_CHUNK) {
+    let remaining = text;
+    while (remaining.length > TG_CHUNK) {
+      let cut = TG_CHUNK;
+      const paraBreak = remaining.lastIndexOf('\n\n', TG_CHUNK);
+      if (paraBreak > 1000) { cut = paraBreak + 2; }
+      else {
+        const sentBreak = remaining.slice(0, TG_CHUNK).search(/[.!?][^.!?]*$/);
+        if (sentBreak > 1000) { cut = sentBreak + 1; }
+        else {
+          const spaceBreak = remaining.lastIndexOf(' ', TG_CHUNK);
+          if (spaceBreak > 1000) { cut = spaceBreak + 1; }
+        }
+      }
+      chunks.push(remaining.slice(0, cut).trimEnd());
+      remaining = remaining.slice(cut).trimStart();
+    }
+    if (remaining.length > 0) chunks.push(remaining);
+  } else {
+    chunks.push(text);
+  }
   const https = require('https');
-  const doRequest = (withRetry = true) => new Promise((resolve) => {
-    const payload = JSON.stringify({ chat_id: chatId, text });
+  const sendChunk = (body, withRetry = true) => new Promise((resolve) => {
+    const payload = JSON.stringify({ chat_id: chatId, text: body });
     const req = https.request(
       `https://api.telegram.org/bot${token}/sendMessage`,
       { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
@@ -12135,7 +12165,7 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
             if (code === 429 && withRetry) {
               const wait = Math.min((parsed.parameters?.retry_after || 3) * 1000, 15000);
               console.warn(`[sendTelegram] 429 rate limit — retrying in ${wait}ms`);
-              setTimeout(() => doRequest(false).then(resolve), wait);
+              setTimeout(() => sendChunk(body, false).then(resolve), wait);
               return;
             }
             // 401/403: token revoked or bot blocked — log to missed-alerts
@@ -12144,7 +12174,7 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
               try {
                 const logPath = path.join(getWorkspace(), 'logs', 'ceo-alerts-missed.log');
                 fs.mkdirSync(path.dirname(logPath), { recursive: true });
-                fs.appendFileSync(logPath, `${new Date().toISOString()}\tTELEGRAM-${code}\t${desc}\t${text.slice(0, 200)}\n`);
+                fs.appendFileSync(logPath, `${new Date().toISOString()}\tTELEGRAM-${code}\t${desc}\t${body.slice(0, 200)}\n`);
               } catch {}
               resolve(null);
               return;
@@ -12159,7 +12189,14 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
     req.write(payload);
     req.end();
   });
-  return doRequest(true);
+  // Send chunks sequentially with a small gap to avoid 429 cascades.
+  let lastResult = null;
+  for (let i = 0; i < chunks.length; i++) {
+    lastResult = await sendChunk(chunks[i], true);
+    if (lastResult === null) break; // hard-fail — stop to avoid partial leaks
+    if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 500));
+  }
+  return lastResult;
 }
 
 // Send a direct Zalo message to the CEO's personal Zalo account via openzca CLI.
