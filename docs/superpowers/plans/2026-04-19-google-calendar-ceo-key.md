@@ -703,11 +703,11 @@ try {
 }
 ```
 
-- [ ] **Step 6: Run full smoke — expect 5/5 PASS**
+- [ ] **Step 7: Run full smoke — expect 5/5 PASS**
 
 Run: `cd electron && npm run smoke`
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add electron/gcal/migrate.js electron/main.js electron/scripts/smoke-gcal.js
@@ -745,6 +745,8 @@ Spec §Audit log token exclusion requires recursive allowlist filtering on ALL m
 const _AUDIT_ARG_ALLOWLIST = new Set([
   'summary','start','end','durationMin','location','guests','description',
   'eventId','dateFrom','dateTo','limit','patch',
+  // Internal metadata flags — safe to log, useful for forensics
+  'retriedAfter412','storedPlain',
 ]);
 function _auditSafeArgs(args) {
   if (!args || typeof args !== 'object') return args;
@@ -1499,16 +1501,31 @@ if (res.statusCode >= 400) {
 }
 ```
 
-- [ ] **Step 3: Update IPC handlers (10, 11, 12, 13, 14) to surface quota message**
+- [ ] **Step 3: Update outer catch in each gcal-* IPC handler (retro-sweep from earlier tasks)**
 
-Wrap outer catch in each gcal-* handler:
+The following handlers defined in Tasks 10, 11, 12, 13, 14 MUST have their outer `catch (e) { return { success: false, error: e.message }; }` expanded. Grep to locate each exact handler:
+
+```sh
+grep -n "ipcMain\.handle\('gcal-\(create\|list\|update\|delete\)-events\?'\|ipcMain\.handle('gcal-get-freebusy'" electron/main.js
+```
+
+For EACH match, replace the outer catch:
+
 ```js
+// BEFORE
+} catch (e) {
+  return { success: false, error: e.message };
+}
+
+// AFTER
 } catch (e) {
   if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
   if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
   return { success: false, error: e.message };
 }
 ```
+
+Expected 5 edits. After patching, re-run `grep -n "error: e\.message" electron/main.js | grep -v "ipcMain" | wc -l` — should NOT include any gcal-* handler's outer catch.
 
 - [ ] **Step 4: Run smoke — expect PASS**
 
@@ -1958,7 +1975,7 @@ In `electron/main.js`, find `ensureZaloRagFix` or similar Zalo inbound patcher. 
 rawBody = rawBody.replace(/\[\[GCAL_/g, '[GCAL-blocked-');
 ```
 
-This string gets injected into the existing `ensureZaloRagFix` anchor. Use the marker-patch pattern (new marker: `MODOROClaw GCAL-NEUTRALIZE PATCH v1`).
+This string gets injected into the existing `ensureZaloRagFix` anchor. Use the marker-patch pattern (marker: `9BizClaw GCAL-NEUTRALIZE PATCH v1` — consistent with other patches like `9BizClaw BLOCKLIST PATCH`).
 
 - [ ] **Step 2: Add ensureZaloGcalNeutralizeFix function to main.js**
 
