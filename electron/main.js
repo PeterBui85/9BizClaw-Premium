@@ -15480,8 +15480,6 @@ async function backfillKnowledgeFromDisk() {
           filetype, filesize: stat.size, wordCount,
           category: cat, summary: null, visibility: 'public'
         });
-        // v2.4.0: audit log — disk-scanned files default to public
-        try { auditLog('visibility-backfill-default', { filename: entry.name, visibility: 'public' }); } catch {}
         try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
         inserted++;
       } catch (e) { console.error('[knowledge] backfill insert err:', entry.name, e.message); }
@@ -15490,6 +15488,7 @@ async function backfillKnowledgeFromDisk() {
   try { db.close(); } catch {}
   if (inserted > 0) {
     console.log('[knowledge] backfilled', inserted, 'file(s) from disk into DB');
+    try { auditLog('knowledge_backfill_visibility_default', { count: inserted }); } catch {}
     for (const cat of KNOWLEDGE_CATEGORIES) rewriteKnowledgeIndex(cat);
   }
 }
@@ -16897,7 +16896,7 @@ async function extractTextFromFile(filepath, filename) {
   return `[Không hỗ trợ extract text cho file ${ext}]`;
 }
 
-ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
+ipcMain.handle('index-document', async (_event, { filepath, filename, category = 'general' }) => {
   try {
     ensureDocumentsDir();
     const dst = path.join(getDocumentsDir(), filename);
@@ -16914,6 +16913,7 @@ ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
         insertDocumentRow(db, {
           filename, filepath: dst, content,
           filetype, filesize, wordCount,
+          category,
           visibility: 'public'
         });
         db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)')
