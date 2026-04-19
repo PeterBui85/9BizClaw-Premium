@@ -4,7 +4,7 @@
 
 Desktop app bundle sẵn mọi thứ. Tải file cài, chạy wizard, có ngay trợ lý AI 24/7. Không cần biết code, không cần cài Node.js hay bất kỳ thứ gì.
 
-**v2.3.43** · Windows 10+ · macOS 11+ (Apple Silicon + Intel)
+**v2.4.0** · Windows 10+ · macOS 11+ (Apple Silicon + Intel)
 
 ---
 
@@ -36,7 +36,7 @@ Cả hai platform bundle sẵn Node.js, OpenClaw, 9Router, OpenZCA, OpenZalo. Kh
 | **Tổng quan** | Greeting, hoạt động gần đây, cron sắp tới, alerts cần xử lý |
 | **Cá tính bot** | Chỉnh persona mix (region, voice, customer style, traits) sau khi wizard |
 | **Tình trạng** | "Hôm nay shop như thế nào" — context real-time inject vào bot |
-| **Lịch hẹn** | CRUD lịch hẹn local, kết nối Google Calendar |
+| **Lịch hẹn** | Kết nối Google Calendar riêng (OAuth CEO tự tạo). Bot tạo/sửa/xóa event qua Telegram chat + Dashboard UI manual CRUD. Google Calendar mobile app lo notification. |
 | **Telegram** | Kiểm tra kết nối, gửi tin test, tạm dừng/tiếp tục |
 | **Zalo** | Quản lý bạn bè, blocklist, nhóm (3 chế độ + xem tóm tắt), tạm dừng/tiếp tục |
 | **Lịch tự động** | 8 built-in crons + custom crons, test fire thủ công |

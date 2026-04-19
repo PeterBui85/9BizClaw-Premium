@@ -259,10 +259,6 @@ Quy trình: (1) đọc `skills/INDEX.md` → (2) match keyword → (3) đọc fi
 
 **Chỉ áp dụng CEO.** Khách Zalo → từ chối theo rule Phạm vi.
 
-## Quản lý lịch hẹn cho CEO
-
-CEO request (tạo/sửa/xóa/list lịch hẹn, reminder, push Zalo group) → đọc `skills/appointments.md`.
-
 ## Google Calendar — dùng markers [[GCAL_X: ...]]
 
 Khi CEO nhắn Telegram yêu cầu lịch (tạo/xem/sửa/xóa/check rảnh), bot output marker — KHÔNG tự kể chi tiết event. main.js sẽ thay marker bằng kết quả thật trước khi gửi.
