@@ -15430,6 +15430,22 @@ function ensureKnowledgeFolders() {
   }
 }
 
+// v2.4.0: All documents INSERT paths go through this helper to guarantee
+// visibility column is always set. Bypassing = silent default to 'public'
+// at SQL layer (safe) but semantically imprecise. Every caller must declare
+// intent explicitly.
+function insertDocumentRow(db, {
+  filename, filepath, content, filetype, filesize, wordCount,
+  category = 'general', summary = null, visibility = 'public'
+}) {
+  if (!['public', 'internal', 'private'].includes(visibility)) {
+    throw new Error(`insertDocumentRow: invalid visibility "${visibility}"`);
+  }
+  return db.prepare(
+    'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(filename, filepath, content, filetype, filesize, wordCount, category, summary, visibility);
+}
+
 // Catch-up: index any files that exist on disk under knowledge/<cat>/files/
 // but are missing from the documents table. Runs once at startup so files
 // uploaded while better-sqlite3 was broken get registered as soon as the DB
@@ -15459,9 +15475,13 @@ async function backfillKnowledgeFromDisk() {
       // Skip slow LLM summary on backfill — leave summary null. CEO can re-upload
       // to trigger AI summary, or bot can summarize on demand later.
       try {
-        db.prepare(
-          'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null);
+        insertDocumentRow(db, {
+          filename: entry.name, filepath: fp, content,
+          filetype, filesize: stat.size, wordCount,
+          category: cat, summary: null, visibility: 'public'
+        });
+        // v2.4.0: audit log — disk-scanned files default to public
+        try { auditLog('visibility-backfill-default', { filename: entry.name, visibility: 'public' }); } catch {}
         try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
         inserted++;
       } catch (e) { console.error('[knowledge] backfill insert err:', entry.name, e.message); }
@@ -15679,9 +15699,11 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
       let insertedDocId = null;
       try {
         const insertBoth = db.transaction(() => {
-          const info = db.prepare(
-            'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(finalName, dst, content, filetype, stat.size, wordCount, category, summary);
+          const info = insertDocumentRow(db, {
+            filename: finalName, filepath: dst, content,
+            filetype, filesize: stat.size, wordCount,
+            category, summary, visibility: 'public'  // Task 7 wires real IPC param
+          });
           insertedDocId = Number(info.lastInsertRowid);
           db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(finalName, content);
         });
@@ -16889,8 +16911,11 @@ ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
     const db = getDocumentsDb();
     if (db) {
       const insertBoth = db.transaction(() => {
-        db.prepare('INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(filename, dst, content, filetype, filesize, wordCount);
+        insertDocumentRow(db, {
+          filename, filepath: dst, content,
+          filetype, filesize, wordCount,
+          visibility: 'public'
+        });
         db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)')
           .run(filename, content);
       });
