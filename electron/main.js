@@ -6817,7 +6817,20 @@ async function _startOpenClawImpl() {
   ensureZaloGroupSettingsFix();
   ensureZaloRagFix();   // depends on group-settings anchor
   // v2.4.0: GCAL-NEUTRALIZE — fails LOUD if anchor missing (security-critical).
-  ensureZaloGcalNeutralizeFix();
+  // FIX 3: wrap in try/catch. Known anchor-miss must not abort boot (would
+  // kill batch flush for Telegram + Zalo both). Alert CEO so spec review
+  // can be scheduled. Unknown errors still rethrow (fail-loud).
+  try {
+    ensureZaloGcalNeutralizeFix();
+  } catch (e) {
+    if (e && e.message === 'GCAL_NEUTRALIZE_ANCHOR_MISSING') {
+      console.error('[boot] GCAL neutralize anchor missing — continuing boot with input-defense DISABLED. Spec review required.');
+      try { auditLog('gcal_neutralize_disabled_boot', { reason: 'anchor_missing' }); } catch {}
+      try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
+    } else {
+      throw e; // unknown error — don't swallow
+    }
+  }
   // Force-one-message PART 2+3: patches inbound.ts (include in batch)
   // PART 1 (channel.ts) uses direct fs I/O internally — safe.
   ensureOpenzaloForceOneMessageFix();
@@ -8990,9 +9003,20 @@ async function _ensureZaloPluginImpl() {
           try { ensureZaloSenderDedupFix(); } catch (e) { console.warn('[ensureZaloPlugin] SenderDedup patch error:', e?.message); }
           try { ensureZaloGroupSettingsFix(); } catch (e) { console.warn('[ensureZaloPlugin] GroupSettings patch error:', e?.message); }
           try { ensureZaloRagFix(); } catch (e) { console.warn('[ensureZaloPlugin] RAG patch error:', e?.message); }
-          // v2.4.0: GCAL-NEUTRALIZE — intentionally NOT wrapped in try/catch.
-          // Security-critical input-side defense must fail LOUD on anchor miss.
-          ensureZaloGcalNeutralizeFix();
+          // v2.4.0: GCAL-NEUTRALIZE — fails LOUD if anchor missing (security-critical).
+          // FIX 3: wrap in try/catch. Known anchor-miss must not abort bundled-copy
+          // path (would force network-install fallback unnecessarily). Alert CEO.
+          try {
+            ensureZaloGcalNeutralizeFix();
+          } catch (e) {
+            if (e && e.message === 'GCAL_NEUTRALIZE_ANCHOR_MISSING') {
+              console.error('[ensureZaloPlugin] GCAL neutralize anchor missing — continuing with input-defense DISABLED. Spec review required.');
+              try { auditLog('gcal_neutralize_disabled_boot', { reason: 'anchor_missing', source: 'bundled_copy' }); } catch {}
+              try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
+            } else {
+              throw e; // unknown error — don't swallow
+            }
+          }
           _zaloReady = true;
           return;
         } catch (e) {
@@ -12203,12 +12227,16 @@ async function interceptGcalMarkers(text) {
       error = e.message || String(e);
     }
     // Audit (args filtered recursively via _auditSafeArgs)
+    // FIX 5: scrub OAuth/refresh token prefixes from error field. Token material
+    // should never enter audit logs — if Google's error body quotes the token,
+    // we'd persist it. Strip common Google token prefixes: ya29. (access),
+    // 1// (refresh), GOCSPX- (client secret).
     try {
       auditLog('gcal_marker_executed', {
         action,
         args: _auditSafeArgs(payload),
         result: error ? null : _auditSafeArgs(result),
-        error,
+        error: error ? String(error).slice(0, 200).replace(/ya29\.[A-Za-z0-9_\-.]+|1\/\/[A-Za-z0-9_\-]+|GOCSPX-[A-Za-z0-9_\-]+/g, '[REDACTED]') : null,
         durationMs: Date.now() - before,
       });
     } catch {}
@@ -12255,8 +12283,14 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
   }
   // v2.4.0: intercept GCAL markers BEFORE Markdown strip + output filter so
   // raw marker payloads (event titles, guest emails) never reach filter regex.
-  if (typeof text === 'string' && text.includes('[[GCAL_')) {
+  // FIX 6: gate on !skipFilter — trusted system alerts (sendCeoAlert embedding
+  // agent stderr that may contain `[[GCAL_...` text) MUST NOT execute markers,
+  // or we'd create phantom calendar events from error text. Scrub instead.
+  if (!skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
     text = await interceptGcalMarkers(text);
+  } else if (skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
+    // Neutralize any marker-looking text so downstream never re-enters intercept.
+    text = text.replace(/\[\[GCAL_/g, '[GCAL-blocked-');
   }
   // Output filter — same patterns as Zalo transport filter
   if (!skipFilter) {
@@ -12380,6 +12414,16 @@ async function sendZalo(text, { skipFilter = false, skipPauseCheck = false } = {
   if (!skipPauseCheck && isChannelPaused('zalo')) {
     console.log('[sendZalo] channel paused — skipping');
     return null;
+  }
+  // v2.4.0 FIX 1: intercept GCAL markers before filters + send (mirrors
+  // sendTelegram). Zalo is customer-facing — raw `[[GCAL_CREATE:...]]` JSON
+  // reaching a customer would leak eventId/guests/location. FIX 6: gate on
+  // !skipFilter so sendCeoAlert embedding error text with marker-looking
+  // substrings doesn't execute phantom events. Scrub instead in bypass path.
+  if (!skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
+    text = await interceptGcalMarkers(text);
+  } else if (skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
+    text = text.replace(/\[\[GCAL_/g, '[GCAL-blocked-');
   }
   // Sanitize markdown — Zalo does not render markdown cleanly
   if (!skipFilter) {
@@ -13516,6 +13560,28 @@ async function triggerGatewayMessage(prompt) {
 // Send message to CEO via Telegram AS IF from the bot itself (bot → CEO direction).
 // This is the reliable path — no gateway dependency.
 async function sendTelegramRich(text, options = {}) {
+  // v2.4.0 FIX 2: sendTelegramRich previously bypassed pause check + marker
+  // intercept + output filter. Any rich-content path that emits raw agent
+  // text could leak `[[GCAL_...]]` JSON or sensitive tokens. Match
+  // sendTelegram safety checks. `options.skipFilter` honored for trusted alerts.
+  const skipFilter = options.skipFilter === true;
+  const skipPauseCheck = options.skipPauseCheck === true;
+  if (!skipPauseCheck && isChannelPaused('telegram')) {
+    console.log('[sendTelegramRich] channel paused — skipping');
+    return false;
+  }
+  if (!skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
+    text = await interceptGcalMarkers(text);
+  } else if (skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
+    text = text.replace(/\[\[GCAL_/g, '[GCAL-blocked-');
+  }
+  if (!skipFilter) {
+    const filtered = filterSensitiveOutput(text);
+    if (filtered.blocked) {
+      console.warn(`[sendTelegramRich] output filter blocked (${filtered.pattern})`);
+      text = filtered.text;
+    }
+  }
   const { token, chatId } = getTelegramConfig();
   if (!token || !chatId) return false;
   const https = require('https');
@@ -18504,11 +18570,14 @@ ipcMain.handle('gcal-connect', async () => {
 ipcMain.handle('gcal-disconnect', async () => {
   const serverRevoke = await gcalAuth.revokeToken().catch((e) => ({ ok: false, error: e.message }));
   gcalAuth.disconnect(); // existing — deletes local tokens file
-  try {
-    const credentials = require('./gcal/credentials');
-    credentials.clear(); // also drop CLIENT_ID + SECRET so wizard starts fresh on reconnect
-  } catch {}
-  try { auditLog('gcal_disconnected', { serverRevokeOk: !!serverRevoke.ok, serverRevokeDetail: serverRevoke.error || null }); } catch {}
+  // FIX 9: preserve clientId + clientSecret. Previously credentials.clear()
+  // forced CEO to redo the full GCP project setup (5-step wizard) on every
+  // reconnect. Now "Kết nối lại" skips straight to Step 6 OAuth consent.
+  // Wizard UI checks getStatus().hasCredentials to decide whether to show
+  // Steps 1-5 or jump to Step 6.
+  // FIX 5: scrub token prefixes from error field before audit log
+  const _scrubbedRevokeDetail = serverRevoke.error ? String(serverRevoke.error).slice(0, 200).replace(/ya29\.[A-Za-z0-9_\-.]+|1\/\/[A-Za-z0-9_\-]+|GOCSPX-[A-Za-z0-9_\-]+/g, '[REDACTED]') : null;
+  try { auditLog('gcal_disconnected', { serverRevokeOk: !!serverRevoke.ok, serverRevokeDetail: _scrubbedRevokeDetail }); } catch {}
   return { success: true, serverRevokeOk: !!serverRevoke.ok, warning: serverRevoke.ok ? null : 'Không gọi được server Google để thu hồi token — vào Google account settings thu hồi thủ công nếu lo lắng.' };
 });
 

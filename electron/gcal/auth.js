@@ -108,8 +108,14 @@ function loadTokens() {
 // OAuth2 URL
 // ---------------------------------------------------------------------------
 
+// FIX 4: CSRF state token generated per OAuth flow, verified in callback.
+// Without state param an attacker could trick CEO into clicking a crafted
+// callback URL that binds their own Google account to CEO's 9BizClaw install.
+let _oauthState = null;
+
 function getAuthUrl() {
   const { clientId } = getCreds();
+  _oauthState = require('node:crypto').randomBytes(16).toString('hex');
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: REDIRECT_URI,
@@ -117,6 +123,7 @@ function getAuthUrl() {
     scope: SCOPES,
     access_type: 'offline',
     prompt: 'consent',
+    state: _oauthState, // CSRF binding
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
@@ -196,12 +203,24 @@ async function refreshAccessToken() {
   return tokens.access_token;
 }
 
+// FIX 7: in-flight promise mutex deduplicates concurrent token refreshes.
+// Two simultaneous callers that both see an expired token would otherwise
+// both POST /token — Google rate-limits the refresh endpoint, so we'd get
+// one success + one 400 invalid_grant. The failure could mark the token
+// as revoked client-side and force CEO to reconnect.
+let _refreshInFlight = null;
+
 /** Get a valid access token, refreshing if expired */
 async function getAccessToken() {
   const tokens = loadTokens();
   if (!tokens) throw new Error('Google Calendar not connected');
   if (Date.now() < tokens.expiresAt) return tokens.access_token;
-  return await refreshAccessToken();
+  // Expired — deduplicate concurrent refresh attempts
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = refreshAccessToken().finally(() => {
+    _refreshInFlight = null;
+  });
+  return _refreshInFlight;
 }
 
 function isConnected() {
@@ -354,6 +373,7 @@ function startCallbackServer() {
       if (parsed.pathname === '/gcal/callback') {
         const code = parsed.query.code;
         const error = parsed.query.error;
+        const state = parsed.query.state;
 
         if (error) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -368,6 +388,19 @@ function startCallbackServer() {
           res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Loi</h2><p>Khong nhan duoc ma xac thuc.</p></body></html>');
           return;
         }
+
+        // FIX 4: verify CSRF state token set in getAuthUrl — reject if missing
+        // or mismatched. Do NOT exchange the code (that would bind an attacker's
+        // Google account to this install). Reset state so replays fail too.
+        if (!_oauthState || !state || state !== _oauthState) {
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Loi bao mat</h2><p>State khong khop (CSRF). Dong tab nay va thu lai tu Dashboard.</p></body></html>');
+          _oauthState = null;
+          stopCallbackServer();
+          reject(new Error('OAUTH_STATE_MISMATCH'));
+          return;
+        }
+        _oauthState = null; // single-use
 
         try {
           const tokens = await exchangeCode(code);
@@ -394,6 +427,12 @@ function startCallbackServer() {
 
     server.on('error', (err) => {
       console.error('[gcal] Callback server error:', err.message);
+      // FIX 8: actionable Vietnamese error for port-busy case. Another Electron
+      // process (crashed prior instance, rogue wizard) may still hold 20199.
+      if (err && err.code === 'EADDRINUSE') {
+        reject(new Error('OAUTH_PORT_BUSY: Port 20199 dang bi app khac su dung. Dong cac Electron/9BizClaw khac va thu lai, hoac khoi dong lai may.'));
+        return;
+      }
       reject(err);
     });
 
