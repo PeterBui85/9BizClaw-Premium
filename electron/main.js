@@ -18285,6 +18285,52 @@ ipcMain.handle('gcal-save-credentials', async (_event, { clientId, clientSecret 
   }
 });
 
+ipcMain.handle('gcal-validate-credentials', async (_event, { clientId, clientSecret }) => {
+  // POST to oauth2.googleapis.com/token with dummy refresh_token.
+  // 401 invalid_client = creds wrong. 400 invalid_grant = creds valid
+  // (the refresh_token is fake but client auth passed).
+  const https = require('node:https');
+  const body = new URLSearchParams({
+    client_id: String(clientId || '').trim(),
+    client_secret: String(clientSecret || '').trim(),
+    refresh_token: 'fake-for-validation-only',
+    grant_type: 'refresh_token',
+  }).toString();
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'oauth2.googleapis.com',
+      path: '/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 10000,
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => data += c);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode === 400 && parsed.error === 'invalid_grant') {
+            resolve({ success: true, valid: true });
+          } else if (res.statusCode === 401 || parsed.error === 'invalid_client') {
+            resolve({ success: true, valid: false, reason: 'invalid_client', detail: parsed.error_description || 'Client ID hoặc Secret sai' });
+          } else {
+            resolve({ success: true, valid: false, reason: 'unexpected', detail: `HTTP ${res.statusCode}: ${parsed.error || data.slice(0, 200)}` });
+          }
+        } catch (e) {
+          resolve({ success: false, error: 'parse_error: ' + e.message });
+        }
+      });
+    });
+    req.on('error', (e) => resolve({ success: false, error: 'network: ' + e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'timeout' }); });
+    req.write(body);
+    req.end();
+  });
+});
+
 ipcMain.handle('gcal-connect', async () => {
   try {
     const authUrl = gcalAuth.getAuthUrl();

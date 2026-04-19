@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld('claw', {
 
   // Google Calendar
   gcalSaveCredentials: (payload) => ipcRenderer.invoke('gcal-save-credentials', payload),
+  gcalValidateCredentials: (payload) => ipcRenderer.invoke('gcal-validate-credentials', payload),
   gcalConnect: () => ipcRenderer.invoke('gcal-connect'),
   gcalDisconnect: () => ipcRenderer.invoke('gcal-disconnect'),
   gcalGetStatus: () => ipcRenderer.invoke('gcal-get-status'),
