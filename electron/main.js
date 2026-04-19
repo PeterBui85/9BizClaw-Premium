@@ -18349,8 +18349,14 @@ ipcMain.handle('gcal-connect', async () => {
 });
 
 ipcMain.handle('gcal-disconnect', async () => {
-  gcalAuth.disconnect();
-  return { success: true };
+  const serverRevoke = await gcalAuth.revokeToken().catch((e) => ({ ok: false, error: e.message }));
+  gcalAuth.disconnect(); // existing — deletes local tokens file
+  try {
+    const credentials = require('./gcal/credentials');
+    credentials.clear(); // also drop CLIENT_ID + SECRET so wizard starts fresh on reconnect
+  } catch {}
+  try { auditLog('gcal_disconnected', { serverRevokeOk: !!serverRevoke.ok, serverRevokeDetail: serverRevoke.error || null }); } catch {}
+  return { success: true, serverRevokeOk: !!serverRevoke.ok, warning: serverRevoke.ok ? null : 'Không gọi được server Google để thu hồi token — vào Google account settings thu hồi thủ công nếu lo lắng.' };
 });
 
 ipcMain.handle('gcal-get-status', async () => {

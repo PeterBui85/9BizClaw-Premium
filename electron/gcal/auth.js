@@ -201,6 +201,32 @@ function disconnect() {
   try { fs.unlinkSync(filePath); } catch {}
 }
 
+async function revokeToken() {
+  const tokens = loadTokens();
+  if (!tokens || !tokens.refresh_token) return { ok: true, skipped: true };
+  const https = require('node:https');
+  const body = `token=${encodeURIComponent(tokens.refresh_token)}`;
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'oauth2.googleapis.com',
+      path: '/revoke',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 10000,
+    }, (res) => {
+      res.on('data', () => {}); // drain
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode }));
+    });
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+    req.write(body);
+    req.end();
+  });
+}
+
 // ---------------------------------------------------------------------------
 // HTTPS GET helper (used by calendar.js too)
 // ---------------------------------------------------------------------------
@@ -364,6 +390,7 @@ module.exports = {
   isConnected,
   getEmail,
   disconnect,
+  revokeToken,
   startCallbackServer,
   stopCallbackServer,
   // Expose for calendar.js
