@@ -2343,7 +2343,12 @@
           <h3 style="margin:0 0 12px;font-size:18px">Bot 9BizClaw dùng lịch Google Calendar riêng của sếp</h3>
           <p style="margin:0 0 24px;color:var(--text-muted);max-width:480px;margin-left:auto;margin-right:auto">Không có dữ liệu nào gửi về MODORO — sếp tự tạo Google Cloud project và OAuth client riêng.</p>
           <button class="btn btn-primary" onclick="gcalOpenSetupWizard()" style="padding:10px 24px;font-size:14px">Kết nối Google Calendar →</button>
-          <p style="margin-top:16px;font-size:11px;color:var(--text-muted)">Cần ~15 phút một lần duy nhất để thiết lập</p>
+          <p style="margin-top:16px;font-size:11px;color:var(--text-muted)">Cần ~15-30 phút một lần duy nhất để thiết lập</p>
+          <div id="gcal-legacy-archive-link" style="display:none;margin-top:20px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:12px;max-width:480px;margin-left:auto;margin-right:auto;text-align:left">
+            <div style="margin-bottom:6px"><strong>Lịch hẹn cũ từ bản trước</strong></div>
+            <div style="color:var(--text-muted);margin-bottom:8px">Sau khi nâng cấp, lịch hẹn local cũ đã được lưu vào file archive. Anh/chị có thể mở đọc hoặc nhập thủ công vào Google Calendar sau khi kết nối.</div>
+            <button class="btn btn-secondary btn-small" onclick="gcalOpenLegacyArchive()">Mở thư mục archive</button>
+          </div>
         </div>
 
         <!-- Connected state -->
@@ -3193,6 +3198,24 @@
         disc.style.display = '';
         conn.style.display = 'none';
         hdr.style.display = 'none';
+        gcalProbeLegacyArchive();
+      }
+    }
+
+    async function gcalProbeLegacyArchive() {
+      try {
+        if (!window.claw || !window.claw.gcalCheckLegacyArchive) return;
+        const r = await window.claw.gcalCheckLegacyArchive();
+        const el = document.getElementById('gcal-legacy-archive-link');
+        if (el) el.style.display = (r && r.exists) ? 'block' : 'none';
+      } catch {}
+    }
+
+    async function gcalOpenLegacyArchive() {
+      try {
+        await window.claw.gcalOpenLegacyArchive();
+      } catch (e) {
+        alert('Không mở được: ' + e.message);
       }
     }
     async function gcalRefreshEvents() {
@@ -5919,8 +5942,8 @@
       },
       {
         target: '[data-page="calendar"]',
-        title: 'Bước 5: Lịch hẹn tự động',
-        desc: 'Quản lý lịch hẹn local. Nhắn Telegram cho bot: "thêm lịch mai 3pm họp anh Minh link zoom.us/abc" — bot tự tạo. Hoặc dùng form tạo nhanh ở tab này.',
+        title: 'Bước 5: Lịch hẹn Google',
+        desc: 'Tab Lịch hẹn kết nối với Google Calendar riêng của anh/chị — bot tạo/sửa/xoá event qua Telegram, app Google Calendar trên điện thoại tự nhắc. Setup wizard 6 bước (~15-30 phút 1 lần duy nhất).',
         pageBefore: 'calendar',
       },
       {

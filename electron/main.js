@@ -17179,6 +17179,8 @@ const _OVERVIEW_EVENT_LABELS = {
   zalo_owner_set: { label: 'Đã đặt chủ Zalo', icon: 'user', show: true },
   system_resume: { label: 'Mac thức dậy', icon: 'power', show: true },
   system_suspend: { label: 'Mac đang ngủ', icon: 'moon', show: true },
+  agents_md_upgraded: { label: 'Nâng cấp rule bot (đã backup bản cũ vào .learnings/)', icon: 'file-text', show: true },
+  appointments_migrated: { label: 'Đã chuyển lịch hẹn cũ sang archive', icon: 'archive', show: true },
 };
 
 function _readJsonlTail(filePath, maxLines) {
@@ -18737,6 +18739,33 @@ ipcMain.handle('gcal-get-config', async () => gcalConfig.read());
 ipcMain.handle('gcal-save-config', async (_event, cfg) => {
   gcalConfig.write(cfg);
   return { success: true };
+});
+
+// Check if any legacy appointments archive file exists in .learnings/ — used by
+// the Lịch hẹn not-connected state to show "Xem lịch cũ" link for merchants
+// who had local appointments before the v2.4.0 Google Calendar migration.
+ipcMain.handle('gcal-check-legacy-archive', async () => {
+  try {
+    const ws = getWorkspace();
+    const learningsDir = path.join(ws, '.learnings');
+    if (!fs.existsSync(learningsDir)) return { exists: false };
+    const files = fs.readdirSync(learningsDir).filter(f => f.startsWith('appointments-archive-') && f.endsWith('.md'));
+    return { exists: files.length > 0, files };
+  } catch (e) {
+    return { exists: false, error: e.message };
+  }
+});
+
+ipcMain.handle('gcal-open-legacy-archive', async () => {
+  try {
+    const ws = getWorkspace();
+    const learningsDir = path.join(ws, '.learnings');
+    if (!fs.existsSync(learningsDir)) return { success: false, error: 'Không có folder archive' };
+    await shell.openPath(learningsDir);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 // ============================================

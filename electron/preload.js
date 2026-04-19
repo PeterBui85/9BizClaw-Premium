@@ -148,6 +148,8 @@ contextBridge.exposeInMainWorld('claw', {
   gcalGetConfig: () => ipcRenderer.invoke('gcal-get-config'),
   gcalSaveConfig: (cfg) => ipcRenderer.invoke('gcal-save-config', cfg),
   gcalListCalendars: () => ipcRenderer.invoke('gcal-list-calendars'),
+  gcalCheckLegacyArchive: () => ipcRenderer.invoke('gcal-check-legacy-archive'),
+  gcalOpenLegacyArchive: () => ipcRenderer.invoke('gcal-open-legacy-archive'),
 
   // Channel pause/resume (symmetric for Telegram + Zalo)
   pauseTelegram: (minutes) => ipcRenderer.invoke('pause-telegram', { minutes }),
