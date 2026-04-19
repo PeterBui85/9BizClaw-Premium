@@ -18249,6 +18249,42 @@ const gcalAuth = require('./gcal/auth');
 const gcalCalendar = require('./gcal/calendar');
 const gcalConfig = require('./gcal/config');
 
+// Recursively filter audit-log args through an allowlist. Prevents token
+// smuggling through nested paths (e.g., patch.access_token). Unit-tested
+// in smoke-gcal.js testAuditTokenExclusion with ya29./1///GOCSPX- prefixes.
+const _AUDIT_ARG_ALLOWLIST = new Set([
+  'summary','start','end','durationMin','location','guests','description',
+  'eventId','dateFrom','dateTo','limit','patch',
+  // Internal metadata flags — safe to log, useful for forensics
+  'retriedAfter412','storedPlain',
+]);
+function _auditSafeArgs(args) {
+  if (!args || typeof args !== 'object') return args;
+  if (Array.isArray(args)) return args.map(_auditSafeArgs);
+  const out = {};
+  for (const k of Object.keys(args)) {
+    if (!_AUDIT_ARG_ALLOWLIST.has(k)) continue;
+    const v = args[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = _auditSafeArgs(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+ipcMain.handle('gcal-save-credentials', async (_event, { clientId, clientSecret }) => {
+  try {
+    const credentials = require('./gcal/credentials');
+    credentials.save({ clientId: String(clientId || '').trim(), clientSecret: String(clientSecret || '').trim() });
+    try { auditLog('gcal_credentials_saved', { storedPlain: credentials.isStoredPlain() }); } catch {}
+    return { success: true, storedPlain: credentials.isStoredPlain() };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('gcal-connect', async () => {
   try {
     const authUrl = gcalAuth.getAuthUrl();

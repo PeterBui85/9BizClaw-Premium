@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('claw', {
   resolveZaloTarget: (query, type) => ipcRenderer.invoke('resolve-zalo-target', { query, type }),
 
   // Google Calendar
+  gcalSaveCredentials: (payload) => ipcRenderer.invoke('gcal-save-credentials', payload),
   gcalConnect: () => ipcRenderer.invoke('gcal-connect'),
   gcalDisconnect: () => ipcRenderer.invoke('gcal-disconnect'),
   gcalGetStatus: () => ipcRenderer.invoke('gcal-get-status'),
