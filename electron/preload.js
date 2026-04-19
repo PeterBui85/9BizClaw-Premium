@@ -101,12 +101,13 @@ contextBridge.exposeInMainWorld('claw', {
   deleteZaloUserNote: (senderId, noteTimestamp) => ipcRenderer.invoke('delete-zalo-user-note', { senderId, noteTimestamp }),
 
   // Knowledge tab
-  uploadKnowledgeFile: (category, filepath, originalName) => ipcRenderer.invoke('upload-knowledge-file', { category, filepath, originalName }),
+  uploadKnowledgeFile: (category, filepath, originalName, visibility = 'public') => ipcRenderer.invoke('upload-knowledge-file', { category, filepath, originalName, visibility }),
   listKnowledgeFiles: (category) => ipcRenderer.invoke('list-knowledge-files', { category }),
   deleteKnowledgeFile: (category, filename) => ipcRenderer.invoke('delete-knowledge-file', { category, filename }),
   getKnowledgeCounts: () => ipcRenderer.invoke('get-knowledge-counts'),
   pickKnowledgeFile: () => ipcRenderer.invoke('pick-knowledge-file'),
   listKnowledgeFolders: () => ipcRenderer.invoke('list-knowledge-folders'),
+  setKnowledgeVisibility: (docId, visibility) => ipcRenderer.invoke('set-knowledge-visibility', { docId, visibility }),
   createKnowledgeFolder: (name) => ipcRenderer.invoke('create-knowledge-folder', { name }),
   deleteKnowledgeFolder: (id) => ipcRenderer.invoke('delete-knowledge-folder', { id }),
   knowledgeSearch: (query, category, limit) => ipcRenderer.invoke('knowledge-search', { query, category, limit }),

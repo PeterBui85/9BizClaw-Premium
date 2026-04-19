@@ -15649,7 +15649,13 @@ function rewriteKnowledgeIndex(category) {
   } catch (e) { console.error('[knowledge] rewrite index write:', e.message); }
 }
 
-ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, originalName }) => {
+ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, originalName, visibility = 'public' }) => {
+  // v2.4.0: validate visibility BEFORE any filesystem work. Return early
+  // so renderer gets a clean error, not a partial upload followed by
+  // INSERT failure.
+  if (!['public', 'internal', 'private'].includes(visibility)) {
+    return { success: false, error: 'Invalid visibility value' };
+  }
   try {
     if (!KNOWLEDGE_CATEGORIES.includes(category)) {
       return { success: false, error: 'Loại không hợp lệ' };
@@ -15701,7 +15707,7 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
           const info = insertDocumentRow(db, {
             filename: finalName, filepath: dst, content,
             filetype, filesize: stat.size, wordCount,
-            category, summary, visibility: 'public'  // Task 7 wires real IPC param
+            category, summary, visibility
           });
           insertedDocId = Number(info.lastInsertRowid);
           db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(finalName, content);
@@ -15756,6 +15762,33 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     return { success: true, filename: finalName, summary, wordCount, dbWarning };
   } catch (e) {
     console.error('[knowledge] upload error:', e.message);
+    return { success: false, error: e.message };
+  }
+});
+
+// v2.4.0: PATCH visibility on existing doc row. Used by Dashboard file list
+// inline editor. Validates enum + existence; audit logs for forensic trail.
+ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility }) => {
+  try {
+    if (!Number.isInteger(docId) || docId <= 0) {
+      return { success: false, error: 'Invalid docId' };
+    }
+    if (!['public', 'internal', 'private'].includes(visibility)) {
+      return { success: false, error: 'Invalid visibility value' };
+    }
+    const db = getDocumentsDb();
+    if (!db) return { success: false, error: 'DB unavailable' };
+    let info;
+    try {
+      info = db.prepare('UPDATE documents SET visibility=? WHERE id=?').run(visibility, docId);
+    } finally {
+      try { db.close(); } catch {}
+    }
+    if (info.changes === 0) return { success: false, error: 'Document not found' };
+    try { auditLog('visibility-change', { docId, visibility, ts: Date.now() }); } catch {}
+    return { success: true };
+  } catch (e) {
+    console.error('[set-knowledge-visibility] error:', e.message);
     return { success: false, error: e.message };
   }
 });
