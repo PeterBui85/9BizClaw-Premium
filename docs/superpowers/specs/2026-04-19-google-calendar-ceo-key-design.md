@@ -205,12 +205,17 @@ Save → `gcal-create-event` or `gcal-update-event` IPC → refresh list.
 5 markers, all JSON-in-brackets, all emitted by bot as part of its reply text:
 
 ```
-[[GCAL_CREATE: {"summary":"...","start":"ISO","durationMin":N,"location":"...","guests":["a@b.com"]}]]
-[[GCAL_LIST: {"dateFrom":"ISO","dateTo":"ISO","limit":10}]]
-[[GCAL_UPDATE: {"eventId":"abc","patch":{"start":"ISO","summary":"..."}}]]
+[[GCAL_CREATE: {"summary":"...","start":"ISO8601","durationMin":N,"location":"...","guests":["a@b.com"]}]]
+[[GCAL_LIST: {"dateFrom":"DATE_OR_ISO","dateTo":"DATE_OR_ISO","limit":10}]]
+[[GCAL_UPDATE: {"eventId":"abc","patch":{"start":"ISO8601","summary":"..."}}]]
 [[GCAL_DELETE: {"eventId":"abc"}]]
-[[GCAL_FREEBUSY: {"dateFrom":"ISO","dateTo":"ISO"}]]
+[[GCAL_FREEBUSY: {"dateFrom":"DATE_OR_ISO","dateTo":"DATE_OR_ISO"}]]
 ```
+
+**Datetime format rules:**
+- `start`, `end` (CREATE, UPDATE patch) — always full RFC3339 with offset: `"2026-04-22T14:00:00+07:00"`. Second-precision required.
+- `dateFrom`, `dateTo` (LIST, FREEBUSY) — accept either date-only (`"2026-04-22"` → bot means whole-day range in workspace timezone) OR full RFC3339 for sub-day windows. Main.js normalizes: date-only → `T00:00:00+07:00` for dateFrom, `T23:59:59+07:00` for dateTo.
+- `durationMin` — integer minutes, 5 ≤ n ≤ 480 (8 hours max — anything longer is almost certainly a bot mistake).
 
 ### Interception pipeline
 
@@ -226,8 +231,8 @@ Order in `sendTelegram()` (similar for future Zalo but NOT in v1):
 `interceptGcalMarkers` — must consume-or-scrub every `[[GCAL_` occurrence so raw JSON payloads (which may contain emails, titles, descriptions) never reach `filterSensitiveOutput`:
 
 1. Brace-balanced extractor (not regex) walks the text character by character. Finds `[[GCAL_<ACTION>:`, then scans forward tracking `{`/`}` depth while respecting JSON string escapes (`\"`, `\\`), stops at matching `]]` after the balanced JSON closes. A regex `\[\[GCAL_(\w+):\s*\{[^\]]+\}\]\]` is NOT adequate — Vietnamese event titles or locations containing `]` break it.
-2. For each marker span extracted, JSON.parse the payload.
-3. If JSON.parse fails or action name is unknown → **scrub the entire marker span** (replace with `"⚠️ Bot thử gọi Google Calendar nhưng cú pháp lỗi — sếp thử lại."`), log raw span to `logs/gcal-actions.jsonl`.
+2. For each marker span extracted, JSON.parse the payload. JSON.parse natively handles unicode escapes (`\u007D` inside a string stays literal text, not a brace) — but the *char walker* in step 1 needs to know the difference: smoke test #2 includes a fixture `[[GCAL_CREATE: {"summary":"\u007D closing brace in title"}]]` to lock this behavior and catch a naive walker that counts escaped braces.
+3. If JSON.parse fails or action name is unknown → **scrub the entire marker span** (replace with `"[!] Bot thử gọi Google Calendar nhưng cú pháp lỗi — sếp thử lại."`), log raw span to `logs/gcal-actions.jsonl`.
 4. If parse OK but any `[[GCAL_` prefix remains unmatched in the text after pass-1 → scrub those too (defense against unterminated markers).
 5. If parse OK and action valid → call corresponding IPC handler, format result as Vietnamese text, replace marker span with result.
 6. Log every marker + result to audit jsonl (see §Audit log for token-exclusion rules).
@@ -243,6 +248,8 @@ Order in `sendTelegram()` (similar for future Zalo but NOT in v1):
 
 This is defense-in-depth, not relying on LLM discipline. Even if AGENTS.md also has a "KHÔNG quote `[[GCAL_`" rule, the input strip runs first and makes the rule redundant-safe.
 
+**Known side effect (accepted):** when CEO legitimately wants to discuss the marker syntax with the bot (e.g., forwarding a dev question "is this syntax right? `[[GCAL_CREATE: {...}]]`"), the inbound strip rewrites their message before the bot sees it. CEO's message echoes back as `[GCAL-blocked-CREATE: ...]`. This is acceptable — security against injection is more important than message-fidelity in the rare CEO-discusses-syntax case. If this becomes a real friction, future work: whitelist the Dashboard "Developer console" as an untransformed path.
+
 ### AGENTS.md additions (v48 → v49)
 
 New section "## Google Calendar — dùng markers [[GCAL_X: ...]]" with:
@@ -255,7 +262,7 @@ New section "## Google Calendar — dùng markers [[GCAL_X: ...]]" with:
   - Time-of-day: "sáng" = 09:00, "trưa" = 12:00, "chiều" = 14:00, "tối" = 19:00; "2pm"/"14h"/"14:30" literal
   - Rejection: "thứ 8" / "31/02" / "ngày 32" → bot must refuse and ask CEO to clarify
 - Ambiguity rule: if date/time/duration missing or ambiguous → bot asks 1 clarifying question BEFORE emitting marker
-- **Destructive action rule:** DELETE + UPDATE require explicit CEO confirmation in prior turn AND the confirmation must be within the **same Telegram thread session** (last 10 minutes OR last 5 turns, whichever is shorter). "Ok" said 30 minutes after the proposal does NOT count. Stale confirmations → bot asks again before emitting. Audit trail records proposal, confirmation text, and marker emission timestamps.
+- **Destructive action rule:** DELETE + UPDATE require explicit CEO confirmation in prior turn AND the confirmation must be within the **same Telegram thread session** (last 10 minutes OR last 5 turns, whichever is shorter). **One "turn" = one CEO message** (bot replies do not count as turns for this window). "Ok" said 30 minutes after the proposal does NOT count. Stale confirmations → bot asks again before emitting. Audit trail records proposal, confirmation text, and marker emission timestamps.
 - **Marker-quoting ban:** bot MUST NOT include literal `[[GCAL_` in any reply text where it would appear in output. (Input is pre-stripped per §Input-side defense, so customer injection is already blocked, but this rule prevents bot from reconstructing markers from partial memory.)
 
 ### Example flows
@@ -324,9 +331,9 @@ On first boot after v2.4.0 upgrade, `seedWorkspace` runs `migrateLocalAppointmen
 
 **Honest threat model:** safeStorage uses OS-level keyring (Keychain on Mac, DPAPI on Windows, libsecret on Linux). It protects against scenarios where encrypted files leave the CEO's logged-in context (backup archive, support zip, cloud sync) but an attacker running as the CEO's user on the CEO's machine CAN call the same safeStorage API to decrypt. This is acceptable: local-code-execution attackers already own the bot, the calendar token is not the weakest link.
 
-**safeStorage fallback:** on Linux without keyring, `safeStorage.isEncryptionAvailable()` returns false. Fall back to plain JSON at `gcal-credentials.plain` + `gcal-tokens.plain`. Boot warning fires: "⚠ Google Calendar credentials stored unencrypted — Linux keyring not available. CEO có thể chọn disconnect nếu không muốn lưu plain."
+**safeStorage fallback:** on Linux without keyring, `safeStorage.isEncryptionAvailable()` returns false. Fall back to plain JSON at `gcal-credentials.plain` + `gcal-tokens.plain`. Boot warning fires: "[!] Google Calendar credentials stored unencrypted — Linux keyring not available. CEO có thể chọn disconnect nếu không muốn lưu plain."
 
-**Locations:** all in `getWorkspace()` (Windows `%APPDATA%/9bizclaw/`, Mac `~/Library/Application Support/9bizclaw/`). Uninstaller wipes.
+**Locations:** all in `getWorkspace()` (Windows `%APPDATA%/modoro-claw/`, Mac `~/Library/Application Support/modoro-claw/`). Workspace dir is lowercase `modoro-claw` per the v2.2.7 hardcoded-fallback in `initFileLogger` + `getWorkspace()` — using `9BizClaw` or `9bizclaw` would resurrect the split-logs phantom-dir bug from that release. Uninstaller wipes.
 
 **Disconnect flow:** CEO clicks "Ngắt kết nối" → `gcal-disconnect` IPC:
 1. POST to `https://oauth2.googleapis.com/revoke?token=<refresh_token>` (server-side revoke so even if local tokens are leaked elsewhere they're dead)
@@ -343,7 +350,7 @@ If step 1 fails (offline, network error), step 2+3+4 still proceed but audit log
 {"t":"ISO","event":"marker_executed","marker":"GCAL_CREATE","args":{...},"result":{"eventId":"..."},"durationMs":N}
 ```
 
-**Explicit exclusions (never logged):** `access_token`, `refresh_token`, `client_secret`. The `args` object is JSON-serialized pre-log with a passthrough allowlist of keys: `summary, start, end, durationMin, location, guests, description, eventId, dateFrom, dateTo, limit, patch`. Anything outside the allowlist is dropped. Unit test asserts token strings (matching `ya29.`, `1//`, `GOCSPX-` prefixes) never appear in log file contents.
+**Explicit exclusions (never logged):** `access_token`, `refresh_token`, `client_secret`. The `args` object is JSON-serialized pre-log with a passthrough allowlist of keys: `summary, start, end, durationMin, location, guests, description, eventId, dateFrom, dateTo, limit, patch`. **Allowlist applies recursively** — the nested `patch` object is itself filtered against the same allowlist (so `patch.summary` passes, `patch.accessToken` would be dropped). Anything outside the allowlist is dropped. Unit test asserts token strings (matching `ya29.`, `1//`, `GOCSPX-` prefixes) never appear in log file contents even through nested path abuse.
 
 ## Error handling
 
@@ -353,10 +360,10 @@ If step 1 fails (offline, network error), step 2+3+4 still proceed but audit log
 | Refresh token revoked | Next API call: 400 invalid_grant | Dashboard banner: "Kết nối hết hạn. Kết nối lại →" |
 | API quota exceeded | 403 userRateLimitExceeded | "Google đang giới hạn — thử lại sau." (both Dashboard + bot reply) |
 | Network offline | ENOTFOUND / ECONNREFUSED | Dashboard dot red. Bot: "Không gọi được Google, sếp thử lại sau." NO silent retry queue. |
-| Marker syntax malformed | JSON.parse throws | Marker scrubbed. CEO: "⚠️ Cú pháp sai — thử lại." Raw marker logged. |
+| Marker syntax malformed | JSON.parse throws | Marker scrubbed. CEO: "[!] Cú pháp sai — thử lại." Raw marker logged. |
 | Event deleted externally mid-update | 404 Not Found | "Lịch này đã bị xóa trên Google — sếp tạo mới nếu cần." |
 | Clock drift >10 min | OAuth token validation fails with clock_skew | "Đồng hồ máy sếp lệch — vào Settings → Date & time → tick 'Set automatically'." |
-| Concurrent edit (412 ETag mismatch) | Google returns 412 on update/delete when event changed since last read | Fetch fresh event, replay user's intent against fresh state, retry once. If 2nd 412 → "Lịch này vừa bị sửa ở chỗ khác — sếp refresh và thử lại." v1 = last-write-wins with 1 retry, no optimistic concurrency. |
+| Concurrent edit (412 ETag mismatch) | Google returns 412 on update/delete when event changed since last read | Fetch fresh event, replay user's intent against fresh state. **Max 2 PATCH attempts total** (initial + 1 retry) regardless of which request returns 412; second 412 → bail with "Lịch này vừa bị sửa ở chỗ khác — sếp refresh và thử lại." v1 = last-write-wins, no optimistic concurrency. |
 
 ## Testing plan
 
@@ -430,4 +437,4 @@ Wired into `npm run smoke` after `smoke-visibility`.
 - Refresh token stable ≥30 days (Production mode invariant)
 - Bot marker execution latency <3s end-to-end (Telegram → main.js → Google → reply)
 - 0 MODORO-side Google credentials anywhere in shipped code
-- Rollback safe: downgrade restores app function (minus calendar feature); migration archive preserves history
+- Rollback degrades gracefully: after downgrade, app runs with empty Lịch hẹn tab; `.learnings/appointments-archive-*.md` preserves the pre-upgrade history so CEO can reconstruct manually if needed. Reverse migration is explicitly not supported (see §Migration rollback).
