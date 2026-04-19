@@ -12224,7 +12224,19 @@ async function interceptGcalMarkers(text) {
         }
       }
     } catch (e) {
-      error = e.message || String(e);
+      // Translate common error codes to Vietnamese before surfacing to CEO
+      // (IPC path already does this; marker path historically leaked raw English)
+      if (e && e.code === 'QUOTA') {
+        error = 'Google đang giới hạn request — thử lại sau vài phút.';
+      } else if (e && e.code === 'UNAUTHORIZED') {
+        error = 'Kết nối Google hết hạn — vào Dashboard Lịch hẹn để kết nối lại.';
+      } else if (e && (e.code === 'NOT_FOUND' || e.code === 404)) {
+        error = 'Không tìm thấy lịch này trên Google — có thể đã bị xóa.';
+      } else if (e && /ENOTFOUND|ETIMEDOUT|ECONNREFUSED|getaddrinfo/i.test(e.message || '')) {
+        error = 'Không kết nối được Google — kiểm tra mạng và thử lại.';
+      } else {
+        error = e.message || String(e);
+      }
     }
     // Audit (args filtered recursively via _auditSafeArgs)
     // FIX 5: scrub OAuth/refresh token prefixes from error field. Token material
@@ -18669,6 +18681,12 @@ ipcMain.handle('gcal-update-event', async (_event, { eventId, patch }) => {
   try {
     if (!eventId) return { success: false, error: 'Missing eventId' };
     if (!patch || typeof patch !== 'object') return { success: false, error: 'Missing patch' };
+    if (patch.guests != null && !Array.isArray(patch.guests)) {
+      return { success: false, error: 'guests must be an array of emails' };
+    }
+    if (Array.isArray(patch.guests)) {
+      patch.guests = patch.guests.filter(g => typeof g === 'string' && g.includes('@')).slice(0, 25);
+    }
     try {
       const r = await gcalCalendar.updateEvent(eventId, patch);
       try { auditLog('gcal_event_updated', _auditSafeArgs({ eventId, patch })); } catch {}

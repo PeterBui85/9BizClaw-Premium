@@ -3291,7 +3291,7 @@
       document.getElementById('gcal-ev-start').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
       const durMs = new Date(e.end).getTime() - d.getTime();
       document.getElementById('gcal-ev-duration').value = String(Math.round(durMs / 60000));
-      document.getElementById('gcal-ev-guests').value = '';
+      document.getElementById('gcal-ev-guests').value = (e.attendees || []).join(', ');
       document.getElementById('gcal-ev-location').value = e.location || '';
       document.getElementById('gcal-ev-description').value = e.description || '';
       document.getElementById('gcal-event-modal').style.display = 'flex';
@@ -3317,7 +3317,7 @@
         const end = new Date(new Date(startLocal).getTime() + durationMin * 60000).toISOString();
         r = await window.claw.gcalUpdateEvent({
           eventId: _gcalEditingId,
-          patch: { summary, start, end, location, description },
+          patch: { summary, start, end, location, description, guests },
         });
       } else {
         r = await window.claw.gcalCreateEvent({ summary, start, durationMin, guests, location, description });
@@ -3370,6 +3370,8 @@
 
     // --- Setup wizard (6 steps) ---
     let _gcalWizardStep = 0;
+    let _gcalStep5Validated = false;
+    let _gcalStep6Connected = false;
     const GCAL_WIZARD_STEPS = [
       {
         title: 'Bước 1/6 — Tạo Google Cloud project',
@@ -3441,6 +3443,8 @@
 
     function gcalOpenSetupWizard() {
       _gcalWizardStep = 0;
+      _gcalStep5Validated = false;
+      _gcalStep6Connected = false;
       document.getElementById('gcal-wizard-modal').style.display = 'flex';
       gcalRenderWizardStep();
     }
@@ -3462,14 +3466,33 @@
       }
       document.getElementById('gcal-wizard-back').style.visibility = _gcalWizardStep === 0 ? 'hidden' : 'visible';
       document.getElementById('gcal-wizard-next').textContent = _gcalWizardStep === GCAL_WIZARD_STEPS.length - 1 ? 'Hoàn tất' : 'Đã làm xong →';
+      // Reset Step 5 validation state when entering/re-entering Step 5
+      // (prevents bypass via Back → Next; forces re-validate if inputs were edited)
+      if (_gcalWizardStep === 4) {
+        _gcalStep5Validated = false;
+        const cidEl = document.getElementById('gcal-wizard-clientid');
+        const csEl = document.getElementById('gcal-wizard-clientsecret');
+        if (cidEl) cidEl.value = '';
+        if (csEl) csEl.value = '';
+      }
     }
 
     function gcalWizardBack() { if (_gcalWizardStep > 0) { _gcalWizardStep--; gcalRenderWizardStep(); } }
     function gcalWizardNext() {
+      // Gate Step 5 → Step 6: require successful validate+save
+      if (_gcalWizardStep === 4 && !_gcalStep5Validated) {
+        alert('Vui lòng bấm "Kiểm tra" và đợi xác nhận Credentials hợp lệ trước khi sang bước 6.');
+        return;
+      }
       if (_gcalWizardStep < GCAL_WIZARD_STEPS.length - 1) {
         _gcalWizardStep++;
         gcalRenderWizardStep();
       } else {
+        // Step 6 Hoàn tất — require successful OAuth
+        if (!_gcalStep6Connected) {
+          alert('Vui lòng bấm "Mở cửa sổ đăng nhập Google" và hoàn tất đăng nhập trước khi Hoàn tất.');
+          return;
+        }
         gcalCloseWizard();
         gcalRefreshStatus();
       }
@@ -3483,6 +3506,7 @@
       alert('Đã copy. Paste vào trường "Authorized redirect URIs" ở Google Cloud.');
     }
     async function gcalValidateAndSave() {
+      _gcalStep5Validated = false;
       const clientId = document.getElementById('gcal-wizard-clientid').value.trim();
       const clientSecret = document.getElementById('gcal-wizard-clientsecret').value.trim();
       const resultEl = document.getElementById('gcal-wizard-validate-result');
@@ -3496,9 +3520,11 @@
       if (!save.success) { resultEl.textContent = 'Lưu lỗi: ' + save.error; resultEl.style.color = 'var(--danger)'; return; }
       resultEl.textContent = '[OK] Credentials hợp lệ và đã lưu. Bấm "Đã làm xong →" để sang bước 6.';
       resultEl.style.color = 'var(--success)';
+      _gcalStep5Validated = true;
     }
 
     async function gcalStartOAuth() {
+      _gcalStep6Connected = false;
       const statusEl = document.getElementById('gcal-wizard-oauth-status');
       statusEl.textContent = 'Chờ sếp hoàn tất đăng nhập trên browser...';
       statusEl.style.color = 'var(--text-muted)';
@@ -3506,9 +3532,16 @@
       if (r.success) {
         statusEl.textContent = '[OK] Đã kết nối với ' + (r.email || 'Google Calendar');
         statusEl.style.color = 'var(--success)';
+        _gcalStep6Connected = true;
       } else {
-        statusEl.textContent = 'Lỗi: ' + r.error;
-        statusEl.style.color = 'var(--danger)';
+        statusEl.innerHTML = `
+          <div style="color:var(--danger)">Lỗi: ${esc(r.error || '')}</div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-secondary btn-small" onclick="gcalStartOAuth()">Thử lại</button>
+            <button class="btn btn-secondary btn-small" onclick="_gcalWizardStep = 4; gcalRenderWizardStep()">Quay lại bước 5</button>
+          </div>
+          <p style="font-size:11px;color:var(--text-muted);margin-top:8px">Nếu vẫn lỗi: kiểm tra lại redirect URI ở Google Cloud — bấm ADD URI đúng chuỗi <code>http://127.0.0.1:20199/gcal/callback</code> (Bước 4). Cần hỗ trợ: t.me/modoro_9bizclaw</p>
+        `;
       }
     }
     async function gcalDisconnect() {

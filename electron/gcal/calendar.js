@@ -40,6 +40,7 @@ async function listEvents({ dateFrom, dateTo, limit = 50 } = {}) {
     location: ev.location || '',
     status: ev.status || 'confirmed',
     etag: ev.etag || '',
+    attendees: (ev.attendees || []).map(a => a.email).filter(Boolean),
   }));
 }
 
@@ -119,6 +120,7 @@ async function updateEvent(eventId, patch, opts = {}) {
   if (patch.location != null) body.location = patch.location;
   if (patch.start) body.start = { dateTime: patch.start, timeZone: tz };
   if (patch.end) body.end = { dateTime: patch.end, timeZone: tz };
+  if (Array.isArray(patch.guests)) body.attendees = patch.guests.map(email => ({ email }));
   const pathStr = `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
   const etag = opts.etag;
   const resp = await httpsPatch('www.googleapis.com', pathStr, body, token, etag);
@@ -137,6 +139,7 @@ async function getEvent(eventId) {
       end: resp.end?.dateTime || resp.end?.date || '',
       etag: resp.etag || '',
       status: resp.status || 'confirmed',
+      attendees: (resp.attendees || []).map(a => a.email).filter(Boolean),
     };
   } catch (e) {
     if (/\b404\b/.test(e.message)) return null;
