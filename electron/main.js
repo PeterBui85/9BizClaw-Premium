@@ -18396,9 +18396,14 @@ ipcMain.handle('gcal-list-events', async (_event, opts = {}) => {
 
 ipcMain.handle('gcal-get-freebusy', async (_event, { dateFrom, dateTo }) => {
   try {
-    return { success: true, ...(await gcalCalendar.getFreeBusy(dateFrom, dateTo)) };
+    const toISOStart = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00+07:00` : s;
+    const toISOEnd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59+07:00` : s;
+    const tFrom = dateFrom ? toISOStart(dateFrom) : new Date().toISOString();
+    const tTo = dateTo ? toISOEnd(dateTo) : new Date(Date.now() + 7 * 86400e3).toISOString();
+    const r = await gcalCalendar.getFreeBusy(tFrom, tTo);
+    return { success: true, ...r };
   } catch (e) {
-    return { success: false, error: e.message, busy: [] };
+    return { success: false, error: e.message };
   }
 });
 
