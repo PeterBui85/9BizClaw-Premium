@@ -142,14 +142,124 @@ function testEnumValidation() {
   ok('enum validation whitelist tight');
 }
 
+// v2.4.0 M4-A: ALTER path — simulate upgrade from v2.3.47 schema (no visibility).
+// Confirms ALTER adds the column AND existing rows return 'public' via DEFAULT.
+function testAlterUpgradePath() {
+  const db = new DatabaseConstructor(':memory:');
+  try {
+    db.exec(`
+      CREATE TABLE documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        filepath TEXT NOT NULL,
+        content TEXT,
+        filetype TEXT,
+        filesize INTEGER,
+        word_count INTEGER,
+        category TEXT DEFAULT 'general',
+        summary TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+    db.prepare('INSERT INTO documents (filename, filepath, content, category) VALUES (?, ?, ?, ?)').run('legacy.pdf', '/l.pdf', 'x', 'cong-ty');
+    const cols1 = db.prepare('PRAGMA table_info(documents)').all().map(c => c.name);
+    if (cols1.includes('visibility')) fail('test bug: visibility already present before ALTER');
+    db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`);
+    const cols2 = db.prepare('PRAGMA table_info(documents)').all().map(c => c.name);
+    if (!cols2.includes('visibility')) fail('ALTER did not add visibility column');
+    const row = db.prepare('SELECT visibility FROM documents WHERE filename = ?').get('legacy.pdf');
+    if (row.visibility !== 'public') fail(`ALTER DEFAULT did not backfill — got "${row.visibility}"`);
+    ok('ALTER upgrade path — legacy row reads visibility=public');
+  } finally {
+    db.close();
+  }
+}
+
+// v2.4.0 M4-B: IPC enum validation reproduced inline (can't invoke IPC from
+// smoke, but we validate the exact predicate used at main.js:15753, 15774).
+function testIpcEnumValidation() {
+  const ALLOWED = ['public', 'internal', 'private'];
+  const validateVisibility = (v) => ALLOWED.includes(v);
+  const rejects = ['Public', 'INTERNAL', ' public', 'public ', '', null, undefined, 0, false, true, 'all', 'ceo'];
+  for (const bad of rejects) {
+    if (validateVisibility(bad)) fail(`IPC enum accepted bad value: ${JSON.stringify(bad)}`);
+  }
+  const accepts = ['public', 'internal', 'private'];
+  for (const good of accepts) {
+    if (!validateVisibility(good)) fail(`IPC enum rejected valid value: ${good}`);
+  }
+  ok('IPC enum predicate rejects non-enum, accepts 3 tiers');
+}
+
+// v2.4.0 M4-C: save-zalo-manager-config whitelist — only literal `true` stores
+// internal flag. Everything else (strings, 1, truthy objects) treated as false.
+function testSaveHandlerWhitelist() {
+  const ATTEMPTS = [
+    { input: { mode: 'mention', internal: true },  expected: { mode: 'mention', internal: true } },
+    { input: { mode: 'mention', internal: 'yes' }, expected: { mode: 'mention' } },
+    { input: { mode: 'mention', internal: 1 },     expected: { mode: 'mention' } },
+    { input: { mode: 'mention', internal: 'true' },expected: { mode: 'mention' } },
+    { input: { mode: 'mention', internal: false }, expected: { mode: 'mention' } },
+    { input: { mode: 'mention' },                  expected: { mode: 'mention' } },
+    { input: { mode: 'all', internal: true, badField: 'x' }, expected: { mode: 'all', internal: true } },
+  ];
+  // Reproduces the whitelist logic at main.js:~10204-10207
+  const sanitize = (gs) => {
+    if (!gs || !gs.mode) return null;
+    if (!['off', 'mention', 'all'].includes(gs.mode)) return null;
+    const out = { mode: gs.mode };
+    if (gs.internal === true) out.internal = true;
+    return out;
+  };
+  for (const { input, expected } of ATTEMPTS) {
+    const got = sanitize(input);
+    if (JSON.stringify(got) !== JSON.stringify(expected)) {
+      fail(`whitelist ${JSON.stringify(input)} → expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`);
+    }
+  }
+  ok('save-handler whitelist — only literal true stores internal');
+}
+
+// v2.4.0 M4-D: FTS5 broken → Tier 3 LIKE still applies filter. Simulates the
+// fall-through path when FTS5 MATCH returns empty and LIKE takes over.
+function testFts5FallThroughToLike(db) {
+  // Query that FTS5 would match — but filter it down via audience=customer
+  // and confirm the LIKE fallback (which has its own filter) doesn't leak
+  // internal/private content when FTS5 silently returns nothing.
+  // Direct LIKE test: confirm filter applied when LIKE is the ONLY path.
+  const allowedTiers = ['public'];
+  const placeholders = allowedTiers.map(() => '?').join(',');
+  // Simulate the EXACT SQL shape from main.js:16020-16029 Tier 3
+  const rows = db.prepare(
+    `SELECT NULL AS chunk_id, d.id AS document_id, d.category, 0 AS chunk_index,
+            0 AS char_start, 0 AS char_end, d.filename, d.title,
+            999.0 AS score,
+            substr(d.content, 1, 300) AS snippet
+     FROM documents d
+     WHERE d.visibility IN (${placeholders})
+       AND (d.content LIKE ? OR d.filename LIKE ?)
+     LIMIT ?`
+  ).all(...allowedTiers, '%giao%', '%giao%', 10);
+  const leakedIds = rows.map(r => r.document_id).filter(id => id === 2 || id === 3);
+  if (leakedIds.length > 0) fail(`Tier 3 LIKE leaked internal/private: ${JSON.stringify(leakedIds)}`);
+  if (rows.length !== 1 || rows[0].document_id !== 1) {
+    fail(`Tier 3 LIKE expected exactly doc 1 (public), got ${JSON.stringify(rows.map(r => r.document_id))}`);
+  }
+  ok('Tier 3 LIKE fall-through — customer audience excludes internal/private');
+}
+
 function main() {
-  console.log('[visibility smoke] 4-location filter + enum validation...');
+  console.log('[visibility smoke] 4-location filter + 4 regression tests...');
   const db = setupDb();
   try {
     testVectorFilter(db);
     testFts5Filter(db);
     testLikeFilter(db);
     testEnumValidation();
+    testAlterUpgradePath();
+    testIpcEnumValidation();
+    testSaveHandlerWhitelist();
+    testFts5FallThroughToLike(db);
   } finally {
     db.close();
   }

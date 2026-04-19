@@ -10195,8 +10195,10 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         if (fs.existsSync(gsPath)) existing = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {};
         if (typeof existing !== 'object' || Array.isArray(existing)) existing = {};
       } catch {}
-      // v2.4.0: detect internal-flag changes for audit trail
-      const oldFile = (() => { try { return JSON.parse(fs.readFileSync(gsPath, 'utf-8')); } catch { return {}; } })();
+      // v2.4.0: snapshot pre-mutation state for audit trail. Structured clone
+      // avoids a second fs read — `existing` already has the parsed file from
+      // the block above (or {} if missing/malformed).
+      const oldFile = JSON.parse(JSON.stringify(existing));
       for (const [gid, gs] of Object.entries(groupSettings)) {
         if (!gs || !gs.mode) continue;
         if (!['off', 'mention', 'all'].includes(gs.mode)) continue;
@@ -15584,7 +15586,7 @@ async function backfillKnowledgeFromDisk() {
   try { db.close(); } catch {}
   if (inserted > 0) {
     console.log('[knowledge] backfilled', inserted, 'file(s) from disk into DB');
-    try { auditLog('knowledge_backfill_visibility_default', { count: inserted }); } catch {}
+    try { auditLog('visibility-backfill-default', { count: inserted }); } catch {}
     for (const cat of KNOWLEDGE_CATEGORIES) rewriteKnowledgeIndex(cat);
   }
 }
