@@ -1533,6 +1533,18 @@
       border-top: 1px solid var(--border);
     }
 
+    /* === Generic modal (used by gcal wizard / event / settings) === */
+    .modal { position:fixed; top:0; left:0; width:100%; height:100%; z-index:200; display:flex; align-items:center; justify-content:center; }
+    .modal .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); }
+    .modal .modal-content { position:relative; background:var(--surface); border:1px solid var(--border); border-radius:14px; width:92%; max-width:520px; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,0.4); }
+    .modal .modal-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); }
+    .modal .modal-header h3 { margin:0; font-size:15px; font-weight:600; }
+    .modal .modal-close { background:transparent; border:none; color:var(--text-muted); font-size:22px; cursor:pointer; padding:0 4px; line-height:1; }
+    .modal .modal-close:hover { color:var(--text); }
+    .modal .modal-body { padding:18px 20px; overflow-y:auto; flex:1; font-size:13px; line-height:1.55; color:var(--text); }
+    .modal .modal-body code { background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:1px 6px; font-size:12px; }
+    .modal .modal-footer { display:flex; justify-content:flex-end; gap:8px; padding:14px 20px; border-top:1px solid var(--border); }
+
     /* === Google Calendar page === */
     .gcal-grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
     .gcal-col { min-width:0; }
@@ -3184,9 +3196,152 @@
       }
     }
     async function gcalRefreshEvents() { /* filled in Task 22 */ }
-    async function gcalOpenSetupWizard() { /* filled in Task 21 */ alert('TODO: setup wizard'); }
     async function gcalOpenCreateModal() { /* filled in Task 23 */ alert('TODO: create modal'); }
     async function gcalOpenSettingsModal() { /* filled in Task 24 */ alert('TODO: settings'); }
+
+    // --- Setup wizard (6 steps) ---
+    let _gcalWizardStep = 0;
+    const GCAL_WIZARD_STEPS = [
+      {
+        title: 'Bước 1/6 — Tạo Google Cloud project',
+        body: `
+          <p>Google Cloud là nơi sếp tạo và quản lý "ứng dụng" truy cập dịch vụ Google. Tab mới sẽ mở trang tạo project.</p>
+          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/projectcreate')">Mở Google Cloud Console</button>
+          <p style="margin-top:12px;color:var(--text-muted);font-size:12px">Đặt tên project bất kỳ (ví dụ: <em>Lịch 9BizClaw</em>), bấm <code>CREATE</code>. Chờ ~30s cho Google tạo xong.</p>
+        `,
+      },
+      {
+        title: 'Bước 2/6 — Bật Calendar API',
+        body: `
+          <p>Project mới chưa có quyền gọi Calendar. Bấm nút để mở trang bật API.</p>
+          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/library/calendar-json.googleapis.com')">Mở trang bật Calendar API</button>
+          <p style="margin-top:12px;color:var(--text-muted);font-size:12px">Ở trang đó bấm nút <code>ENABLE</code>. Chờ 10-20s.</p>
+        `,
+      },
+      {
+        title: 'Bước 3/6 — OAuth consent screen',
+        body: `
+          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/consent')">Mở OAuth consent screen</button>
+          <ol style="margin-top:12px;padding-left:20px;line-height:1.8">
+            <li>Chọn <code>External</code>, bấm <code>CREATE</code>.</li>
+            <li>App name: bất kỳ. Support email + developer email = email sếp.</li>
+            <li>Bấm <code>SAVE AND CONTINUE</code> qua 4 màn (Scopes / Test users / Summary — để trống).</li>
+            <li><strong>Quan trọng:</strong> sau Summary sẽ quay về trang "OAuth consent screen". Tìm nút xanh <code>PUBLISH APP</code>, bấm → xác nhận <code>CONFIRM</code>. Đây là bước bắt buộc cho refresh token bền.</li>
+          </ol>
+        `,
+      },
+      {
+        title: 'Bước 4/6 — Tạo OAuth Client ID',
+        body: `
+          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/oauthclient')">Mở trang tạo OAuth Client</button>
+          <ol style="margin-top:12px;padding-left:20px;line-height:1.8">
+            <li>Application type: <code>Web application</code></li>
+            <li>Name: bất kỳ</li>
+            <li>Authorized redirect URIs — bấm <code>ADD URI</code> và dán đúng chuỗi này:<br>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <code id="gcal-redirect-uri" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:12px">http://127.0.0.1:20199/gcal/callback</code>
+                <button class="btn btn-secondary btn-small" onclick="gcalCopyRedirect()">Copy</button>
+              </div>
+            </li>
+            <li>Bấm <code>CREATE</code>. Popup hiện ra với Client ID + Client Secret.</li>
+          </ol>
+        `,
+      },
+      {
+        title: 'Bước 5/6 — Dán Client ID + Secret',
+        body: `
+          <p>Dán từ popup Google Cloud vừa mở ở bước 4.</p>
+          <label style="display:block;margin-top:12px;font-size:12px;font-weight:600">Client ID</label>
+          <input type="text" id="gcal-wizard-clientid" placeholder="xxx.apps.googleusercontent.com" style="width:100%;padding:8px;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <label style="display:block;margin-top:12px;font-size:12px;font-weight:600">Client Secret</label>
+          <input type="text" id="gcal-wizard-clientsecret" placeholder="GOCSPX-xxx" style="width:100%;padding:8px;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <button class="btn btn-secondary" onclick="gcalValidateAndSave()" style="margin-top:12px">Kiểm tra</button>
+          <div id="gcal-wizard-validate-result" style="margin-top:8px;font-size:12px"></div>
+        `,
+      },
+      {
+        title: 'Bước 6/6 — Đăng nhập Google',
+        body: `
+          <p>Cửa sổ sẽ mở trang đăng nhập Google. Chọn tài khoản gắn với project vừa tạo ở Bước 1. Nếu có nhiều tài khoản, chọn đúng tài khoản — sai là sẽ bị từ chối.</p>
+          <p style="color:var(--text-muted);font-size:12px">Google sẽ hiện cảnh báo "unverified app" — đây là bình thường vì sếp chưa submit verification (không cần). Bấm <code>Advanced → Go to (app name) (unsafe)</code> → allow.</p>
+          <button class="btn btn-primary" onclick="gcalStartOAuth()">Mở cửa sổ đăng nhập Google</button>
+          <div id="gcal-wizard-oauth-status" style="margin-top:12px;font-size:12px"></div>
+        `,
+      },
+    ];
+
+    function gcalOpenSetupWizard() {
+      _gcalWizardStep = 0;
+      document.getElementById('gcal-wizard-modal').style.display = 'flex';
+      gcalRenderWizardStep();
+    }
+
+    function gcalCloseWizard() {
+      document.getElementById('gcal-wizard-modal').style.display = 'none';
+    }
+
+    function gcalRenderWizardStep() {
+      const step = GCAL_WIZARD_STEPS[_gcalWizardStep];
+      document.getElementById('gcal-wizard-title').textContent = step.title;
+      document.getElementById('gcal-wizard-step').innerHTML = step.body;
+      const progress = document.getElementById('gcal-wizard-progress');
+      progress.innerHTML = '';
+      for (let i = 0; i < GCAL_WIZARD_STEPS.length; i++) {
+        const dot = document.createElement('div');
+        dot.style.cssText = `flex:1;height:4px;background:${i <= _gcalWizardStep ? 'var(--accent)' : 'var(--border)'};border-radius:2px`;
+        progress.appendChild(dot);
+      }
+      document.getElementById('gcal-wizard-back').style.visibility = _gcalWizardStep === 0 ? 'hidden' : 'visible';
+      document.getElementById('gcal-wizard-next').textContent = _gcalWizardStep === GCAL_WIZARD_STEPS.length - 1 ? 'Hoàn tất' : 'Đã làm xong →';
+    }
+
+    function gcalWizardBack() { if (_gcalWizardStep > 0) { _gcalWizardStep--; gcalRenderWizardStep(); } }
+    function gcalWizardNext() {
+      if (_gcalWizardStep < GCAL_WIZARD_STEPS.length - 1) {
+        _gcalWizardStep++;
+        gcalRenderWizardStep();
+      } else {
+        gcalCloseWizard();
+        gcalRefreshStatus();
+      }
+    }
+
+    async function gcalOpenExternal(url) {
+      await window.claw.openExternal(url);
+    }
+    async function gcalCopyRedirect() {
+      await navigator.clipboard.writeText('http://127.0.0.1:20199/gcal/callback');
+      alert('Đã copy. Paste vào trường "Authorized redirect URIs" ở Google Cloud.');
+    }
+    async function gcalValidateAndSave() {
+      const clientId = document.getElementById('gcal-wizard-clientid').value.trim();
+      const clientSecret = document.getElementById('gcal-wizard-clientsecret').value.trim();
+      const resultEl = document.getElementById('gcal-wizard-validate-result');
+      resultEl.textContent = 'Đang kiểm tra...';
+      resultEl.style.color = 'var(--text-muted)';
+      const r = await window.claw.gcalValidateCredentials({ clientId, clientSecret });
+      if (!r.success) { resultEl.textContent = 'Lỗi mạng: ' + r.error; resultEl.style.color = 'var(--danger)'; return; }
+      if (!r.valid) { resultEl.textContent = r.detail || 'Client ID/Secret không hợp lệ'; resultEl.style.color = 'var(--danger)'; return; }
+      // Save
+      const save = await window.claw.gcalSaveCredentials({ clientId, clientSecret });
+      if (!save.success) { resultEl.textContent = 'Lưu lỗi: ' + save.error; resultEl.style.color = 'var(--danger)'; return; }
+      resultEl.textContent = '[OK] Credentials hợp lệ và đã lưu. Bấm "Đã làm xong →" để sang bước 6.';
+      resultEl.style.color = 'var(--success)';
+    }
+
+    async function gcalStartOAuth() {
+      const statusEl = document.getElementById('gcal-wizard-oauth-status');
+      statusEl.textContent = 'Chờ sếp hoàn tất đăng nhập trên browser...';
+      statusEl.style.color = 'var(--text-muted)';
+      const r = await window.claw.gcalConnect();
+      if (r.success) {
+        statusEl.textContent = '[OK] Đã kết nối với ' + (r.email || 'Google Calendar');
+        statusEl.style.color = 'var(--success)';
+      } else {
+        statusEl.textContent = 'Lỗi: ' + r.error;
+        statusEl.style.color = 'var(--danger)';
+      }
+    }
     async function gcalDisconnect() {
       if (!confirm('Ngắt kết nối Google Calendar? Sếp sẽ cần làm lại wizard để kết nối lại.')) return;
       const r = await window.claw.gcalDisconnect();
@@ -5997,5 +6152,26 @@
       window.__kbdPalette = { open: openPalette, close: closePalette, openHelp, closeHelp };
     })();
   </script>
+
+  <!-- Google Calendar: setup wizard modal (Task 21) -->
+  <div id="gcal-wizard-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="gcalCloseWizard()"></div>
+    <div class="modal-content" style="max-width:640px">
+      <div class="modal-header">
+        <h3 id="gcal-wizard-title">Thiết lập Google Calendar</h3>
+        <button class="modal-close" onclick="gcalCloseWizard()">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="gcal-wizard-progress" style="display:flex;gap:4px;margin-bottom:20px">
+          <!-- 6 dots populated by JS -->
+        </div>
+        <div id="gcal-wizard-step"><!-- filled by JS --></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="gcalWizardBack()" id="gcal-wizard-back">Quay lại</button>
+        <button class="btn btn-primary" onclick="gcalWizardNext()" id="gcal-wizard-next">Đã làm xong →</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
