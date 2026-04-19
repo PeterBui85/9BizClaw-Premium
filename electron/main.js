@@ -18380,11 +18380,17 @@ ipcMain.handle('gcal-list-calendars', async () => {
   }
 });
 
-ipcMain.handle('gcal-list-events', async (_event, { maxResults } = {}) => {
+ipcMain.handle('gcal-list-events', async (_event, opts = {}) => {
   try {
-    return { success: true, events: await gcalCalendar.listEvents(maxResults || 10) };
+    let { dateFrom, dateTo, limit } = opts;
+    const toISOStart = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00+07:00` : s;
+    const toISOEnd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59+07:00` : s;
+    if (dateFrom) dateFrom = toISOStart(dateFrom);
+    if (dateTo) dateTo = toISOEnd(dateTo);
+    const events = await gcalCalendar.listEvents({ dateFrom, dateTo, limit });
+    return { success: true, events };
   } catch (e) {
-    return { success: false, error: e.message, events: [] };
+    return { success: false, error: e.message };
   }
 });
 

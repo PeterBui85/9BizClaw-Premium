@@ -14,12 +14,14 @@ const gcalConfig = require('./config');
 // List upcoming events
 // ---------------------------------------------------------------------------
 
-async function listEvents(maxResults = 10) {
+async function listEvents({ dateFrom, dateTo, limit = 50 } = {}) {
   const token = await getAccessToken();
-  const now = new Date().toISOString();
+  const now = new Date();
+  const timeMin = dateFrom || now.toISOString();
+  const timeMax = dateTo || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const params = new URLSearchParams({
-    timeMin: now,
-    maxResults: String(maxResults),
+    timeMin, timeMax,
+    maxResults: String(Math.min(Math.max(1, Number(limit) || 50), 250)),
     singleEvents: 'true',
     orderBy: 'startTime',
   });
@@ -30,13 +32,14 @@ async function listEvents(maxResults = 10) {
   );
   return (resp.items || []).map(ev => ({
     id: ev.id,
-    summary: ev.summary || '(Khong co tieu de)',
+    summary: ev.summary || '(không tên)',
     description: ev.description || '',
     start: ev.start?.dateTime || ev.start?.date || '',
     end: ev.end?.dateTime || ev.end?.date || '',
     htmlLink: ev.htmlLink || '',
     location: ev.location || '',
     status: ev.status || 'confirmed',
+    etag: ev.etag || '',
   }));
 }
 
