@@ -8929,9 +8929,16 @@ async function _ensureZaloPluginImpl() {
           try { ensureZaloFriendCheckFix(); } catch (e) { console.warn('[ensureZaloPlugin] friend check fix failed:', e?.message); }
           try { ensureZaloOwnerFix(); } catch (e) { console.warn('[ensureZaloPlugin] zalo owner fix failed:', e?.message); }
           try { ensureZaloOutputFilterFix(); } catch (e) { console.warn('[ensureZaloPlugin] output filter fix failed:', e?.message); }
-          // Order matters: SYSTEM-MSG must come before SENDER-DEDUP which must come
-          // before GROUP-SETTINGS (anchor dependency — same ordering as _startOpenClawImpl).
+          // Order matters: GS-HELPER injects the __mcReadGroupSettings helper
+          // that GROUP-SETTINGS + RAG patches consume (audience='internal' only
+          // when helper resolves truthy group.internal). On fresh install,
+          // this path fires once during the same event-loop turn as the other
+          // ensures — so RAG v9 consuming the helper never runs before
+          // injection. Kept explicit here as defense-in-depth: _startOpenClawImpl
+          // calls helper before RAG too (line ~6752/6761), matching this order.
+          // SYSTEM-MSG / SENDER-DEDUP precede GROUP-SETTINGS (anchor dependency).
           // Idempotent via marker check, safe on double-call with _startOpenClawImpl.
+          try { ensureZaloGsHelperFix(); } catch (e) { console.warn('[ensureZaloPlugin] GsHelper patch error:', e?.message); }
           try { ensureZaloSystemMsgFix(); } catch (e) { console.warn('[ensureZaloPlugin] SystemMsg patch error:', e?.message); }
           try { ensureZaloSenderDedupFix(); } catch (e) { console.warn('[ensureZaloPlugin] SenderDedup patch error:', e?.message); }
           try { ensureZaloGroupSettingsFix(); } catch (e) { console.warn('[ensureZaloPlugin] GroupSettings patch error:', e?.message); }
