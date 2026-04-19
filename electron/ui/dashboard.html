@@ -3470,10 +3470,18 @@
       // (prevents bypass via Back → Next; forces re-validate if inputs were edited)
       if (_gcalWizardStep === 4) {
         _gcalStep5Validated = false;
+        _gcalStep6Connected = false; // force re-OAuth if creds changed after visiting Step 6
         const cidEl = document.getElementById('gcal-wizard-clientid');
         const csEl = document.getElementById('gcal-wizard-clientsecret');
         if (cidEl) cidEl.value = '';
         if (csEl) csEl.value = '';
+      }
+      // Reset Step 6 OAuth flag on re-entry so prior session's [OK] doesn't
+      // persist after user bounced through Step 5 with different creds.
+      if (_gcalWizardStep === 5) {
+        _gcalStep6Connected = false;
+        const statusEl = document.getElementById('gcal-wizard-oauth-status');
+        if (statusEl) statusEl.innerHTML = '';
       }
     }
 

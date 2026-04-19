@@ -1,8 +1,14 @@
 /**
  * Google Calendar OAuth2 — raw HTTPS, no googleapis package.
  *
- * Token storage: ~/.openclaw/gcal-tokens.json
+ * Token storage: <workspace>/gcal-tokens.json
+ *   (Mac: ~/Library/Application Support/modoro-claw/gcal-tokens.json,
+ *    Win: %APPDATA%/modoro-claw/gcal-tokens.json,
+ *    honors MODORO_WORKSPACE env var.)
  * Encrypted via electron.safeStorage when available, plaintext fallback.
+ * Legacy pre-v2.4.0 installs stored tokens at ~/.openclaw/gcal-tokens.json;
+ * _migrateLegacyTokensOnce() copies them on first loadTokens() and deletes
+ * the old file, mirroring the gcal-config.json migration pattern.
  *
  * Exports: getAuthUrl, exchangeCode, getAccessToken, isConnected, disconnect,
  *          startCallbackServer, stopCallbackServer
@@ -58,14 +64,44 @@ function getCreds() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Resolve token file path — same level as openclaw.json */
-function tokenPath() {
-  // Reuse getWorkspace from main.js via a simple heuristic:
-  // ~/.openclaw/gcal-tokens.json (matches other gcal-config, sticky-chatid, etc.)
+// Mirror of config.js:getWorkspace — keep in sync. Resolves workspace dir
+// where gcal-tokens.json + gcal-config.json + gcal-credentials.enc all live
+// (CLAUDE.md Rule #1: single source of truth).
+function getWorkspace() {
+  if (process.env.MODORO_WORKSPACE) return process.env.MODORO_WORKSPACE;
   const home = process.env.USERPROFILE || process.env.HOME || '';
-  const openclawDir = path.join(home, '.openclaw');
-  try { fs.mkdirSync(openclawDir, { recursive: true }); } catch {}
-  return path.join(openclawDir, 'gcal-tokens.json');
+  if (process.platform === 'darwin') {
+    return path.join(home, 'Library', 'Application Support', 'modoro-claw');
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    return path.join(appData, 'modoro-claw');
+  }
+  return path.join(home, '.config', 'modoro-claw');
+}
+
+/** Resolve token file path — workspace dir, same level as gcal-credentials.enc */
+function tokenPath() {
+  const ws = getWorkspace();
+  try { fs.mkdirSync(ws, { recursive: true }); } catch {}
+  return path.join(ws, 'gcal-tokens.json');
+}
+
+// v2.4.0 hotfix: merchants pre-migration had tokens at ~/.openclaw/gcal-tokens.json
+// Copy to workspace on first access; delete old after. Idempotent.
+function _migrateLegacyTokensOnce() {
+  const newPath = tokenPath();
+  if (fs.existsSync(newPath)) return;
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const legacy = path.join(home, '.openclaw', 'gcal-tokens.json');
+  if (!fs.existsSync(legacy)) return;
+  try {
+    try { fs.mkdirSync(path.dirname(newPath), { recursive: true }); } catch {}
+    const content = fs.readFileSync(legacy);
+    fs.writeFileSync(newPath, content);
+    try { fs.unlinkSync(legacy); } catch {}
+    console.log('[gcal auth] migrated tokens from ~/.openclaw/ to workspace');
+  } catch {}
 }
 
 /** Try encrypt with safeStorage (Electron), fallback plaintext JSON */
@@ -85,6 +121,7 @@ function saveTokens(tokens) {
 
 /** Load tokens — try decrypt, fallback parse JSON */
 function loadTokens() {
+  _migrateLegacyTokensOnce();
   const filePath = tokenPath();
   if (!fs.existsSync(filePath)) return null;
   const raw = fs.readFileSync(filePath);
@@ -199,6 +236,9 @@ async function refreshAccessToken() {
   if (resp.error) throw new Error(resp.error_description || resp.error);
   tokens.access_token = resp.access_token;
   tokens.expiresAt = Date.now() + (resp.expires_in || 3600) * 1000 - 60000;
+  // v2.4.0 hotfix: Google occasionally rotates refresh_token.
+  // If response includes a new one, persist it — old rotates out.
+  if (resp.refresh_token) tokens.refresh_token = resp.refresh_token;
   saveTokens(tokens);
   return tokens.access_token;
 }

@@ -112,22 +112,8 @@ function testMarkerParser() {
 }
 
 function testAuditTokenExclusion() {
-  // Simulate _auditSafeArgs behavior (copy the function — it's pure)
-  const ALLOW = new Set(['summary','start','end','durationMin','location','guests','description','eventId','dateFrom','dateTo','limit','patch']);
-  function auditSafeArgs(args) {
-    if (!args || typeof args !== 'object') return args;
-    const out = {};
-    for (const k of Object.keys(args)) {
-      if (!ALLOW.has(k)) continue;
-      const v = args[k];
-      if (v && typeof v === 'object' && !Array.isArray(v)) {
-        out[k] = auditSafeArgs(v);
-      } else {
-        out[k] = v;
-      }
-    }
-    return out;
-  }
+  // Import the SAME impl main.js uses — no drift possible.
+  const { auditSafeArgs } = require('../gcal/audit-safe');
   const attacks = [
     { access_token: 'ya29.BADBADBAD', summary: 'ok' },
     { refresh_token: '1//BADREFRESH', summary: 'ok' },
@@ -142,7 +128,7 @@ function testAuditTokenExclusion() {
     if (/1\/\//.test(serialized)) fail(`1// refresh token leaked: ${serialized}`);
     if (/GOCSPX-/.test(serialized)) fail(`GOCSPX- client secret leaked: ${serialized}`);
   }
-  ok('audit log: token prefixes never pass allowlist (recursive)');
+  ok('audit log: token prefixes never pass allowlist (recursive) — shared impl');
 }
 
 function testVietnameseDateParser() {

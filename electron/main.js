@@ -6824,9 +6824,10 @@ async function _startOpenClawImpl() {
     ensureZaloGcalNeutralizeFix();
   } catch (e) {
     if (e && e.message === 'GCAL_NEUTRALIZE_ANCHOR_MISSING') {
-      console.error('[boot] GCAL neutralize anchor missing — continuing boot with input-defense DISABLED. Spec review required.');
+      _gcalInputDefenseDisabled = true; // output-side interceptor must fail-closed
+      console.error('[boot] GCAL neutralize anchor missing — output-side marker execution DISABLED (fail-closed)');
       try { auditLog('gcal_neutralize_disabled_boot', { reason: 'anchor_missing' }); } catch {}
-      try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
+      try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Bot sẽ từ chối thực thi marker từ input. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
     } else {
       throw e; // unknown error — don't swallow
     }
@@ -9010,9 +9011,10 @@ async function _ensureZaloPluginImpl() {
             ensureZaloGcalNeutralizeFix();
           } catch (e) {
             if (e && e.message === 'GCAL_NEUTRALIZE_ANCHOR_MISSING') {
-              console.error('[ensureZaloPlugin] GCAL neutralize anchor missing — continuing with input-defense DISABLED. Spec review required.');
+              _gcalInputDefenseDisabled = true; // output-side interceptor must fail-closed
+              console.error('[ensureZaloPlugin] GCAL neutralize anchor missing — output-side marker execution DISABLED (fail-closed)');
               try { auditLog('gcal_neutralize_disabled_boot', { reason: 'anchor_missing', source: 'bundled_copy' }); } catch {}
-              try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
+              try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Bot sẽ từ chối thực thi marker từ input. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
             } else {
               throw e; // unknown error — don't swallow
             }
@@ -12167,9 +12169,21 @@ function stripTelegramMarkdown(text) {
 // + filterSensitiveOutput so raw JSON payloads never reach the output filter.
 const gcalMarkers = require('./gcal/markers');
 
+// Set true when ensureZaloGcalNeutralizeFix fails → output-side
+// interceptGcalMarkers must refuse EXECUTE and scrub markers instead.
+// Agent might echo customer-typed [[GCAL_...]] that wasn't neutralized
+// on input, so executing would delete CEO events. Log + scrub instead.
+let _gcalInputDefenseDisabled = false;
+
 async function interceptGcalMarkers(text) {
   if (!text || typeof text !== 'string') return text;
   if (!text.includes('[[GCAL_')) return text; // fast path
+  if (_gcalInputDefenseDisabled) {
+    // Fail-closed: input defense disabled at boot, so we can't trust that
+    // bot-output markers didn't originate from customer injection via echoed
+    // text. Scrub all markers instead of executing.
+    return text.replace(/\[\[GCAL_/g, '[GCAL-blocked-');
+  }
   return await gcalMarkers.replaceMarkers(text, async (span) => {
     const { action, payload } = span;
     const before = Date.now();
@@ -18483,27 +18497,10 @@ const gcalConfig = require('./gcal/config');
 // Recursively filter audit-log args through an allowlist. Prevents token
 // smuggling through nested paths (e.g., patch.access_token). Unit-tested
 // in smoke-gcal.js testAuditTokenExclusion with ya29./1///GOCSPX- prefixes.
-const _AUDIT_ARG_ALLOWLIST = new Set([
-  'summary','start','end','durationMin','location','guests','description',
-  'eventId','dateFrom','dateTo','limit','patch',
-  // Internal metadata flags — safe to log, useful for forensics
-  'retriedAfter412','storedPlain',
-]);
-function _auditSafeArgs(args) {
-  if (!args || typeof args !== 'object') return args;
-  if (Array.isArray(args)) return args.map(_auditSafeArgs);
-  const out = {};
-  for (const k of Object.keys(args)) {
-    if (!_AUDIT_ARG_ALLOWLIST.has(k)) continue;
-    const v = args[k];
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      out[k] = _auditSafeArgs(v);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
+// v2.4.0 R4 hotfix: extracted to ./gcal/audit-safe.js so smoke-gcal.js can
+// import the SAME impl. Previously the smoke test reimplemented the allowlist
+// inline and drifted (missing retriedAfter412, storedPlain).
+const { auditSafeArgs: _auditSafeArgs } = require('./gcal/audit-safe');
 
 ipcMain.handle('gcal-save-credentials', async (_event, { clientId, clientSecret }) => {
   try {
