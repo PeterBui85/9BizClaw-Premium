@@ -18390,6 +18390,8 @@ ipcMain.handle('gcal-list-events', async (_event, opts = {}) => {
     const events = await gcalCalendar.listEvents({ dateFrom, dateTo, limit });
     return { success: true, events };
   } catch (e) {
+    if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
+    if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
     return { success: false, error: e.message };
   }
 });
@@ -18403,6 +18405,8 @@ ipcMain.handle('gcal-get-freebusy', async (_event, { dateFrom, dateTo }) => {
     const r = await gcalCalendar.getFreeBusy(tFrom, tTo);
     return { success: true, ...r };
   } catch (e) {
+    if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
+    if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
     return { success: false, error: e.message };
   }
 });
@@ -18433,6 +18437,8 @@ ipcMain.handle('gcal-create-event', async (_event, opts) => {
     try { auditLog('gcal_event_created', _auditSafeArgs({ eventId: result.eventId, summary: result.summary, start: result.start })); } catch {}
     return result;
   } catch (e) {
+    if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
+    if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
     return { success: false, error: e.message };
   }
 });
@@ -18459,6 +18465,8 @@ ipcMain.handle('gcal-update-event', async (_event, { eventId, patch }) => {
       }
     }
   } catch (e) {
+    if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
+    if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
     return { success: false, error: e.message };
   }
 });
@@ -18470,7 +18478,9 @@ ipcMain.handle('gcal-delete-event', async (_event, { eventId }) => {
     try { auditLog('gcal_event_deleted', _auditSafeArgs({ eventId })); } catch {}
     return r;
   } catch (e) {
-    if (e.code === 404) return { success: false, error: 'Lịch này đã bị xóa trên Google — sếp tạo mới nếu cần.' };
+    if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
+    if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
+    if (e.code === 'NOT_FOUND' || e.code === 404) return { success: false, error: 'Lịch này đã bị xóa trên Google — sếp tạo mới nếu cần.' };
     return { success: false, error: e.message };
   }
 });

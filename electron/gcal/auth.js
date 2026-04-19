@@ -10,6 +10,27 @@
 
 'use strict';
 
+// Errors thrown with .code set to one of these constants allow IPC handlers
+// to surface specific Vietnamese error messages without brittle string parse.
+const HTTP_CODE_QUOTA = 'QUOTA';
+const HTTP_CODE_UNAUTHORIZED = 'UNAUTHORIZED'; // refresh expired/revoked
+const HTTP_CODE_NOT_FOUND = 'NOT_FOUND';
+const HTTP_CODE_ETAG_MISMATCH = 412;
+
+function _classifyHttpError(statusCode, bodyJson) {
+  if (statusCode === 429) return HTTP_CODE_QUOTA;
+  if (statusCode === 403) {
+    const reason = bodyJson?.error?.errors?.[0]?.reason || bodyJson?.error?.status;
+    if (reason === 'userRateLimitExceeded' || reason === 'rateLimitExceeded' || reason === 'quotaExceeded' || reason === 'RESOURCE_EXHAUSTED') {
+      return HTTP_CODE_QUOTA;
+    }
+  }
+  if (statusCode === 401) return HTTP_CODE_UNAUTHORIZED;
+  if (statusCode === 404) return HTTP_CODE_NOT_FOUND;
+  if (statusCode === 412) return HTTP_CODE_ETAG_MISMATCH;
+  return null;
+}
+
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
@@ -244,13 +265,20 @@ function httpsGet(hostname, pathStr, accessToken) {
       let chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString());
-          if (res.statusCode >= 400) {
-            reject(new Error(body.error?.message || `HTTP ${res.statusCode}`));
-          } else {
-            resolve(body);
+        const raw = Buffer.concat(chunks).toString();
+        if (res.statusCode >= 400) {
+          try {
+            const parsed = raw ? JSON.parse(raw) : {};
+            const code = _classifyHttpError(res.statusCode, parsed);
+            const err = new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || raw.slice(0, 200)}`);
+            if (code !== null) err.code = code;
+            return reject(err);
+          } catch {
+            return reject(new Error(`HTTP ${res.statusCode}: ${raw.slice(0, 200)}`));
           }
+        }
+        try {
+          resolve(JSON.parse(raw));
         } catch (e) {
           reject(new Error('Invalid JSON from Google'));
         }
@@ -278,13 +306,20 @@ function httpsPostJson(hostname, pathStr, body, accessToken) {
       let chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString());
-          if (res.statusCode >= 400) {
-            reject(new Error(body.error?.message || `HTTP ${res.statusCode}`));
-          } else {
-            resolve(body);
+        const raw = Buffer.concat(chunks).toString();
+        if (res.statusCode >= 400) {
+          try {
+            const parsed = raw ? JSON.parse(raw) : {};
+            const code = _classifyHttpError(res.statusCode, parsed);
+            const err = new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || raw.slice(0, 200)}`);
+            if (code !== null) err.code = code;
+            return reject(err);
+          } catch {
+            return reject(new Error(`HTTP ${res.statusCode}: ${raw.slice(0, 200)}`));
           }
+        }
+        try {
+          resolve(JSON.parse(raw));
         } catch (e) {
           reject(new Error('Invalid JSON from Google'));
         }
@@ -391,7 +426,17 @@ async function httpsDelete(host, pathStr, token) {
       res.on('data', c => data += c);
       res.on('end', () => {
         if (res.statusCode === 204 || res.statusCode === 200) return resolve({ deleted: true });
-        if (res.statusCode === 404) return reject(Object.assign(new Error('NOT_FOUND'), { code: 404 }));
+        if (res.statusCode >= 400) {
+          try {
+            const parsed = data ? JSON.parse(data) : {};
+            const code = _classifyHttpError(res.statusCode, parsed);
+            const err = new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || data.slice(0, 200)}`);
+            if (code !== null) err.code = code;
+            return reject(err);
+          } catch {
+            return reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+          }
+        }
         reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
       });
     });
@@ -418,10 +463,21 @@ async function httpsPatch(host, pathStr, body, token, etag) {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
+        // Preserve ETAG_MISMATCH message for callers that parse it.
+        if (res.statusCode === 412) return reject(Object.assign(new Error('ETAG_MISMATCH'), { code: 412 }));
+        if (res.statusCode >= 400) {
+          try {
+            const parsed = data ? JSON.parse(data) : {};
+            const code = _classifyHttpError(res.statusCode, parsed);
+            const err = new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || data.slice(0, 200)}`);
+            if (code !== null) err.code = code;
+            return reject(err);
+          } catch {
+            return reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+          }
+        }
         try {
           const parsed = data ? JSON.parse(data) : {};
-          if (res.statusCode === 412) return reject(Object.assign(new Error('ETAG_MISMATCH'), { code: 412 }));
-          if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || data.slice(0, 200)}`));
           resolve(parsed);
         } catch (e) { reject(e); }
       });
@@ -451,4 +507,9 @@ module.exports = {
   httpsPostJson,
   httpsPatch,
   httpsDelete,
+  // Error classification sentinels
+  HTTP_CODE_QUOTA,
+  HTTP_CODE_UNAUTHORIZED,
+  HTTP_CODE_NOT_FOUND,
+  HTTP_CODE_ETAG_MISMATCH,
 };
