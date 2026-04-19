@@ -18458,6 +18458,18 @@ ipcMain.handle('gcal-update-event', async (_event, { eventId, patch }) => {
   }
 });
 
+ipcMain.handle('gcal-delete-event', async (_event, { eventId }) => {
+  try {
+    if (!eventId) return { success: false, error: 'Missing eventId' };
+    const r = await gcalCalendar.deleteEvent(eventId);
+    try { auditLog('gcal_event_deleted', _auditSafeArgs({ eventId })); } catch {}
+    return r;
+  } catch (e) {
+    if (e.code === 404) return { success: false, error: 'Lịch này đã bị xóa trên Google — sếp tạo mới nếu cần.' };
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('gcal-get-free-slots', async (_event, { date }) => {
   try {
     const config = gcalConfig.read();

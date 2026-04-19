@@ -379,6 +379,28 @@ function stopCallbackServer() {
   }
 }
 
+async function httpsDelete(host, pathStr, token) {
+  const https = require('node:https');
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: host, path: pathStr, method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+      timeout: 10000,
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode === 204 || res.statusCode === 200) return resolve({ deleted: true });
+        if (res.statusCode === 404) return reject(Object.assign(new Error('NOT_FOUND'), { code: 404 }));
+        reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
+
 async function httpsPatch(host, pathStr, body, token, etag) {
   const https = require('node:https');
   const payload = JSON.stringify(body);
@@ -428,4 +450,5 @@ module.exports = {
   httpsGet,
   httpsPostJson,
   httpsPatch,
+  httpsDelete,
 };

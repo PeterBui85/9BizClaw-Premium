@@ -142,6 +142,8 @@ contextBridge.exposeInMainWorld('claw', {
   gcalListEvents: (opts) => ipcRenderer.invoke('gcal-list-events', opts || {}),
   gcalGetFreeSlots: (opts) => ipcRenderer.invoke('gcal-get-free-slots', opts),
   gcalCreateEvent: (opts) => ipcRenderer.invoke('gcal-create-event', opts),
+  gcalUpdateEvent: (payload) => ipcRenderer.invoke('gcal-update-event', payload),
+  gcalDeleteEvent: (payload) => ipcRenderer.invoke('gcal-delete-event', payload),
   gcalGetFreeBusy: (opts) => ipcRenderer.invoke('gcal-get-freebusy', opts),
   gcalGetConfig: () => ipcRenderer.invoke('gcal-get-config'),
   gcalSaveConfig: (cfg) => ipcRenderer.invoke('gcal-save-config', cfg),

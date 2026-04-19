@@ -7,7 +7,7 @@
 
 'use strict';
 
-const { getAccessToken, httpsGet, httpsPostJson, httpsPatch } = require('./auth');
+const { getAccessToken, httpsGet, httpsPostJson, httpsPatch, httpsDelete } = require('./auth');
 const gcalConfig = require('./config');
 
 // ---------------------------------------------------------------------------
@@ -145,6 +145,16 @@ async function getEvent(eventId) {
 }
 
 // ---------------------------------------------------------------------------
+// Delete event
+// ---------------------------------------------------------------------------
+
+async function deleteEvent(eventId) {
+  const token = await getAccessToken();
+  await httpsDelete('www.googleapis.com', `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, token);
+  return { success: true, eventId };
+}
+
+// ---------------------------------------------------------------------------
 // Get free slots for a day
 // ---------------------------------------------------------------------------
 
@@ -236,6 +246,7 @@ module.exports = {
   createEvent,
   updateEvent,
   getEvent,
+  deleteEvent,
   getFreeSlotsForDay,
   listCalendars,
 };
