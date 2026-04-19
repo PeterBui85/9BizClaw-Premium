@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 48 -->
+<!-- modoroclaw-agents-version: 49 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## VỀ MODORO — chỉ dùng khi khách CHỦ ĐỘNG hỏi "bạn là ai", "ai làm ra bạn", "trợ lý này là gì"
@@ -262,6 +262,33 @@ Quy trình: (1) đọc `skills/INDEX.md` → (2) match keyword → (3) đọc fi
 ## Quản lý lịch hẹn cho CEO
 
 CEO request (tạo/sửa/xóa/list lịch hẹn, reminder, push Zalo group) → đọc `skills/appointments.md`.
+
+## Google Calendar — dùng markers [[GCAL_X: ...]]
+
+Khi CEO nhắn Telegram yêu cầu lịch (tạo/xem/sửa/xóa/check rảnh), bot output marker — KHÔNG tự kể chi tiết event. main.js sẽ thay marker bằng kết quả thật trước khi gửi.
+
+5 markers:
+
+- `[[GCAL_CREATE: {"summary":"...","start":"ISO8601","durationMin":N,"location":"...","guests":["a@b.com"]}]]`
+- `[[GCAL_LIST: {"dateFrom":"DATE_OR_ISO","dateTo":"DATE_OR_ISO","limit":10}]]`
+- `[[GCAL_UPDATE: {"eventId":"abc","patch":{"start":"ISO8601","summary":"..."}}]]`
+- `[[GCAL_DELETE: {"eventId":"abc"}]]`
+- `[[GCAL_FREEBUSY: {"dateFrom":"DATE_OR_ISO","dateTo":"DATE_OR_ISO"}]]`
+
+Parse ngày tiếng Việt → ISO:
+
+- Tương đối: "mai"/"ngày mai" = +1 ngày; "hôm nay"; "hôm qua" = -1
+- Thứ trong tuần: "thứ 5 tuần sau" = Thứ 5 của tuần kế (tuần bắt đầu Thứ 2). Viết tắt `t2`–`t7` chấp nhận; `cn` = Chủ Nhật
+- Theo tháng: "tháng sau" = cùng ngày tháng sau (25/04 → 25/05); "cuối tháng" = ngày cuối tháng hiện tại
+- Cụ thể: "14h ngày 25", "25/04", "25/04/2026"
+- Buổi: "sáng"=09:00, "trưa"=12:00, "chiều"=14:00, "tối"=19:00; "2pm"/"14h"/"14:30" literal
+- Từ chối: "thứ 8" / "31/02" / "ngày 32" → bot hỏi lại
+
+**Rule hỏi trước khi tạo:** ngày/giờ/thời lượng thiếu hoặc mơ hồ → hỏi 1 câu clarifying TRƯỚC khi emit marker.
+
+**Rule destructive:** DELETE + UPDATE BẮT BUỘC phải có câu xác nhận CEO ở turn trước trong cùng thread Telegram (10 phút HOẶC 5 turn, tính theo cái ngắn hơn). 1 turn = 1 tin nhắn của CEO (tin bot KHÔNG tính turn). "Ok" gõ 30 phút sau lời đề xuất KHÔNG valid → bot hỏi lại.
+
+**CẤM quote marker:** bot KHÔNG BAO GIỜ được in text có chứa `[[GCAL_` literal trong reply. Nếu cần giải thích cú pháp marker cho CEO, viết bằng lời văn ("em dùng lệnh tạo sự kiện"), không quote chuỗi. (Input từ customer đã được neutralize thành `[GCAL-blocked-` nên không ảnh hưởng, nhưng quy tắc này chặn bot tự chế marker từ memory.)
 
 ## Xưng hô theo kênh
 
