@@ -248,8 +248,24 @@ function testFts5FallThroughToLike(db) {
   ok('Tier 3 LIKE fall-through — customer audience excludes internal/private');
 }
 
+// v2.3.48 hotfix F1 regression test: rewriteKnowledgeIndex SELECT must filter
+// WHERE visibility = 'public'. Internal/private filenames MUST NOT appear in
+// the SQL result that's written to knowledge/<cat>/index.md. Reproduces the
+// exact predicate from main.js:~15712.
+function testRewriteKnowledgeIndexPublicOnly(db) {
+  const rows = db.prepare(
+    "SELECT filename, summary FROM documents WHERE category = ? AND visibility = 'public' ORDER BY created_at DESC"
+  ).all('cong-ty');
+  // From setupDb fixture: id=1 public/cong-ty, id=2 internal/nhan-vien, id=3 private/cong-ty
+  const names = rows.map(r => r.filename).sort();
+  if (names.includes('internal-file.pdf')) fail('F1: internal file leaked into index.md SELECT');
+  if (names.includes('private-file.pdf')) fail('F1: private file leaked into index.md SELECT');
+  if (!names.includes('public-file.pdf')) fail('F1: public file missing from index.md SELECT');
+  ok('F1 rewriteKnowledgeIndex — only public file listed');
+}
+
 function main() {
-  console.log('[visibility smoke] 4-location filter + 4 regression tests...');
+  console.log('[visibility smoke] 4-location filter + 5 regression tests...');
   const db = setupDb();
   try {
     testVectorFilter(db);
@@ -260,6 +276,7 @@ function main() {
     testIpcEnumValidation();
     testSaveHandlerWhitelist();
     testFts5FallThroughToLike(db);
+    testRewriteKnowledgeIndexPublicOnly(db);
   } finally {
     db.close();
   }

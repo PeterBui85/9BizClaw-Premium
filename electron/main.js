@@ -607,7 +607,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 46;
+const CURRENT_AGENTS_MD_VERSION = 47;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -15434,6 +15434,7 @@ function getDocumentsDb() {
               filename TEXT NOT NULL, filepath TEXT NOT NULL, content TEXT,
               filetype TEXT, filesize INTEGER, word_count INTEGER,
               category TEXT DEFAULT 'general', summary TEXT,
+              visibility TEXT NOT NULL DEFAULT 'public',
               created_at TEXT DEFAULT (datetime('now'))
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -15442,6 +15443,11 @@ function getDocumentsDb() {
           `);
           try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
           try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
+          // v2.3.48 hotfix F3: auto-fix fallback must match main schema path.
+          // Without this ALTER, recovered DBs from ABI mismatch miss the
+          // visibility column → insertDocumentRow throws + searchKnowledge
+          // SQL fails with "no such column: visibility".
+          try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
           try { ensureKnowledgeChunksSchema(db); } catch {}
           console.log('[documents] DB now working after auto-fix');
           return db;
@@ -15666,10 +15672,16 @@ async function call9Router(prompt, { maxTokens = 200, temperature = 0.3, timeout
 
 // AI summarize via 9Router (fallback to filename + first 200 chars)
 async function summarizeKnowledgeContent(content, filename) {
-  const fallback = () => {
-    const stripped = (content || '').replace(/\s+/g, ' ').trim();
-    return stripped.substring(0, 200) || `(không đọc được nội dung ${filename})`;
-  };
+  // v2.3.48 hotfix F2: previous fallback returned raw first 200 chars of
+  // content. Safe when summary stayed in Dashboard. Unsafe after v2.4.0 —
+  // summary is written to knowledge/<cat>/index.md read by bot for customer
+  // queries (AGENTS.md §48-50). For an internal/private file whose LLM
+  // summary fails (9router offline / timeout), the raw excerpt could contain
+  // salary, cost, or personal data. Return a generic placeholder so the
+  // fallback path NEVER leaks content bytes. F1 already filters private rows
+  // out of index.md SELECT; F2 is defense-in-depth for public files + edge
+  // cases (ex: public file typed wrong tier then retagged later).
+  const fallback = () => `(tóm tắt chưa sẵn sàng cho ${filename} — 9Router offline, file đã lưu)`;
   if (!content || content.length < 30) return fallback();
   const truncated = content.length > 4000 ? content.substring(0, 4000) + '...' : content;
   const result = await call9Router(
@@ -15708,15 +15720,23 @@ function rewriteKnowledgeIndex(category) {
   const db = getDocumentsDb();
   if (db) {
     try {
+      // v2.3.48 hotfix F1: index.md is read by bot at bootstrap per AGENTS.md
+      // §48-50 ("Hỏi sản phẩm/công ty/nhân viên → đọc DUY NHẤT knowledge/
+      // <cat>/index.md"). Customer Zalo queries that miss RAG hit this fallback.
+      // Including internal/private rows here defeats the 3-tier filter applied
+      // at SQL level in searchKnowledge. Only public-tier docs belong in the
+      // shared manifest. Internal/private docs are retrieved exclusively via
+      // the audience-filtered /search HTTP endpoint.
       rows = db.prepare(
-        'SELECT filename, summary, content, filesize, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        "SELECT filename, summary, content, filesize, created_at FROM documents WHERE category = ? AND visibility = 'public' ORDER BY created_at DESC"
       ).all(category);
     } catch (e) { console.error('[knowledge] rewrite index db query:', e.message); }
     try { db.close(); } catch {}
   }
   // Merge in disk-only files so the bot's bootstrap reading of index.md sees
   // everything that physically exists, not just DB rows. Keeps Knowledge tab
-  // useful even when better-sqlite3 is broken.
+  // useful even when better-sqlite3 is broken. Disk-only files default to
+  // public (matches insertDocumentRow default in upload + backfill paths).
   const dbNames = new Set(rows.map(r => r.filename));
   for (const f of listKnowledgeFilesFromDisk(category)) {
     if (!dbNames.has(f.filename)) {
