@@ -16274,7 +16274,14 @@ async function rewriteQueryViaAI(query, model) {
 // Each call opens its own db handle (via getDocumentsDb) and MUST close it
 // on every exit path. Skipping close leaks handles under busy shops (Zalo
 // inbound HTTP hits this 50-100×/day) → eventual EMFILE on macOS.
-async function searchKnowledge({ query, category, limit } = {}) {
+async function searchKnowledge({ query, category, limit, audience = 'customer' } = {}) {
+  // v2.4.0: 3-tier visibility filter. Default 'customer' means missing/invalid
+  // audience is treated as the most restrictive tier — fail-closed principle
+  // ensures a buggy caller cannot accidentally elevate access.
+  const allowedTiers = audience === 'ceo'      ? ['public', 'internal', 'private']
+                     : audience === 'internal' ? ['public', 'internal']
+                                               : ['public'];
+  const visPlaceholders = allowedTiers.map(() => '?').join(',');
   limit = Math.min(Math.max(parseInt(limit, 10) || 3, 1), 10);
   // Round-1 I2 + Round-2 E1: reject non-string / empty / whitespace queries.
   // String(obj) → "[object Object]" was bypassing round-1's guard.
@@ -16322,15 +16329,17 @@ async function searchKnowledge({ query, category, limit } = {}) {
         ? db.prepare(
             `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
              FROM documents_chunks c JOIN documents d ON d.id = c.document_id
-             WHERE c.category = ? AND c.embedding IS NOT NULL
+             WHERE d.visibility IN (${visPlaceholders})
+               AND c.category = ? AND c.embedding IS NOT NULL
              ORDER BY c.id DESC LIMIT 2000`
-          ).all(category)
+          ).all(...allowedTiers, category)
         : db.prepare(
             `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
              FROM documents_chunks c JOIN documents d ON d.id = c.document_id
-             WHERE c.embedding IS NOT NULL
+             WHERE d.visibility IN (${visPlaceholders})
+               AND c.embedding IS NOT NULL
              ORDER BY c.id DESC LIMIT 2000`
-          ).all();
+          ).all(...allowedTiers);
 
       // Price filter: drop rows whose chunk text doesn't fit range. Be
       // conservative — if extractChunkPrice can't parse (non-product chunk
