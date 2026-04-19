@@ -16316,7 +16316,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
   // vector query would only see the chunks embedded so far (filter IS NOT NULL)
   // and could confidently pick a wrong top-1 from 0.6% of corpus.
   if (_backfillInProgress) {
-    try { return searchKnowledgeFTS5({ query, category, limit }, db); }
+    try { return searchKnowledgeFTS5({ query, category, limit, audience }, db); }
     finally { try { db.close(); } catch {} }
   }
 
@@ -16399,7 +16399,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
         }
         console.log('[knowledge-search] no embeddings — falling back to FTS5');
         _ragTier = 'fts5-no-embed';
-        return searchKnowledgeFTS5({ query, category, limit }, db);
+        return searchKnowledgeFTS5({ query, category, limit, audience }, db);
       }
       _ragTier = 'hybrid-rrf';
 
@@ -16433,7 +16433,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
       // rowids in documents_chunks (chunk_id column when returned).
       let ftsIds = [];
       try {
-        const ftsResults = searchKnowledgeFTS5({ query, category, limit: 10 }, db);
+        const ftsResults = searchKnowledgeFTS5({ query, category, limit: 10, audience }, db);
         const eligible = new Set(semRanked.map(s => s.id));
         // Only keep FTS5 hits that have embeddings (in rows set). Prevents
         // RRF from picking chunks we can't score + present with full data.
@@ -16469,7 +16469,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
     } catch (e) {
       console.warn('[knowledge-search] vector search error, falling back to FTS5:', e.message);
       _ragTier = 'fts5-error';
-      return searchKnowledgeFTS5({ query, category, limit }, db);
+      return searchKnowledgeFTS5({ query, category, limit, audience }, db);
     }
     _top1 = scored[0]?.score || 0;
     _top2 = scored[1]?.score || 0;
@@ -16617,7 +16617,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
 ipcMain.handle('knowledge-search', async (_event, payload) => {
   const { query, category, limit } = payload || {};
   try {
-    const results = await searchKnowledge({ query, category, limit });
+    const results = await searchKnowledge({ query, category, limit, audience: 'ceo' });
     return { success: true, results };
   } catch (e) {
     return { success: false, error: e.message || String(e) };
@@ -16776,12 +16776,15 @@ function startKnowledgeSearchServer() {
       const query = url.searchParams.get('q') || '';
       const category = url.searchParams.get('cat') || null;
       const limit = parseInt(url.searchParams.get('k') || '3', 10);
+      // v2.4.0: fail-closed audience parse. Any value other than 'internal' = customer.
+      const rawAudience = url.searchParams.get('audience');
+      const audience = (rawAudience === 'internal') ? 'internal' : 'customer';
       if (!query || query.length < 2) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ results: [] }));
         return;
       }
-      const results = await searchKnowledge({ query, category, limit: Math.min(Math.max(limit, 1), 8) });
+      const results = await searchKnowledge({ query, category, limit: Math.min(Math.max(limit, 1), 8), audience });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ results }));
     } catch (e) {
