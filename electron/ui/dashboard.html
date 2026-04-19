@@ -1532,6 +1532,20 @@
       padding-top: 16px;
       border-top: 1px solid var(--border);
     }
+
+    /* === Google Calendar page === */
+    .gcal-grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .gcal-col { min-width:0; }
+    .gcal-section { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:12px; }
+    .gcal-section-head { display:flex; justify-content:space-between; font-weight:600; font-size:13px; margin-bottom:10px; color:var(--text); }
+    .gcal-list { display:flex; flex-direction:column; gap:6px; }
+    .gcal-empty { padding:16px; color:var(--text-muted); text-align:center; font-size:12px; }
+    .gcal-event { padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; cursor:pointer; }
+    .gcal-event:hover { border-color:var(--accent); }
+    .gcal-event-time { font-size:11px; color:var(--text-muted); }
+    .gcal-event-title { font-size:13px; font-weight:500; margin-top:2px; }
+    .gcal-detail { background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+    @media (max-width: 900px) { .gcal-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -2296,7 +2310,49 @@
 
       <!-- PAGE: Google Calendar -->
       <div class="page" id="page-calendar">
-        <!-- Body replaced by Google Calendar UI in later task (v2.4.0) -->
+        <div class="page-header">
+          <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
+          <div>
+            <h2>Lịch hẹn</h2>
+            <div class="page-sub">Kết nối Google Calendar để bot tự đặt lịch + nhắc sếp</div>
+          </div>
+          <div id="gcal-header-actions" style="margin-left:auto;display:none;gap:8px">
+            <span id="gcal-email" style="font-size:12px;color:var(--text-muted);padding:4px 8px"></span>
+            <button class="btn btn-secondary btn-small" onclick="gcalRefreshEvents()"><span data-icon="refresh-cw" data-icon-size="12"></span> Làm mới</button>
+            <button class="btn btn-primary btn-small" onclick="gcalOpenCreateModal()"><span data-icon="plus" data-icon-size="12"></span> Thêm</button>
+            <button class="btn btn-secondary btn-small" onclick="gcalOpenSettingsModal()"><span data-icon="settings" data-icon-size="12"></span></button>
+            <button class="btn btn-secondary btn-small" onclick="gcalDisconnect()">Ngắt kết nối</button>
+          </div>
+        </div>
+
+        <!-- Not-connected state (fresh install or disconnected) -->
+        <div id="gcal-disconnected" style="display:none;text-align:center;padding:60px 20px">
+          <div style="font-size:64px;margin-bottom:16px;opacity:0.5"><span data-icon="calendar" data-icon-size="64"></span></div>
+          <h3 style="margin:0 0 12px;font-size:18px">Bot 9BizClaw dùng lịch Google Calendar riêng của sếp</h3>
+          <p style="margin:0 0 24px;color:var(--text-muted);max-width:480px;margin-left:auto;margin-right:auto">Không có dữ liệu nào gửi về MODORO — sếp tự tạo Google Cloud project và OAuth client riêng.</p>
+          <button class="btn btn-primary" onclick="gcalOpenSetupWizard()" style="padding:10px 24px;font-size:14px">Kết nối Google Calendar →</button>
+          <p style="margin-top:16px;font-size:11px;color:var(--text-muted)">Cần ~15 phút một lần duy nhất để thiết lập</p>
+        </div>
+
+        <!-- Connected state -->
+        <div id="gcal-connected" style="display:none">
+          <div class="gcal-grid">
+            <div class="gcal-col">
+              <div class="gcal-section">
+                <div class="gcal-section-head"><span>Hôm nay</span><span id="gcal-today-count">0</span></div>
+                <div id="gcal-today-list" class="gcal-list"><div class="gcal-empty">Chưa có lịch hôm nay.</div></div>
+              </div>
+              <div class="gcal-section">
+                <div class="gcal-section-head"><span>Sắp tới 7 ngày</span><span id="gcal-upcoming-count">0</span></div>
+                <div id="gcal-upcoming-list" class="gcal-list"><div class="gcal-empty">Không có lịch sắp tới.</div></div>
+              </div>
+            </div>
+            <div class="gcal-col gcal-detail">
+              <div id="gcal-detail-empty" style="padding:40px 16px;text-align:center;color:var(--text-muted)">Chọn một lịch bên trái để xem chi tiết.</div>
+              <div id="gcal-detail-body" style="display:none"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- PAGE: 9Router (embedded web UI) -->
@@ -3099,9 +3155,44 @@
       if (page === 'persona-mix') {
         loadPersonaMix();
       }
+      if (page === 'calendar') {
+        gcalRefreshStatus();
+      }
     }
     // Alias used by overview card buttons (matches what onclick handlers call)
     function setActivePage(page) { switchPage(page); }
+
+    // ============================================
+    //  GOOGLE CALENDAR — CEO key + wizard + events
+    // ============================================
+    let _gcalEvents = [];
+    async function gcalRefreshStatus() {
+      const status = await window.claw.gcalGetStatus();
+      const disc = document.getElementById('gcal-disconnected');
+      const conn = document.getElementById('gcal-connected');
+      const hdr = document.getElementById('gcal-header-actions');
+      if (status && status.connected) {
+        disc.style.display = 'none';
+        conn.style.display = '';
+        hdr.style.display = 'flex';
+        document.getElementById('gcal-email').textContent = status.email || '';
+        await gcalRefreshEvents();
+      } else {
+        disc.style.display = '';
+        conn.style.display = 'none';
+        hdr.style.display = 'none';
+      }
+    }
+    async function gcalRefreshEvents() { /* filled in Task 22 */ }
+    async function gcalOpenSetupWizard() { /* filled in Task 21 */ alert('TODO: setup wizard'); }
+    async function gcalOpenCreateModal() { /* filled in Task 23 */ alert('TODO: create modal'); }
+    async function gcalOpenSettingsModal() { /* filled in Task 24 */ alert('TODO: settings'); }
+    async function gcalDisconnect() {
+      if (!confirm('Ngắt kết nối Google Calendar? Sếp sẽ cần làm lại wizard để kết nối lại.')) return;
+      const r = await window.claw.gcalDisconnect();
+      if (r && r.warning) alert(r.warning);
+      await gcalRefreshStatus();
+    }
 
     // ============================================
     //  PERSONA MIX — Tính cách bot
