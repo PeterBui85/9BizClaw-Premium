@@ -79,12 +79,45 @@ function testMigration() {
   ok('migration: legacy appointments.json → .learnings archive, idempotent flag');
 }
 
+function testMarkerParser() {
+  const markers = require('../gcal/markers');
+  // Good cases
+  const cases = [
+    { in: 'OK. [[GCAL_CREATE: {"summary":"Họp Huy","start":"2026-04-20T14:00:00+07:00","durationMin":30}]] Done.',
+      expectActions: ['CREATE'] },
+    { in: 'Tuần này: [[GCAL_LIST: {"dateFrom":"2026-04-19","dateTo":"2026-04-26","limit":20}]]',
+      expectActions: ['LIST'] },
+    { in: '[[GCAL_DELETE: {"eventId":"xyz"}]]', expectActions: ['DELETE'] },
+    { in: '[[GCAL_CREATE: {"summary":"Quận 1, HCM [tòa nhà A] phòng 302","start":"2026-04-20T14:00:00+07:00","durationMin":30}]]',
+      expectActions: ['CREATE'] }, // square bracket in title
+    { in: '[[GCAL_CREATE: {"summary":"\u007D closing brace","start":"2026-04-20T14:00:00+07:00","durationMin":30}]]',
+      expectActions: ['CREATE'] }, // unicode escaped brace
+  ];
+  for (const c of cases) {
+    const spans = markers.extractMarkers(c.in);
+    const actions = spans.map(s => s.action);
+    if (JSON.stringify(actions) !== JSON.stringify(c.expectActions)) {
+      fail(`marker extract: expected ${JSON.stringify(c.expectActions)}, got ${JSON.stringify(actions)} for input: ${c.in.slice(0, 80)}`);
+    }
+  }
+  // Malformed — should be flagged as malformed span, NOT silently pass through
+  const bad = '[[GCAL_CREATE: {invalid json]]';
+  const spans = markers.extractMarkers(bad);
+  if (spans.length !== 1 || !spans[0].malformed) fail('malformed marker not flagged');
+  // Unknown action
+  const unknown = '[[GCAL_BADACTION: {"foo":1}]]';
+  const spans2 = markers.extractMarkers(unknown);
+  if (spans2.length !== 1 || !spans2[0].malformed) fail('unknown action not flagged as malformed');
+  ok('marker parser: 5 valid shapes + 2 malformed cases');
+}
+
 function main() {
   console.log('[gcal smoke] running...');
   try {
     testCredentialsRoundTrip();
     testConfigRoundTrip();
     testMigration();
+    testMarkerParser();
   } finally {
     try { fs.rmSync(TMP_WS, { recursive: true, force: true }); } catch {}
   }
