@@ -50,11 +50,41 @@ function testConfigRoundTrip() {
   ok('config round-trip: defaults, full write, partial write merge');
 }
 
+function testMigration() {
+  const migrate = require('../gcal/migrate');
+  // Fixture: legacy appointments.json
+  const ws = process.env.MODORO_WORKSPACE;
+  const apptFile = path.join(ws, 'appointments.json');
+  const legacy = [
+    { id: 'a1', title: 'Họp Huy', start: '2026-04-22T14:00:00+07:00', end: '2026-04-22T15:00:00+07:00', notes: 'Dự án chung cư' },
+    { id: 'a2', title: 'Review team', start: '2026-04-22T16:30:00+07:00', end: '2026-04-22T17:00:00+07:00', notes: '' },
+    { id: 'a3', title: 'Gặp KH Minh', start: '2026-04-23T09:00:00+07:00', end: '2026-04-23T09:30:00+07:00', notes: '' },
+  ];
+  fs.writeFileSync(apptFile, JSON.stringify(legacy, null, 2));
+  // First run: should migrate
+  const result1 = migrate.migrateLocalAppointments();
+  if (!result1.migrated) fail('first run did not migrate');
+  if (result1.count !== 3) fail(`expected 3 migrated, got ${result1.count}`);
+  if (!fs.existsSync(result1.archivePath)) fail('archive .md not written');
+  if (fs.existsSync(apptFile)) fail('legacy appointments.json not deleted');
+  const flagPath = path.join(ws, '.learnings', 'appointments-migrated.flag');
+  if (!fs.existsSync(flagPath)) fail('migration flag not written');
+  // Archive content sanity
+  const archive = fs.readFileSync(result1.archivePath, 'utf-8');
+  if (!archive.includes('Họp Huy')) fail('archive missing event title');
+  if (!archive.includes('22/04/2026')) fail('archive missing formatted date');
+  // Second run: idempotent, no-op
+  const result2 = migrate.migrateLocalAppointments();
+  if (result2.migrated) fail('second run migrated again (not idempotent)');
+  ok('migration: legacy appointments.json → .learnings archive, idempotent flag');
+}
+
 function main() {
   console.log('[gcal smoke] running...');
   try {
     testCredentialsRoundTrip();
     testConfigRoundTrip();
+    testMigration();
   } finally {
     try { fs.rmSync(TMP_WS, { recursive: true, force: true }); } catch {}
   }

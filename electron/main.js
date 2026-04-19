@@ -909,6 +909,18 @@ function seedWorkspace() {
     }
   }
 
+  // v2.4.0: one-time migration of legacy local appointments → archive .md
+  try {
+    const gcalMigrate = require('./gcal/migrate');
+    const result = gcalMigrate.migrateLocalAppointments();
+    if (result.migrated) {
+      console.log(`[seedWorkspace] appointments migrated: ${result.count} → ${result.archivePath}`);
+      try { auditLog('appointments_migrated', { count: result.count, archivePath: result.archivePath }); } catch {}
+    }
+  } catch (e) {
+    console.warn('[seedWorkspace] appointment migration failed:', e.message);
+  }
+
   return ws;
 }
 
