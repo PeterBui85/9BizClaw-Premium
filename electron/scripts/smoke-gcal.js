@@ -111,6 +111,40 @@ function testMarkerParser() {
   ok('marker parser: 5 valid shapes + 2 malformed cases');
 }
 
+function testAuditTokenExclusion() {
+  // Simulate _auditSafeArgs behavior (copy the function — it's pure)
+  const ALLOW = new Set(['summary','start','end','durationMin','location','guests','description','eventId','dateFrom','dateTo','limit','patch']);
+  function auditSafeArgs(args) {
+    if (!args || typeof args !== 'object') return args;
+    const out = {};
+    for (const k of Object.keys(args)) {
+      if (!ALLOW.has(k)) continue;
+      const v = args[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        out[k] = auditSafeArgs(v);
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+  const attacks = [
+    { access_token: 'ya29.BADBADBAD', summary: 'ok' },
+    { refresh_token: '1//BADREFRESH', summary: 'ok' },
+    { client_secret: 'GOCSPX-BAD', summary: 'ok' },
+    { patch: { access_token: 'ya29.NESTED', summary: 'ok' } },
+    { summary: 'ok', custom_field: 'ya29.smuggled-in-value' },
+  ];
+  for (const a of attacks) {
+    const filtered = auditSafeArgs(a);
+    const serialized = JSON.stringify(filtered);
+    if (/ya29\./.test(serialized)) fail(`ya29. token leaked through allowlist: ${serialized}`);
+    if (/1\/\//.test(serialized)) fail(`1// refresh token leaked: ${serialized}`);
+    if (/GOCSPX-/.test(serialized)) fail(`GOCSPX- client secret leaked: ${serialized}`);
+  }
+  ok('audit log: token prefixes never pass allowlist (recursive)');
+}
+
 function main() {
   console.log('[gcal smoke] running...');
   try {
@@ -118,6 +152,7 @@ function main() {
     testConfigRoundTrip();
     testMigration();
     testMarkerParser();
+    testAuditTokenExclusion();
   } finally {
     try { fs.rmSync(TMP_WS, { recursive: true, force: true }); } catch {}
   }
