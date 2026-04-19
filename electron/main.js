@@ -18398,7 +18398,29 @@ ipcMain.handle('gcal-get-freebusy', async (_event, { dateFrom, dateTo }) => {
 
 ipcMain.handle('gcal-create-event', async (_event, opts) => {
   try {
-    return await gcalCalendar.createEvent(opts);
+    const { summary, start, durationMin, description, location, guests } = opts || {};
+    if (!summary || !start || !durationMin) {
+      return { success: false, error: 'Missing required fields: summary, start, durationMin' };
+    }
+    const dMin = Number(durationMin);
+    if (!Number.isFinite(dMin) || dMin < 5 || dMin > 480) {
+      return { success: false, error: 'durationMin must be 5-480' };
+    }
+    const startDate = new Date(start);
+    if (isNaN(startDate.getTime())) {
+      return { success: false, error: 'Invalid start datetime' };
+    }
+    const endDate = new Date(startDate.getTime() + dMin * 60 * 1000);
+    const result = await gcalCalendar.createEvent({
+      summary: String(summary).slice(0, 512),
+      description: description ? String(description).slice(0, 4096) : '',
+      location: location ? String(location).slice(0, 256) : undefined,
+      guests: Array.isArray(guests) ? guests.filter(g => typeof g === 'string' && g.includes('@')).slice(0, 25) : undefined,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+    });
+    try { auditLog('gcal_event_created', _auditSafeArgs({ eventId: result.eventId, summary: result.summary, start: result.start })); } catch {}
+    return result;
   } catch (e) {
     return { success: false, error: e.message };
   }

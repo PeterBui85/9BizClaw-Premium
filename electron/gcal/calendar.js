@@ -68,23 +68,28 @@ async function getFreeBusy(dateFrom, dateTo) {
 // Create event
 // ---------------------------------------------------------------------------
 
-async function createEvent({ summary, description, start, end, reminderMinutes }) {
+async function createEvent({ summary, description, start, end, location, guests, reminderMinutes }) {
   const token = await getAccessToken();
   const config = gcalConfig.read();
   const reminder = reminderMinutes ?? config.reminderMinutes ?? 15;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh';
   const body = {
     summary,
     description: description || '',
-    start: { dateTime: start, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    end: { dateTime: end, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    location: location || undefined,
+    start: { dateTime: start, timeZone: tz },
+    end: { dateTime: end, timeZone: tz },
     reminders: {
       useDefault: false,
       overrides: [{ method: 'popup', minutes: reminder }],
     },
   };
+  if (Array.isArray(guests) && guests.length) {
+    body.attendees = guests.map(email => ({ email }));
+  }
   const resp = await httpsPostJson(
     'www.googleapis.com',
-    '/calendar/v3/calendars/primary/events',
+    '/calendar/v3/calendars/primary/events?sendUpdates=none',
     body,
     token
   );
