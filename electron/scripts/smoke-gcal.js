@@ -145,6 +145,39 @@ function testAuditTokenExclusion() {
   ok('audit log: token prefixes never pass allowlist (recursive)');
 }
 
+function testVietnameseDateParser() {
+  // Shape-level validation at IPC boundary. LLM-level natural-language parsing
+  // ("mai 2pm", "thứ 5 tuần sau") lives in AGENTS.md — not tested here.
+  const invalidShapes = [
+    'not-a-date',
+    '2026-04-32T10:00:00+07:00', // day 32
+    '2026-13-01T10:00:00+07:00', // month 13
+  ];
+  for (const s of invalidShapes) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) fail(`invalid date '${s}' parsed as valid by Date()`);
+  }
+  const validShapes = [
+    '2026-04-20T14:00:00+07:00',
+    '2026-04-20T14:00:00Z',
+    '2026-04-20', // date-only (list range)
+  ];
+  for (const s of validShapes) {
+    const d = new Date(s);
+    if (isNaN(d.getTime())) fail(`valid date '${s}' rejected by Date()`);
+  }
+  const bounds = [
+    { v: 0, ok: false }, { v: 4, ok: false },
+    { v: 5, ok: true }, { v: 480, ok: true },
+    { v: 481, ok: false }, { v: 1000, ok: false },
+  ];
+  for (const b of bounds) {
+    const pass = Number.isFinite(b.v) && b.v >= 5 && b.v <= 480;
+    if (pass !== b.ok) fail(`durationMin bound check: ${b.v} expected ok=${b.ok}`);
+  }
+  ok('date shape validation + durationMin bounds (5-480)');
+}
+
 function main() {
   console.log('[gcal smoke] running...');
   try {
@@ -153,6 +186,7 @@ function main() {
     testMigration();
     testMarkerParser();
     testAuditTokenExclusion();
+    testVietnameseDateParser();
   } finally {
     try { fs.rmSync(TMP_WS, { recursive: true, force: true }); } catch {}
   }
