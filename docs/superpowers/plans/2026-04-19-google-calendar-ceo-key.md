@@ -47,42 +47,54 @@ Tasks 1–5 prepare the ground: delete legacy feature, set up credential storage
 
 ---
 
-### Task 1: Delete legacy local appointment feature
+### Task 1: Delete legacy local appointment feature (full sweep)
 
 **Files:**
-- Modify: `electron/main.js` (delete 4 IPC handlers + 1 cron branch)
+- Modify: `electron/main.js` (delete 4 IPC handlers + dispatcher + helpers + boot call)
 - Modify: `electron/ui/dashboard.html` (delete JS helpers + HTML body)
 - Modify: `electron/preload.js` (delete 4 appointment bridges)
 
-- [ ] **Step 1: Find legacy appointment IPC handler line ranges**
+The legacy feature is larger than it first appears: `startAppointmentDispatcher` runs on boot (line 2871 call, line 12703 def), with helpers `getAppointmentsPath` / `readAppointments` / `writeAppointments` / `mutateAppointments` / `newAppointmentId` / `normalizeAppointment` spread across ~lines 12340-12703. Leaving any of these in place causes runtime errors once migrate.js (Task 5) wipes the data file. This task deletes the ENTIRE subsystem.
 
-Run: `grep -n "ipcMain\.handle('\(list\|create\|update\|delete\)-appointments\?'" electron/main.js`
-Expected: 4 matches near line 12812.
+- [ ] **Step 1: Enumerate every legacy reference**
 
-- [ ] **Step 2: Delete 4 IPC handlers in main.js**
+Run: `grep -n "startAppointmentDispatcher\|getAppointmentsPath\|readAppointments\|writeAppointments\|mutateAppointments\|normalizeAppointment\|newAppointmentId\|appointment" electron/main.js`
+Expected: call at ~line 2871 (`startAppointmentDispatcher()` inside boot sequence), defs spanning ~12340-12703, 4 IPC handlers ~12810-12870. Note the full range on paper before deleting.
 
-Delete lines from `ipcMain.handle('list-appointments'` through the closing `});` of `ipcMain.handle('delete-appointment'`. Preserve surrounding code.
+- [ ] **Step 2: Delete the boot call first**
 
-- [ ] **Step 3: Find + delete appointment reminder cron branch**
+Find line `startAppointmentDispatcher();` (~line 2871) and delete ONLY that one line. This prevents the dispatcher from firing again during subsequent restarts while you're mid-refactor. Leave the function def in place until Step 3.
 
-Run: `grep -n "appointment" electron/main.js | grep -i "cron\|reminder\|schedule"`
-Delete the cron registration + handler that reads appointments.json (typically inside `startCronJobs`).
+- [ ] **Step 3: Delete the entire APPOINTMENTS section**
 
-- [ ] **Step 4: Delete dashboard.html appointment helpers**
+Delete the contiguous block containing:
+- The `// Schema: see normalizeAppointment() below...` header comment
+- `getAppointmentsPath`, `readAppointments`, `writeAppointments`, `newAppointmentId`, `mutateAppointments`, `normalizeAppointment` function defs
+- `startAppointmentDispatcher` function def (~line 12703)
+- The 4 IPC handlers `list-appointments`, `create-appointment`, `update-appointment`, `delete-appointment`
+
+Approximate range to remove: lines 12333-12870. Use Read tool on that range first to confirm the block boundary before deleting — other code must not be swept up.
+
+- [ ] **Step 4: Verify no dangling callers**
+
+Run: `grep -n "appointment\|Appointment" electron/main.js`
+Expected: only references inside migrate.js comments or the gcal section, NOT inside startup/IPC/cron. If any legacy callers remain, delete them.
+
+- [ ] **Step 5: Delete dashboard.html appointment helpers**
 
 Run: `grep -n "_appointments\|listAppointments\|openApptForm\|appt-" electron/ui/dashboard.html`
 Delete: `let _appointments = [];`, `async function loadAppointments`, `openApptForm`, `saveAppointment`, `deleteAppointment`, any `.appt-*` CSS. KEEP the `#page-calendar` shell — its body is replaced in Task 20.
 
-- [ ] **Step 5: Delete preload bridges**
+- [ ] **Step 6: Delete preload bridges**
 
 In `electron/preload.js`, delete 4 entries: `listAppointments`, `createAppointment`, `updateAppointment`, `deleteAppointment`.
 
-- [ ] **Step 6: Verify smoke still passes (no broken reference)**
+- [ ] **Step 7: Verify smoke still passes (no broken reference)**
 
 Run: `cd electron && npm run smoke`
 Expected: 4/4 suites pass. If any suite fails due to `undefined appointment function`, fix the stray reference.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add electron/main.js electron/ui/dashboard.html electron/preload.js
@@ -332,12 +344,14 @@ Inside functions that previously referenced these constants (getAuthUrl, exchang
 
 - [ ] **Step 4: Add getEmail() export for Dashboard header display**
 
+Note: current auth.js exports `loadTokens` + `saveTokens` (not `readTokens`/`writeTokens`). Use those names verbatim — renaming is out of scope for this task.
+
 Before module.exports, add:
 ```js
 // Returns OAuth'd Google email from stored userinfo, or null.
 function getEmail() {
   try {
-    const tokens = readTokens();
+    const tokens = loadTokens();
     return tokens?.email || null;
   } catch { return null; }
 }
@@ -351,7 +365,7 @@ In the function that handles the OAuth callback (post-exchangeCode), after recei
 ```js
 const userinfo = await httpsGet('www.googleapis.com', '/oauth2/v2/userinfo', access_token);
 tokens.email = userinfo.email;
-writeTokens(tokens);
+saveTokens(tokens);
 ```
 
 (If `httpsGet` isn't already exported from auth.js helpers, add it.)
@@ -383,7 +397,7 @@ header. userinfo fetch wired into exchangeCode callback."
 **Files:**
 - Modify: `electron/gcal/config.js` (change storage path, no schema changes)
 
-- [ ] **Step 1: Replace configPath() with workspace-aware version**
+- [ ] **Step 1: Replace configPath() with workspace-aware version + legacy migration**
 
 Edit `electron/gcal/config.js`:
 
@@ -413,7 +427,28 @@ function getWorkspace() {
 function configPath() {
   return path.join(getWorkspace(), 'gcal-config.json');
 }
+
+// One-time migration for merchants who connected under the pre-v2.4.0 path.
+// Runs the first time read() is called and the new path is empty but the
+// old path has data. Idempotent — subsequent reads find the new file and
+// skip. Deletes the old file after copy so subsequent downgrade surfaces
+// the same "Lịch hẹn" empty state everywhere.
+function _migrateLegacyConfigOnce() {
+  const newPath = configPath();
+  if (fs.existsSync(newPath)) return;
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const legacy = path.join(home, '.openclaw', 'gcal-config.json');
+  if (!fs.existsSync(legacy)) return;
+  try {
+    try { fs.mkdirSync(path.dirname(newPath), { recursive: true }); } catch {}
+    const content = fs.readFileSync(legacy, 'utf-8');
+    fs.writeFileSync(newPath, content);
+    try { fs.unlinkSync(legacy); } catch {}
+  } catch {}
+}
 ```
+
+Then in `read()`, call `_migrateLegacyConfigOnce()` FIRST (before reading). Safe: if legacy file missing, no-op.
 
 - [ ] **Step 2: Add config round-trip smoke test**
 
@@ -557,14 +592,21 @@ function formatTimeVI(iso) {
 }
 
 function buildArchive(appts) {
-  // Group by day
+  // Group by day. Skip entries with unparseable start (corrupt JSON tolerance).
   const byDay = {};
+  const skipped = [];
   for (const a of appts) {
+    if (!a || typeof a !== 'object' || !a.start) { skipped.push(a); continue; }
+    const d = new Date(a.start);
+    if (isNaN(d.getTime())) { skipped.push(a); continue; }
     const dayKey = formatDateVI(a.start);
     (byDay[dayKey] = byDay[dayKey] || []).push(a);
   }
   let md = '# Lịch hẹn cũ (local, pre-v2.4.0)\n\n';
   md += `Xuất ngày ${formatDateVI(new Date().toISOString())}. CEO có thể re-enter thủ công vào Google Calendar nếu cần.\n\n`;
+  if (skipped.length) {
+    md += `_Bỏ qua ${skipped.length} entry lỗi (thiếu start hoặc start không hợp lệ). Xem \`appointments.json.bak\` trong workspace nếu cần khôi phục._\n\n`;
+  }
   const sortedDays = Object.keys(byDay).sort((a, b) => {
     const [da, ma, ya] = a.split('/').map(Number);
     const [db, mb, yb] = b.split('/').map(Number);
@@ -574,7 +616,9 @@ function buildArchive(appts) {
     md += `## ${day}\n`;
     for (const a of byDay[day]) {
       const s = formatTimeVI(a.start);
-      const e = formatTimeVI(a.end);
+      // end may be missing/invalid — format defensively
+      const endParsed = a.end ? new Date(a.end) : null;
+      const e = (endParsed && !isNaN(endParsed.getTime())) ? formatTimeVI(a.end) : '??:??';
       md += `- ${s}–${e} **${a.title || '(không tên)'}**`;
       if (a.notes) md += ` · ghi chú: ${a.notes}`;
       md += '\n';
@@ -616,7 +660,10 @@ function migrateLocalAppointments() {
 
   try { fs.mkdirSync(learningsDir, { recursive: true }); } catch {}
   fs.writeFileSync(archivePath, buildArchive(appts), 'utf-8');
-  try { fs.unlinkSync(apptFile); } catch {}
+  // Preserve the raw legacy file alongside the archive for recoverability —
+  // .bak so backup tools pick it up, and CEO can re-parse if archive is
+  // ever found to have skipped entries.
+  try { fs.renameSync(apptFile, apptFile + '.bak'); } catch { try { fs.unlinkSync(apptFile); } catch {} }
   fs.writeFileSync(flagPath, JSON.stringify({ ts: Date.now(), count: appts.length, archivePath }, null, 2));
 
   return { migrated: true, count: appts.length, archivePath };
@@ -630,7 +677,15 @@ module.exports = { migrateLocalAppointments };
 Run: `cd electron && npm run smoke`
 Expected: `OK migration: legacy appointments.json → .learnings archive, idempotent flag`.
 
-- [ ] **Step 5: Wire into seedWorkspace in main.js**
+- [ ] **Step 5: Verify auditLog is in scope at seedWorkspace**
+
+seedWorkspace is defined at main.js:~613 but auditLog at main.js:~6475. JS function declarations are hoisted within the same module so the call works at runtime — but verify no module-level `const auditLog = ...` assignment (which WOULDN'T be hoisted) was introduced. Run:
+
+`grep -n "function auditLog\|const auditLog\|let auditLog" electron/main.js`
+
+Expected: one `function auditLog(event, meta)` declaration. If a `const auditLog` exists instead, move the migrate invocation to AFTER the auditLog definition or convert auditLog to a function declaration.
+
+- [ ] **Step 6: Wire into seedWorkspace in main.js**
 
 In `electron/main.js`, locate `function seedWorkspace()`. Near the end, after existing migrations (AGENTS.md backup block), add:
 
@@ -679,7 +734,36 @@ event so Dashboard activity feed can surface the archive path."
 - Modify: `electron/main.js` (near existing gcal-* handlers, ~line 18779)
 - Modify: `electron/preload.js` (add bridge)
 
-- [ ] **Step 1: Add IPC handler in main.js**
+- [ ] **Step 1: Add _auditSafeArgs helper at module scope (used by every gcal audit call)**
+
+Spec §Audit log token exclusion requires recursive allowlist filtering on ALL marker executions — not just UPDATE. Define ONCE at module scope near the top of the gcal IPC section in main.js so every subsequent handler can reuse it:
+
+```js
+// Recursively filter audit-log args through an allowlist. Prevents token
+// smuggling through nested paths (e.g., patch.access_token). Unit-tested
+// in smoke-gcal.js testAuditTokenExclusion with ya29./1///GOCSPX- prefixes.
+const _AUDIT_ARG_ALLOWLIST = new Set([
+  'summary','start','end','durationMin','location','guests','description',
+  'eventId','dateFrom','dateTo','limit','patch',
+]);
+function _auditSafeArgs(args) {
+  if (!args || typeof args !== 'object') return args;
+  if (Array.isArray(args)) return args.map(_auditSafeArgs);
+  const out = {};
+  for (const k of Object.keys(args)) {
+    if (!_AUDIT_ARG_ALLOWLIST.has(k)) continue;
+    const v = args[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = _auditSafeArgs(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+```
+
+- [ ] **Step 2: Add IPC handler in main.js**
 
 Near other gcal IPCs (`grep -n "gcal-connect" electron/main.js`), insert:
 
@@ -696,18 +780,18 @@ ipcMain.handle('gcal-save-credentials', async (_event, { clientId, clientSecret 
 });
 ```
 
-- [ ] **Step 2: Add preload bridge**
+- [ ] **Step 3: Add preload bridge**
 
 In `electron/preload.js`, add to the exposed object:
 ```js
 gcalSaveCredentials: (payload) => ipcRenderer.invoke('gcal-save-credentials', payload),
 ```
 
-- [ ] **Step 3: Run smoke — expect PASS (module load only)**
+- [ ] **Step 4: Run smoke — expect PASS (module load only)**
 
 Run: `cd electron && npm run smoke`
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add electron/main.js electron/preload.js
@@ -808,10 +892,10 @@ reason so wizard UI shows actionable message."
 
 - [ ] **Step 1: Add revokeToken helper to auth.js**
 
-In auth.js before module.exports:
+In auth.js before module.exports (current exports are `loadTokens` + `saveTokens` — match those names):
 ```js
 async function revokeToken() {
-  const tokens = readTokens();
+  const tokens = loadTokens();
   if (!tokens || !tokens.refresh_token) return { ok: true, skipped: true };
   const https = require('node:https');
   const body = `token=${encodeURIComponent(tokens.refresh_token)}`;
@@ -1024,7 +1108,7 @@ ipcMain.handle('gcal-create-event', async (_event, opts) => {
       start: startDate.toISOString(),
       end: endDate.toISOString(),
     });
-    try { auditLog('gcal_event_created', { eventId: result.eventId, summary: result.summary, start: result.start }); } catch {}
+    try { auditLog('gcal_event_created', _auditSafeArgs({ eventId: result.eventId, summary: result.summary, start: result.start })); } catch {}
     return result;
   } catch (e) {
     return { success: false, error: e.message };
@@ -1193,9 +1277,31 @@ async function updateEvent(eventId, patch, opts = {}) {
   const resp = await httpsPatch('www.googleapis.com', pathStr, body, token, etag);
   return { success: true, eventId: resp.id, htmlLink: resp.htmlLink, etag: resp.etag };
 }
+
+// Fetch a single event directly by id (for 412-retry etag refresh).
+// listEvents' default timeMax=now+7d would silently miss events >7d out —
+// getEvent uses the single-shot endpoint so any event, any date, returns.
+async function getEvent(eventId) {
+  const token = await getAccessToken();
+  const pathStr = `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+  try {
+    const resp = await httpsGet('www.googleapis.com', pathStr, token);
+    return {
+      id: resp.id,
+      summary: resp.summary || '',
+      start: resp.start?.dateTime || resp.start?.date || '',
+      end: resp.end?.dateTime || resp.end?.date || '',
+      etag: resp.etag || '',
+      status: resp.status || 'confirmed',
+    };
+  } catch (e) {
+    if (/\b404\b/.test(e.message)) return null;
+    throw e;
+  }
+}
 ```
 
-Export updateEvent.
+Export both `updateEvent` and `getEvent`.
 
 - [ ] **Step 2: Add main.js handler with 1-retry-on-412 logic**
 
@@ -1207,17 +1313,18 @@ ipcMain.handle('gcal-update-event', async (_event, { eventId, patch }) => {
     // First attempt — no etag
     try {
       const r = await gcalCalendar.updateEvent(eventId, patch);
-      try { auditLog('gcal_event_updated', { eventId, patch: _auditSafeArgs(patch) }); } catch {}
+      try { auditLog('gcal_event_updated', _auditSafeArgs({ eventId, patch })); } catch {}
       return r;
     } catch (e) {
       if (e.code !== 412) throw e;
-      // 412 — fetch fresh event, replay patch, retry ONCE
-      const events = await gcalCalendar.listEvents({ dateFrom: new Date(0).toISOString(), limit: 1 });
-      const fresh = events.find(ev => ev.id === eventId);
+      // 412 — fetch fresh event by id (NOT via listEvents which has a
+      // time-window default that would miss events >7d out), replay patch,
+      // retry ONCE. Max 2 PATCH attempts total per spec §Error handling.
+      const fresh = await gcalCalendar.getEvent(eventId);
       if (!fresh) return { success: false, error: 'Lịch này vừa bị xóa ở chỗ khác.' };
       try {
         const r2 = await gcalCalendar.updateEvent(eventId, patch, { etag: fresh.etag });
-        try { auditLog('gcal_event_updated', { eventId, patch: _auditSafeArgs(patch), retriedAfter412: true }); } catch {}
+        try { auditLog('gcal_event_updated', _auditSafeArgs({ eventId, patch, retriedAfter412: true })); } catch {}
         return r2;
       } catch (e2) {
         if (e2.code === 412) {
@@ -1230,26 +1337,9 @@ ipcMain.handle('gcal-update-event', async (_event, { eventId, patch }) => {
     return { success: false, error: e.message };
   }
 });
-
-// Helper: filter args through allowlist for audit log (defined once, reused)
-function _auditSafeArgs(args) {
-  const ALLOW = new Set(['summary','start','end','durationMin','location','guests','description','eventId','dateFrom','dateTo','limit','patch']);
-  if (!args || typeof args !== 'object') return args;
-  const out = {};
-  for (const k of Object.keys(args)) {
-    if (!ALLOW.has(k)) continue;
-    const v = args[k];
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      out[k] = _auditSafeArgs(v); // recurse into nested (e.g. patch object)
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
 ```
 
-(Place `_auditSafeArgs` at module scope near top of main.js gcal section so other handlers can reuse.)
+(`_auditSafeArgs` was defined in Task 6 Step 1 at module scope — reused here.)
 
 - [ ] **Step 3: Run smoke — expect PASS**
 
@@ -1322,7 +1412,7 @@ ipcMain.handle('gcal-delete-event', async (_event, { eventId }) => {
   try {
     if (!eventId) return { success: false, error: 'Missing eventId' };
     const r = await gcalCalendar.deleteEvent(eventId);
-    try { auditLog('gcal_event_deleted', { eventId }); } catch {}
+    try { auditLog('gcal_event_deleted', _auditSafeArgs({ eventId })); } catch {}
     return r;
   } catch (e) {
     if (e.code === 404) return { success: false, error: 'Lịch này đã bị xóa trên Google — sếp tạo mới nếu cần.' };
@@ -1349,6 +1439,89 @@ git commit -m "feat(gcal): gcal-delete-event with 404 surfaced as 'đã bị xó
 DELETE /calendar/v3/calendars/primary/events/{id}. 404 -> Vietnamese error
 so CEO knows it was already gone externally. audit log 'gcal_event_deleted'
 with eventId only — no summary (may be sensitive)."
+```
+
+---
+
+### Task 13b: Quota classification in HTTP helpers (429/403)
+
+**Files:**
+- Modify: `electron/gcal/auth.js` (httpsGet, httpsPostJson, httpsPatch, httpsDelete)
+
+**Why:** spec §Error handling requires 429/403 quota to surface as `"Google đang giới hạn — thử lại sau"` to CEO. Current helpers lump all 4xx/5xx into a generic `HTTP XXX` message. Classify specifically before the Calendar IPC handlers consume the error.
+
+- [ ] **Step 1: Add QUOTA_ERROR sentinel + classifier in auth.js**
+
+At the top of auth.js:
+```js
+// Errors thrown with .code set to one of these constants allow IPC handlers
+// to surface specific Vietnamese error messages without brittle string parse.
+const HTTP_CODE_QUOTA = 'QUOTA';
+const HTTP_CODE_UNAUTHORIZED = 'UNAUTHORIZED'; // refresh expired/revoked
+const HTTP_CODE_NOT_FOUND = 'NOT_FOUND';
+const HTTP_CODE_ETAG_MISMATCH = 412;
+
+function _classifyHttpError(statusCode, bodyJson) {
+  if (statusCode === 429) return HTTP_CODE_QUOTA;
+  if (statusCode === 403) {
+    const reason = bodyJson?.error?.errors?.[0]?.reason || bodyJson?.error?.status;
+    if (reason === 'userRateLimitExceeded' || reason === 'rateLimitExceeded' || reason === 'quotaExceeded' || reason === 'RESOURCE_EXHAUSTED') {
+      return HTTP_CODE_QUOTA;
+    }
+  }
+  if (statusCode === 401) return HTTP_CODE_UNAUTHORIZED;
+  if (statusCode === 404) return HTTP_CODE_NOT_FOUND;
+  if (statusCode === 412) return HTTP_CODE_ETAG_MISMATCH;
+  return null;
+}
+
+module.exports = Object.assign(module.exports || {}, {
+  HTTP_CODE_QUOTA, HTTP_CODE_UNAUTHORIZED, HTTP_CODE_NOT_FOUND, HTTP_CODE_ETAG_MISMATCH,
+});
+```
+
+- [ ] **Step 2: Update each HTTP helper to tag errors**
+
+For httpsGet, httpsPostJson, httpsPatch, httpsDelete — at the point where a non-2xx triggers `reject(new Error(...))`, use:
+
+```js
+if (res.statusCode >= 400) {
+  try {
+    const parsed = data ? JSON.parse(data) : {};
+    const code = _classifyHttpError(res.statusCode, parsed);
+    const err = new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || data.slice(0, 200)}`);
+    if (code !== null) err.code = code;
+    return reject(err);
+  } catch {
+    const err = new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`);
+    return reject(err);
+  }
+}
+```
+
+- [ ] **Step 3: Update IPC handlers (10, 11, 12, 13, 14) to surface quota message**
+
+Wrap outer catch in each gcal-* handler:
+```js
+} catch (e) {
+  if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
+  if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
+  return { success: false, error: e.message };
+}
+```
+
+- [ ] **Step 4: Run smoke — expect PASS**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add electron/gcal/auth.js electron/main.js
+git commit -m "feat(gcal): classify 429/403/401 errors with Vietnamese user-facing messages
+
+HTTP helpers tag errors with .code (QUOTA / UNAUTHORIZED / NOT_FOUND /
+412). IPC handlers translate to CEO-facing text: quota 'Google đang
+giới hạn', refresh-expired 'Kết nối Google hết hạn'. Matches spec
+§Error handling rows for 429/403 userRateLimitExceeded + refresh revoked."
 ```
 
 ---
@@ -1661,10 +1834,10 @@ async function interceptGcalMarkers(text) {
           break;
         }
         case 'UPDATE': {
-          // Call IPC directly by function (not through ipcMain)
-          const evResp = await new Promise((res) => ipcMain._invokeHandlers?.['gcal-update-event']?.(null, { eventId: payload.eventId, patch: payload.patch }).then(res).catch(e => res({ success: false, error: e.message })));
-          // Simpler: inline call via module
-          // Actually re-call the calendar module directly:
+          // NOTE: this path bypasses the IPC handler's 412-retry wrapper in
+          // Task 12. If marker-initiated update hits 412, it surfaces raw —
+          // CEO can just re-issue the command. Spec §Error handling 412 row
+          // applies to Dashboard UI flow (human retries). Acceptable tradeoff.
           result = await gcalCalendar.updateEvent(payload.eventId, payload.patch || {});
           break;
         }
@@ -1789,31 +1962,38 @@ This string gets injected into the existing `ensureZaloRagFix` anchor. Use the m
 
 - [ ] **Step 2: Add ensureZaloGcalNeutralizeFix function to main.js**
 
-Model after `ensureZaloRagFix`. Mark the injection with a fresh marker so it's idempotent + upgradable:
+Model after `ensureZaloRagFix`. Use the same marker-naming convention as existing patches (`9BizClaw <NAME> PATCH vN`) for grep-ability.
+
+**Critical — anchor format:** actual inbound.ts uses the MULTI-LINE form `  if (!rawBody && !hasMedia) {\n    return;\n  }` (2-space indent, brace+newline style — verified against existing `ensureZaloBlocklistFix` + `ensureZaloOwnerFix` anchors in main.js ~lines 4623 and 5268). A single-line `if (!rawBody && !hasMedia) return;` anchor will NOT match → injection silently skipped → input-side defense never activates (security-critical).
+
+**Critical — anchor-miss must fail loud**, not silently warn. The neutralization is load-bearing per spec §Input-side defense invariant #4. A silent no-op leaves customer marker-injection attack open.
 
 ```js
 function ensureZaloGcalNeutralizeFix() {
   const fp = path.join(getOpenclawExtDir(), 'openzalo', 'src', 'inbound.ts');
   if (!fs.existsSync(fp)) return;
   let content = fs.readFileSync(fp, 'utf-8');
-  if (content.includes('MODOROClaw GCAL-NEUTRALIZE PATCH v1')) return;
-  // Strip older versions if any
-  // (none yet)
-  // Anchor: right after the line `if (!rawBody && !hasMedia) return;`
-  const anchor = 'if (!rawBody && !hasMedia) return;';
+  if (content.includes('9BizClaw GCAL-NEUTRALIZE PATCH v1')) return;
+  // Anchor — MUST be exact multi-line form matching other patches
+  const anchor = '  if (!rawBody && !hasMedia) {\n    return;\n  }';
   if (!content.includes(anchor)) {
-    console.warn('[gcal-neutralize] anchor not found in inbound.ts');
-    return;
+    // FAIL LOUD — neutralization is security-critical. Log, audit, alert
+    // (sendCeoAlert if configured). Rethrow so gateway boot surfaces the
+    // error instead of silently running with the defense disabled.
+    const err = '[gcal-neutralize] CRITICAL: anchor not found in inbound.ts — input-side defense NOT active. openzalo may have been updated upstream; rerun spec review.';
+    console.error(err);
+    try { auditLog('gcal_neutralize_anchor_missing', { path: fp }); } catch {}
+    throw new Error('GCAL_NEUTRALIZE_ANCHOR_MISSING');
   }
   const injection = `
-  // === MODOROClaw GCAL-NEUTRALIZE PATCH v1 ===
+  // === 9BizClaw GCAL-NEUTRALIZE PATCH v1 ===
   // Rewrite '[[GCAL_' to '[GCAL-blocked-' in all inbound text so the agent
   // cannot be tricked into quoting customer-typed calendar markers back
   // into its output where interceptGcalMarkers would execute them.
   if (typeof rawBody === 'string' && rawBody.includes('[[GCAL_')) {
     rawBody = rawBody.replace(/\\[\\[GCAL_/g, '[GCAL-blocked-');
   }
-  // === END MODOROClaw GCAL-NEUTRALIZE PATCH v1 ===
+  // === END 9BizClaw GCAL-NEUTRALIZE PATCH v1 ===
 `;
   content = content.replace(anchor, anchor + injection);
   _writeInboundTs(fp, content);
@@ -1821,7 +2001,7 @@ function ensureZaloGcalNeutralizeFix() {
 }
 ```
 
-Call `ensureZaloGcalNeutralizeFix()` in both places `ensureZaloRagFix()` is called.
+Call `ensureZaloGcalNeutralizeFix()` in both places `ensureZaloRagFix()` is called. If this throws, let it bubble — fail-loud is the policy.
 
 - [ ] **Step 3: Also neutralize CEO Telegram inbound if it reaches any workspace write path**
 
