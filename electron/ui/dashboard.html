@@ -457,6 +457,14 @@
     .know-drop-zone strong { color:var(--text); display:block; margin-bottom:6px; }
     .know-upload-help { font-size:11px; color:var(--text-muted); margin-top:12px; padding:10px; background:var(--bg); border-radius:8px; line-height:1.5; }
     .know-progress { font-size:12px; padding:10px; background:var(--bg); border-radius:8px; margin-top:8px; }
+    /* Knowledge visibility radios (inline, above drop-zone) */
+    .visibility-option { display:flex; gap:8px; align-items:flex-start; padding:8px; border:1px solid var(--border); border-radius:6px; cursor:pointer; background:var(--bg); transition:border-color 0.15s, background 0.15s; }
+    .visibility-option:hover { border-color:var(--border-strong); }
+    .visibility-option:has(input:checked) { border-color:var(--accent, #4ea1ff); background:var(--surface-hover, var(--bg)); }
+    .visibility-option input[type="radio"] { margin-top:3px; flex-shrink:0; accent-color:var(--accent, #4ea1ff); }
+    .visibility-option .radio-label { flex:1; font-size:12px; line-height:1.4; color:var(--text); }
+    .visibility-option .radio-label strong { font-weight:600; }
+    .visibility-option .radio-label small { display:block; color:var(--text-muted); font-size:11px; margin-top:2px; }
     @media (max-width: 1200px) {
       .know-columns { grid-template-columns:1fr; }
       #page-knowledge.page.active { height:auto; }
@@ -2368,6 +2376,32 @@
 
           <div class="know-col">
             <h4>Thêm tài liệu</h4>
+            <div class="form-row" style="margin-bottom:12px">
+              <label class="form-label" style="font-size:12px;font-weight:600;color:var(--text)">Ai được thấy file này?</label>
+              <div class="visibility-radio-group" style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+                <label class="visibility-option">
+                  <input type="radio" name="visibility" value="public" checked>
+                  <span class="radio-label">
+                    <strong>Công khai</strong> — mọi khách hàng thấy
+                    <small>Bảng giá, catalog, chính sách (mặc định)</small>
+                  </span>
+                </label>
+                <label class="visibility-option">
+                  <input type="radio" name="visibility" value="internal">
+                  <span class="radio-label">
+                    <strong>Nội bộ</strong> — CEO + nhân viên nội bộ
+                    <small>Sổ tay NV, SOP, quy định chỉ nhân viên cần biết</small>
+                  </span>
+                </label>
+                <label class="visibility-option">
+                  <input type="radio" name="visibility" value="private">
+                  <span class="radio-label">
+                    <strong>Chỉ mình tôi</strong> — chỉ CEO qua Telegram
+                    <small>Ghi chú cá nhân, tài chính, giá nhập</small>
+                  </span>
+                </label>
+              </div>
+            </div>
             <div class="know-drop-zone" id="know-drop-zone" data-max-mb="100" onclick="pickKnowledgeFiles()" data-tooltip="Kéo thả hoặc bấm để thêm file. PDF, Word, Excel, TXT. Tối đa 100MB/file.">
               <div class="upload-icon" data-icon="upload" data-icon-size="36"></div>
               <strong>Click để chọn file</strong>
@@ -3520,6 +3554,8 @@
         loadSchedules();
       }
       if (page === 'knowledge') {
+        // Reset user-touched flag so nudge logic runs again on this visit
+        window._visibilityUserTouched = false;
         if (!knowledgeInitialized) initKnowledge();
         else refreshKnowledgeFiles();
       }
@@ -4032,14 +4068,25 @@
     // ============================================
     let knowledgeInitialized = false;
     let currentKnowledgeCategory = 'cong-ty';
+    let currentUploadVisibility = 'public';
     let _knowFolders = [];
     const KNOW_ICONS = { 'cong-ty': 'building', 'san-pham': 'shopping-bag', 'nhan-vien': 'users' };
 
     async function initKnowledge() {
       knowledgeInitialized = true;
       setupKnowledgeDragDrop();
+      setupVisibilityRadios();
       await renderKnowledgeFolders();
       await refreshKnowledgeFiles();
+    }
+
+    function setupVisibilityRadios() {
+      document.querySelectorAll('input[name="visibility"]').forEach(r => {
+        r.addEventListener('change', (e) => {
+          currentUploadVisibility = e.target.value;
+          window._visibilityUserTouched = true;
+        });
+      });
     }
 
     async function renderKnowledgeFolders() {
@@ -4071,6 +4118,14 @@
 
     function selectKnowledgeFolder(cat) {
       currentKnowledgeCategory = cat;
+      // v2.4.0: nudge visibility for HR category (overridable by explicit user click)
+      if (!window._visibilityUserTouched && cat === 'nhan-vien') {
+        const r = document.querySelector('input[name="visibility"][value="internal"]');
+        if (r) {
+          r.checked = true;
+          currentUploadVisibility = 'internal';
+        }
+      }
       document.querySelectorAll('.know-folder').forEach(f => {
         f.classList.toggle('active', f.dataset.cat === cat);
       });
@@ -4226,7 +4281,7 @@
         const filename = fp.split(/[\\/]/).pop();
         progressEl.textContent = `Đang xử lý ${i + 1}/${paths.length}: ${filename}...`;
         try {
-          const r = await window.claw.uploadKnowledgeFile(currentKnowledgeCategory, fp, filename);
+          const r = await window.claw.uploadKnowledgeFile(currentKnowledgeCategory, fp, filename, currentUploadVisibility);
           if (r?.success) {
             success++;
             addActivity(`Đã thêm: ${r.filename}`);
