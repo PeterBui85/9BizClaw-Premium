@@ -4519,6 +4519,68 @@ function _sweepInboundOrphanTmps() {
   }
 }
 
+// v2.4.0: Shared helper __mcReadGroupSettings. Injected at TOP of inbound.ts
+// (module scope, before other patches) so group-settings v7 AND RAG v9
+// patches can both read zalo-group-settings.json via one function.
+//
+// Without this helper, each patch duplicates ~20 lines of path-candidate
+// logic. Also: RAG v9 needs internal-flag lookup that v7 patch doesn't
+// expose — shared helper solves both concerns.
+//
+// Idempotent via marker "9BizClaw GS-HELPER PATCH v1".
+function ensureZaloGsHelperFix() {
+  try {
+    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(pluginFile)) return;
+    let content = _readInboundTs(pluginFile);
+    if (content.includes('9BizClaw GS-HELPER PATCH v1')) return;
+
+    // Anchor: end of the "from api.js" import block. Verified at top of
+    // inbound.ts. Injection happens AFTER this line (module scope).
+    const anchor = `} from "../api.js";`;
+    if (!content.includes(anchor)) {
+      console.warn('[zalo-gs-helper] api.js import anchor missing — skipping');
+      return;
+    }
+
+    const injection = `
+
+// === 9BizClaw GS-HELPER PATCH v1 ===
+// Shared helper for zalo-group-settings.json access. Used by group-settings
+// patch (v7) and RAG patch (v9). Module scope — available to all injections.
+(global as any).__mcReadGroupSettings = function (): Record<string, { mode?: string; internal?: boolean }> {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    const candidates: string[] = [];
+    if (process.env['9BIZ_WORKSPACE']) candidates.push(path.join(process.env['9BIZ_WORKSPACE'], 'zalo-group-settings.json'));
+    if (process.env.MODORO_WORKSPACE) candidates.push(path.join(process.env.MODORO_WORKSPACE, 'zalo-group-settings.json')); // legacy fallback, matches RAG v8 at main.js:4110
+    if (process.platform === 'darwin') {
+      candidates.push(path.join(home, 'Library', 'Application Support', '9bizclaw', 'zalo-group-settings.json'));
+    } else if (process.platform === 'win32') {
+      candidates.push(path.join(process.env.APPDATA || '', '9bizclaw', 'zalo-group-settings.json'));
+    } else {
+      candidates.push(path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), '9bizclaw', 'zalo-group-settings.json'));
+    }
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
+      } catch {}
+    }
+  } catch {}
+  return {};
+};
+// === END 9BizClaw GS-HELPER PATCH v1 ===
+`;
+    content = content.replace(anchor, anchor + injection);
+    _writeInboundTs(pluginFile, content);
+    console.log('[zalo-gs-helper] Injected shared __mcReadGroupSettings helper');
+  } catch (e) {
+    console.error('[zalo-gs-helper] error:', e?.message || e);
+  }
+}
+
 function ensureZaloBlocklistFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
@@ -6669,6 +6731,9 @@ async function _startOpenClawImpl() {
     global.__patchInboundCache = fs.readFileSync(_inboundTsPath, 'utf-8');
     global.__patchInboundDirty = false;
   }
+  // v2.4.0: GS-HELPER must inject BEFORE other patches that consume it.
+  // Module-scope helper, anchored to api.js import line.
+  ensureZaloGsHelperFix();
   ensureZaloBlocklistFix();
   ensureZaloPauseFix();
   ensureZaloModeFix(); // code-level gate: read/daily mode → drop message before AI
