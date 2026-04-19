@@ -7,7 +7,7 @@
 
 'use strict';
 
-const { getAccessToken, httpsGet, httpsPostJson } = require('./auth');
+const { getAccessToken, httpsGet, httpsPostJson, httpsPatch } = require('./auth');
 const gcalConfig = require('./config');
 
 // ---------------------------------------------------------------------------
@@ -107,6 +107,44 @@ async function createEvent({ summary, description, start, end, location, guests,
 }
 
 // ---------------------------------------------------------------------------
+// Update event (with optional etag for optimistic concurrency)
+// ---------------------------------------------------------------------------
+
+async function updateEvent(eventId, patch, opts = {}) {
+  const token = await getAccessToken();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh';
+  const body = {};
+  if (patch.summary != null) body.summary = patch.summary;
+  if (patch.description != null) body.description = patch.description;
+  if (patch.location != null) body.location = patch.location;
+  if (patch.start) body.start = { dateTime: patch.start, timeZone: tz };
+  if (patch.end) body.end = { dateTime: patch.end, timeZone: tz };
+  const pathStr = `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+  const etag = opts.etag;
+  const resp = await httpsPatch('www.googleapis.com', pathStr, body, token, etag);
+  return { success: true, eventId: resp.id, htmlLink: resp.htmlLink, etag: resp.etag };
+}
+
+async function getEvent(eventId) {
+  const token = await getAccessToken();
+  const pathStr = `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+  try {
+    const resp = await httpsGet('www.googleapis.com', pathStr, token);
+    return {
+      id: resp.id,
+      summary: resp.summary || '',
+      start: resp.start?.dateTime || resp.start?.date || '',
+      end: resp.end?.dateTime || resp.end?.date || '',
+      etag: resp.etag || '',
+      status: resp.status || 'confirmed',
+    };
+  } catch (e) {
+    if (/\b404\b/.test(e.message)) return null;
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Get free slots for a day
 // ---------------------------------------------------------------------------
 
@@ -196,6 +234,8 @@ module.exports = {
   listEvents,
   getFreeBusy,
   createEvent,
+  updateEvent,
+  getEvent,
   getFreeSlotsForDay,
   listCalendars,
 };

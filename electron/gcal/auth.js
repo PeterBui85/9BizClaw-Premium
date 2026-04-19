@@ -379,6 +379,37 @@ function stopCallbackServer() {
   }
 }
 
+async function httpsPatch(host, pathStr, body, token, etag) {
+  const https = require('node:https');
+  const payload = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: host, path: pathStr, method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        ...(etag ? { 'If-Match': etag } : {}),
+      },
+      timeout: 15000,
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try {
+          const parsed = data ? JSON.parse(data) : {};
+          if (res.statusCode === 412) return reject(Object.assign(new Error('ETAG_MISMATCH'), { code: 412 }));
+          if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${parsed.error?.message || data.slice(0, 200)}`));
+          resolve(parsed);
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.write(payload); req.end();
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
@@ -396,4 +427,5 @@ module.exports = {
   // Expose for calendar.js
   httpsGet,
   httpsPostJson,
+  httpsPatch,
 };

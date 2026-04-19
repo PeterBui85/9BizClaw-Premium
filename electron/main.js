@@ -18432,6 +18432,32 @@ ipcMain.handle('gcal-create-event', async (_event, opts) => {
   }
 });
 
+ipcMain.handle('gcal-update-event', async (_event, { eventId, patch }) => {
+  try {
+    if (!eventId) return { success: false, error: 'Missing eventId' };
+    if (!patch || typeof patch !== 'object') return { success: false, error: 'Missing patch' };
+    try {
+      const r = await gcalCalendar.updateEvent(eventId, patch);
+      try { auditLog('gcal_event_updated', _auditSafeArgs({ eventId, patch })); } catch {}
+      return r;
+    } catch (e) {
+      if (e.code !== 412) throw e;
+      const fresh = await gcalCalendar.getEvent(eventId);
+      if (!fresh) return { success: false, error: 'Lịch này vừa bị xóa ở chỗ khác.' };
+      try {
+        const r2 = await gcalCalendar.updateEvent(eventId, patch, { etag: fresh.etag });
+        try { auditLog('gcal_event_updated', _auditSafeArgs({ eventId, patch, retriedAfter412: true })); } catch {}
+        return r2;
+      } catch (e2) {
+        if (e2.code === 412) return { success: false, error: 'Lịch này vừa bị sửa ở chỗ khác — sếp refresh và thử lại.' };
+        return { success: false, error: e2.message };
+      }
+    }
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('gcal-get-free-slots', async (_event, { date }) => {
   try {
     const config = gcalConfig.read();
