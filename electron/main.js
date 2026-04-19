@@ -7305,7 +7305,8 @@ async function _startOpenClawImpl() {
           sendTelegram(
             'Telegram đã sẵn sàng.\n\n' +
             'Anh/chị nhắn bất kỳ tin nào cho bot ngay bây giờ, sẽ có trả lời thật.\n\n' +
-            '(Tin này do bot tự gửi — nếu anh/chị nhận được = Telegram đã hoạt động 100%)',
+            '(Tin này do bot tự gửi — nếu anh/chị nhận được = Telegram đã hoạt động 100%)' +
+            '\n\nMới: file Knowledge có 3 tầng Công khai / Nội bộ / Chỉ CEO. Vào Dashboard để cấu hình.',
             { skipFilter: true }
           ).then(ok => {
             if (ok) {
@@ -15934,7 +15935,7 @@ ipcMain.handle('list-knowledge-files', async (_event, { category }) => {
     let dbRows = [];
     try {
       dbRows = db.prepare(
-        'SELECT filename, filetype, filesize, word_count, summary, visibility, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        'SELECT id, filename, filetype, filesize, word_count, summary, visibility, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
       ).all(category);
     } catch (e) {
       console.error('[knowledge] db query error:', e.message);

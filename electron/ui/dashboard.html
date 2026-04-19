@@ -447,6 +447,13 @@
     .know-file .file-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
     .know-file .file-summary { font-size:12px; color:var(--text); margin-top:6px; line-height:1.4; padding:6px 8px; background:var(--bg); border-radius:6px; }
     .know-file .file-actions { display:flex; align-items:flex-start; }
+    .vis-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:500; cursor:pointer; margin-left:8px; vertical-align:middle; }
+    .vis-badge.vis-public { background:#e5e5e5; color:#555; }
+    .vis-badge.vis-internal { background:#fff3cd; color:#856404; }
+    .vis-badge.vis-private { background:#f8d7da; color:#721c24; }
+    .vis-badge:hover { opacity:0.8; }
+    .internal-flag { margin-left:12px; font-size:12px; color:var(--text-muted); user-select:none; cursor:pointer; }
+    .internal-flag input { margin-right:4px; vertical-align:middle; }
     .know-file-delete { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:4px; }
     .know-file-delete:hover { color:var(--danger, #e74c3c); background:var(--bg); }
     .know-empty { text-align:center; color:var(--text-muted); padding:60px 20px; font-size:13px; }
@@ -2342,6 +2349,12 @@
           <div><h2>Tài liệu doanh nghiệp</h2><div class="page-sub">Thêm tài liệu để bot tự đọc và dùng khi khách hỏi</div></div>
         </div>
 
+        <div id="visibility-migration-banner" style="display:none; padding:12px 16px; background:#fff8e1; border-left:3px solid #ffa000; margin-bottom:12px; border-radius:4px; color:#333">
+          <strong>Mới v2.4.0</strong>: anh/chị đã có thể chọn file nào KHÁCH thấy, file nào CHỈ NHÂN VIÊN hoặc CHỈ CEO.
+          Mặc định mọi file hiện tại = Công khai. Vào xem và đánh dấu lại các file có nội dung nhạy cảm.
+          <button onclick="dismissVisibilityBanner()" style="margin-left:12px;padding:4px 10px;background:none;border:1px solid #ffa000;border-radius:4px;cursor:pointer;color:#333">Đã hiểu</button>
+        </div>
+
         <div class="know-columns">
           <div class="know-col">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -4076,8 +4089,21 @@
       knowledgeInitialized = true;
       setupKnowledgeDragDrop();
       setupVisibilityRadios();
+      // v2.4.0: one-time banner, dismiss-once via localStorage
+      try {
+        if (!localStorage.getItem('v2.4.0-knowledge-visibility-seen')) {
+          const el = document.getElementById('visibility-migration-banner');
+          if (el) el.style.display = 'block';
+        }
+      } catch {}
       await renderKnowledgeFolders();
       await refreshKnowledgeFiles();
+    }
+
+    function dismissVisibilityBanner() {
+      try { localStorage.setItem('v2.4.0-knowledge-visibility-seen', String(Date.now())); } catch {}
+      const el = document.getElementById('visibility-migration-banner');
+      if (el) el.style.display = 'none';
     }
 
     function setupVisibilityRadios() {
@@ -4238,11 +4264,16 @@
         list.innerHTML = files.map(f => {
           const sizeKB = (f.filesize / 1024).toFixed(1);
           const date = new Date(f.created_at + 'Z').toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          const vis = f.visibility || 'public';
+          const visLabel = vis === 'private' ? 'Chỉ CEO' : vis === 'internal' ? 'Nội bộ' : 'Công khai';
+          const visBadge = (f.id != null)
+            ? `<span class="vis-badge vis-${vis}" data-doc-id="${f.id}" onclick="editVisibility(${f.id}, this)" title="Đổi tầng hiển thị">${visLabel}</span>`
+            : `<span class="vis-badge vis-${vis}" title="Tầng hiển thị (cần DB để chỉnh)">${visLabel}</span>`;
           return `
             <div class="know-file">
               <div class="file-icon" data-icon="file-text" data-icon-size="20"></div>
               <div class="file-info">
-                <div class="file-name">${esc(f.filename)}</div>
+                <div class="file-name">${esc(f.filename)}${visBadge}</div>
                 <div class="file-meta">${sizeKB} KB · ${esc(f.filetype || 'unknown')} · ${date} · ${f.word_count || 0} từ</div>
                 ${f.summary ? `<div class="file-summary">${esc(f.summary)}</div>` : ''}
               </div>
@@ -4258,6 +4289,26 @@
       } catch (e) {
         list.innerHTML = '<div class="know-empty">Lỗi load: ' + esc(e.message) + '</div>';
       }
+    }
+
+    // v2.4.0: inline visibility editor. prompt() fallback — keep minimal,
+    // avoid modal overhead. DB-only (disk-fallback rows have no id → no edit).
+    async function editVisibility(docId, el) {
+      const current = el.classList.contains('vis-private') ? 'private'
+                    : el.classList.contains('vis-internal') ? 'internal' : 'public';
+      const next = prompt(
+        `Đổi tầng hiển thị cho file (hiện tại: ${current}):\n\n` +
+        `1 = Công khai (khách thấy)\n` +
+        `2 = Nội bộ (nhân viên)\n` +
+        `3 = Chỉ mình tôi`,
+        current === 'public' ? '1' : current === 'internal' ? '2' : '3'
+      );
+      if (!next) return;
+      const vis = next === '1' ? 'public' : next === '2' ? 'internal' : next === '3' ? 'private' : null;
+      if (!vis) return alert('Giá trị không hợp lệ');
+      const r = await window.claw.setKnowledgeVisibility(docId, vis);
+      if (!r || !r.success) return alert('Lỗi: ' + (r && r.error ? r.error : 'unknown'));
+      refreshKnowledgeFiles();
     }
 
     async function pickKnowledgeFiles() {
@@ -4495,6 +4546,10 @@
               <option value="all" ${mode === 'all' ? 'selected' : ''}>Mọi tin</option>
               <option value="off" ${mode === 'off' ? 'selected' : ''}>Tắt</option>
             </select>
+            <label class="internal-flag" title="Nếu tick, nhân viên trong group này truy cập được file Nội bộ">
+              <input type="checkbox" data-group-id="${escAttr(g.groupId)}" ${gSettings.internal ? 'checked' : ''} onchange="updateGroupInternal('${escAttr(g.groupId)}', this.checked)">
+              Nội bộ
+            </label>
           </div>
         </div>`;
     }
@@ -4655,7 +4710,9 @@
 
     function setGroupMode(groupId, mode) {
       if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
-      zaloMgrConfig.groupSettings[groupId] = { mode };
+      // Preserve internal flag across mode changes (v2.4.0)
+      const prev = zaloMgrConfig.groupSettings[groupId] || {};
+      zaloMgrConfig.groupSettings[groupId] = { ...prev, mode };
       // Sync allowFrom: "off" = remove from allowlist, "mention"/"all" = add
       if (!zaloMgrConfig.groupAllowFrom) zaloMgrConfig.groupAllowFrom = [];
       if (isOpenGroupMode()) {
@@ -4670,6 +4727,22 @@
         if (!arr.includes(groupId)) arr.push(groupId);
       }
       renderZaloGroups();
+      autoSaveZaloManager();
+    }
+
+    // v2.4.0: mark a group as "internal" — employees in this group can see
+    // knowledge files tagged Nội bộ. Preserves mode + other per-group fields.
+    function updateGroupInternal(groupId, isInternal) {
+      if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
+      const prev = zaloMgrConfig.groupSettings[groupId] || {};
+      zaloMgrConfig.groupSettings[groupId] = { ...prev, internal: !!isInternal };
+      const internalCount = Object.values(zaloMgrConfig.groupSettings)
+        .filter(g => g && g.internal).length;
+      try {
+        if (typeof showToast === 'function') {
+          showToast(`Đã lưu. ${internalCount} group nội bộ.`, 'success');
+        }
+      } catch {}
       autoSaveZaloManager();
     }
 
