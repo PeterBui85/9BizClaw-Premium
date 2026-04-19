@@ -264,8 +264,111 @@ function testRewriteKnowledgeIndexPublicOnly(db) {
   ok('F1 rewriteKnowledgeIndex — only public file listed');
 }
 
+// v2.3.48 hotfix round-2 P0-1 regression: rewriteKnowledgeIndex disk-merge
+// path must NOT re-add internal/private files that happen to exist on disk.
+// Before the round-2 fix, dbNames (built from public-only SELECT) didn't
+// contain internal/private filenames, so the merge loop added them as "public"
+// entries → index.md leaked filenames to customer at bot bootstrap.
+function testDiskMergeSkipsNonPublic(db) {
+  // Reproduce the function's internal logic: public SELECT + nonPublic SELECT +
+  // disk-merge loop with both blocklists.
+  const category = 'cong-ty';
+  const publicRows = db.prepare(
+    "SELECT filename, summary, filesize, created_at FROM documents WHERE category = ? AND visibility = 'public' ORDER BY created_at DESC"
+  ).all(category);
+  const nonPublicRows = db.prepare(
+    "SELECT filename FROM documents WHERE category = ? AND visibility != 'public'"
+  ).all(category);
+  const dbNames = new Set(publicRows.map(r => r.filename));
+  const nonPublicSet = new Set(nonPublicRows.map(r => r.filename));
+  // Simulate disk listing that sees EVERYTHING (includes internal + private files).
+  const diskFiles = [
+    { filename: 'public-file.pdf',   filesize: 10, created_at: 't1' },
+    { filename: 'internal-file.pdf', filesize: 20, created_at: 't2' }, // wrong cat but force-add to disk
+    { filename: 'private-file.pdf',  filesize: 30, created_at: 't3' },
+    { filename: 'disk-only.pdf',     filesize: 40, created_at: 't4' }, // truly disk-only (no DB row)
+  ];
+  // Test fixture: move internal-file & private-file into cong-ty for this test
+  db.prepare("UPDATE documents SET category = 'cong-ty' WHERE filename IN ('internal-file.pdf', 'private-file.pdf')").run();
+  const nonPublicRows2 = db.prepare(
+    "SELECT filename FROM documents WHERE category = ? AND visibility != 'public'"
+  ).all(category);
+  const nonPublicSet2 = new Set(nonPublicRows2.map(r => r.filename));
+  const merged = [...publicRows];
+  for (const f of diskFiles) {
+    if (dbNames.has(f.filename)) continue;
+    if (nonPublicSet2.has(f.filename)) continue; // the round-2 fix
+    merged.push({ filename: f.filename, summary: null, filesize: f.filesize, created_at: f.created_at });
+  }
+  const mergedNames = merged.map(r => r.filename).sort();
+  if (mergedNames.includes('internal-file.pdf')) fail('P0-1: internal file leaked via disk-merge into index manifest');
+  if (mergedNames.includes('private-file.pdf')) fail('P0-1: private file leaked via disk-merge into index manifest');
+  if (!mergedNames.includes('public-file.pdf')) fail('P0-1: public file dropped from manifest');
+  if (!mergedNames.includes('disk-only.pdf')) fail('P0-1: truly disk-only file dropped (no DB row means unknown, default public ok)');
+  ok('P0-1 disk-merge — internal/private blocklist prevents filename leak; disk-only file still allowed');
+  // Restore fixture state so other tests see clean rows
+  db.prepare("UPDATE documents SET category = 'nhan-vien' WHERE filename = 'internal-file.pdf'").run();
+  // private-file.pdf was already cong-ty in fixture; leave as is
+}
+
+// v2.3.48 hotfix round-2 P0-2 regression: after UPDATE documents SET visibility
+// the subsequent public-only SELECT (which is what rewriteKnowledgeIndex uses)
+// must reflect the change immediately. Invariant: if retag happens, the next
+// regen will NOT list the retagged file in the public manifest.
+function testRetagAffectsNextRegen(db) {
+  // Seed a public file, then retag to internal, then read via the same SELECT.
+  db.prepare('INSERT INTO documents (filename, filepath, content, category, visibility) VALUES (?, ?, ?, ?, ?)')
+    .run('retag-test.pdf', '/fake/rt.pdf', 'x', 'san-pham', 'public');
+  const before = db.prepare(
+    "SELECT filename FROM documents WHERE category = ? AND visibility = 'public'"
+  ).all('san-pham').map(r => r.filename);
+  if (!before.includes('retag-test.pdf')) fail('P0-2: public file not visible in pre-retag SELECT');
+  // Simulate set-knowledge-visibility IPC
+  db.prepare('UPDATE documents SET visibility = ? WHERE filename = ?').run('internal', 'retag-test.pdf');
+  const after = db.prepare(
+    "SELECT filename FROM documents WHERE category = ? AND visibility = 'public'"
+  ).all('san-pham').map(r => r.filename);
+  if (after.includes('retag-test.pdf')) fail('P0-2: retagged file still in public SELECT — regen would leak it');
+  // Cleanup
+  db.prepare('DELETE FROM documents WHERE filename = ?').run('retag-test.pdf');
+  ok('P0-2 retag — public-only SELECT reflects UPDATE immediately (regen uses this)');
+}
+
+// v2.3.48 hotfix round-3 meta-test: the SQL-behavior tests above can't import
+// main.js (Electron runtime) so they reimplement the fix logic inline. That's
+// fine for proving SQLite semantics, but it does NOT prove the production code
+// invokes those semantics. Safety net: grep main.js for the load-bearing call
+// sites + patterns. If a future refactor deletes a guard, this fails loud.
+function testProductionCallSitesExist() {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const mainJs = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const assertions = [
+    { name: 'rewriteKnowledgeIndex public-only SELECT',
+      re: /SELECT\s+filename[\s\S]{0,200}FROM\s+documents\s+WHERE\s+category\s*=\s*\?\s+AND\s+visibility\s*=\s*'public'/ },
+    { name: 'rewriteKnowledgeIndex non-public blocklist SELECT',
+      re: /SELECT\s+filename\s+FROM\s+documents\s+WHERE\s+category\s*=\s*\?\s+AND\s+visibility\s*!=\s*'public'/ },
+    { name: 'rewriteKnowledgeIndex atomic write (tmp + rename)',
+      re: /openSync\([^)]*tmpFile[\s\S]{0,400}renameSync\(\s*tmpFile\s*,\s*indexFile\s*\)/ },
+    { name: 'rewriteKnowledgeIndex disk-merge skips when blocklist null',
+      re: /nonPublicSet\s*!==\s*null[\s\S]{0,500}nonPublicSet\.has\(f\.filename\)/ },
+    { name: 'set-knowledge-visibility calls rewriteKnowledgeIndex after UPDATE',
+      re: /ipcMain\.handle\(\s*'set-knowledge-visibility'[\s\S]{0,2000}rewriteKnowledgeIndex\(\s*category\s*\)/ },
+    { name: 'set-knowledge-visibility surfaces indexWarning on regen failure',
+      re: /indexWarning:\s*e\.message/ },
+    { name: 'CREATE INDEX on documents.visibility',
+      re: /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+idx_documents_visibility\s+ON\s+documents\s*\(\s*visibility\s*\)/i },
+    { name: 'agents_md_upgraded audit event',
+      re: /auditLog\(\s*'agents_md_upgraded'/ },
+  ];
+  for (const a of assertions) {
+    if (!a.re.test(mainJs)) fail(`production call site missing: ${a.name}`);
+    ok(`prod call site present: ${a.name}`);
+  }
+}
+
 function main() {
-  console.log('[visibility smoke] 4-location filter + 5 regression tests...');
+  console.log('[visibility smoke] 4-location filter + 7 regression tests + 8 prod-call-site checks...');
   const db = setupDb();
   try {
     testVectorFilter(db);
@@ -277,6 +380,9 @@ function main() {
     testSaveHandlerWhitelist();
     testFts5FallThroughToLike(db);
     testRewriteKnowledgeIndexPublicOnly(db);
+    testDiskMergeSkipsNonPublic(db);
+    testRetagAffectsNextRegen(db);
+    testProductionCallSitesExist();
   } finally {
     db.close();
   }

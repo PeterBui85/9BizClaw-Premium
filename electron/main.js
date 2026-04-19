@@ -11827,6 +11827,12 @@ const _outputFilterPatterns = [
   { name: 'brand-9router', re: /9router[\/\\\\.\-](?:dist|cli|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+9router/i },
   { name: 'brand-openzca', re: /openzca[\/\\\\.\-](?:dist|cli|listen|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+openzca/i },
   { name: 'zalo-chu-nhan-marker', re: /\[ZALO_CHU_NHAN/i },
+  // NOTE: a filename-leak-vi pattern lived here briefly in round-2 hotfix but
+  // was removed in round 3 — it was trivially bypassable by rephrasing ("X.pdf
+  // có thông tin…" skips the preamble) AND it false-matched legitimate CEO
+  // Telegram replies that correctly cite a source. Filename-leak defense lives
+  // at the SQL `visibility` filter (4 search paths) + the public-only SELECT
+  // in rewriteKnowledgeIndex. Transport-layer regex couldn't carry the load.
   // Layer F: prompt injection acknowledgment leakage
   { name: 'jailbreak-acknowledge', re: /\b(developer mode|jailbreak|ignore previous|forget instructions|role\s*play as|you are now|pretend to be)\b/i },
   { name: 'system-prompt-leak', re: /\b(my (?:instructions|prompt|system prompt|rules)|here (?:are|is) my (?:rules|instructions))/i },
@@ -15394,6 +15400,11 @@ function getDocumentsDb() {
       try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
       try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
       try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
+      // v2.3.48 P2: index on visibility for query planner. SMB scale (100-500
+      // docs) doesn't strictly need this, but it's free to add and future-proofs
+      // the filter sites in searchKnowledge/FTS5/LIKE fallback.
+      try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`); } catch {}
+      try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_cat_vis ON documents(category, visibility)`); } catch {}
       try { ensureKnowledgeChunksSchema(db); } catch (e) {
         console.warn('[documents] chunk schema init failed:', e.message);
       }
@@ -15713,10 +15724,21 @@ function sanitizeKnowledgeContentForIndex(raw) {
   return s.trim();
 }
 
+// Writes knowledge/<cat>/index.md — the manifest bot reads on bootstrap.
+// Security-sensitive: must NOT list internal/private filenames to customers.
+// Throws on unrecoverable failure so the IPC caller can surface a warning —
+// silent swallow would leave stale manifest with leaked filenames.
 function rewriteKnowledgeIndex(category) {
   const ws = getWorkspace();
   const indexFile = path.join(ws, 'knowledge', category, 'index.md');
   let rows = [];
+  // Blocklist built from the DB's non-public rows. Local (not a function
+  // property) so it cannot leak state between invocations on exception, and
+  // so concurrent CEO retags for different categories never interleave.
+  // Explicitly initialized to `null` = "could not determine non-public set"
+  // → skip the disk-merge entirely (fail-closed). Populated to a Set only
+  // when both SELECTs succeed.
+  let nonPublicSet = null;
   const db = getDocumentsDb();
   if (db) {
     try {
@@ -15730,41 +15752,66 @@ function rewriteKnowledgeIndex(category) {
       rows = db.prepare(
         "SELECT filename, summary, content, filesize, created_at FROM documents WHERE category = ? AND visibility = 'public' ORDER BY created_at DESC"
       ).all(category);
-    } catch (e) { console.error('[knowledge] rewrite index db query:', e.message); }
+      // v2.3.48 hotfix F1 (round 2): build a non-public filename blocklist so
+      // the disk-merge step below cannot re-surface internal/private docs as
+      // if they were public. Without this, a file tagged internal is excluded
+      // from `rows` (the public-only SELECT) but its filename isn't in dbNames,
+      // so the disk-merge loop re-adds it as a public entry in index.md —
+      // defeating the 3-tier filter the bot relies on at bootstrap.
+      const nonPublic = db.prepare(
+        "SELECT filename FROM documents WHERE category = ? AND visibility != 'public'"
+      ).all(category);
+      nonPublicSet = new Set(nonPublic.map(r => r.filename));
+    } catch (e) {
+      // If either SELECT throws, nonPublicSet stays null → skipMerge fires
+      // and we never surface a disk-only file we can't classify.
+      console.error('[knowledge] rewrite index db query:', e.message);
+    }
     try { db.close(); } catch {}
   }
   // Merge in disk-only files so the bot's bootstrap reading of index.md sees
   // everything that physically exists, not just DB rows. Keeps Knowledge tab
   // useful even when better-sqlite3 is broken. Disk-only files default to
   // public (matches insertDocumentRow default in upload + backfill paths).
+  // Fail-closed: when DB is unavailable (null) OR when the blocklist SELECT
+  // threw (left as null), skip the disk-merge entirely — we'd rather miss a
+  // legitimate disk-only file than risk surfacing an unclassified one.
   const dbNames = new Set(rows.map(r => r.filename));
-  for (const f of listKnowledgeFilesFromDisk(category)) {
-    if (!dbNames.has(f.filename)) {
+  if (nonPublicSet !== null) {
+    for (const f of listKnowledgeFilesFromDisk(category)) {
+      if (dbNames.has(f.filename)) continue;
+      if (nonPublicSet.has(f.filename)) continue;
       rows.push({ filename: f.filename, summary: null, content: null, filesize: f.filesize, created_at: f.created_at });
     }
   }
-  try {
-    // Manifest-only. Bot bootstrap reads this file to know what docs exist,
-    // but actual content retrieval happens via RAG search (vector + FTS5)
-    // through the knowledge-search HTTP endpoint consumed by inbound.ts.
-    // No raw content here — keeps bootstrap context small + avoids stale
-    // copies when originals update.
-    let md = `# Knowledge — ${KNOWLEDGE_LABELS[category]}\n\n`;
-    if (rows.length === 0) {
-      md += '*Chưa có tài liệu nào. CEO upload file qua Dashboard → Knowledge.*\n';
-      fs.writeFileSync(indexFile, md, 'utf-8');
-      console.log(`[knowledge-index] ${category}: 0 files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
-      return;
-    }
+  // Build manifest. Manifest-only — no raw content. Bot bootstrap reads this
+  // file for presence, RAG handles retrieval via audience-filtered endpoint.
+  let md = `# Knowledge — ${KNOWLEDGE_LABELS[category]}\n\n`;
+  if (rows.length === 0) {
+    md += '*Chưa có tài liệu nào. CEO upload file qua Dashboard → Knowledge.*\n';
+  } else {
     md += `Tổng: ${rows.length} tài liệu. Bot dùng search vector khi khách hỏi (không nạp toàn bộ nội dung).\n\n`;
     for (const r of rows) {
       md += `- **${r.filename}** (${((r.filesize || 0) / 1024).toFixed(1)} KB, uploaded ${r.created_at})\n`;
       if (r.summary) md += `  *${r.summary.slice(0, 200)}*\n`;
       md += `\n`;
     }
-    fs.writeFileSync(indexFile, md, 'utf-8');
-    console.log(`[knowledge-index] ${category}: ${rows.length} files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
-  } catch (e) { console.error('[knowledge] rewrite index write:', e.message); }
+  }
+  // v2.3.48 hotfix round 3: atomic write via tmp+rename. fs.writeFileSync is
+  // open(O_TRUNC)+write as 2 syscalls — a customer Zalo query reading index.md
+  // during a CEO retag could see an empty or truncated manifest. renameSync is
+  // atomic on POSIX and Windows (MoveFileEx with MOVEFILE_REPLACE_EXISTING) so
+  // readers always see either the old or the new manifest, never partial.
+  const tmpFile = indexFile + '.tmp';
+  const fd = fs.openSync(tmpFile, 'w');
+  try {
+    fs.writeSync(fd, md, 0, 'utf-8');
+    try { fs.fsyncSync(fd); } catch {}
+  } finally {
+    try { fs.closeSync(fd); } catch {}
+  }
+  fs.renameSync(tmpFile, indexFile);
+  console.log(`[knowledge-index] ${category}: ${rows.length} files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
 }
 
 ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, originalName, visibility = 'public' }) => {
@@ -15896,14 +15943,33 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
     }
     const db = getDocumentsDb();
     if (!db) return { success: false, error: 'DB unavailable' };
-    let info;
+    // Capture category BEFORE the UPDATE so we can regenerate the right
+    // index.md. v2.3.48 hotfix: retag without regen left stale public entries
+    // in index.md after CEO downgraded file → customer kept seeing filename.
+    let info, category = null;
     try {
+      const row = db.prepare('SELECT category FROM documents WHERE id=?').get(docId);
+      if (!row) return { success: false, error: 'Document not found' };
+      category = row.category;
       info = db.prepare('UPDATE documents SET visibility=? WHERE id=?').run(visibility, docId);
     } finally {
       try { db.close(); } catch {}
     }
     if (info.changes === 0) return { success: false, error: 'Document not found' };
-    try { auditLog('visibility-change', { docId, visibility, ts: Date.now() }); } catch {}
+    try { auditLog('visibility-change', { docId, visibility, category, ts: Date.now() }); } catch {}
+    // v2.3.48 hotfix round 3: surface regen failure to the UI. If rewrite
+    // throws (disk full, permissions), index.md stays stale — the bot will
+    // still cite the file at the previous tier for customers. CEO must know
+    // to retry, not see a "success" toast over a silent leak.
+    if (category) {
+      try {
+        rewriteKnowledgeIndex(category);
+      } catch (e) {
+        console.error('[set-knowledge-visibility] rewrite index:', e.message);
+        try { auditLog('visibility-change-index-failed', { docId, visibility, category, error: e.message, ts: Date.now() }); } catch {}
+        return { success: true, indexWarning: e.message };
+      }
+    }
     return { success: true };
   } catch (e) {
     console.error('[set-knowledge-visibility] error:', e.message);
