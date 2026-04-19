@@ -4027,7 +4027,7 @@ function ensureZaloGroupSettingsFix() {
 }
 
 // inbound.ts RAG enrichment: calls Electron main HTTP knowledge-search + prepends chunks.
-// Idempotent via "9BizClaw RAG PATCH v8" marker.
+// Idempotent via "9BizClaw RAG PATCH v9" marker.
 // Anchor: AFTER group-settings end marker (runs only for messages that passed all filters).
 // Fail-open: if HTTP fails or returns nothing, message dispatches as-is.
 // Circuit breaker: 3 consecutive fails within 60s → POST /audit-rag-degraded + stop calling for 5min.
@@ -4049,7 +4049,7 @@ function ensureZaloRagFix() {
     //   v5: drop score>0.45 hard filter (Hybrid RRF server-side ranking is
     //       authoritative — keyword-dominant chunks have low cosine but
     //       high RRF score and should not be discarded by the client).
-    for (const oldVer of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']) {
+    for (const oldVer of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8']) {
       if (content.includes(`9BizClaw RAG PATCH ${oldVer}`)) {
         const oldStart = content.indexOf(`  // === 9BizClaw RAG PATCH ${oldVer} ===`);
         const oldEnd = content.indexOf(`  // === END 9BizClaw RAG PATCH ${oldVer} ===`);
@@ -4060,7 +4060,7 @@ function ensureZaloRagFix() {
       }
     }
 
-    if (content.includes('9BizClaw RAG PATCH v8')) return;
+    if (content.includes('9BizClaw RAG PATCH v9')) return;
 
     const anchor = '  // === END 9BizClaw GROUP-SETTINGS PATCH ===';
     if (!content.includes(anchor)) {
@@ -4069,12 +4069,16 @@ function ensureZaloRagFix() {
     }
 
     const injection = `
-  // === 9BizClaw RAG PATCH v8 ===
+  // === 9BizClaw RAG PATCH v9 ===
   // Enrich message with knowledge chunks via HTTP to Electron main.
   // Invariant: rawBody is ALWAYS rewritten to a fenced "customer question"
   // wrapper before the agent sees it, regardless of whether RAG returns data.
   // RAG chunks (if any) are prepended in their own <kb-doc untrusted="true">
   // fence. Both OPEN and CLOSE kb-doc tags are escaped to prevent break-out.
+  //
+  // v9 (2026-04-19): audience detection via __mcReadGroupSettings helper.
+  //   Zalo group internal flag → audience=internal → HTTP /search returns
+  //   public + internal tier docs. Default audience=customer (public only).
   //
   // v8 security fixes (adversarial review 2026-04-18):
   //   - Customer rawBody was only fenced when RAG returned ≥1 chunk. Empty
@@ -4100,6 +4104,18 @@ function ensureZaloRagFix() {
     const __ragNeutralize = (s: string) => String(s || '').replace(/<(\\/?)kb-doc\\b/gi, '[$1kb-doc');
     const __ragSafeCustomer = __ragNeutralize(rawBody);
 
+    // v9: audience detection for 3-tier visibility filter
+    const __mcGsFn = (global as any).__mcReadGroupSettings;
+    const __mcGs = typeof __mcGsFn === 'function' ? __mcGsFn() : {};
+    let __audience = 'customer';
+    if (message.isGroup && message.threadId) {
+      const groupCfg = __mcGs[message.threadId];
+      if (groupCfg?.internal === true) __audience = 'internal';
+    }
+    if (__audience === 'internal') {
+      runtime.log?.(\`openzalo: audience=internal for thread \${message.threadId}\`);
+    }
+
     let __ragCtx = '';
     if (__ragNow > __ragG.__ragCooldownUntil && (rawBody || '').trim().length >= 3) {
       if (!__ragG.__ragSecret) {
@@ -4118,7 +4134,7 @@ function ensureZaloRagFix() {
         }
       } else {
         const __ragQ = (rawBody || '').slice(0, 500).trim();
-        const __ragUrl = \`http://127.0.0.1:20129/search?q=\${encodeURIComponent(__ragQ)}&k=3\`;
+        const __ragUrl = \`http://127.0.0.1:20129/search?q=\${encodeURIComponent(__ragQ)}&k=3&audience=\${__audience}\`;
         const __ragCtrl = new AbortController();
         const __ragTimer = setTimeout(() => __ragCtrl.abort(), 8000);
         try {
@@ -4175,11 +4191,11 @@ function ensureZaloRagFix() {
   } catch (__ragOuter) {
     runtime.log?.('openzalo: RAG outer error: ' + String(__ragOuter));
   }
-  // === END 9BizClaw RAG PATCH v8 ===
+  // === END 9BizClaw RAG PATCH v9 ===
 `;
     content = content.replace(anchor, anchor + injection);
     _writeInboundTs(pluginFile, content);
-    console.log('[zalo-rag] Injected RAG enrichment into inbound.ts (v8)');
+    console.log('[zalo-rag] Injected RAG enrichment into inbound.ts (v9)');
   } catch (e) {
     console.error('[zalo-rag] error:', e?.message || e);
   }
