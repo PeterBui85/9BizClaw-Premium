@@ -17,8 +17,24 @@ const DEFAULTS = {
   reminderMinutes: 15,
 };
 
+// App dir = "9bizclaw" (matches package.json.name / app.getName()).
+// See gcal/auth.js for the rebrand rationale.
+const APP_DIR = '9bizclaw';
+
 function getWorkspace() {
   if (process.env.MODORO_WORKSPACE) return process.env.MODORO_WORKSPACE;
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  if (process.platform === 'darwin') {
+    return path.join(home, 'Library', 'Application Support', APP_DIR);
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    return path.join(appData, APP_DIR);
+  }
+  return path.join(home, '.config', APP_DIR);
+}
+
+function _legacyWorkspaceModoroClaw() {
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (process.platform === 'darwin') {
     return path.join(home, 'Library', 'Application Support', 'modoro-claw');
@@ -34,23 +50,28 @@ function configPath() {
   return path.join(getWorkspace(), 'gcal-config.json');
 }
 
-// One-time migration for merchants who connected under the pre-v2.4.0 path.
-// Runs the first time read() is called and the new path is empty but the
-// old path has data. Idempotent — subsequent reads find the new file and
-// skip. Deletes the old file after copy so subsequent downgrade surfaces
-// the same "Lịch hẹn" empty state everywhere.
+// One-time migration covers two pre-rebrand locations:
+//   1. ~/.openclaw/gcal-config.json (pre-v2.4.0)
+//   2. %APPDATA%/modoro-claw/gcal-config.json (pre-v2.3.48 rebrand)
+// Idempotent — subsequent reads find the new file and skip.
 function _migrateLegacyConfigOnce() {
   const newPath = configPath();
   if (fs.existsSync(newPath)) return;
   const home = process.env.USERPROFILE || process.env.HOME || '';
-  const legacy = path.join(home, '.openclaw', 'gcal-config.json');
-  if (!fs.existsSync(legacy)) return;
-  try {
-    try { fs.mkdirSync(path.dirname(newPath), { recursive: true }); } catch {}
-    const content = fs.readFileSync(legacy, 'utf-8');
-    fs.writeFileSync(newPath, content);
-    try { fs.unlinkSync(legacy); } catch {}
-  } catch {}
+  const legacyCandidates = [
+    path.join(home, '.openclaw', 'gcal-config.json'),
+    path.join(_legacyWorkspaceModoroClaw(), 'gcal-config.json'),
+  ];
+  for (const legacy of legacyCandidates) {
+    if (!fs.existsSync(legacy)) continue;
+    try {
+      try { fs.mkdirSync(path.dirname(newPath), { recursive: true }); } catch {}
+      const content = fs.readFileSync(legacy, 'utf-8');
+      fs.writeFileSync(newPath, content);
+      try { fs.unlinkSync(legacy); } catch {}
+      return;
+    } catch {}
+  }
 }
 
 function read() {

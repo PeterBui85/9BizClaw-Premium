@@ -3,7 +3,7 @@
  *
  * Encrypted via electron.safeStorage when available (Mac Keychain, Windows
  * DPAPI, Linux libsecret). Falls back to plain JSON with a boot warning
- * on Linux without keyring. Files live in workspace dir (modoro-claw).
+ * on Linux without keyring. Files live in workspace dir (9bizclaw).
  *
  * Exports: save({clientId, clientSecret}), load() -> {...}|null, clear().
  * isStoredPlain() for UI to warn CEO.
@@ -13,9 +13,23 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const APP_DIR = '9bizclaw';
+
 function getWorkspace() {
   // Prefer env override (set by main.js + smoke tests).
   if (process.env.MODORO_WORKSPACE) return process.env.MODORO_WORKSPACE;
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  if (process.platform === 'darwin') {
+    return path.join(home, 'Library', 'Application Support', APP_DIR);
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    return path.join(appData, APP_DIR);
+  }
+  return path.join(home, '.config', APP_DIR);
+}
+
+function _legacyWorkspaceModoroClaw() {
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (process.platform === 'darwin') {
     return path.join(home, 'Library', 'Application Support', 'modoro-claw');
@@ -29,6 +43,27 @@ function getWorkspace() {
 
 function encPath() { return path.join(getWorkspace(), 'gcal-credentials.enc'); }
 function plainPath() { return path.join(getWorkspace(), 'gcal-credentials.plain'); }
+
+// On first access, if new dir empty but pre-rebrand dir has files, move them.
+// Idempotent — runs only when new files absent.
+function _migrateLegacyCredentialsOnce() {
+  try {
+    if (fs.existsSync(encPath()) || fs.existsSync(plainPath())) return;
+    const legacyWs = _legacyWorkspaceModoroClaw();
+    const legacyEnc = path.join(legacyWs, 'gcal-credentials.enc');
+    const legacyPlain = path.join(legacyWs, 'gcal-credentials.plain');
+    const ws = getWorkspace();
+    try { fs.mkdirSync(ws, { recursive: true }); } catch {}
+    if (fs.existsSync(legacyEnc)) {
+      fs.copyFileSync(legacyEnc, encPath());
+      try { fs.unlinkSync(legacyEnc); } catch {}
+    }
+    if (fs.existsSync(legacyPlain)) {
+      fs.copyFileSync(legacyPlain, plainPath());
+      try { fs.unlinkSync(legacyPlain); } catch {}
+    }
+  } catch {}
+}
 
 // Lazy-load safeStorage so this module is importable from smoke (non-Electron).
 function trySafeStorage() {
@@ -64,6 +99,7 @@ function save({ clientId, clientSecret }) {
 }
 
 function load() {
+  _migrateLegacyCredentialsOnce();
   const safe = trySafeStorage();
   if (safe) {
     try {

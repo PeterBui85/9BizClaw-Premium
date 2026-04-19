@@ -3332,12 +3332,22 @@
       const location = document.getElementById('gcal-ev-location').value.trim() || undefined;
       const description = document.getElementById('gcal-ev-description').value.trim() || undefined;
       if (!summary || !startLocal) { alert('Thiếu tiêu đề hoặc thời gian bắt đầu'); return; }
-      const start = new Date(startLocal).toISOString();
-      const guests = guestsRaw ? guestsRaw.split(',').map(s => s.trim()).filter(s => s.includes('@')) : undefined;
+      // <input type="datetime-local"> returns "YYYY-MM-DDTHH:MM" (no zone).
+      // Default Date() parses it as the host system tz. Pin to ICT (+07:00)
+      // so a CEO traveling with a non-VN clock still books Vietnam wall-time.
+      const startIct = startLocal.length === 16 ? startLocal + ':00+07:00' : startLocal + '+07:00';
+      const startDate = new Date(startIct);
+      const start = startDate.toISOString();
+      // Empty input on EDIT = "remove all guests" (explicit []). undefined on
+      // edit would leave existing guests untouched — a bug when CEO clears field.
+      // On CREATE, undefined is fine (no guests).
+      const guests = guestsRaw
+        ? guestsRaw.split(',').map(s => s.trim()).filter(s => s.includes('@'))
+        : (_gcalEditingId ? [] : undefined);
 
       let r;
       if (_gcalEditingId) {
-        const end = new Date(new Date(startLocal).getTime() + durationMin * 60000).toISOString();
+        const end = new Date(startDate.getTime() + durationMin * 60000).toISOString();
         r = await window.claw.gcalUpdateEvent({
           eventId: _gcalEditingId,
           patch: { summary, start, end, location, description, guests },
@@ -3387,7 +3397,8 @@
         slotDurationMinutes: Number(document.getElementById('gcal-st-slot').value),
         reminderMinutes: Number(document.getElementById('gcal-st-reminder').value),
       };
-      await window.claw.gcalSaveConfig(cfg);
+      const r = await window.claw.gcalSaveConfig(cfg);
+      if (r && r.success === false) { alert('Lỗi lưu cấu hình: ' + (r.error || 'unknown')); return; }
       gcalCloseSettings();
     }
 
@@ -3530,7 +3541,27 @@
     }
 
     async function gcalOpenExternal(url) {
-      await window.claw.openExternal(url);
+      const r = await window.claw.openExternal(url);
+      // Structured return (v2.3.48 hotfix): if allowlist blocked or URL was
+      // malformed, surface to CEO instead of looking like a dead button.
+      if (r && r.ok === false) {
+        alert('Không mở được link:\n' + url + '\n\nLý do: ' + (r.error || 'unknown'));
+      }
+    }
+
+    // Telegram tab "Lệnh tay CEO": 21 .prompt-row cards with onclick="copyPrompt(this)".
+    // Copies code text to clipboard, flashes .copied class for 1.2s (CSS handles visuals).
+    async function copyPrompt(el) {
+      try {
+        const codeEl = el.querySelector('code');
+        const text = (codeEl && codeEl.innerText) || el.innerText || '';
+        if (!text.trim()) return;
+        await navigator.clipboard.writeText(text);
+        el.classList.add('copied');
+        setTimeout(() => el.classList.remove('copied'), 1200);
+      } catch (e) {
+        console.warn('[copyPrompt] clipboard failed:', e?.message);
+      }
     }
     async function gcalCopyRedirect() {
       await navigator.clipboard.writeText('http://127.0.0.1:20199/gcal/callback');

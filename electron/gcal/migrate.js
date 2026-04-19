@@ -10,17 +10,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const APP_DIR = '9bizclaw';
+
 function getWorkspace() {
   if (process.env.MODORO_WORKSPACE) return process.env.MODORO_WORKSPACE;
   const home = process.env.USERPROFILE || process.env.HOME || '';
   if (process.platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'modoro-claw');
+    return path.join(home, 'Library', 'Application Support', APP_DIR);
   }
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-    return path.join(appData, 'modoro-claw');
+    return path.join(appData, APP_DIR);
   }
-  return path.join(home, '.config', 'modoro-claw');
+  return path.join(home, '.config', APP_DIR);
 }
 
 function formatDateVI(iso) {

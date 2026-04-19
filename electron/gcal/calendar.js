@@ -10,6 +10,21 @@
 const { getAccessToken, httpsGet, httpsPostJson, httpsPatch, httpsDelete } = require('./auth');
 const gcalConfig = require('./config');
 
+// CEO ops from Vietnam — pin timezone. Do NOT use
+// Intl.DateTimeFormat().resolvedOptions().timeZone — server/VPS/travel with
+// UTC system tz would write events at wrong clock time.
+const CALENDAR_TZ = 'Asia/Ho_Chi_Minh';
+
+// Resolve selected calendar ID from config. 'primary' = user's main calendar.
+// Without this, `gcal-save-config` would save calendarId but API paths would
+// ignore it — events land on wrong calendar silently.
+function getCalendarId() {
+  try {
+    const cfg = gcalConfig.read();
+    return cfg.calendarId || 'primary';
+  } catch { return 'primary'; }
+}
+
 // ---------------------------------------------------------------------------
 // List upcoming events
 // ---------------------------------------------------------------------------
@@ -25,9 +40,10 @@ async function listEvents({ dateFrom, dateTo, limit = 50 } = {}) {
     singleEvents: 'true',
     orderBy: 'startTime',
   });
+  const calId = encodeURIComponent(getCalendarId());
   const resp = await httpsGet(
     'www.googleapis.com',
-    `/calendar/v3/calendars/primary/events?${params.toString()}`,
+    `/calendar/v3/calendars/${calId}/events?${params.toString()}`,
     token
   );
   return (resp.items || []).map(ev => ({
@@ -50,10 +66,11 @@ async function listEvents({ dateFrom, dateTo, limit = 50 } = {}) {
 
 async function getFreeBusy(dateFrom, dateTo) {
   const token = await getAccessToken();
+  const calId = getCalendarId();
   const body = {
     timeMin: dateFrom,
     timeMax: dateTo,
-    items: [{ id: 'primary' }],
+    items: [{ id: calId }],
   };
   const resp = await httpsPostJson(
     'www.googleapis.com',
@@ -61,7 +78,7 @@ async function getFreeBusy(dateFrom, dateTo) {
     body,
     token
   );
-  const busy = (resp.calendars?.primary?.busy || []).map(b => ({
+  const busy = (resp.calendars?.[calId]?.busy || []).map(b => ({
     start: b.start,
     end: b.end,
   }));
@@ -76,13 +93,12 @@ async function createEvent({ summary, description, start, end, location, guests,
   const token = await getAccessToken();
   const config = gcalConfig.read();
   const reminder = reminderMinutes ?? config.reminderMinutes ?? 15;
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh';
   const body = {
     summary,
     description: description || '',
     location: location || undefined,
-    start: { dateTime: start, timeZone: tz },
-    end: { dateTime: end, timeZone: tz },
+    start: { dateTime: start, timeZone: CALENDAR_TZ },
+    end: { dateTime: end, timeZone: CALENDAR_TZ },
     reminders: {
       useDefault: false,
       overrides: [{ method: 'popup', minutes: reminder }],
@@ -91,9 +107,10 @@ async function createEvent({ summary, description, start, end, location, guests,
   if (Array.isArray(guests) && guests.length) {
     body.attendees = guests.map(email => ({ email }));
   }
+  const calId = encodeURIComponent(getCalendarId());
   const resp = await httpsPostJson(
     'www.googleapis.com',
-    '/calendar/v3/calendars/primary/events?sendUpdates=none',
+    `/calendar/v3/calendars/${calId}/events?sendUpdates=none`,
     body,
     token
   );
@@ -113,15 +130,16 @@ async function createEvent({ summary, description, start, end, location, guests,
 
 async function updateEvent(eventId, patch, opts = {}) {
   const token = await getAccessToken();
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh';
   const body = {};
   if (patch.summary != null) body.summary = patch.summary;
   if (patch.description != null) body.description = patch.description;
   if (patch.location != null) body.location = patch.location;
-  if (patch.start) body.start = { dateTime: patch.start, timeZone: tz };
-  if (patch.end) body.end = { dateTime: patch.end, timeZone: tz };
+  if (patch.start) body.start = { dateTime: patch.start, timeZone: CALENDAR_TZ };
+  if (patch.end) body.end = { dateTime: patch.end, timeZone: CALENDAR_TZ };
+  // Explicit [] = "remove all guests". undefined/null = "don't touch guests".
   if (Array.isArray(patch.guests)) body.attendees = patch.guests.map(email => ({ email }));
-  const pathStr = `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+  const calId = encodeURIComponent(getCalendarId());
+  const pathStr = `/calendar/v3/calendars/${calId}/events/${encodeURIComponent(eventId)}`;
   const etag = opts.etag;
   const resp = await httpsPatch('www.googleapis.com', pathStr, body, token, etag);
   return { success: true, eventId: resp.id, htmlLink: resp.htmlLink, etag: resp.etag };
@@ -129,7 +147,8 @@ async function updateEvent(eventId, patch, opts = {}) {
 
 async function getEvent(eventId) {
   const token = await getAccessToken();
-  const pathStr = `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`;
+  const calId = encodeURIComponent(getCalendarId());
+  const pathStr = `/calendar/v3/calendars/${calId}/events/${encodeURIComponent(eventId)}`;
   try {
     const resp = await httpsGet('www.googleapis.com', pathStr, token);
     return {
@@ -153,7 +172,8 @@ async function getEvent(eventId) {
 
 async function deleteEvent(eventId) {
   const token = await getAccessToken();
-  await httpsDelete('www.googleapis.com', `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, token);
+  const calId = encodeURIComponent(getCalendarId());
+  await httpsDelete('www.googleapis.com', `/calendar/v3/calendars/${calId}/events/${encodeURIComponent(eventId)}`, token);
   return { success: true, eventId };
 }
 

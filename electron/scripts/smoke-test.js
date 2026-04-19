@@ -627,6 +627,81 @@ if (missingPrefixes.length > 0) {
 }
 
 // =========================================================================
+// IPC parity guards (preload.js ↔ main.js ↔ dashboard.html)
+// ---------------------------------------------------------------
+// Closest structural analog to the v2.3.48 silent-reject bug: a preload
+// bridge invokes an IPC channel that no main.js handler registers, or
+// dashboard.html calls window.claw.X that no preload bridge exposes, or
+// onclick="fn()" where fn is not defined. All three fail silently.
+// =========================================================================
+section('IPC parity (preload/main/dashboard)');
+const preloadPath = path.join(__dirname, '..', 'preload.js');
+const dashboardHtmlPathForParity = path.join(__dirname, '..', 'ui', 'dashboard.html');
+const mainJsPath = path.join(__dirname, '..', 'main.js');
+
+if (!fs.existsSync(preloadPath) || !fs.existsSync(dashboardHtmlPathForParity) || !fs.existsSync(mainJsPath)) {
+  warn('IPC parity', 'one or more source files missing — skip');
+} else {
+  const preloadSrc = fs.readFileSync(preloadPath, 'utf-8');
+  const dashSrc = fs.readFileSync(dashboardHtmlPathForParity, 'utf-8');
+  const mainSrcForParity = fs.readFileSync(mainJsPath, 'utf-8');
+
+  // G1: every ipcRenderer.invoke('<ch>') in preload must have ipcMain.handle in main.js
+  const preloadChannels = new Set();
+  const invokeRe = /ipcRenderer\.(?:invoke|send)\(['"]([a-z0-9-]+)['"]/gi;
+  let gm;
+  while ((gm = invokeRe.exec(preloadSrc)) !== null) preloadChannels.add(gm[1]);
+  const handlerChannels = new Set();
+  const handleRe = /ipcMain\.(?:handle|on)\(['"]([a-z0-9-]+)['"]/gi;
+  while ((gm = handleRe.exec(mainSrcForParity)) !== null) handlerChannels.add(gm[1]);
+  const orphanPreloadChannels = [...preloadChannels].filter((ch) => !handlerChannels.has(ch));
+  if (orphanPreloadChannels.length > 0) {
+    fail('G1 preload channels have main handlers', `preload.js bridges channels that no ipcMain handler serves: [${orphanPreloadChannels.join(', ')}]. Calling these from renderer silently returns undefined — dead buttons. Register ipcMain.handle('<name>', ...) in main.js or remove the bridge.`);
+  } else {
+    pass(`G1 all ${preloadChannels.size} preload channels have main.js handlers`);
+  }
+
+  // G2a: every onclick="fn(" / onchange="fn(" / oninput="fn(" / onsubmit="fn(" in dashboard.html must resolve to defined JS function
+  const onEventRe = /on(?:click|change|input|submit|focus|blur|mouseover|mouseout)\s*=\s*["']([a-zA-Z_$][\w$]*)\s*\(/g;
+  const inlineHandlerNames = new Set();
+  while ((gm = onEventRe.exec(dashSrc)) !== null) inlineHandlerNames.add(gm[1]);
+  // Built-in and this-reference whitelist. Include JS control-flow keywords
+  // because `onclick="if(event.target===this)foo()"` is a valid pattern
+  // (backdrop-click-to-close modal) where the regex captures `if` as the
+  // "function name" before the first paren.
+  const builtins = new Set(['alert', 'confirm', 'prompt', 'event', 'return', 'this',
+    'if', 'for', 'while', 'switch', 'try', 'function', 'void', 'typeof', 'new']);
+  const declaredFnRe = /(?:^|\s)(?:async\s+)?function\s+([a-zA-Z_$][\w$]*)\s*\(|\bconst\s+([a-zA-Z_$][\w$]*)\s*=\s*(?:async\s*)?\(|\blet\s+([a-zA-Z_$][\w$]*)\s*=\s*(?:async\s*)?\(|\bvar\s+([a-zA-Z_$][\w$]*)\s*=\s*(?:async\s*)?\(|\bwindow\.([a-zA-Z_$][\w$]*)\s*=\s*(?:async\s*)?\(/g;
+  const declaredFns = new Set();
+  while ((gm = declaredFnRe.exec(dashSrc)) !== null) {
+    const name = gm[1] || gm[2] || gm[3] || gm[4] || gm[5];
+    if (name) declaredFns.add(name);
+  }
+  const missingInlineFns = [...inlineHandlerNames].filter((n) => !builtins.has(n) && !declaredFns.has(n));
+  if (missingInlineFns.length > 0) {
+    fail('G2a onclick handlers have defined functions', `dashboard.html inline on* handlers reference undefined functions: [${missingInlineFns.join(', ')}]. Clicks throw ReferenceError at runtime. Define the function or fix the typo.`);
+  } else {
+    pass(`G2a all ${inlineHandlerNames.size} inline on* handlers defined`);
+  }
+
+  // G2b: every window.claw.X in dashboard.html + wizard.html must have matching preload bridge
+  const wizardPath = path.join(__dirname, '..', 'ui', 'wizard.html');
+  const wizardSrc = fs.existsSync(wizardPath) ? fs.readFileSync(wizardPath, 'utf-8') : '';
+  const clawUsageRe = /window\.claw\.([a-zA-Z_$][\w$]*)/g;
+  const clawUsedMethods = new Set();
+  while ((gm = clawUsageRe.exec(dashSrc + '\n' + wizardSrc)) !== null) clawUsedMethods.add(gm[1]);
+  const bridgeKeyRe = /^\s*([a-zA-Z_$][\w$]*)\s*:\s*\(/gm;
+  const bridgeKeys = new Set();
+  while ((gm = bridgeKeyRe.exec(preloadSrc)) !== null) bridgeKeys.add(gm[1]);
+  const missingBridges = [...clawUsedMethods].filter((m) => !bridgeKeys.has(m));
+  if (missingBridges.length > 0) {
+    fail('G2b window.claw.X has preload bridge', `dashboard.html/wizard.html call window.claw.X where X is not in preload.js: [${missingBridges.join(', ')}]. Await resolves undefined — silent dead button. Add the bridge to preload.js contextBridge.exposeInMainWorld('claw', {...}).`);
+  } else {
+    pass(`G2b all ${clawUsedMethods.size} window.claw.X methods have bridges`);
+  }
+}
+
+// =========================================================================
 // UI regression guards (dashboard.html)
 // ---------------------------------------------------------------
 // Enforce docs/UI-REGRESSION-RULES.md. Grep-based checks for CSS

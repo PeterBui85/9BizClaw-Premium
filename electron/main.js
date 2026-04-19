@@ -18100,11 +18100,17 @@ ipcMain.handle('open-external', async (_event, url) => {
     if (allowedOrigins.includes(parsed.origin) || isTelegramResolve) {
       const { shell } = require('electron');
       shell.openExternal(url);
-    } else {
-      console.warn('[open-external] rejected (not in allowlist):', parsed.origin);
+      return { ok: true };
     }
+    // Structured reject: caller can surface this via inline status instead of
+    // looking like a dead button. Caused the v2.3.48 gcal-deeplinks ship bug.
+    const reason = `URL blocked: origin ${parsed.origin} not in allowlist`;
+    console.warn('[open-external]', reason);
+    return { ok: false, error: reason };
   } catch (e) {
-    console.warn('[open-external] invalid URL:', url, e?.message);
+    const reason = 'invalid URL: ' + (e?.message || 'parse error');
+    console.warn('[open-external]', url, reason);
+    return { ok: false, error: reason };
   }
 });
 
@@ -18590,17 +18596,23 @@ ipcMain.handle('gcal-connect', async () => {
 });
 
 ipcMain.handle('gcal-disconnect', async () => {
-  const serverRevoke = await gcalAuth.revokeToken().catch((e) => ({ ok: false, error: e.message }));
-  gcalAuth.disconnect(); // existing — deletes local tokens file
-  // FIX 9: preserve clientId + clientSecret. Previously credentials.clear()
-  // forced CEO to redo the full GCP project setup (5-step wizard) on every
-  // reconnect. Now "Kết nối lại" skips straight to Step 6 OAuth consent.
-  // Wizard UI checks getStatus().hasCredentials to decide whether to show
-  // Steps 1-5 or jump to Step 6.
-  // FIX 5: scrub token prefixes from error field before audit log
-  const _scrubbedRevokeDetail = serverRevoke.error ? String(serverRevoke.error).slice(0, 200).replace(/ya29\.[A-Za-z0-9_\-.]+|1\/\/[A-Za-z0-9_\-]+|GOCSPX-[A-Za-z0-9_\-]+/g, '[REDACTED]') : null;
-  try { auditLog('gcal_disconnected', { serverRevokeOk: !!serverRevoke.ok, serverRevokeDetail: _scrubbedRevokeDetail }); } catch {}
-  return { success: true, serverRevokeOk: !!serverRevoke.ok, warning: serverRevoke.ok ? null : 'Không gọi được server Google để thu hồi token — vào Google account settings thu hồi thủ công nếu lo lắng.' };
+  try {
+    const serverRevoke = await gcalAuth.revokeToken().catch((e) => ({ ok: false, error: e.message }));
+    gcalAuth.disconnect(); // existing — deletes local tokens file
+    // FIX 9: preserve clientId + clientSecret. Previously credentials.clear()
+    // forced CEO to redo the full GCP project setup (5-step wizard) on every
+    // reconnect. Now "Kết nối lại" skips straight to Step 6 OAuth consent.
+    // Wizard UI checks getStatus().hasCredentials to decide whether to show
+    // Steps 1-5 or jump to Step 6.
+    // FIX 5: scrub token prefixes from error field before audit log
+    const _scrubbedRevokeDetail = serverRevoke.error ? String(serverRevoke.error).slice(0, 200).replace(/ya29\.[A-Za-z0-9_\-.]+|1\/\/[A-Za-z0-9_\-]+|GOCSPX-[A-Za-z0-9_\-]+/g, '[REDACTED]') : null;
+    try { auditLog('gcal_disconnected', { serverRevokeOk: !!serverRevoke.ok, serverRevokeDetail: _scrubbedRevokeDetail }); } catch {}
+    return { success: true, serverRevokeOk: !!serverRevoke.ok, warning: serverRevoke.ok ? null : 'Không gọi được server Google để thu hồi token — vào Google account settings thu hồi thủ công nếu lo lắng.' };
+  } catch (e) {
+    // File locked by antivirus, filesystem permission, or similar — surface
+    // instead of swallowing. CEO sees the real reason, can retry informed.
+    return { success: false, error: e?.message || 'unknown error', warning: null };
+  }
 });
 
 ipcMain.handle('gcal-get-status', async () => {
@@ -18748,8 +18760,15 @@ ipcMain.handle('gcal-get-free-slots', async (_event, { date }) => {
 ipcMain.handle('gcal-get-config', async () => gcalConfig.read());
 
 ipcMain.handle('gcal-save-config', async (_event, cfg) => {
-  gcalConfig.write(cfg);
-  return { success: true };
+  try {
+    if (!cfg || typeof cfg !== 'object') return { success: false, error: 'invalid config payload' };
+    gcalConfig.write(cfg);
+    return { success: true };
+  } catch (e) {
+    // Disk full, permission denied, JSON too big — surface to renderer so the
+    // Settings modal shows the real reason instead of silently discarding.
+    return { success: false, error: e?.message || 'save failed' };
+  }
 });
 
 // Check if any legacy appointments archive file exists in .learnings/ — used by
