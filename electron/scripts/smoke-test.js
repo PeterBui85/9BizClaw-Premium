@@ -627,6 +627,78 @@ if (missingPrefixes.length > 0) {
 }
 
 // =========================================================================
+// UI regression guards (dashboard.html)
+// ---------------------------------------------------------------
+// Enforce docs/UI-REGRESSION-RULES.md. Grep-based checks for CSS
+// anti-patterns that previously caused ship-breaking layout bugs.
+// Every bug discovered in production gets a rule added here + in
+// UI-REGRESSION-RULES.md so the same class can NEVER ship again.
+// =========================================================================
+section('UI regression guards (dashboard.html)');
+const dashboardHtmlPath = path.join(__dirname, '..', 'ui', 'dashboard.html');
+if (!fs.existsSync(dashboardHtmlPath)) {
+  fail('dashboard.html present', `${dashboardHtmlPath} missing — UI shell file. Build will produce empty window.`);
+} else {
+  const dashboardSrc = fs.readFileSync(dashboardHtmlPath, 'utf-8');
+
+  // R1: never `overflow-wrap:anywhere` (collapses flex/grid children to 1-char width)
+  if (/overflow-wrap\s*:\s*anywhere/i.test(dashboardSrc)) {
+    fail('R1 no overflow-wrap:anywhere', 'dashboard.html contains `overflow-wrap:anywhere`. Combined with flex:1 1 0 or grid minmax(0,1fr), this makes text min-content = 1 glyph → vertical char-per-line collapse under viewport pressure. Use `word-break:break-word` instead. See docs/UI-REGRESSION-RULES.md R1.');
+  } else {
+    pass('R1 no overflow-wrap:anywhere in dashboard.html');
+  }
+
+  // R2: .visibility-option must use grid, not flex (prevents char-per-line collapse)
+  const visOptMatch = dashboardSrc.match(/\.visibility-option\s*\{[^}]*\}/);
+  if (!visOptMatch) {
+    fail('R2 visibility-option CSS exists', '.visibility-option CSS rule not found in dashboard.html. Knowledge upload visibility radios will be unstyled.');
+  } else if (/display\s*:\s*flex/i.test(visOptMatch[0])) {
+    fail('R2 visibility-option uses grid', '.visibility-option uses `display:flex`. Must be `display:grid` with `grid-template-columns:18px minmax(0,1fr)`. Flex is fragile under viewport pressure (1200-1400px) and previously shipped char-per-line bug. See docs/UI-REGRESSION-RULES.md R2.');
+  } else if (!/display\s*:\s*grid/i.test(visOptMatch[0])) {
+    fail('R2 visibility-option uses grid', '.visibility-option missing `display:grid`. Required for robust radio layout. See docs/UI-REGRESSION-RULES.md R2.');
+  } else {
+    pass('R2 visibility-option uses display:grid');
+  }
+
+  // R5: .know-col must have overflow:hidden AND min-width:0
+  const knowColMatch = dashboardSrc.match(/\.know-col\s*\{[^}]*\}/);
+  if (!knowColMatch) {
+    fail('R5 know-col CSS exists', '.know-col CSS rule not found in dashboard.html.');
+  } else {
+    const hasOverflowHidden = /overflow\s*:\s*hidden/i.test(knowColMatch[0]);
+    const hasMinWidth0 = /min-width\s*:\s*0/i.test(knowColMatch[0]);
+    if (!hasOverflowHidden || !hasMinWidth0) {
+      fail('R5 know-col has overflow:hidden + min-width:0', `.know-col missing ${!hasOverflowHidden ? '`overflow:hidden`' : ''}${!hasOverflowHidden && !hasMinWidth0 ? ' and ' : ''}${!hasMinWidth0 ? '`min-width:0`' : ''}. Without these, flex/grid children overflow outside card boundary (text renders in blank area beside card). See docs/UI-REGRESSION-RULES.md R5.`);
+    } else {
+      pass('R5 know-col has overflow:hidden + min-width:0');
+    }
+  }
+
+  // R6: every -webkit-line-clamp must be paired with -webkit-box-orient:vertical
+  const clampCount = (dashboardSrc.match(/-webkit-line-clamp/g) || []).length;
+  if (clampCount > 0) {
+    // Split CSS into rule blocks and check each block that has line-clamp also has box-orient
+    const ruleBlocks = dashboardSrc.match(/\{[^{}]*-webkit-line-clamp[^{}]*\}/g) || [];
+    const missingBoxOrient = ruleBlocks.filter((blk) => !/-webkit-box-orient\s*:\s*vertical/i.test(blk));
+    if (missingBoxOrient.length > 0) {
+      fail('R6 line-clamp paired with box-orient', `${missingBoxOrient.length} rule(s) use \`-webkit-line-clamp\` without \`-webkit-box-orient:vertical\`. Text will render as single line, overflowing card. See docs/UI-REGRESSION-RULES.md R6.`);
+    } else {
+      pass(`R6 all ${clampCount} -webkit-line-clamp rules pair with -webkit-box-orient:vertical`);
+    }
+  } else {
+    pass('R6 no -webkit-line-clamp rules to check');
+  }
+
+  // R3: spot-check — visibility radio-label needs min-width:0 (inside grid/flex)
+  const radioLabelMatch = dashboardSrc.match(/\.visibility-option\s+\.radio-label\s*\{[^}]*\}/);
+  if (radioLabelMatch && !/min-width\s*:\s*0/i.test(radioLabelMatch[0])) {
+    fail('R3 radio-label has min-width:0', '.visibility-option .radio-label missing `min-width:0`. Grid/flex children with text default to min-width:auto (min-content), can cause overflow. See docs/UI-REGRESSION-RULES.md R3.');
+  } else if (radioLabelMatch) {
+    pass('R3 .visibility-option .radio-label has min-width:0');
+  }
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
