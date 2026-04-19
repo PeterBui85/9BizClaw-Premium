@@ -12099,11 +12099,124 @@ function stripTelegramMarkdown(text) {
     .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, '$1'); // _italic_ (skip snake_case)
 }
 
+// v2.4.0: Google Calendar marker interception — runs BEFORE stripTelegramMarkdown
+// + filterSensitiveOutput so raw JSON payloads never reach the output filter.
+const gcalMarkers = require('./gcal/markers');
+
+async function interceptGcalMarkers(text) {
+  if (!text || typeof text !== 'string') return text;
+  if (!text.includes('[[GCAL_')) return text; // fast path
+  return await gcalMarkers.replaceMarkers(text, async (span) => {
+    const { action, payload } = span;
+    const before = Date.now();
+    let result;
+    let error = null;
+    try {
+      switch (action) {
+        case 'CREATE': {
+          const r = await gcalCalendar.createEvent({
+            summary: payload.summary,
+            start: payload.start,
+            end: payload.end || new Date(new Date(payload.start).getTime() + (payload.durationMin || 30) * 60000).toISOString(),
+            description: payload.description || '',
+            location: payload.location,
+            guests: payload.guests,
+          });
+          result = { eventId: r.eventId, htmlLink: r.htmlLink };
+          break;
+        }
+        case 'LIST': {
+          const toISOStart = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00+07:00` : s;
+          const toISOEnd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59+07:00` : s;
+          const events = await gcalCalendar.listEvents({
+            dateFrom: payload.dateFrom ? toISOStart(payload.dateFrom) : undefined,
+            dateTo: payload.dateTo ? toISOEnd(payload.dateTo) : undefined,
+            limit: payload.limit,
+          });
+          result = { events: events.slice(0, 50) };
+          break;
+        }
+        case 'UPDATE': {
+          // NOTE: this path bypasses the IPC handler's 412-retry wrapper.
+          // If marker-initiated update hits 412, it surfaces raw — CEO can
+          // just re-issue the command. Spec §Error handling 412 row applies
+          // to Dashboard UI flow (human retries). Acceptable tradeoff.
+          result = await gcalCalendar.updateEvent(payload.eventId, payload.patch || {});
+          break;
+        }
+        case 'DELETE': {
+          await gcalCalendar.deleteEvent(payload.eventId);
+          result = { eventId: payload.eventId };
+          break;
+        }
+        case 'FREEBUSY': {
+          const toISOStart = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00+07:00` : s;
+          const toISOEnd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59+07:00` : s;
+          result = await gcalCalendar.getFreeBusy(
+            payload.dateFrom ? toISOStart(payload.dateFrom) : new Date().toISOString(),
+            payload.dateTo ? toISOEnd(payload.dateTo) : new Date(Date.now() + 7*86400e3).toISOString()
+          );
+          break;
+        }
+      }
+    } catch (e) {
+      error = e.message || String(e);
+    }
+    // Audit (args filtered recursively via _auditSafeArgs)
+    try {
+      auditLog('gcal_marker_executed', {
+        action,
+        args: _auditSafeArgs(payload),
+        result: error ? null : _auditSafeArgs(result),
+        error,
+        durationMs: Date.now() - before,
+      });
+    } catch {}
+    // Format Vietnamese response
+    if (error) return `[!] Lỗi Google Calendar: ${error}`;
+    return formatMarkerResult(action, result);
+  });
+}
+
+function formatMarkerResult(action, r) {
+  if (action === 'CREATE') {
+    return `Đã tạo lịch · link: ${r.htmlLink}`;
+  }
+  if (action === 'LIST') {
+    if (!r.events || r.events.length === 0) return 'Không có lịch trong khoảng này.';
+    const lines = r.events.slice(0, 20).map(ev => {
+      const d = new Date(ev.start);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}/${mo} ${hh}:${mm} ${ev.summary}`;
+    });
+    return `${r.events.length} lịch:\n• ${lines.join('\n• ')}`;
+  }
+  if (action === 'UPDATE') {
+    return `Đã cập nhật lịch · link: ${r.htmlLink || ''}`;
+  }
+  if (action === 'DELETE') {
+    return `Đã xóa lịch.`;
+  }
+  if (action === 'FREEBUSY') {
+    if (!r.busy || r.busy.length === 0) return 'Khoảng này sếp hoàn toàn rảnh.';
+    return `Sếp bận ${r.busy.length} khoảng: ${r.busy.slice(0, 5).map(b => `${b.start.slice(11, 16)}-${b.end.slice(11, 16)}`).join(', ')}`;
+  }
+  return '(marker executed)';
+}
+
 async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false } = {}) {
   // Check pause state — skip send if Telegram is paused
   if (!skipPauseCheck && isChannelPaused('telegram')) {
     console.log('[sendTelegram] channel paused — skipping');
     return null;
+  }
+  // v2.4.0: intercept GCAL markers BEFORE Markdown strip + output filter so
+  // raw marker payloads (event titles, guest emails) never reach filter regex.
+  if (typeof text === 'string' && text.includes('[[GCAL_')) {
+    text = await interceptGcalMarkers(text);
   }
   // Output filter — same patterns as Zalo transport filter
   if (!skipFilter) {
