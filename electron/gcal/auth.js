@@ -17,12 +17,21 @@ const path = require('path');
 const url = require('url');
 
 // ---------------------------------------------------------------------------
-// Google OAuth2 credentials — PLACEHOLDER, MODORO fills in real values
+// Google OAuth2 credentials
+// REDIRECT_URI + SCOPES are constant; CLIENT_ID + SECRET come from
+// credentials.js at call time so CEO-supplied values take effect without
+// restart after the setup wizard saves them.
 // ---------------------------------------------------------------------------
-const CLIENT_ID = 'REPLACE_WITH_REAL_CLIENT_ID.apps.googleusercontent.com';
-const CLIENT_SECRET = 'REPLACE_WITH_REAL_CLIENT_SECRET';
+const credentials = require('./credentials');
+
 const REDIRECT_URI = 'http://127.0.0.1:20199/gcal/callback';
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+
+function getCreds() {
+  const c = credentials.load();
+  if (!c) throw new Error('NO_CREDENTIALS — CEO chưa setup OAuth qua Dashboard wizard');
+  return c;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,8 +88,9 @@ function loadTokens() {
 // ---------------------------------------------------------------------------
 
 function getAuthUrl() {
+  const { clientId } = getCreds();
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: clientId,
     redirect_uri: REDIRECT_URI,
     response_type: 'code',
     scope: SCOPES,
@@ -124,10 +134,11 @@ function httpsPost(hostname, pathStr, body) {
 }
 
 async function exchangeCode(code) {
+  const { clientId, clientSecret } = getCreds();
   const resp = await httpsPost('oauth2.googleapis.com', '/token', {
     code,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
     redirect_uri: REDIRECT_URI,
     grant_type: 'authorization_code',
   });
@@ -148,12 +159,13 @@ async function exchangeCode(code) {
 }
 
 async function refreshAccessToken() {
+  const { clientId, clientSecret } = getCreds();
   const tokens = loadTokens();
   if (!tokens || !tokens.refresh_token) throw new Error('No refresh token available');
   const resp = await httpsPost('oauth2.googleapis.com', '/token', {
     refresh_token: tokens.refresh_token,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
     grant_type: 'refresh_token',
   });
   if (resp.error) throw new Error(resp.error_description || resp.error);
@@ -176,9 +188,12 @@ function isConnected() {
   return !!(tokens && tokens.refresh_token);
 }
 
+// Returns OAuth'd Google email from stored userinfo, or null.
 function getEmail() {
-  const tokens = loadTokens();
-  return tokens?.email || null;
+  try {
+    const tokens = loadTokens();
+    return tokens?.email || null;
+  } catch { return null; }
 }
 
 function disconnect() {
