@@ -607,7 +607,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 47;
+const CURRENT_AGENTS_MD_VERSION = 48;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -675,6 +675,18 @@ function seedWorkspace() {
           const label = spoofed ? 'spoof-reset' : 'upgrade';
           console.log('[seedWorkspace] AGENTS.md ' + label + ' ' + existingVersion + ' → ' +
             CURRENT_AGENTS_MD_VERSION + ' (backup: .learnings/' + backupName + ')');
+          // v2.3.48 hotfix round 3: emit audit event so Dashboard activity feed
+          // + "Cần anh để ý" alerts can surface the backup. Without this,
+          // merchants with custom rules lose them silently on every upgrade.
+          try {
+            auditLog('agents_md_upgraded', {
+              fromVersion: existingVersion,
+              toVersion: CURRENT_AGENTS_MD_VERSION,
+              backupPath: '.learnings/' + backupName,
+              reason: label,
+              ts: Date.now(),
+            });
+          } catch {}
         } catch (be) {
           console.warn('[seedWorkspace] AGENTS.md backup failed:', be && be.message ? be.message : String(be));
           // Continue with overwrite anyway — the rule update is more
