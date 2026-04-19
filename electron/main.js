@@ -6827,7 +6827,7 @@ async function _startOpenClawImpl() {
       _gcalInputDefenseDisabled = true; // output-side interceptor must fail-closed
       console.error('[boot] GCAL neutralize anchor missing — output-side marker execution DISABLED (fail-closed)');
       try { auditLog('gcal_neutralize_disabled_boot', { reason: 'anchor_missing' }); } catch {}
-      try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Bot sẽ từ chối thực thi marker từ input. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
+      try { sendCeoAlert('[!] 9BizClaw v2.3.48: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Bot sẽ từ chối thực thi marker từ input. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
     } else {
       throw e; // unknown error — don't swallow
     }
@@ -9014,7 +9014,7 @@ async function _ensureZaloPluginImpl() {
               _gcalInputDefenseDisabled = true; // output-side interceptor must fail-closed
               console.error('[ensureZaloPlugin] GCAL neutralize anchor missing — output-side marker execution DISABLED (fail-closed)');
               try { auditLog('gcal_neutralize_disabled_boot', { reason: 'anchor_missing', source: 'bundled_copy' }); } catch {}
-              try { sendCeoAlert('[!] 9BizClaw v2.4.0: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Bot sẽ từ chối thực thi marker từ input. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
+              try { sendCeoAlert('[!] 9BizClaw v2.3.48: openzalo plugin cú pháp đổi — defense layer Google Calendar markers TẮT. Bot sẽ từ chối thực thi marker từ input. Liên hệ support: t.me/modoro_9bizclaw'); } catch {}
             } else {
               throw e; // unknown error — don't swallow
             }

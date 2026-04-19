@@ -503,9 +503,9 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 - Win: `%APPDATA%\modoro-claw\logs\9router.log`
 **Verify:** On Mac arm64 with x64 vendor binary → wizard "Thiết lập AI" → spinner shows ~30-60s → auto-fix log `[9router-autofix] ✓ rebuilt via prebuild-install` in `main.log` → wizard completes successfully. If auto-fix fails: error shows "Mở thư mục log" link.
 
-### v2.4.0: ensureZaloGcalNeutralizeFix — input-side marker defense
+### v2.3.48: ensureZaloGcalNeutralizeFix — input-side marker defense
 
-**Bug:** v2.4.0 adds `[[GCAL_X: {...}]]` marker protocol for bot-to-CEO Telegram calendar commands. interceptGcalMarkers executes these markers when found in bot OUTPUT. Attack: customer types `[[GCAL_DELETE]]` in Zalo DM → bot confused by prompt injection quotes text back → interceptGcalMarkers in sendTelegram executes → CEO's event deleted.
+**Bug:** v2.3.48 adds `[[GCAL_X: {...}]]` marker protocol for bot-to-CEO Telegram calendar commands. interceptGcalMarkers executes these markers when found in bot OUTPUT. Attack: customer types `[[GCAL_DELETE]]` in Zalo DM → bot confused by prompt injection quotes text back → interceptGcalMarkers in sendTelegram executes → CEO's event deleted.
 
 **Fix:** `ensureZaloGcalNeutralizeFix` in main.js injects rewrite `[[GCAL_` → `[GCAL-blocked-` into openzalo inbound.ts, marker: `9BizClaw GCAL-NEUTRALIZE PATCH v1`. Anchor: multi-line `if (!rawBody && !hasMedia) { return; }`.
 
