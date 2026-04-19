@@ -131,11 +131,6 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.on('channel-status', (_, data) => callback(data));
   },
 
-  // Appointments (local calendar)
-  listAppointments: () => ipcRenderer.invoke('list-appointments'),
-  createAppointment: (data) => ipcRenderer.invoke('create-appointment', data),
-  updateAppointment: (id, patch) => ipcRenderer.invoke('update-appointment', { id, patch }),
-  deleteAppointment: (id) => ipcRenderer.invoke('delete-appointment', { id }),
   resolveZaloTarget: (query, type) => ipcRenderer.invoke('resolve-zalo-target', { query, type }),
 
   // Google Calendar
