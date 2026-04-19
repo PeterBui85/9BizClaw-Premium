@@ -165,6 +165,22 @@ async function getFreeSlotsForDay(date, slotDurationMinutes) {
 }
 
 // ---------------------------------------------------------------------------
+// List calendars
+// ---------------------------------------------------------------------------
+
+async function listCalendars() {
+  const token = await getAccessToken();
+  const resp = await httpsGet('www.googleapis.com', '/calendar/v3/users/me/calendarList', token);
+  return (resp.items || []).map(c => ({
+    id: c.id,
+    summary: c.summary,
+    primary: !!c.primary,
+    accessRole: c.accessRole,
+    timeZone: c.timeZone,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -173,4 +189,5 @@ module.exports = {
   getFreeBusy,
   createEvent,
   getFreeSlotsForDay,
+  listCalendars,
 };

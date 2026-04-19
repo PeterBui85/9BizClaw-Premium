@@ -18360,7 +18360,24 @@ ipcMain.handle('gcal-disconnect', async () => {
 });
 
 ipcMain.handle('gcal-get-status', async () => {
-  return { connected: gcalAuth.isConnected(), email: gcalAuth.getEmail() };
+  const credentials = require('./gcal/credentials');
+  const hasCreds = !!credentials.load();
+  const connected = hasCreds && gcalAuth.isConnected();
+  return {
+    connected,
+    hasCredentials: hasCreds,
+    email: connected ? gcalAuth.getEmail() : null,
+    storedPlain: credentials.isStoredPlain(),
+  };
+});
+
+ipcMain.handle('gcal-list-calendars', async () => {
+  try {
+    const calendars = await gcalCalendar.listCalendars();
+    return { success: true, calendars };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 ipcMain.handle('gcal-list-events', async (_event, { maxResults } = {}) => {
