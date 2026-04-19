@@ -3195,7 +3195,72 @@
         hdr.style.display = 'none';
       }
     }
-    async function gcalRefreshEvents() { /* filled in Task 22 */ }
+    async function gcalRefreshEvents() {
+      const r = await window.claw.gcalListEvents({ limit: 100 });
+      if (!r.success) {
+        document.getElementById('gcal-today-list').innerHTML = `<div class="gcal-empty">Lỗi: ${esc(r.error)}</div>`;
+        return;
+      }
+      _gcalEvents = r.events || [];
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const todayList = _gcalEvents.filter(e => e.start && e.start.startsWith(today));
+      const weekEnd = new Date(now.getTime() + 7 * 86400e3).toISOString().slice(0, 10);
+      const upcoming = _gcalEvents.filter(e => e.start && !e.start.startsWith(today) && e.start.slice(0, 10) <= weekEnd);
+      document.getElementById('gcal-today-count').textContent = todayList.length;
+      document.getElementById('gcal-upcoming-count').textContent = upcoming.length;
+      document.getElementById('gcal-today-list').innerHTML = todayList.length
+        ? todayList.map(e => gcalEventRowHtml(e)).join('')
+        : '<div class="gcal-empty">Không có lịch hôm nay.</div>';
+      document.getElementById('gcal-upcoming-list').innerHTML = upcoming.length
+        ? upcoming.map(e => gcalEventRowHtml(e)).join('')
+        : '<div class="gcal-empty">Không có lịch sắp tới.</div>';
+      if (typeof mountIcons === 'function') mountIcons();
+    }
+
+    function gcalEventRowHtml(e) {
+      const d = new Date(e.start);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `<div class="gcal-event" onclick="gcalSelectEvent('${escJs(e.id)}')">
+        <div class="gcal-event-time">${hh}:${mm}</div>
+        <div class="gcal-event-title">${esc(e.summary || '(không có tiêu đề)')}</div>
+      </div>`;
+    }
+
+    function gcalSelectEvent(id) {
+      const e = _gcalEvents.find(x => x.id === id);
+      if (!e) return;
+      document.getElementById('gcal-detail-empty').style.display = 'none';
+      const body = document.getElementById('gcal-detail-body');
+      body.style.display = '';
+      const ds = new Date(e.start);
+      const de = new Date(e.end);
+      const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      body.innerHTML = `
+        <div style="padding:16px">
+          <h3 style="margin:0 0 8px">${esc(e.summary || '(không có tiêu đề)')}</h3>
+          <div style="color:var(--text-muted);font-size:13px;margin-bottom:12px">${fmt(ds)} – ${fmt(de)}</div>
+          ${e.location ? `<div style="font-size:13px;margin-bottom:8px"><strong>Địa điểm:</strong> ${esc(e.location)}</div>` : ''}
+          ${e.description ? `<div style="font-size:13px;margin-bottom:12px;white-space:pre-wrap">${esc(e.description)}</div>` : ''}
+          <div style="display:flex;gap:8px;margin-top:16px">
+            ${e.htmlLink ? `<button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('${escJs(e.htmlLink)}')">Mở trong Google</button>` : ''}
+            <button class="btn btn-secondary btn-small" onclick="gcalEditEvent('${escJs(e.id)}')">Sửa</button>
+            <button class="btn btn-secondary btn-small" onclick="gcalDeleteEventClick('${escJs(e.id)}', '${escJs(e.summary || '')}')" style="color:var(--danger)">Xóa</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function gcalDeleteEventClick(id, summary) {
+      if (!confirm(`Xóa lịch "${summary}"?`)) return;
+      const r = await window.claw.gcalDeleteEvent({ eventId: id });
+      if (!r.success) { alert('Lỗi: ' + r.error); return; }
+      await gcalRefreshEvents();
+      document.getElementById('gcal-detail-empty').style.display = '';
+      document.getElementById('gcal-detail-body').style.display = 'none';
+    }
+
     async function gcalOpenCreateModal() { /* filled in Task 23 */ alert('TODO: create modal'); }
     async function gcalOpenSettingsModal() { /* filled in Task 24 */ alert('TODO: settings'); }
 
