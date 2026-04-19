@@ -4713,6 +4713,41 @@ function ensureZaloBlocklistFix() {
   }
 }
 
+// v2.4.0: 9BizClaw GCAL-NEUTRALIZE PATCH — rewrites '[[GCAL_' to
+// '[GCAL-blocked-' in inbound Zalo text so the agent cannot be tricked into
+// quoting customer-typed calendar markers back into its output where
+// interceptGcalMarkers would execute them (spec §Input-side defense).
+// FAIL LOUD on anchor mismatch — security-critical defense.
+function ensureZaloGcalNeutralizeFix() {
+  const fp = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+  if (!fs.existsSync(fp)) return;
+  let content = _readInboundTs(fp);
+  if (content.includes('9BizClaw GCAL-NEUTRALIZE PATCH v1')) return;
+  // Anchor — MUST be exact multi-line form matching other patches
+  const anchor = '  if (!rawBody && !hasMedia) {\n    return;\n  }';
+  if (!content.includes(anchor)) {
+    // FAIL LOUD — neutralization is security-critical. Silent skip leaves
+    // the input-side defense disabled, enabling customer marker injection.
+    const err = '[gcal-neutralize] CRITICAL: anchor not found in inbound.ts — input-side defense NOT active. openzalo may have been updated upstream; rerun spec review.';
+    console.error(err);
+    try { auditLog('gcal_neutralize_anchor_missing', { path: fp }); } catch {}
+    throw new Error('GCAL_NEUTRALIZE_ANCHOR_MISSING');
+  }
+  const injection = `
+  // === 9BizClaw GCAL-NEUTRALIZE PATCH v1 ===
+  // Rewrite '[[GCAL_' to '[GCAL-blocked-' in all inbound text so the agent
+  // cannot be tricked into quoting customer-typed calendar markers back
+  // into its output where interceptGcalMarkers would execute them.
+  if (typeof rawBody === 'string' && rawBody.includes('[[GCAL_')) {
+    rawBody = rawBody.replace(/\\[\\[GCAL_/g, '[GCAL-blocked-');
+  }
+  // === END 9BizClaw GCAL-NEUTRALIZE PATCH v1 ===
+`;
+  content = content.replace(anchor, anchor + injection);
+  _writeInboundTs(fp, content);
+  console.log('[gcal-neutralize] injected into inbound.ts');
+}
+
 // 9BizClaw PAUSE PATCH: When CEO/staff types /pause in Zalo, bot stops
 // replying for 30 min so human can take over. Also auto-detect staff reply.
 //
@@ -6781,6 +6816,8 @@ async function _startOpenClawImpl() {
   ensureZaloSenderDedupFix();
   ensureZaloGroupSettingsFix();
   ensureZaloRagFix();   // depends on group-settings anchor
+  // v2.4.0: GCAL-NEUTRALIZE — fails LOUD if anchor missing (security-critical).
+  ensureZaloGcalNeutralizeFix();
   // Force-one-message PART 2+3: patches inbound.ts (include in batch)
   // PART 1 (channel.ts) uses direct fs I/O internally — safe.
   ensureOpenzaloForceOneMessageFix();
@@ -8953,6 +8990,9 @@ async function _ensureZaloPluginImpl() {
           try { ensureZaloSenderDedupFix(); } catch (e) { console.warn('[ensureZaloPlugin] SenderDedup patch error:', e?.message); }
           try { ensureZaloGroupSettingsFix(); } catch (e) { console.warn('[ensureZaloPlugin] GroupSettings patch error:', e?.message); }
           try { ensureZaloRagFix(); } catch (e) { console.warn('[ensureZaloPlugin] RAG patch error:', e?.message); }
+          // v2.4.0: GCAL-NEUTRALIZE — intentionally NOT wrapped in try/catch.
+          // Security-critical input-side defense must fail LOUD on anchor miss.
+          ensureZaloGcalNeutralizeFix();
           _zaloReady = true;
           return;
         } catch (e) {
