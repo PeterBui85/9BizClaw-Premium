@@ -805,16 +805,16 @@ function seedWorkspace() {
     // Archetype id → mix config map (mirrors PERSONA_PRESETS in wizard.html).
     // Traits use the 15 scientific slugs (Big Five + service-specific).
     const ARCHETYPE_TO_MIX = {
-      'chi-ban-hang-mien-tay': { region: 'tay',         voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['am-ap','thuc-te','kien-nhan','chu-dao'],            formality: 4 },
-      'em-sale-bds-sg':        { region: 'nam',         voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['nang-dong','chu-dong','chuyen-nghiep','chu-dao'],   formality: 6 },
-      'co-giao-ha-noi':        { region: 'bac',         voice: 'chi-trung-nien',  customer: 'anh-chi',   traits: ['chin-chu','kien-nhan','chu-dao','tinh-te'],         formality: 8 },
-      'duoc-si-an-can':        { region: 'trung-tinh',  voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['chin-chu','dong-cam','diem-tinh','chu-dao'],        formality: 6 },
-      'chi-spa-nhe-nhang':     { region: 'trung-tinh',  voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['tinh-te','am-ap','diem-tinh','linh-hoat'],          formality: 7 },
-      'anh-tho-sua-xe':        { region: 'nam',         voice: 'em-nam-tre',      customer: 'anh-chi',   traits: ['thang-than','thuc-te','chu-dao','than-thien'],      formality: 4 },
-      'co-le-tan-khach-san':   { region: 'bac',         voice: 'em-nu-tre',       customer: 'quy-khach', traits: ['tinh-te','chuyen-nghiep','chin-chu','linh-hoat'],  formality: 10 },
-      'anh-sale-oto':          { region: 'trung-tinh',  voice: 'em-nam-tre',      customer: 'anh-chi',   traits: ['chuyen-nghiep','chu-dong','chu-dao','linh-hoat'],  formality: 7 },
-      'chi-chu-boutique':      { region: 'nam',         voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['sang-tao','tinh-te','am-ap','linh-hoat'],           formality: 6 },
-      'anh-ky-thuat-cong-nghe':{ region: 'trung-tinh',  voice: 'em-nam-tre',      customer: 'anh-chi',   traits: ['chuyen-nghiep','kien-nhan','thuc-te','chu-dao'],   formality: 6 },
+      'chi-ban-hang-mien-tay': { voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['am-ap','thuc-te','kien-nhan','chu-dao'],            formality: 4 },
+      'em-sale-bds-sg':        { voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['nang-dong','chu-dong','chuyen-nghiep','chu-dao'],   formality: 6 },
+      'co-giao-ha-noi':        { voice: 'chi-trung-nien',  customer: 'anh-chi',   traits: ['chin-chu','kien-nhan','chu-dao','tinh-te'],         formality: 8 },
+      'duoc-si-an-can':        { voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['chin-chu','dong-cam','diem-tinh','chu-dao'],        formality: 6 },
+      'chi-spa-nhe-nhang':     { voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['tinh-te','am-ap','diem-tinh','linh-hoat'],          formality: 7 },
+      'anh-tho-sua-xe':        { voice: 'em-nam-tre',      customer: 'anh-chi',   traits: ['thang-than','thuc-te','chu-dao','than-thien'],      formality: 4 },
+      'co-le-tan-khach-san':   { voice: 'em-nu-tre',       customer: 'quy-khach', traits: ['tinh-te','chuyen-nghiep','chin-chu','linh-hoat'],  formality: 10 },
+      'anh-sale-oto':          { voice: 'em-nam-tre',      customer: 'anh-chi',   traits: ['chuyen-nghiep','chu-dong','chu-dao','linh-hoat'],  formality: 7 },
+      'chi-chu-boutique':      { voice: 'em-nu-tre',       customer: 'anh-chi',   traits: ['sang-tao','tinh-te','am-ap','linh-hoat'],           formality: 6 },
+      'anh-ky-thuat-cong-nghe':{ voice: 'em-nam-tre',      customer: 'anh-chi',   traits: ['chuyen-nghiep','kien-nhan','thuc-te','chu-dao'],   formality: 6 },
     };
 
     if (!fs.existsSync(mixJsonPath)) {
@@ -836,7 +836,6 @@ function seedWorkspace() {
       // Fresh install default
       if (!mixToSeed) {
         mixToSeed = {
-          region: 'trung-tinh',
           voice: 'em-nu-tre',
           customer: 'anh-chi',
           traits: ['am-ap', 'chu-dao', 'chuyen-nghiep'],
@@ -10312,7 +10311,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
 
 // Save personalization (industry, tone, pronouns)
 // Compile a persona mix config into a human-readable Markdown prompt that
-// the bot reads on bootstrap. Mix contains: region, voice, customer, traits[],
+// the bot reads on bootstrap. Mix contains: voice, customer, traits[],
 // formality (1-10), greeting/closing/phrases (optional custom text).
 // Bot reads the compiled file (not the raw JSON) to get concrete instructions
 // + signature phrases it can apply naturally.

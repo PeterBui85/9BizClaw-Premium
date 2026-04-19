@@ -374,10 +374,6 @@
     .avatar-wrap.failed .avatar-fallback { display:inline-flex; }
     .schedule-icon-wrap { width:36px; height:36px; border-radius:10px; background:var(--bg); border:1px solid var(--border); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--accent, #4ea1ff); }
     /* Activity FAB (floating button) — shows on non-overview pages */
-    .activity-fab { position:fixed; bottom:20px; right:20px; width:48px; height:48px; border-radius:50%; background:var(--accent, #4ea1ff); color:#fff; border:none; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.4); display:none; align-items:center; justify-content:center; z-index:90; transition:transform 0.15s; }
-    .activity-fab:hover { transform:scale(1.08); }
-    .activity-fab .fab-badge { position:absolute; top:-4px; right:-4px; background:var(--danger,#e74c3c); color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:9px; display:flex; align-items:center; justify-content:center; padding:0 4px; border:2px solid var(--bg); }
-    body.compact-layout .activity-fab { display:flex; }
     body.compact-layout .activity-panel { display:none; }
     /* Activity drawer (popover from right) */
     .activity-drawer { position:fixed; top:0; right:-340px; width:320px; height:100vh; background:var(--bg); border-left:1px solid var(--border); z-index:95; transition:right 0.25s ease; display:flex; flex-direction:column; box-shadow:-8px 0 24px rgba(0,0,0,0.3); }
@@ -1931,20 +1927,11 @@
           </div>
         </div>
 
-        <!-- Stat cards -->
-        <div class="ov-stats" id="ov-stats">
-          <div class="ov-stat">
-            <div class="ov-stat-num" id="ov-stat-customers"><span class="skeleton skeleton-num"></span></div>
-            <div class="ov-stat-label">Khách mới Zalo hôm nay <span class="tip" data-tooltip="Số khách Zalo mới nhắn tin hôm nay">?</span></div>
-          </div>
-          <div class="ov-stat">
-            <div class="ov-stat-num" id="ov-stat-events"><span class="skeleton skeleton-num"></span></div>
-            <div class="ov-stat-label">Sự kiện hôm nay <span class="tip" data-tooltip="Tổng hoạt động bot ghi nhận hôm nay">?</span></div>
-          </div>
-          <div class="ov-stat">
-            <div class="ov-stat-num" id="ov-stat-cron"><span class="skeleton skeleton-num"></span></div>
-            <div class="ov-stat-label">Cron OK hôm nay <span class="tip" data-tooltip="Số lịch tự động đã chạy thành công hôm nay">?</span></div>
-          </div>
+        <!-- Compact today line -->
+        <div class="ov-today" id="ov-today" style="display:flex;gap:18px;flex-wrap:wrap;padding:10px 14px;margin:0 0 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--text-muted)">
+          <span><strong id="ov-stat-customers" style="color:var(--text);font-variant-numeric:tabular-nums">–</strong> khách mới Zalo</span>
+          <span><strong id="ov-stat-events" style="color:var(--text);font-variant-numeric:tabular-nums">–</strong> sự kiện</span>
+          <span><strong id="ov-stat-cron" style="color:var(--text);font-variant-numeric:tabular-nums">–</strong> cron OK</span>
         </div>
 
         <!-- 2-column: Alerts + Recent customers -->
@@ -2224,7 +2211,9 @@
             <div class="page-sub">Quản lý nhóm, bạn bè và chế độ trả lời</div>
             <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-zalo" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-zalo-text">Đang kiểm tra kết nối...</span></span></div>
           </div>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn btn-secondary btn-small" onclick="refreshZaloCache()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đồng bộ</button>
+            <button class="btn btn-small zalo-save-btn" onclick="saveZaloManager()" style="display:inline-flex;align-items:center;gap:6px;background:#16a34a;color:#fff"><span data-icon="save" data-icon-size="14"></span>Lưu cấu hình</button>
             <button class="btn btn-secondary btn-small" onclick="recheckZaloFull()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
             <button class="btn btn-secondary btn-small" id="reconnect-zalo-btn" onclick="reconnectZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
             <button class="btn btn-secondary btn-small" id="zalo-pause-btn" onclick="toggleZaloPause()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="zalo-pause-label">Tạm dừng</span></button>
@@ -2296,10 +2285,6 @@
               </div>
               <div id="zalo-owner-dashboard-status" style="display:none;font-size:10px;margin-top:4px"></div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
-              <button class="btn btn-secondary btn-small" onclick="refreshZaloCache()" style="display:inline-flex;align-items:center;gap:6px;justify-content:center;font-size:12px"><span data-icon="refresh-cw" data-icon-size="13"></span>Đồng bộ</button>
-              <button class="btn btn-small zalo-save-btn" onclick="saveZaloManager()" style="display:inline-flex;align-items:center;gap:6px;justify-content:center;background:#16a34a;color:#fff;font-size:12px"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
-            </div>
           </div>
 
           <!-- RIGHT: Groups/Friends tabs -->
@@ -2350,7 +2335,7 @@
         </div>
 
         <div id="visibility-migration-banner" style="display:none; padding:12px 16px; background:#fff8e1; border-left:3px solid #ffa000; margin-bottom:12px; border-radius:4px; color:#333">
-          <strong>Mới v2.4.0</strong>: anh/chị đã có thể chọn file nào KHÁCH thấy, file nào CHỈ NHÂN VIÊN hoặc CHỈ CEO.
+          <strong>Mới v2.3.48</strong>: anh/chị đã có thể chọn file nào KHÁCH thấy, file nào CHỈ NHÂN VIÊN hoặc CHỈ CEO.
           Mặc định mọi file hiện tại = Công khai. Vào xem và đánh dấu lại các file có nội dung nhạy cảm.
           <button onclick="dismissVisibilityBanner()" style="margin-left:12px;padding:4px 10px;background:none;border:1px solid #ffa000;border-radius:4px;cursor:pointer;color:#333">Đã hiểu</button>
         </div>
@@ -2430,34 +2415,6 @@
           </div>
         </div>
 
-        <!-- RAG Settings -->
-        <div class="ds-section" style="margin-top:24px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
-          <h3 class="ds-section-title" style="margin:0 0 4px 0">Tìm kiếm tài liệu cho khách</h3>
-          <p class="ds-section-desc" style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted)">Khi khách hỏi gì đó, bot tra cứu tài liệu shop để trả lời chính xác.</p>
-
-          <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:not-allowed;opacity:0.7">
-            <input type="checkbox" id="rag-tier1" checked disabled>
-            <span><strong>Tìm kiếm thông minh</strong> (luôn bật) — local model, miễn phí, hoạt động offline.</span>
-          </label>
-
-          <label style="display:flex;align-items:center;gap:8px;margin:8px 0">
-            <input type="checkbox" id="rag-tier2" onchange="saveRagConfig()">
-            <span><strong>Tự chuẩn hoá câu hỏi khó qua AI</strong> — khi khách gõ thiếu dấu hoặc sai chính tả. Chi phí ~$0.10-3/tháng.</span>
-          </label>
-
-          <div id="rag-tier2-model-row" style="margin-left:26px;display:none">
-            <label style="display:block;margin:4px 0;font-size:12px;color:var(--text-muted)">Model dùng cho rewrite:</label>
-            <select id="rag-rewrite-model" class="zs-select" style="max-width:300px" onchange="saveRagConfig()">
-              <option value="ninerouter/main">main (khuyến nghị nếu anh/chị dùng ChatGPT Plus)</option>
-              <option value="ninerouter/fast">fast (khuyến nghị nếu dùng API key trả tiền)</option>
-            </select>
-          </div>
-
-          <p style="margin-top:12px;font-size:11px;color:var(--text-muted)">
-            Reranker (tăng thêm độ chính xác) — sẽ có ở bản 2.4.
-          </p>
-        </div>
-
       </div>
 
       <!-- PAGE: Tính cách bot (persona mix editor) -->
@@ -2467,17 +2424,6 @@
           <div>
             <h2>Tính cách bot</h2>
             <div class="page-sub">Kết hợp giọng và tính cách để tạo phong cách giao tiếp riêng cho bot. Thay đổi có hiệu lực ngay sau khi lưu.</div>
-          </div>
-        </div>
-
-        <div class="persona-section">
-          <div class="persona-label">Vùng miền</div>
-          <div class="persona-chips" data-pgroup="region">
-            <button type="button" class="persona-chip" data-pvalue="bac">Miền Bắc</button>
-            <button type="button" class="persona-chip" data-pvalue="trung">Miền Trung</button>
-            <button type="button" class="persona-chip" data-pvalue="nam">Miền Nam</button>
-            <button type="button" class="persona-chip" data-pvalue="tay">Miền Tây</button>
-            <button type="button" class="persona-chip" data-pvalue="trung-tinh">Trung tính</button>
           </div>
         </div>
 
@@ -3105,16 +3051,6 @@
         while (list.children.length > 50) list.lastChild.remove();
       });
       _activityCount++;
-      // Show unread badge on FAB when drawer closed
-      const drawerOpen = document.getElementById('activity-drawer')?.classList.contains('show');
-      if (!drawerOpen && document.body.classList.contains('compact-layout')) {
-        const unread = _activityCount - _activitySeen;
-        const badge = document.getElementById('activity-fab-badge');
-        if (badge && unread > 0) {
-          badge.textContent = unread > 9 ? '9+' : unread;
-          badge.style.display = 'flex';
-        }
-      }
     }
 
     // Theme toggle
@@ -3160,8 +3096,6 @@
       backdrop.classList.toggle('show', willShow);
       if (willShow) {
         _activitySeen = _activityCount;
-        const badge = document.getElementById('activity-fab-badge');
-        if (badge) badge.style.display = 'none';
       }
     }
 
@@ -3598,7 +3532,6 @@
     //  PERSONA MIX — Tính cách bot
     // ============================================
     let _personaMix = {
-      region: 'trung-tinh',
       voice: 'em-nu-tre',
       customer: 'anh-chi',
       traits: ['am-ap', 'chu-dao', 'chuyen-nghiep'],
@@ -3658,7 +3591,7 @@
     }
 
     function syncPersonaMixUI() {
-      ['region', 'voice', 'customer'].forEach(group => {
+      ['voice', 'customer'].forEach(group => {
         document.querySelectorAll(`#page-persona-mix .persona-chips[data-pgroup="${group}"] .persona-chip`).forEach(chip => {
           chip.classList.toggle('is-selected', chip.getAttribute('data-pvalue') === _personaMix[group]);
         });
@@ -3685,7 +3618,7 @@
       }
       const addressMap = { 'anh-chi': 'anh/chị', 'quy-khach': 'quý khách', 'mình': 'mình' };
       const address = addressMap[_personaMix.customer] || 'anh/chị';
-      const suffix = _personaMix.region === 'tay' ? ' nha' : ' ạ';
+      const suffix = ' ạ';
       const capAddress = address[0].toUpperCase() + address.slice(1);
       let preview;
       if (_personaMix.formality >= 8) {
@@ -4089,19 +4022,22 @@
       knowledgeInitialized = true;
       setupKnowledgeDragDrop();
       setupVisibilityRadios();
-      // v2.4.0: one-time banner, dismiss-once via localStorage
+      await renderKnowledgeFolders();
+      await refreshKnowledgeFiles();
+      // v2.3.48: one-time banner, only when merchant actually has files to
+      // re-tag (fresh install has nothing to migrate). Dismiss-once via
+      // localStorage. Stamp version in key so a future migration can re-show.
       try {
-        if (!localStorage.getItem('v2.4.0-knowledge-visibility-seen')) {
+        const hasFiles = !!(window._knowledgeHasFiles);
+        if (hasFiles && !localStorage.getItem('v2.3.48-knowledge-visibility-seen')) {
           const el = document.getElementById('visibility-migration-banner');
           if (el) el.style.display = 'block';
         }
       } catch {}
-      await renderKnowledgeFolders();
-      await refreshKnowledgeFiles();
     }
 
     function dismissVisibilityBanner() {
-      try { localStorage.setItem('v2.4.0-knowledge-visibility-seen', String(Date.now())); } catch {}
+      try { localStorage.setItem('v2.3.48-knowledge-visibility-seen', String(Date.now())); } catch {}
       const el = document.getElementById('visibility-migration-banner');
       if (el) el.style.display = 'none';
     }
@@ -4218,38 +4154,12 @@
       } catch (e) { console.warn('refreshKnowledgeCounts:', e); }
     }
 
-    // RAG settings — tier2 toggle + rewrite-model dropdown
-    async function loadRagConfig() {
-      try {
-        if (!window.claw || !window.claw.getRagConfig) return;
-        const cfg = await window.claw.getRagConfig();
-        const t2 = document.getElementById('rag-tier2');
-        const row = document.getElementById('rag-tier2-model-row');
-        const model = document.getElementById('rag-rewrite-model');
-        if (t2) t2.checked = !!cfg.tier2Enabled;
-        if (row) row.style.display = cfg.tier2Enabled ? 'block' : 'none';
-        if (model) model.value = cfg.rewriteModel || 'ninerouter/fast';
-      } catch (e) { console.warn('loadRagConfig:', e); }
-    }
-    async function saveRagConfig() {
-      try {
-        if (!window.claw || !window.claw.setRagConfig) return;
-        const t2El = document.getElementById('rag-tier2');
-        const modelEl = document.getElementById('rag-rewrite-model');
-        const row = document.getElementById('rag-tier2-model-row');
-        const tier2 = !!(t2El && t2El.checked);
-        const model = (modelEl && modelEl.value) || 'ninerouter/fast';
-        if (row) row.style.display = tier2 ? 'block' : 'none';
-        await window.claw.setRagConfig({ tier2Enabled: tier2, rewriteModel: model });
-      } catch (e) { console.warn('saveRagConfig:', e); }
-    }
-    document.addEventListener('DOMContentLoaded', loadRagConfig);
-
     async function refreshKnowledgeFiles() {
       const list = document.getElementById('know-files-list');
       list.innerHTML = '<div class="know-empty">Đang tải...</div>';
       try {
         const files = await window.claw.listKnowledgeFiles(currentKnowledgeCategory);
+        window._knowledgeHasFiles = !!(files && files.length > 0);
         if (!files || files.length === 0) {
           list.innerHTML = `
             <div class="know-empty-guide">
@@ -4308,6 +4218,12 @@
       if (!vis) return alert('Giá trị không hợp lệ');
       const r = await window.claw.setKnowledgeVisibility(docId, vis);
       if (!r || !r.success) return alert('Lỗi: ' + (r && r.error ? r.error : 'unknown'));
+      // v2.3.48: surface index.md regen failure so CEO knows manifest is stale
+      // and can retry. DB update persisted, but bot still cites old tier until
+      // index.md is regenerated.
+      if (r.indexWarning) {
+        alert('Đã đổi tầng trong DB, nhưng manifest index.md chưa cập nhật:\n\n' + r.indexWarning + '\n\nBấm "Đổi tầng" lại để retry.');
+      }
       refreshKnowledgeFiles();
     }
 
