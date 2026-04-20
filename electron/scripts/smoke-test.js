@@ -1025,6 +1025,23 @@ try {
 } catch (e) { fail('G13.generator — require failed', e.message); }
 
 try {
+  const mk = require('../fb/markers.js');
+  const req = ['interceptFbMarkers', 'extractFbMarkers', 'validateSource'];
+  for (const n of req) {
+    if (typeof mk[n] !== 'undefined') pass(`G13.markers.${n} — exported`);
+    else fail(`G13.markers.${n} — missing`, n);
+  }
+} catch (e) { fail('G13.markers — require failed', e.message); }
+
+try {
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes('pending-undo.json')) pass('G13.undo-file — referenced in main.js');
+  else fail('G13.undo-file — missing', 'pending-undo.json not referenced');
+  if (mainText.includes('interceptFbMarkers')) pass('G13.intercept-wired — interceptFbMarkers called in main.js');
+  else fail('G13.intercept-wired — not wired', 'interceptFbMarkers not invoked');
+} catch (e) { fail('G13.undo-intercept — read failed', e.message); }
+
+try {
   const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
   if (mainText.includes("'fb-draft-generator'") || mainText.includes('"fb-draft-generator"')) {
     pass('G14.cron-fb.handler — fb-draft-generator case present');

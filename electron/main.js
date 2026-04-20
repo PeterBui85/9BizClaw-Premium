@@ -11794,6 +11794,144 @@ async function runFbDraftGenerator({ label = 'Tạo draft FB sáng' } = {}) {
   return { ok: true, date: draft.date, mainId: draft.main.id, digestSuppressed };
 }
 
+// =========================================================================
+// FB marker handlers (PUBLISH / SKIP / UNDO) — invoked by fbMarkers.interceptFbMarkers
+// from sendTelegram when CEO replies trigger a bot reply containing [[FB_*]].
+// pending-undo.json tracks post ids within a 60s window for safe reversal.
+// =========================================================================
+function _fbUndoPath() {
+  return path.join(getWorkspace(), 'pending-undo.json');
+}
+function _readUndoList() {
+  try { return JSON.parse(fs.readFileSync(_fbUndoPath(), 'utf-8')); } catch { return []; }
+}
+function _writeUndoList(list) {
+  try { fs.writeFileSync(_fbUndoPath(), JSON.stringify(list, null, 2) + '\n', 'utf-8'); } catch {}
+}
+function _cleanupExpiredUndo() {
+  const list = _readUndoList();
+  const now = Date.now();
+  const kept = list.filter((e) => new Date(e.expiresAt).getTime() > now);
+  if (kept.length !== list.length) _writeUndoList(kept);
+  return kept;
+}
+
+async function _fbHandlePublish({ id }) {
+  try {
+    if (!id) return { ok: false, text: 'Lỗi: thiếu id' };
+    const date = id.slice(0, 10);   // YYYY-MM-DD
+    const draft = fbDrafts.readDraftForDate(date);
+    if (!draft) return { ok: false, text: 'Lỗi: không tìm thấy draft' };
+    const variantId = id;
+    const content = draft.main?.id === variantId
+      ? draft.main
+      : (draft.variants || []).find((v) => v.id === variantId);
+    if (!content) return { ok: false, text: `Lỗi: không tìm thấy variant ${variantId}` };
+
+    const loaded = fbAuth.loadPageToken(safeStorage);
+    if (!loaded) return { ok: false, text: 'Chưa kết nối FB — mở wizard reconnect' };
+
+    let mediaFbids = [];
+    if (content.imageHint && content.imageHint.startsWith('knowledge/')) {
+      const imgPath = path.join(getWorkspace(), content.imageHint);
+      if (fs.existsSync(imgPath)) {
+        try {
+          const up = await fbGraph.uploadPhoto(loaded.config.pageId, loaded.token, { filePath: imgPath });
+          if (up.id) mediaFbids = [up.id];
+        } catch (e) {
+          console.warn('[fb publish] photo upload failed, text-only fallback:', e.message);
+        }
+      }
+    }
+
+    const res = await fbGraph.postToFeed(loaded.config.pageId, loaded.token, {
+      message: content.message, mediaFbids,
+    });
+    const postId = res.id || res.post_id;
+
+    fbDrafts.markStatus(date, variantId, 'published');
+
+    try {
+      const logDir = path.join(getWorkspace(), 'logs');
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.appendFileSync(path.join(logDir, 'fb-posts-log.jsonl'),
+        JSON.stringify({ t: new Date().toISOString(), postId, draftId: variantId, angle: content.angle, imageHint: content.imageHint || null }) + '\n');
+    } catch {}
+
+    // Register 60s undo window
+    const undoList = _cleanupExpiredUndo();
+    undoList.push({ postId, variantId, expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    _writeUndoList(undoList);
+
+    try { auditLog('fb_published', { postId, draftId: variantId }); } catch {}
+
+    const pageUrl = `https://www.facebook.com/${loaded.config.pageId}/posts/${String(postId).split('_').pop()}`;
+    return {
+      ok: true,
+      postId,
+      text: `Đã đăng ${variantId}. Link: ${pageUrl}\n(Hủy trong 60s: reply "hủy")`,
+    };
+  } catch (e) {
+    console.error('[fb publish] failed:', e);
+    try {
+      if (e.status === 401 || e.status === 403) {
+        const loaded = fbAuth.loadPageToken(safeStorage);
+        if (loaded) {
+          const dbg = await fbGraph.debugToken(loaded.token, loaded.config.appId, loaded.secret);
+          if (!dbg?.data?.is_valid) {
+            await sendCeoAlert('[FB] Token invalid — vào Dashboard reconnect.');
+          }
+        }
+      }
+    } catch {}
+    return { ok: false, text: `Lỗi đăng FB: ${e.message}` };
+  }
+}
+
+async function _fbHandleSkip({ id }) {
+  try {
+    if (!id) return { ok: false, text: 'Lỗi: thiếu id' };
+    const date = id.slice(0, 10);
+    const draft = fbDrafts.readDraftForDate(date);
+    if (!draft) return { ok: false, text: 'Lỗi: không tìm thấy draft' };
+    // Mark all entries as skipped
+    fbDrafts.markStatus(date, `${date}-main`, 'skipped');
+    for (const v of (draft.variants || [])) {
+      fbDrafts.markStatus(date, v.id, 'skipped');
+    }
+    try { auditLog('fb_skipped', { date }); } catch {}
+    return { ok: true, text: 'Đã bỏ qua draft hôm nay.' };
+  } catch (e) {
+    return { ok: false, text: `Lỗi: ${e.message}` };
+  }
+}
+
+async function _fbHandleUndo({ postId }) {
+  try {
+    if (!postId) return { ok: false, text: 'Lỗi: thiếu postId' };
+    const undoList = _cleanupExpiredUndo();
+    const idx = undoList.findIndex((e) => e.postId === postId);
+    if (idx < 0) return { ok: false, text: 'Quá thời gian hủy (60s đã trôi qua).' };
+
+    const loaded = fbAuth.loadPageToken(safeStorage);
+    if (!loaded) return { ok: false, text: 'Chưa kết nối FB.' };
+
+    // DELETE via Graph API
+    const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(postId)}?access_token=${encodeURIComponent(loaded.token)}`, {
+      method: 'DELETE',
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, text: `Lỗi hủy: ${body.error?.message || res.status}` };
+
+    undoList.splice(idx, 1);
+    _writeUndoList(undoList);
+    try { auditLog('fb_undone', { postId }); } catch {}
+    return { ok: true, text: 'Đã hủy post.' };
+  } catch (e) {
+    return { ok: false, text: `Lỗi: ${e.message}` };
+  }
+}
+
 // Manually trigger a cron handler (for "Test ngay" button in Dashboard).
 // CRITICAL: test fires MUST be byte-identical to scheduled cron fires so the
 // customer's test preview matches what they'll receive in production. No
@@ -12524,6 +12662,34 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
   } else if (skipFilter && typeof text === 'string' && text.includes('[[GCAL_')) {
     // Neutralize any marker-looking text so downstream never re-enters intercept.
     text = text.replace(/\[\[GCAL_/g, '[GCAL-blocked-');
+  }
+  // v2.4.1: intercept FB markers ([[FB_PUBLISH|SKIP|UNDO: {...}]]) BEFORE the
+  // output filter runs — marker payloads carry URLs and IDs that would otherwise
+  // trigger filter regex. Source is locked to Telegram CEO chat via ceoChatId
+  // match inside markers.js (fail-closed on channel/chat mismatch).
+  if (!skipFilter && typeof text === 'string' && text.includes('[[FB_')) {
+    try {
+      const tgCfgForFb = await getTelegramConfigWithRecovery();
+      const ceoChatId = tgCfgForFb?.chatId || null;
+      if (ceoChatId) {
+        text = await fbMarkers.interceptFbMarkers(text, {
+          channel: 'telegram', chatId: ceoChatId, senderUserId: null,
+        }, {
+          ceoChatId,
+          workspace: getWorkspace(),
+          handlers: {
+            publish: _fbHandlePublish,
+            skip: _fbHandleSkip,
+            undo: _fbHandleUndo,
+          },
+        });
+      }
+    } catch (e) {
+      console.error('[sendTelegram] FB marker intercept failed:', e.message);
+    }
+  } else if (skipFilter && typeof text === 'string' && text.includes('[[FB_')) {
+    // Neutralize marker-looking text for system alerts (don't execute).
+    text = text.replace(/\[\[FB_/g, '[FB-blocked-');
   }
   // Output filter — same patterns as Zalo transport filter
   if (!skipFilter) {
@@ -18823,6 +18989,7 @@ const fbGraph = require('./fb/graph');
 const fbConfig = require('./fb/config');
 const fbGenerator = require('./fb/generator');
 const fbDrafts = require('./fb/drafts');
+const fbMarkers = require('./fb/markers');
 let _fbOauthInFlight = null;
 let _fbGeneratorFailCount = 0;
 
