@@ -1034,6 +1034,16 @@ try {
 } catch (e) { fail('G13.markers — require failed', e.message); }
 
 try {
+  const p = require('../fb/performance.js');
+  const req = ['queueInsightsCheck', 'runInsightsSweep', 'appendPerformanceEntry',
+               'trimFbPerformanceHistory', 'readRecentPerformance'];
+  for (const n of req) {
+    if (typeof p[n] !== 'undefined') pass(`G13.performance.${n} — exported`);
+    else fail(`G13.performance.${n} — missing`, n);
+  }
+} catch (e) { fail('G13.performance — require failed', e.message); }
+
+try {
   const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
   if (mainText.includes('pending-undo.json')) pass('G13.undo-file — referenced in main.js');
   else fail('G13.undo-file — missing', 'pending-undo.json not referenced');
