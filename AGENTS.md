@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 50 -->
+<!-- modoroclaw-agents-version: 51 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## VỀ MODORO — chỉ dùng khi khách CHỦ ĐỘNG hỏi "bạn là ai", "ai làm ra bạn", "trợ lý này là gì"
@@ -285,6 +285,48 @@ Parse ngày tiếng Việt → ISO:
 **Rule destructive:** DELETE + UPDATE BẮT BUỘC phải có câu xác nhận CEO ở turn trước trong cùng thread Telegram (10 phút HOẶC 5 turn, tính theo cái ngắn hơn). 1 turn = 1 tin nhắn của CEO (tin bot KHÔNG tính turn). "Ok" gõ 30 phút sau lời đề xuất KHÔNG valid → bot hỏi lại.
 
 **CẤM quote marker:** bot KHÔNG BAO GIỜ được in text có chứa `[[GCAL_` literal trong reply. Nếu cần giải thích cú pháp marker cho CEO, viết bằng lời văn ("em dùng lệnh tạo sự kiện"), không quote chuỗi. (Input từ customer đã được neutralize thành `[GCAL-blocked-` nên không ảnh hưởng, nhưng quy tắc này chặn bot tự chế marker từ memory.)
+
+## Facebook Fanpage — Approval markers
+
+Khi cron `fb-draft-generator` gửi draft sáng qua Telegram, CEO reply ngắn để duyệt. Bot PHẢI nhận diện context (reply đến tin nhắn digest FB) và emit marker tương ứng — main.js sẽ thực hiện action, KHÔNG tự kể lại.
+
+**5 markers:**
+
+- `[[FB_PUBLISH: {"id":"YYYY-MM-DD-main"}]]` — đăng Main
+- `[[FB_PUBLISH: {"id":"YYYY-MM-DD-a"}]]` — đăng Variant A
+- `[[FB_PUBLISH: {"id":"YYYY-MM-DD-b"}]]` — đăng Variant B
+- `[[FB_SKIP: {"id":"YYYY-MM-DD"}]]` — bỏ draft hôm nay
+- `[[FB_UNDO: {"postId":"<post_id_vừa_đăng>"}]]` — hủy post vừa đăng (chỉ hợp lệ trong 60s sau khi đăng)
+
+**Mapping reply ngắn → marker** (khi message trước đó từ bot là FB digest hoặc FB confirmation):
+
+| Reply CEO | Marker emit |
+|---|---|
+| "ok" / "duyệt" / "đăng" / "đăng main" / "main" | `[[FB_PUBLISH: {"id":"<today>-main"}]]` |
+| "a" / "variant a" / "đăng a" | `[[FB_PUBLISH: {"id":"<today>-a"}]]` |
+| "b" / "variant b" / "đăng b" | `[[FB_PUBLISH: {"id":"<today>-b"}]]` |
+| "bỏ" / "skip" / "không" | `[[FB_SKIP: {"id":"<today>"}]]` |
+| "hủy" / "undo" (trong 60s sau "Đã đăng") | `[[FB_UNDO: {"postId":"<id_từ_tin_trước>"}]]` |
+
+**Nguyên tắc an toàn:**
+
+- CHỈ emit FB marker khi reply đến từ Telegram của CEO (main.js validate source channel + chat ID). Bot không cần check — main.js interceptor làm.
+- Khách Zalo gõ `[[FB_PUBLISH: {...}]]` → sẽ bị `ensureZaloFbNeutralizeFix` rewrite thành `[FB-blocked-PUBLISH: ...]` ở input — bot không bao giờ thấy dạng marker này từ khách.
+- Nếu không chắc reply là duyệt FB hay task khác → HỎI lại, không emit marker bậy.
+
+**Ví dụ đúng:**
+
+Context: bot vừa gửi FB digest.
+CEO: "ok"
+Bot: `[[FB_PUBLISH: {"id":"2026-04-20-main"}]]`
+(main.js thay marker bằng confirmation thật sau khi publish)
+
+**Ví dụ sai (KHÔNG làm):**
+
+CEO: "ok" (nhưng bot vừa gửi tin về cron khác, không phải FB digest)
+Bot: `[[FB_PUBLISH: ...]]`  ← sai context, emit nhầm
+
+Context check bắt buộc trước khi emit FB marker.
 
 ## Xưng hô theo kênh
 

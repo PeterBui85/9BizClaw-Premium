@@ -1034,6 +1034,20 @@ try {
   } else fail('G14.cron-fb.import — not imported', 'require fb/generator');
 } catch (e) { fail('G14.cron-fb — read failed', e.message); }
 
+try {
+  const agents = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
+  const requiredSnippets = [
+    'FB_PUBLISH',
+    'FB_SKIP',
+    'FB_UNDO',
+    'modoroclaw-agents-version: 51',
+  ];
+  for (const s of requiredSnippets) {
+    if (agents.includes(s)) pass(`G14.agents-fb.${s.replace(/[^a-zA-Z0-9]/g, '_')} — present`);
+    else fail(`G14.agents-fb.${s} — missing from AGENTS.md`, s);
+  }
+} catch (e) { fail('G14.agents-fb — read failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
