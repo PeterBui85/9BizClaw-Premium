@@ -3288,9 +3288,14 @@
     async function gcalRefreshEvents() {
       if (!_gcalFc) {
         gcalInitFullCalendar();
-      } else {
-        _gcalFc.refetchEvents();
+        return;
       }
+      // Clear selection + remove local events TRƯỚC khi refetch.
+      // Phòng trường hợp FC giữ placeholder từ selectMirror hoặc event cũ
+      // mà không clear đúng cách → CEO thấy "double event" sau khi tạo/sửa.
+      try { _gcalFc.unselect(); } catch {}
+      try { _gcalFc.getEvents().forEach(e => e.remove()); } catch {}
+      _gcalFc.refetchEvents();
     }
 
     function gcalInitFullCalendar() {
@@ -3299,12 +3304,16 @@
       _gcalFc = new FullCalendar.Calendar(el, {
         initialView: 'timeGridWeek',
         locale: 'vi',
-        timeZone: 'Asia/Ho_Chi_Minh',
+        // KHÔNG set timeZone vì FC 6.x yêu cầu @fullcalendar/moment-timezone
+        // plugin để hiểu named timezone. Không có plugin → string bị bỏ qua
+        // lặng lẽ → startStr/endStr format không ổn định → trigger HTTP 400
+        // khi query Google. Để default 'local' + UTC-ISOString ở client side
+        // (xem events callback) là an toàn nhất.
         firstDay: 1,           // tuần bắt đầu Thứ Hai
         slotMinTime: '07:00:00',
         slotMaxTime: '21:00:00',
         nowIndicator: true,
-        height: '100%',
+        height: 'auto',        // tự fit theo container, tránh 100% calc sai khi hint bar chiếm 40px
         expandRows: true,
         allDaySlot: true,
         // 2 views duy nhất — Tuần (mặc định) + Tháng. Bỏ Day + List để CEO
@@ -3324,8 +3333,13 @@
         eventResizableFromStart: false,
         eventDurationEditable: true, // kéo cạnh dưới để đổi thời lượng
         selectable: true,       // click-drag vào slot trống = tạo event
-        selectMirror: true,
+        selectMirror: false,    // KHÔNG hiện ghost event — gây confusion "double event" sau khi tạo
+        unselectAuto: true,     // auto clear selection khi click ra ngoài
         dayMaxEvents: 3,        // hiện tối đa 3 event/ngày, còn lại gộp "+N thêm"
+        datesSet: (info) => {
+          // Log để CEO check DevTools xem prev/next có fire không
+          console.log('[gcalFc] datesSet', info.view.type, info.startStr, '→', info.endStr);
+        },
         events: async (info, success, failure) => {
           try {
             // Dùng toISOString() từ Date object — Google chấp nhận UTC Z-suffix
@@ -3406,6 +3420,7 @@
     }
 
     function gcalOpenCreateModalFromSlot(startDate, endDate) {
+      _gcalResetEventModalInputs();
       _gcalEditingId = null;
       document.getElementById('gcal-event-modal-title').textContent = 'Thêm lịch hẹn';
       document.getElementById('gcal-ev-submit').textContent = 'Tạo';
@@ -3420,6 +3435,7 @@
       document.getElementById('gcal-ev-location').value = '';
       document.getElementById('gcal-ev-description').value = '';
       document.getElementById('gcal-event-modal').style.display = 'flex';
+      setTimeout(() => { document.getElementById('gcal-ev-summary')?.focus(); }, 50);
     }
 
     // Popover chi tiết khi click event. 2 nút lớn rõ ràng: Sửa + Xoá.
@@ -3500,7 +3516,24 @@
     // --- Create / Edit event modal ---
     let _gcalEditingId = null;
 
+    // Helper: reset tất cả input của event modal về trạng thái mới/enabled/tự focus
+    // Gọi ở đầu gcalOpenCreateModal + gcalOpenCreateModalFromSlot + gcalEditEvent
+    // để không bao giờ còn input bị stuck do state cũ chưa reset.
+    function _gcalResetEventModalInputs() {
+      const ids = ['gcal-ev-summary', 'gcal-ev-start', 'gcal-ev-duration', 'gcal-ev-guests', 'gcal-ev-location', 'gcal-ev-description'];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) { el.disabled = false; el.readOnly = false; }
+      }
+      const submit = document.getElementById('gcal-ev-submit');
+      if (submit) { submit.disabled = false; submit.classList.remove('is-loading'); }
+      // Xóa popover cũ nếu còn sót (z-index 5500 có thể overlay trên modal)
+      const pop = document.getElementById('gcal-event-popover');
+      if (pop) pop.remove();
+    }
+
     function gcalOpenCreateModal() {
+      _gcalResetEventModalInputs();
       _gcalEditingId = null;
       document.getElementById('gcal-event-modal-title').textContent = 'Thêm lịch hẹn';
       document.getElementById('gcal-ev-submit').textContent = 'Tạo';
@@ -3513,11 +3546,13 @@
       document.getElementById('gcal-ev-location').value = '';
       document.getElementById('gcal-ev-description').value = '';
       document.getElementById('gcal-event-modal').style.display = 'flex';
+      setTimeout(() => { document.getElementById('gcal-ev-summary')?.focus(); }, 50);
     }
 
     function gcalEditEvent(id) {
       const e = _gcalEvents.find(x => x.id === id);
       if (!e) return;
+      _gcalResetEventModalInputs();
       _gcalEditingId = id;
       document.getElementById('gcal-event-modal-title').textContent = 'Sửa lịch hẹn';
       document.getElementById('gcal-ev-submit').textContent = 'Lưu';
