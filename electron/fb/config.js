@@ -2,6 +2,8 @@
 // Spec: docs/superpowers/specs/2026-04-20-fb-fanpage-posting-autonomy-design.md
 // Responsibility: fb-post-settings.json read/write + path resolution
 
+'use strict';
+
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -49,10 +51,11 @@ function readSettings() {
 }
 
 function writeSettings(settings) {
-  const merged = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+  const existing = readSettings();
+  const merged = Object.assign({}, existing, settings || {});
   const p = getSettingsPath();
   try { fs.mkdirSync(path.dirname(p), { recursive: true }); } catch {}
-  fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf-8');
+  fs.writeFileSync(p, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
   return merged;
 }
 
