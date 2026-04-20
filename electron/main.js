@@ -18692,9 +18692,12 @@ ipcMain.handle('gcal-list-events', async (_event, opts = {}) => {
     const toISOEnd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T23:59:59+07:00` : s;
     if (dateFrom) dateFrom = toISOStart(dateFrom);
     if (dateTo) dateTo = toISOEnd(dateTo);
+    console.log('[gcal-list-events] dateFrom=', dateFrom, 'dateTo=', dateTo, 'limit=', limit);
     const events = await gcalCalendar.listEvents({ dateFrom, dateTo, limit });
     return { success: true, events };
   } catch (e) {
+    // Log full error for DevTools visibility — silent 400 was confusing for CEO
+    console.error('[gcal-list-events] FAILED:', e?.message || e, 'code=', e?.code);
     if (e.code === 'QUOTA') return { success: false, error: 'Google đang giới hạn — thử lại sau vài phút.' };
     if (e.code === 'UNAUTHORIZED') return { success: false, error: 'Kết nối Google hết hạn — vào Lịch hẹn → Ngắt kết nối → Kết nối lại.' };
     return { success: false, error: e.message };

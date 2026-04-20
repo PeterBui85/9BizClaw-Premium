@@ -1562,6 +1562,29 @@
     .gcal-detail { background:var(--surface); border:1px solid var(--border); border-radius:12px; }
     @media (max-width: 900px) { .gcal-grid { grid-template-columns:1fr; } }
 
+    /* GCal setup wizard — format rõ ràng cho CEO không tech.
+       Nguyên tắc: 1 nút lớn → 3-5 bước số tròn → 1 dòng "Xong khi thấy" xanh → cảnh báo cam nếu cần */
+    .wiz-intro { margin:0 0 14px; font-size:14px; color:var(--text); line-height:1.5; }
+    .wiz-btn-open { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:12px 20px; font-size:14px; font-weight:600; background:var(--accent, #4ea1ff); color:#fff; border:none; border-radius:8px; cursor:pointer; transition:filter 0.15s; }
+    .wiz-btn-open:hover { filter:brightness(1.08); }
+    .wiz-steps { margin:18px 0 4px; display:flex; flex-direction:column; gap:12px; }
+    .wiz-step-item { display:flex; gap:12px; align-items:flex-start; }
+    .wiz-step-num { flex:0 0 28px; width:28px; height:28px; border-radius:50%; background:var(--accent, #4ea1ff); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+    .wiz-step-body { flex:1; min-width:0; font-size:14px; line-height:1.55; color:var(--text); padding-top:3px; }
+    .wiz-step-body strong { color:var(--text); font-weight:600; }
+    .wiz-step-body code { background:var(--bg); padding:2px 7px; border-radius:4px; font-size:12.5px; border:1px solid var(--border); font-family:'SF Mono', Consolas, monospace; }
+    .wiz-step-sub { margin:6px 0 0 0; padding:0; list-style:none; font-size:12.5px; color:var(--text-muted); line-height:1.6; }
+    .wiz-step-sub li { padding-left:16px; position:relative; }
+    .wiz-step-sub li:before { content:"–"; position:absolute; left:0; color:var(--text-muted); }
+    .wiz-success { margin-top:16px; padding:10px 14px; background:rgba(34,197,94,0.1); border-left:3px solid #22c55e; border-radius:6px; font-size:13px; color:var(--text); line-height:1.5; }
+    .wiz-success strong { color:#16a34a; }
+    .wiz-warn { margin-top:12px; padding:10px 14px; background:rgba(245,158,11,0.1); border-left:3px solid #f59e0b; border-radius:6px; font-size:13px; color:var(--text); line-height:1.5; }
+    .wiz-warn strong { color:#b45309; }
+    .wiz-help { margin-top:12px; padding:10px 14px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--text-muted); line-height:1.5; }
+    .wiz-help strong { color:var(--text); }
+    .wiz-copy-row { display:flex; gap:8px; margin-top:8px; align-items:stretch; }
+    .wiz-copy-row code { flex:1; padding:9px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-size:12.5px; font-family:'SF Mono', Consolas, monospace; word-break:break-all; }
+
     /* FullCalendar theme overrides — map FC's CSS vars to our theme tokens */
     #page-calendar.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
     #gcal-connected { flex:1; display:flex; flex-direction:column; min-height:0; }
@@ -3305,14 +3328,22 @@
         dayMaxEvents: 3,        // hiện tối đa 3 event/ngày, còn lại gộp "+N thêm"
         events: async (info, success, failure) => {
           try {
+            // Dùng toISOString() từ Date object — Google chấp nhận UTC Z-suffix
+            // ổn định nhất. info.startStr có thể có format lẫn lộn tùy FC view
+            // + timezone setting, đôi khi gây HTTP 400 bad request.
+            const dateFrom = info.start ? info.start.toISOString() : info.startStr;
+            const dateTo = info.end ? info.end.toISOString() : info.endStr;
+            console.log('[gcalFc events] query', dateFrom, '→', dateTo);
             const r = await window.claw.gcalListEvents({
-              dateFrom: info.startStr,
-              dateTo: info.endStr,
+              dateFrom,
+              dateTo,
               limit: 250,
             });
             if (!r || r.success === false) {
-              alert('Không tải được lịch: ' + (r && r.error ? r.error : 'unknown'));
-              return failure(new Error(r && r.error));
+              const msg = r && r.error ? r.error : 'unknown';
+              console.error('[gcalFc events] backend error:', msg);
+              alert('Không tải được lịch: ' + msg);
+              return failure(new Error(msg));
             }
             _gcalEvents = r.events || [];
             success(_gcalEvents.map(e => ({
@@ -3599,124 +3630,201 @@
     let _gcalStep6Connected = false;
     const GCAL_WIZARD_STEPS = [
       {
-        title: 'Bước 1/6 — Tạo Google Cloud project',
+        title: 'Bước 1/6 — Tạo project ở Google Cloud',
         body: `
-          <p>Google Cloud là "phòng kỹ thuật" của sếp ở Google — mỗi app muốn đọc/ghi lịch phải được tạo dưới dạng project. Mỗi người làm 1 lần duy nhất, sau đó mọi app đều dùng chung project này.</p>
-          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/projectcreate')">Mở trang tạo project</button>
-          <ol style="margin-top:12px;padding-left:20px;line-height:1.7;font-size:13px">
-            <li>Nếu là lần đầu dùng Google Cloud: sếp sẽ thấy màn hình <code>Terms of Service</code> — tick ô đồng ý, chọn Country = Vietnam, bấm <code>AGREE AND CONTINUE</code>.</li>
-            <li><strong>Project name</strong>: đặt tên tùy ý (ví dụ <code>9BizClaw Lich</code>). Không dấu tiếng Việt.</li>
-            <li><strong>Organization</strong>: để <code>No organization</code> (tài khoản cá nhân). Nếu dùng Google Workspace công ty sẽ thấy tên org — chọn cũng được.</li>
-            <li>Bấm nút xanh <code>CREATE</code> ở dưới.</li>
-            <li><strong>Chờ ~30 giây</strong> — góc trên bên phải sẽ hiện popup "Creating project..." rồi "Project created". Đừng đóng tab.</li>
-          </ol>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Dấu hiệu xong:</strong> popup "Project created" + thanh trên cùng đổi tên thành project vừa tạo.<br>
-          <strong>Lưu ý:</strong> Google Calendar API miễn phí — nếu hỏi billing, bỏ qua/skip được.</p>
-        `,
-      },
-      {
-        title: 'Bước 2/6 — Bật Calendar API',
-        body: `
-          <p>Project vừa tạo chưa biết Google Calendar là gì — phải "bật" quyền cho nó trước.</p>
-          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/library/calendar-json.googleapis.com')">Mở trang bật Calendar API</button>
-          <ol style="margin-top:12px;padding-left:20px;line-height:1.7;font-size:13px">
-            <li><strong>Kiểm tra tên project ở thanh trên cùng</strong> (bên cạnh chữ "Google Cloud") — phải đúng project vừa tạo ở Bước 1. Nếu sai → bấm vào, chọn đúng project rồi mới tiếp.</li>
-            <li>Trên trang mở ra, bấm nút xanh <code>ENABLE</code>.</li>
-            <li>Chờ 10-20 giây. Trang tự chuyển sang dashboard của Calendar API.</li>
-          </ol>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Dấu hiệu xong:</strong> nút <code>ENABLE</code> biến mất, thay bằng <code>MANAGE</code> (hoặc thấy biểu đồ Traffic/Errors). Giờ quay lại app này bấm Tiếp.</p>
-        `,
-      },
-      {
-        title: 'Bước 3/6 — OAuth consent screen',
-        body: `
-          <p>Đây là phần khai báo: "khi user đăng nhập vào app, Google hiện màn hình xin quyền gì, tên app là gì".</p>
-          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/consent')">Mở OAuth consent screen</button>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)">Google đổi UI cuối 2024 — 2 flow (mới/cũ) có thể gặp. Làm theo thứ tự dưới, bỏ qua nếu không thấy.</p>
-          <ol style="margin-top:8px;padding-left:20px;line-height:1.7;font-size:13px">
-            <li>Nếu trang có nút lớn <code>GET STARTED</code> hoặc <code>Configure consent screen</code> → bấm vào (UI mới). Nếu không → đã vào form luôn (UI cũ) — tiếp tục bước 2 bên dưới.</li>
-            <li><strong>App name</strong>: điền tên bất kỳ (ví dụ <code>9BizClaw</code>).</li>
-            <li><strong>User support email</strong>: chọn email sếp từ dropdown.</li>
-            <li><strong>Audience</strong> (chỗ hay lạc — sếp đang tìm "External" ở đây):
-              <ul style="margin-top:4px;padding-left:20px">
-                <li>Chọn radio <code>External</code>.</li>
-                <li>Nếu <code>Internal</code> bị mờ/greyed → bình thường, chỉ org Google Workspace mới chọn được. Vẫn chọn <code>External</code>.</li>
-              </ul>
-            </li>
-            <li><strong>Developer contact email</strong>: điền email sếp.</li>
-            <li>Bấm <code>CREATE</code>. UI cũ có thể dẫn sếp qua 4 màn <code>Scopes → Test users → Summary</code> → bấm <code>SAVE AND CONTINUE</code> qua hết, để trống mọi field.</li>
-            <li><strong>BƯỚC KHÓ — PUBLISH APP:</strong>
-              <ul style="margin-top:4px;padding-left:20px">
-                <li><strong>UI mới:</strong> sidebar trái có tab <code>Audience</code> → bấm vào → thấy "Publishing status: <code>Testing</code>" → bấm nút xanh <code>PUBLISH APP</code> → popup xác nhận → <code>CONFIRM</code>.</li>
-                <li><strong>UI cũ:</strong> trên trang OAuth consent screen thấy luôn nút <code>PUBLISH APP</code> → bấm → <code>CONFIRM</code>.</li>
-                <li><strong>Tại sao bắt buộc:</strong> nếu bỏ qua bước publish, refresh token sẽ hết hạn sau 7 ngày → CEO phải đăng nhập lại mỗi tuần. Publish xong thì token sống vĩnh viễn.</li>
-              </ul>
-            </li>
-          </ol>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Dấu hiệu xong:</strong> Publishing status đổi từ <code>Testing</code> thành <code>In production</code>.</p>
-        `,
-      },
-      {
-        title: 'Bước 4/6 — Tạo OAuth Client ID',
-        body: `
-          <p>Bước cuối ở Google Cloud — tạo "chìa khóa" (Client ID + Secret) cho 9BizClaw dùng.</p>
-          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/oauthclient')">Mở trang Clients</button>
-          <ol style="margin-top:12px;padding-left:20px;line-height:1.7;font-size:13px">
-            <li><strong>⚠️ Kiểm tra project ở thanh trên cùng</strong> — bên cạnh chữ "Google Cloud". PHẢI đúng project sếp tạo ở Bước 1 (ví dụ <code>9BizClaw Lich</code>).<br>
-              <small style="color:var(--text-muted)">Nếu thấy <code>Default Gemini Project</code> hoặc tên project khác → bấm vào dropdown project, chọn đúng project. Tạo Client ở sai project = làm lại từ đầu.</small>
-            </li>
-            <li><strong>Bấm nút <code>+ Create client</code></strong> (phía trên bảng "OAuth 2.0 Client IDs"). Bảng hiện "No OAuth clients to display" là đúng (chưa tạo bao giờ).</li>
-            <li><strong>Application type</strong>: chọn <code>Web application</code> từ dropdown (KHÔNG chọn Desktop/iOS/Android/TVs).</li>
-            <li><strong>Name</strong>: đặt bất kỳ (ví dụ <code>9BizClaw Client</code>). Không ảnh hưởng gì.</li>
-            <li><strong>Authorized JavaScript origins</strong>: <strong>để TRỐNG</strong> (không bấm + ADD URI ở mục này).</li>
-            <li><strong>Authorized redirect URIs</strong> — bấm <code>+ ADD URI</code> và dán ĐÚNG chuỗi này (copy từ nút dưới, không gõ tay):<br>
-              <div style="display:flex;gap:8px;margin-top:6px">
-                <code id="gcal-redirect-uri" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:12px">http://127.0.0.1:20199/gcal/callback</code>
-                <button class="btn btn-secondary btn-small" onclick="gcalCopyRedirect()">Copy</button>
+          <p class="wiz-intro">Bấm nút dưới → điền 1 cái tên → bấm <strong>CREATE</strong>.</p>
+          <button class="wiz-btn-open" onclick="gcalOpenExternal('https://console.cloud.google.com/projectcreate')">Mở trang tạo project</button>
+          <div class="wiz-steps">
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">1</div>
+              <div class="wiz-step-body">
+                Lần đầu dùng Google Cloud → hiện màn <strong>Terms of Service</strong>
+                <ul class="wiz-step-sub">
+                  <li>Tick ô đồng ý</li>
+                  <li>Country: <code>Vietnam</code></li>
+                  <li>Bấm <code>AGREE AND CONTINUE</code></li>
+                </ul>
               </div>
-              <small style="color:var(--text-muted)">Lưu ý: <strong>http</strong> không phải https, <strong>127.0.0.1</strong> không phải localhost. Sai 1 ký tự là không login được.</small>
-            </li>
-            <li>Bấm nút xanh <code>CREATE</code> ở cuối form.</li>
-            <li><strong>Popup "OAuth client created" xuất hiện</strong> — có 2 chuỗi:
-              <ul style="margin-top:4px;padding-left:20px">
-                <li><strong>Client ID</strong> (kết thúc bằng <code>.apps.googleusercontent.com</code>)</li>
-                <li><strong>Client Secret</strong> (bắt đầu bằng <code>GOCSPX-</code>)</li>
-              </ul>
-              <strong style="color:var(--danger, #e74c3c)">ĐỪNG ĐÓNG POPUP NÀY.</strong> Nút <code>DOWNLOAD JSON</code> bấm cũng được nhưng không cần — chỉ copy 2 chuỗi trên sang Bước 5.
-            </li>
-          </ol>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Lỡ đóng popup?</strong> Vào tab <code>Clients</code> ở sidebar, bấm vào client vừa tạo (cột Name), bấm biểu tượng <code>👁</code> hoặc <code>Copy</code> cạnh Client ID để lấy lại. Secret phải bấm <code>RESET SECRET</code> tạo mới (secret cũ bị huỷ — nhớ dán lại vào Bước 5 sau khi reset).</p>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">2</div>
+              <div class="wiz-step-body"><strong>Project name</strong>: đặt tùy ý, không dấu tiếng Việt (ví dụ <code>9BizClaw Lich</code>)</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">3</div>
+              <div class="wiz-step-body"><strong>Organization</strong>: để <code>No organization</code></div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">4</div>
+              <div class="wiz-step-body">Bấm nút xanh <code>CREATE</code> → chờ ~30 giây</div>
+            </div>
+          </div>
+          <div class="wiz-success"><strong>Xong khi thấy:</strong> popup "Project created" ở góc trên bên phải + thanh trên cùng đổi tên thành project vừa tạo.</div>
+          <div class="wiz-help">Google Calendar API miễn phí. Nếu hỏi billing — bỏ qua/Skip được.</div>
+        `,
+      },
+      {
+        title: 'Bước 2/6 — Bật quyền đọc lịch',
+        body: `
+          <p class="wiz-intro">Bấm nút dưới → bấm <strong>ENABLE</strong>. Chỉ 1 nút duy nhất.</p>
+          <button class="wiz-btn-open" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/library/calendar-json.googleapis.com')">Mở trang bật Calendar API</button>
+          <div class="wiz-warn"><strong>Kiểm tra thanh trên cùng trước:</strong> tên project (cạnh chữ "Google Cloud") phải đúng project sếp tạo ở Bước 1. Nếu sai → bấm dropdown chọn đúng project.</div>
+          <div class="wiz-steps">
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">1</div>
+              <div class="wiz-step-body">Bấm nút xanh <code>ENABLE</code></div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">2</div>
+              <div class="wiz-step-body">Chờ 10-20 giây</div>
+            </div>
+          </div>
+          <div class="wiz-success"><strong>Xong khi thấy:</strong> nút <code>ENABLE</code> biến mất, thay bằng <code>MANAGE</code> (hoặc hiện biểu đồ Traffic/Errors).</div>
+        `,
+      },
+      {
+        title: 'Bước 3/6 — Khai báo app',
+        body: `
+          <p class="wiz-intro">Khai báo: tên app, email hỗ trợ, loại user. Cuối cùng bấm <strong>PUBLISH APP</strong>.</p>
+          <button class="wiz-btn-open" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/consent')">Mở OAuth consent screen</button>
+          <div class="wiz-steps">
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">1</div>
+              <div class="wiz-step-body">Thấy nút lớn <code>GET STARTED</code> → bấm. Không thấy → skip bước 1, làm tiếp bước 2.</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">2</div>
+              <div class="wiz-step-body"><strong>App name</strong>: bất kỳ (ví dụ <code>9BizClaw</code>)</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">3</div>
+              <div class="wiz-step-body"><strong>User support email</strong>: chọn email sếp từ dropdown</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">4</div>
+              <div class="wiz-step-body">
+                <strong>Audience</strong>: chọn <code>External</code>
+                <ul class="wiz-step-sub">
+                  <li>Nếu <code>Internal</code> bị mờ — bình thường, vẫn chọn <code>External</code></li>
+                </ul>
+              </div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">5</div>
+              <div class="wiz-step-body"><strong>Developer contact email</strong>: điền email sếp</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">6</div>
+              <div class="wiz-step-body">Bấm <code>CREATE</code>. Nếu hiện thêm các màn Scopes / Test users / Summary → bấm <code>SAVE AND CONTINUE</code> qua hết, để trống tất cả.</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">7</div>
+              <div class="wiz-step-body">
+                <strong>PUBLISH APP</strong> (quan trọng):
+                <ul class="wiz-step-sub">
+                  <li>Sidebar trái → tab <code>Audience</code> → nút xanh <code>PUBLISH APP</code> → xác nhận <code>CONFIRM</code></li>
+                  <li>UI cũ: nút <code>PUBLISH APP</code> hiện luôn trên trang</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="wiz-success"><strong>Xong khi thấy:</strong> "Publishing status: <strong>In production</strong>" (thay vì Testing).</div>
+          <div class="wiz-warn"><strong>Không bỏ qua bước PUBLISH:</strong> để <code>Testing</code> thì sau 7 ngày phải đăng nhập lại. Publish xong dùng vĩnh viễn.</div>
+        `,
+      },
+      {
+        title: 'Bước 4/6 — Tạo chìa khoá (Client ID + Secret)',
+        body: `
+          <p class="wiz-intro">Tạo "chìa khoá" để 9BizClaw mở khoá Google Calendar. Cuối bước sẽ copy 2 chuỗi.</p>
+          <button class="wiz-btn-open" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/oauthclient')">Mở trang Clients</button>
+          <div class="wiz-warn"><strong>Kiểm tra thanh trên cùng:</strong> project phải đúng project ở Bước 1. Nếu thấy <code>Default Gemini Project</code> → bấm dropdown chọn đúng project, không là làm lại từ đầu.</div>
+          <div class="wiz-steps">
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">1</div>
+              <div class="wiz-step-body">Bấm nút <code>+ Create client</code> phía trên bảng (bảng hiện "No OAuth clients to display" là đúng)</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">2</div>
+              <div class="wiz-step-body"><strong>Application type</strong>: chọn <code>Web application</code> (không phải Desktop/iOS/Android/TVs)</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">3</div>
+              <div class="wiz-step-body"><strong>Name</strong>: bất kỳ (ví dụ <code>9BizClaw Client</code>)</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">4</div>
+              <div class="wiz-step-body"><strong>Authorized JavaScript origins</strong>: để <strong>TRỐNG</strong> (không bấm + ADD URI)</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">5</div>
+              <div class="wiz-step-body">
+                <strong>Authorized redirect URIs</strong>: bấm <code>+ ADD URI</code>, dán đúng chuỗi này (dùng nút Copy, không gõ tay):
+                <div class="wiz-copy-row">
+                  <code id="gcal-redirect-uri">http://127.0.0.1:20199/gcal/callback</code>
+                  <button class="btn btn-secondary btn-small" onclick="gcalCopyRedirect()">Copy</button>
+                </div>
+              </div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">6</div>
+              <div class="wiz-step-body">Bấm nút xanh <code>CREATE</code></div>
+            </div>
+          </div>
+          <div class="wiz-warn"><strong>Popup hiện ra — ĐỪNG ĐÓNG:</strong> 2 chuỗi <strong>Client ID</strong> (đuôi <code>.apps.googleusercontent.com</code>) và <strong>Client Secret</strong> (đầu <code>GOCSPX-</code>) dùng cho Bước 5.</div>
+          <div class="wiz-help"><strong>Lỡ đóng popup?</strong> Vào tab <code>Clients</code> → bấm client vừa tạo → copy Client ID. Secret phải bấm <code>RESET SECRET</code> để tạo mới (secret cũ bị huỷ).</div>
         `,
       },
       {
         title: 'Bước 5/6 — Dán Client ID + Secret',
         body: `
-          <p>Copy 2 chuỗi từ popup Google Cloud ở Bước 4 dán vào đây. Giữ popup Google mở — nếu đã đóng, xem hướng dẫn cuối Bước 4 để lấy lại.</p>
-          <label style="display:block;margin-top:12px;font-size:12px;font-weight:600">Client ID</label>
-          <input type="text" id="gcal-wizard-clientid" placeholder="123456-abcxyz.apps.googleusercontent.com" style="width:100%;padding:8px;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:monospace;font-size:12px">
-          <small style="color:var(--text-muted);font-size:11px">Phải kết thúc bằng <code>.apps.googleusercontent.com</code></small>
-          <label style="display:block;margin-top:12px;font-size:12px;font-weight:600">Client Secret</label>
-          <input type="text" id="gcal-wizard-clientsecret" placeholder="GOCSPX-abc123xyz" style="width:100%;padding:8px;margin-top:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:monospace;font-size:12px">
-          <small style="color:var(--text-muted);font-size:11px">Phải bắt đầu bằng <code>GOCSPX-</code></small>
-          <button class="btn btn-secondary" onclick="gcalValidateAndSave()" style="margin-top:12px">Kiểm tra và lưu</button>
-          <div id="gcal-wizard-validate-result" style="margin-top:8px;font-size:12px"></div>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Kiểm tra</strong> sẽ: (1) verify format, (2) lưu mã hoá bằng Windows DPAPI vào <code>%APPDATA%\\9bizclaw\\</code>, (3) bật nút Tiếp. Nếu báo lỗi — copy lại đúng 2 chuỗi (không thừa space), bấm lại.</p>
+          <p class="wiz-intro">Copy 2 chuỗi từ popup Google sang 2 ô dưới → bấm <strong>Kiểm tra và lưu</strong>.</p>
+          <div style="margin-top:16px">
+            <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:var(--text)">Client ID</label>
+            <input type="text" id="gcal-wizard-clientid" placeholder="123456-abcxyz.apps.googleusercontent.com" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-size:12.5px">
+            <div style="margin-top:3px;font-size:11px;color:var(--text-muted)">Phải kết thúc bằng <code style="background:var(--bg);padding:1px 5px;border-radius:3px;border:1px solid var(--border)">.apps.googleusercontent.com</code></div>
+          </div>
+          <div style="margin-top:14px">
+            <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:var(--text)">Client Secret</label>
+            <input type="text" id="gcal-wizard-clientsecret" placeholder="GOCSPX-abc123xyz" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-size:12.5px">
+            <div style="margin-top:3px;font-size:11px;color:var(--text-muted)">Phải bắt đầu bằng <code style="background:var(--bg);padding:1px 5px;border-radius:3px;border:1px solid var(--border)">GOCSPX-</code></div>
+          </div>
+          <button class="btn btn-primary" onclick="gcalValidateAndSave()" style="margin-top:16px;width:100%;padding:10px">Kiểm tra và lưu</button>
+          <div id="gcal-wizard-validate-result" style="margin-top:10px;font-size:13px"></div>
+          <div class="wiz-help"><strong>Nút kiểm tra</strong> sẽ: kiểm tra format → lưu mã hoá trong máy sếp → bật nút Tiếp. Báo lỗi → copy lại đúng 2 chuỗi (không thừa space), bấm lại.</div>
         `,
       },
       {
         title: 'Bước 6/6 — Đăng nhập Google',
         body: `
-          <p>Bấm nút dưới → tab Google mở ra → chọn tài khoản → Google hỏi có cho phép 9BizClaw đọc/ghi Calendar không → Allow.</p>
-          <button class="btn btn-primary" onclick="gcalStartOAuth()">Mở cửa sổ đăng nhập Google</button>
-          <div id="gcal-wizard-oauth-status" style="margin-top:12px;font-size:12px"></div>
-          <ol style="margin-top:12px;padding-left:20px;line-height:1.7;font-size:13px">
-            <li><strong>Chọn tài khoản Google</strong> — QUAN TRỌNG: phải là tài khoản sếp dùng để tạo project ở Bước 1. Sai tài khoản → bị từ chối.</li>
-            <li><strong>Cảnh báo "Google hasn't verified this app"</strong> — hiện ra vì app chưa nộp verification (không cần, dùng cá nhân thôi). Bấm chữ <code>Advanced</code> nhỏ dưới cùng → bấm <code>Go to 9BizClaw (unsafe)</code>. Đây là cảnh báo tiêu chuẩn của Google cho app nhỏ, không phải lỗi bảo mật.</li>
-            <li>Màn hình <strong>xin quyền</strong>: Google liệt kê "See, edit, share, and permanently delete all the calendars..." → bấm <code>Continue</code> → bấm <code>Continue</code> lần nữa (nếu có) → bấm <code>Allow</code>.</li>
-            <li>Tab Google đổi thành "Ket noi thanh cong" (trang local của 9BizClaw) → đóng tab, quay lại app này.</li>
-          </ol>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Dấu hiệu xong:</strong> dòng trạng thái dưới nút chuyển thành <strong style="color:#16a34a">Đã kết nối</strong> (có thể mất 5-30s). Nút <code>Hoàn tất</code> ở dưới cùng wizard bật lên.<br>
-          <strong>Nếu bị lỗi:</strong> thường do Redirect URI ở Bước 4 gõ sai → back về Bước 4, kiểm tra URI là đúng <code>http://127.0.0.1:20199/gcal/callback</code> (không phải https, không có dấu / cuối).</p>
+          <p class="wiz-intro">Bấm nút dưới → chọn tài khoản Google → Allow.</p>
+          <button class="wiz-btn-open" onclick="gcalStartOAuth()">Mở cửa sổ đăng nhập Google</button>
+          <div id="gcal-wizard-oauth-status" style="margin-top:14px;font-size:13px"></div>
+          <div class="wiz-steps">
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">1</div>
+              <div class="wiz-step-body"><strong>Chọn tài khoản Google</strong> — phải là tài khoản sếp đã dùng tạo project ở Bước 1. Sai tài khoản → Google từ chối.</div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">2</div>
+              <div class="wiz-step-body">
+                Hiện cảnh báo <strong>"Google hasn't verified this app"</strong>
+                <ul class="wiz-step-sub">
+                  <li>Bấm chữ <code>Advanced</code> nhỏ dưới cùng</li>
+                  <li>Bấm <code>Go to 9BizClaw (unsafe)</code></li>
+                </ul>
+              </div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">3</div>
+              <div class="wiz-step-body">Màn <strong>xin quyền</strong> hiện: "See, edit, share..." → bấm <code>Continue</code> / <code>Allow</code></div>
+            </div>
+            <div class="wiz-step-item">
+              <div class="wiz-step-num">4</div>
+              <div class="wiz-step-body">Tab Google đổi thành "Ket noi thanh cong" → đóng tab, quay lại app</div>
+            </div>
+          </div>
+          <div class="wiz-success"><strong>Xong khi thấy:</strong> dòng trạng thái dưới nút chuyển thành <strong>Đã kết nối</strong>. Nút <strong>Hoàn tất</strong> cuối wizard bật lên (có thể mất 5-30 giây).</div>
+          <div class="wiz-warn"><strong>Nếu bị lỗi:</strong> 99% do Redirect URI ở Bước 4 sai. Quay lại Bước 4, kiểm tra đúng <code>http://127.0.0.1:20199/gcal/callback</code> (http không phải https, không có dấu <code>/</code> cuối).</div>
         `,
       },
     ];
