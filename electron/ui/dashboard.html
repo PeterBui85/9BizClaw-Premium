@@ -1552,6 +1552,7 @@
     .gcal-col { min-width:0; }
     .gcal-section { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:12px; }
     .gcal-section-head { display:flex; justify-content:space-between; font-weight:600; font-size:13px; margin-bottom:10px; color:var(--text); }
+    /* Legacy gcal list styles kept for walkthrough references — harmless if unused */
     .gcal-list { display:flex; flex-direction:column; gap:6px; }
     .gcal-empty { padding:16px; color:var(--text-muted); text-align:center; font-size:12px; }
     .gcal-event { padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; cursor:pointer; }
@@ -1560,7 +1561,52 @@
     .gcal-event-title { font-size:13px; font-weight:500; margin-top:2px; }
     .gcal-detail { background:var(--surface); border:1px solid var(--border); border-radius:12px; }
     @media (max-width: 900px) { .gcal-grid { grid-template-columns:1fr; } }
+
+    /* FullCalendar theme overrides — map FC's CSS vars to our theme tokens */
+    #page-calendar.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
+    #gcal-connected { flex:1; display:flex; flex-direction:column; min-height:0; }
+    #gcal-fc-container {
+      flex:1;
+      min-height:0;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:16px;
+      overflow:hidden;
+      /* FullCalendar CSS variables */
+      --fc-border-color: var(--border);
+      --fc-button-bg-color: var(--surface);
+      --fc-button-border-color: var(--border);
+      --fc-button-text-color: var(--text);
+      --fc-button-hover-bg-color: var(--bg);
+      --fc-button-hover-border-color: var(--border-strong, var(--border));
+      --fc-button-active-bg-color: var(--accent, #4ea1ff);
+      --fc-button-active-border-color: var(--accent, #4ea1ff);
+      --fc-today-bg-color: rgba(78,161,255,0.08);
+      --fc-event-bg-color: var(--accent, #4ea1ff);
+      --fc-event-border-color: var(--accent, #4ea1ff);
+      --fc-event-text-color: #fff;
+      --fc-page-bg-color: var(--surface);
+      --fc-neutral-bg-color: var(--bg);
+      --fc-list-event-hover-bg-color: var(--bg);
+      --fc-now-indicator-color: #e74c3c;
+    }
+    #gcal-fc-container .fc { height:100%; color:var(--text); font-size:13px; }
+    #gcal-fc-container .fc-toolbar-title { font-size:16px; font-weight:600; }
+    #gcal-fc-container .fc-button { font-size:12px; padding:6px 10px; text-transform:none; font-weight:500; }
+    #gcal-fc-container .fc-button-primary:focus { box-shadow:0 0 0 2px rgba(78,161,255,0.25); }
+    #gcal-fc-container .fc-col-header-cell-cushion { color:var(--text-muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; padding:8px 4px; text-decoration:none; }
+    #gcal-fc-container .fc-daygrid-day-number { color:var(--text); padding:4px 6px; font-size:12px; text-decoration:none; }
+    #gcal-fc-container .fc-daygrid-day.fc-day-today { background:var(--fc-today-bg-color); }
+    #gcal-fc-container .fc-event { cursor:pointer; border-radius:4px; padding:1px 4px; font-size:11px; }
+    #gcal-fc-container .fc-event:hover { filter:brightness(1.1); }
+    #gcal-fc-container .fc-list-event-title a { color:var(--text); text-decoration:none; }
+    #gcal-fc-container .fc-list-day-cushion { background:var(--bg); }
+    #gcal-fc-container .fc-timegrid-slot-label-cushion { color:var(--text-muted); font-size:11px; }
+    #gcal-fc-container .fc-scrollgrid { border-color:var(--border); }
   </style>
+  <script src="vendor/fullcalendar/index.global.min.js"></script>
+  <script src="vendor/fullcalendar/locale-vi.global.min.js"></script>
 </head>
 <body>
 
@@ -2353,24 +2399,9 @@
           </div>
         </div>
 
-        <!-- Connected state -->
+        <!-- Connected state: FullCalendar grid view -->
         <div id="gcal-connected" style="display:none">
-          <div class="gcal-grid">
-            <div class="gcal-col">
-              <div class="gcal-section">
-                <div class="gcal-section-head"><span>Hôm nay</span><span id="gcal-today-count">0</span></div>
-                <div id="gcal-today-list" class="gcal-list"><div class="gcal-empty">Chưa có lịch hôm nay.</div></div>
-              </div>
-              <div class="gcal-section">
-                <div class="gcal-section-head"><span>Sắp tới 7 ngày</span><span id="gcal-upcoming-count">0</span></div>
-                <div id="gcal-upcoming-list" class="gcal-list"><div class="gcal-empty">Không có lịch sắp tới.</div></div>
-              </div>
-            </div>
-            <div class="gcal-col gcal-detail">
-              <div id="gcal-detail-empty" style="padding:40px 16px;text-align:center;color:var(--text-muted)">Chọn một lịch bên trái để xem chi tiết.</div>
-              <div id="gcal-detail-body" style="display:none"></div>
-            </div>
-          </div>
+          <div id="gcal-fc-container"></div>
         </div>
       </div>
 
@@ -3220,70 +3251,191 @@
         alert('Không mở được: ' + e.message);
       }
     }
+    // FullCalendar instance — lazily created when Lịch tab first activates
+    // after gcal connection. Subsequent tab visits call refetchEvents.
+    let _gcalFc = null;
+
     async function gcalRefreshEvents() {
-      const r = await window.claw.gcalListEvents({ limit: 100 });
-      if (!r.success) {
-        document.getElementById('gcal-today-list').innerHTML = `<div class="gcal-empty">Lỗi: ${esc(r.error)}</div>`;
-        return;
+      if (!_gcalFc) {
+        gcalInitFullCalendar();
+      } else {
+        _gcalFc.refetchEvents();
       }
-      _gcalEvents = r.events || [];
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      const todayList = _gcalEvents.filter(e => e.start && e.start.startsWith(today));
-      const weekEnd = new Date(now.getTime() + 7 * 86400e3).toISOString().slice(0, 10);
-      const upcoming = _gcalEvents.filter(e => e.start && !e.start.startsWith(today) && e.start.slice(0, 10) <= weekEnd);
-      document.getElementById('gcal-today-count').textContent = todayList.length;
-      document.getElementById('gcal-upcoming-count').textContent = upcoming.length;
-      document.getElementById('gcal-today-list').innerHTML = todayList.length
-        ? todayList.map(e => gcalEventRowHtml(e)).join('')
-        : '<div class="gcal-empty">Không có lịch hôm nay.</div>';
-      document.getElementById('gcal-upcoming-list').innerHTML = upcoming.length
-        ? upcoming.map(e => gcalEventRowHtml(e)).join('')
-        : '<div class="gcal-empty">Không có lịch sắp tới.</div>';
-      if (typeof mountIcons === 'function') mountIcons();
     }
 
-    function gcalEventRowHtml(e) {
-      const d = new Date(e.start);
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      return `<div class="gcal-event" onclick="gcalSelectEvent('${escJs(e.id)}')">
-        <div class="gcal-event-time">${hh}:${mm}</div>
-        <div class="gcal-event-title">${esc(e.summary || '(không có tiêu đề)')}</div>
-      </div>`;
+    function gcalInitFullCalendar() {
+      const el = document.getElementById('gcal-fc-container');
+      if (!el || typeof FullCalendar === 'undefined') return;
+      _gcalFc = new FullCalendar.Calendar(el, {
+        initialView: 'timeGridWeek',
+        locale: 'vi',
+        timeZone: 'Asia/Ho_Chi_Minh',
+        firstDay: 1,           // tuần bắt đầu Thứ Hai
+        slotMinTime: '06:00:00',
+        slotMaxTime: '23:00:00',
+        nowIndicator: true,
+        height: '100%',
+        expandRows: true,
+        allDaySlot: true,
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
+        },
+        buttonText: {
+          today: 'Hôm nay',
+          month: 'Tháng',
+          week: 'Tuần',
+          day: 'Ngày',
+          list: 'Lịch biểu',
+        },
+        editable: true,         // cho phép kéo-thả + resize
+        eventResizableFromStart: false,
+        selectable: true,       // click-drag vào slot trống = tạo event
+        selectMirror: true,
+        dayMaxEvents: true,
+        events: async (info, success, failure) => {
+          try {
+            const r = await window.claw.gcalListEvents({
+              dateFrom: info.startStr,
+              dateTo: info.endStr,
+              limit: 250,
+            });
+            if (!r || r.success === false) {
+              alert('Không tải được lịch: ' + (r && r.error ? r.error : 'unknown'));
+              return failure(new Error(r && r.error));
+            }
+            _gcalEvents = r.events || [];
+            success(_gcalEvents.map(e => ({
+              id: e.id,
+              title: e.summary || '(không tiêu đề)',
+              start: e.start,
+              end: e.end,
+              extendedProps: {
+                description: e.description || '',
+                location: e.location || '',
+                attendees: e.attendees || [],
+                htmlLink: e.htmlLink || '',
+                etag: e.etag || '',
+              },
+            })));
+          } catch (err) {
+            failure(err);
+          }
+        },
+        eventClick: (info) => {
+          info.jsEvent.preventDefault();
+          gcalOpenEventDetailPopover(info.event, info.jsEvent);
+        },
+        select: (info) => {
+          // Click-drag vào slot trống → mở create modal với start/duration pre-fill
+          gcalOpenCreateModalFromSlot(info.start, info.end);
+          _gcalFc.unselect();
+        },
+        eventDrop: async (info) => {
+          const ok = await gcalRescheduleFromFc(info.event);
+          if (!ok) info.revert();
+        },
+        eventResize: async (info) => {
+          const ok = await gcalRescheduleFromFc(info.event);
+          if (!ok) info.revert();
+        },
+      });
+      _gcalFc.render();
     }
 
-    function gcalSelectEvent(id) {
-      const e = _gcalEvents.find(x => x.id === id);
-      if (!e) return;
-      document.getElementById('gcal-detail-empty').style.display = 'none';
-      const body = document.getElementById('gcal-detail-body');
-      body.style.display = '';
-      const ds = new Date(e.start);
-      const de = new Date(e.end);
+    function gcalOpenCreateModalFromSlot(startDate, endDate) {
+      _gcalEditingId = null;
+      document.getElementById('gcal-event-modal-title').textContent = 'Thêm lịch hẹn';
+      document.getElementById('gcal-ev-submit').textContent = 'Tạo';
+      document.getElementById('gcal-ev-summary').value = '';
+      const pad = n => String(n).padStart(2, '0');
+      const d = startDate;
+      document.getElementById('gcal-ev-start').value =
+        `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      const durMs = endDate.getTime() - startDate.getTime();
+      document.getElementById('gcal-ev-duration').value = String(Math.max(15, Math.round(durMs / 60000)));
+      document.getElementById('gcal-ev-guests').value = '';
+      document.getElementById('gcal-ev-location').value = '';
+      document.getElementById('gcal-ev-description').value = '';
+      document.getElementById('gcal-event-modal').style.display = 'flex';
+    }
+
+    // Popover hiển thị chi tiết khi click event; có Sửa / Xóa / Mở Google.
+    function gcalOpenEventDetailPopover(fcEvent, jsEvent) {
+      const id = fcEvent.id;
+      const title = fcEvent.title;
+      const ext = fcEvent.extendedProps || {};
+      // Đóng popover cũ nếu có
+      const old = document.getElementById('gcal-event-popover');
+      if (old) old.remove();
+      const pop = document.createElement('div');
+      pop.id = 'gcal-event-popover';
+      pop.style.cssText = 'position:fixed;z-index:5500;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.25);padding:14px;max-width:340px;font-size:13px';
+      const ds = fcEvent.start;
+      const de = fcEvent.end || fcEvent.start;
       const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      body.innerHTML = `
-        <div style="padding:16px">
-          <h3 style="margin:0 0 8px">${esc(e.summary || '(không có tiêu đề)')}</h3>
-          <div style="color:var(--text-muted);font-size:13px;margin-bottom:12px">${fmt(ds)} – ${fmt(de)}</div>
-          ${e.location ? `<div style="font-size:13px;margin-bottom:8px"><strong>Địa điểm:</strong> ${esc(e.location)}</div>` : ''}
-          ${e.description ? `<div style="font-size:13px;margin-bottom:12px;white-space:pre-wrap">${esc(e.description)}</div>` : ''}
-          <div style="display:flex;gap:8px;margin-top:16px">
-            ${e.htmlLink ? `<button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('${escJs(e.htmlLink)}')">Mở trong Google</button>` : ''}
-            <button class="btn btn-secondary btn-small" onclick="gcalEditEvent('${escJs(e.id)}')">Sửa</button>
-            <button class="btn btn-secondary btn-small" onclick="gcalDeleteEventClick('${escJs(e.id)}', '${escJs(e.summary || '')}')" style="color:var(--danger)">Xóa</button>
-          </div>
+      pop.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
+          <strong style="font-size:14px;flex:1;min-width:0;word-break:break-word">${esc(title)}</strong>
+          <button class="btn btn-secondary btn-small" onclick="document.getElementById('gcal-event-popover')?.remove()" style="padding:2px 8px">×</button>
+        </div>
+        <div style="color:var(--text-muted);margin-bottom:8px">${fmt(ds)} – ${fmt(de)}</div>
+        ${ext.location ? `<div style="margin-bottom:6px"><strong>Địa điểm:</strong> ${esc(ext.location)}</div>` : ''}
+        ${ext.attendees && ext.attendees.length ? `<div style="margin-bottom:6px"><strong>Khách:</strong> ${ext.attendees.map(esc).join(', ')}</div>` : ''}
+        ${ext.description ? `<div style="margin-bottom:10px;white-space:pre-wrap;color:var(--text)">${esc(ext.description)}</div>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${ext.htmlLink ? `<button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('${escJs(ext.htmlLink)}')">Mở Google</button>` : ''}
+          <button class="btn btn-secondary btn-small" onclick="document.getElementById('gcal-event-popover')?.remove();gcalEditEvent('${escJs(id)}')">Sửa</button>
+          <button class="btn btn-secondary btn-small" onclick="gcalDeleteEventClick('${escJs(id)}', '${escJs(title)}')" style="color:var(--danger)">Xóa</button>
         </div>
       `;
+      document.body.appendChild(pop);
+      // Position near click, keep in viewport
+      const rect = { x: jsEvent.clientX, y: jsEvent.clientY };
+      const w = pop.offsetWidth; const h = pop.offsetHeight;
+      const vw = window.innerWidth; const vh = window.innerHeight;
+      let x = rect.x + 8, y = rect.y + 8;
+      if (x + w > vw - 8) x = vw - w - 8;
+      if (y + h > vh - 8) y = vh - h - 8;
+      pop.style.left = Math.max(8, x) + 'px';
+      pop.style.top = Math.max(8, y) + 'px';
+      // Close on outside click (next tick)
+      setTimeout(() => {
+        const onDoc = (ev) => {
+          if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', onDoc); }
+        };
+        document.addEventListener('click', onDoc);
+      }, 0);
+    }
+
+    // Sau kéo-thả hoặc resize → push start/end mới lên Google Calendar
+    async function gcalRescheduleFromFc(fcEvent) {
+      const startIso = fcEvent.start ? fcEvent.start.toISOString() : null;
+      const endIso = fcEvent.end ? fcEvent.end.toISOString() : null;
+      if (!startIso || !endIso) return false;
+      try {
+        const r = await window.claw.gcalUpdateEvent({
+          eventId: fcEvent.id,
+          patch: { start: startIso, end: endIso },
+        });
+        if (!r || r.success === false) {
+          alert('Không cập nhật được lịch: ' + (r && r.error ? r.error : 'unknown'));
+          return false;
+        }
+        return true;
+      } catch (e) {
+        alert('Lỗi kết nối khi cập nhật lịch: ' + (e?.message || e));
+        return false;
+      }
     }
 
     async function gcalDeleteEventClick(id, summary) {
       if (!confirm(`Xóa lịch "${summary}"?`)) return;
       const r = await window.claw.gcalDeleteEvent({ eventId: id });
       if (!r.success) { alert('Lỗi: ' + r.error); return; }
-      await gcalRefreshEvents();
-      document.getElementById('gcal-detail-empty').style.display = '';
-      document.getElementById('gcal-detail-body').style.display = 'none';
+      document.getElementById('gcal-event-popover')?.remove();
+      if (_gcalFc) _gcalFc.refetchEvents();
     }
 
     // --- Create / Edit event modal ---
