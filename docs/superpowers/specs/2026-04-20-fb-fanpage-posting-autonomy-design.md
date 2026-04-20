@@ -63,30 +63,38 @@ Mirrors `electron/gcal/` convention shipped in v2.3.48.
 
 ```
 electron/fb/
-  auth.js          - OAuth flow + safeStorage token wrap
-  config.js        - page settings, cron time
-  graph.js         - Graph API helpers: postToFeed, uploadPhoto, fetchInsights, fetchRecentPosts
-  drafts.js        - pending-fb-drafts/*.json read/write + approval lifecycle
-  generator.js     - context → skills → draft pipeline
-  performance.js   - Insights cron worker + history rewrite
-  markers.js       - [[FB_PUBLISH]], [[FB_SKIP]], [[FB_EDIT]], [[SKILL_LIST]] + neutralize
-  migrate.js       - workspace path compat + owner-field migration for cron
+  auth.js          - OAuth flow + safeStorage token wrap + port fallback 18791..18795
+  config.js        - page settings, cron time, pause-aware logic
+  graph.js         - Graph API v21.0 helpers: postToFeed, uploadPhoto, fetchInsights, fetchRecentPosts, debugToken
+  drafts.js        - pending-fb-drafts/*.json read/write + approval lifecycle + undo window
+  generator.js     - context → skills (single concatenated prompt) → draft pipeline
+  performance.js   - Insights cron worker + history rewrite + trim policy
+  markers.js       - [[FB_PUBLISH]], [[FB_SKIP]], [[FB_EDIT]], [[SKILL_*]] interceptors + source-channel validation
+  migrate.js       - owner-field migration for schedules.json + custom-crons.json (one-shot, idempotent via flag file)
 ```
+
+`migrate.js` is called from `seedWorkspace()` exactly once per `seedWorkspace()` run; idempotency enforced by reading/writing marker `cron-owner-migrated-v1` in `workspace-state.json`. No legacy path migration (9bizclaw dir rename was handled in v2.3.48 via `_legacyWorkspaceModoroClaw()` in `gcal/migrate.js`).
+
+Graph API version pinned to **v21.0** in `graph.js` constant `GRAPH_API_VERSION = 'v21.0'`; all endpoint URLs interpolate this. Rationale: pinning prevents silent breakage when Meta deprecates older versions. Upgrade cadence: review on each Meta quarterly release, bump explicitly after smoke-test pass on new version.
 
 ### Workspace Files (Seeded)
 
 ```
-skills/fb-post-writer.md             (seeded by seedWorkspace)
-skills/fb-industry-voice.md
-skills/fb-repetition-avoider.md
-skills/fb-trend-aware.md
-skills/fb-ab-variant.md
-memory/fb-performance-history.md     (seeded empty, grows per post)
-config/fb-post-settings.json         (cron time, auto-publish toggle, default angle)
+skills/INDEX.md                      (UPDATED: +5 fb-* rows under Marketing section)
+skills/fb-post-writer.md             (NEW, seeded by seedWorkspace)
+skills/fb-industry-voice.md          (NEW)
+skills/fb-repetition-avoider.md      (NEW)
+skills/fb-trend-aware.md             (NEW)
+skills/fb-ab-variant.md              (NEW)
+memory/fb-performance-history.md     (seeded empty, grows per post, trimmed per policy)
+config/fb-post-settings.json         (cron time, auto-publish toggle, default angle, quiet hours)
 logs/fb-posts-log.jsonl              (created lazily)
 pending-fb-drafts/                   (created lazily)
 pending-insights-checks.json         (created lazily)
+pending-undo.json                    (created lazily; per-post undo state, entries expire T+60s)
 ```
+
+INDEX.md addition is a diff, not a full rewrite — append 5 rows under existing `### Marketing` section (or a new `### Facebook Marketing` subsection). `seedWorkspace()` applies the updated INDEX.md via the existing AGENTS.md version piggyback (v23 → v24).
 
 ### Encrypted Token Store (`%APPDATA%/9bizclaw/fb/`)
 
@@ -123,7 +131,7 @@ SYSTEM (read-only)
   • Cron watchdog             Every 5min  ON
 ```
 
-Each cron row shows: name / schedule / status / actions (pause/test/edit/delete for non-system).
+Each cron row shows: name / schedule / status / actions (pause/test/edit/delete for non-system rows, plus **"Sửa nhóm"** action for all non-system rows to correct owner misclassification from the migration heuristic).
 
 ### Data Schema Changes
 
@@ -173,9 +181,9 @@ Bước 6/6: Pick Page from dropdown → Save
 
 Mirrors `gcal/auth.js` pattern with its listen-vs-openExternal race fix.
 
-1. `buildAuthUrl(appId, state)` — FB authorize URL with 3 scopes + CSRF state
-2. `startCallbackServer()` — temp HTTP server on port 18791, returns `{tokens, ready}` (ready fires after listen succeeds)
-3. Callback handler: verify state from `_pendingOauthStates` Map (10-min TTL), extract `code`
+1. `buildAuthUrl(appId, state, port)` — FB authorize URL with 3 scopes + CSRF state + dynamic port (used in redirect URI)
+2. `startCallbackServer()` — attempts to bind ports **18791..18795** in order until one succeeds. Returns `{tokens, ready, port}`. If all 5 ports busy → error with actionable message "Vui lòng đóng ứng dụng khác đang dùng port 18791-18795 rồi thử lại". Redirect URI in wizard Step 3 shows the actually-bound port. GCal uses port 18790; FB port range is disjoint to avoid collision.
+3. Callback handler: verify state from `_pendingOauthStates` Map (10-min TTL, per-flow), extract `code`
 4. `exchangeCodeForToken(code, appId, appSecret)` → short-lived user token (1h)
 5. `exchangeLongLived(userToken, appId, appSecret)` → long-lived user token (60d)
 6. `fetchPageTokens(longUserToken)` GET `/me/accounts` → array of `{ pageId, name, access_token, tasks[] }`
@@ -193,7 +201,8 @@ Mirrors `gcal/auth.js` pattern with its listen-vs-openExternal race fix.
 - App Secret stored local-only with `safeStorage.encryptString()` (Windows DPAPI / macOS Keychain)
 - Output filter extended: add regex `access_token=[^&\s]+` and `client_secret=[^&\s]+` patterns to `_outputFilterPatterns` + injected TS in Zalo output filter
 - CSRF state Map per-flow with 10-min TTL
-- `startCallbackServer()` returns `{tokens, ready}` not bare Promise — eliminates listen-vs-openExternal race (pattern fixed in GCal)
+- `startCallbackServer()` returns `{tokens, ready, port}` not bare Promise — eliminates listen-vs-openExternal race (pattern fixed in GCal)
+- Non-expiring Page Access Token claim source: https://developers.facebook.com/docs/facebook-login/guides/access-tokens/#pagetokens (Long-Lived Page Access Tokens section). Spec valid as of Feb 2024 Meta docs; implementer should re-verify at implementation time.
 
 ### Failure Modes
 
@@ -204,6 +213,15 @@ Mirrors `gcal/auth.js` pattern with its listen-vs-openExternal race fix.
 ## Daily Generator Pipeline
 
 Cron `fb-draft-generator` fires default 07:30 (configurable via Dashboard → Settings).
+
+### Pause-Aware Behavior
+
+- If `telegram-paused.json` active at cron fire time: still generate draft + persist `pending-fb-drafts/{today}.json` (state `pending-digest-queued`). Do not send Telegram digest.
+- On Telegram resume (`resumeChannel('telegram')`): scan `pending-fb-drafts/` for `pending-digest-queued` entries, send consolidated catch-up digest "Có N draft FB chờ duyệt từ khi sếp pause" with buttons still functional.
+- If both Telegram + Dashboard unreachable (shouldn't happen but defensive): draft persists, CEO sees on next Dashboard open.
+- If generator itself fails entirely (LLM down after retries): do NOT send "no draft today" message (noise). Log to `logs/fb-generator-errors.jsonl` + single Telegram alert after 2 consecutive fail days.
+
+### Pipeline Execution
 
 ### Context Inputs
 
@@ -218,11 +236,15 @@ Cron `fb-draft-generator` fires default 07:30 (configurable via Dashboard → Se
 | `memory/fb-performance-history.md` | Performance Loop feedback |
 | Graph API `/me/posts?since={14d}&fields=message,created_time` | Actual published posts, avoid repetition |
 
+### Skill Stack Execution Model
+
+**Single concatenated system prompt, ONE LLM call.** All 5 skills are loaded into one system prompt in the order listed below. This is a single-shot generation, not a chained pipeline. Cost: 1 prompt per morning (not 5). Latency: ~3-5s typical.
+
 ### Skill Stack (Injected into System Prompt in Order)
 
 | Skill | Responsibility |
 |---|---|
-| `fb-post-writer` | Hook structure (first 2 lines before "See more"), 80-200 words sweet spot, CTA placement, **NO emojis by default** (override per-task only), conversational VN tone |
+| `fb-post-writer` | Hook structure (first 2 lines before "See more"), 80-200 words sweet spot, CTA placement, conversational VN tone. **Emoji rule** — 9BizClaw UI / Telegram digests / internal output: NEVER emoji (CLAUDE.md feedback rule). FB caption text that CEO publishes to their Page: emojis allowed ONLY IF CEO explicitly requests per-task ("viết bài vui có emoji") — default is still no-emoji plain copy. Two-context distinction is codified in this skill file. |
 | `fb-industry-voice` | Read `industry/active.md`, adjust tone/examples: F&B playful + visual-heavy / SaaS professional + benefit-focused / Edu warm + authoritative / Retail urgency / Real Estate data-driven |
 | `fb-repetition-avoider` | Extract topics/angles/products/CTAs from last 14 days Graph API + performance history. Hard rule: don't post same product 2 days in a row. Instruction: "Last 3 posts used angles X — use different angle" |
 | `fb-trend-aware` | VN calendar: Fixed (Tết, 30/4, 1/5, 2/9, 20/10, 20/11, 8/3, 14/2), Lunar (Rằm tháng 7, Vu Lan, Trung Thu, Tết Nguyên Đán), Industry-specific (Black Friday, back-to-school). If today±7d matches → suggest light hook integration |
@@ -303,6 +325,8 @@ Sáng sếp. Hôm nay có 1 draft + 2 variant để duyệt.
 ### Button Callback Handling
 
 - Patch openclaw Telegram plugin: `ensureTelegramCallbackFix()` (idempotent via marker `9BizClaw TELEGRAM-CALLBACK PATCH v1`)
+- **Call-site**: invoked from `_startOpenClawImpl()` in `main.js`, same ordering as `ensureZaloBlocklistFix`, `ensureZaloGcalNeutralizeFix` (per CLAUDE.md Rule #1). Smoke guard G9b verifies literal string `ensureTelegramCallbackFix()` appears inside `_startOpenClawImpl`'s body in main.js source.
+- Patch-failure resilience: wrapped in try/catch; on `TELEGRAM_CALLBACK_ANCHOR_MISSING` → audit log + CEO alert + continue boot with callback handling DISABLED (inline buttons still render but taps are no-ops; free-text fallback still works). Output-side marker interceptor still runs.
 - Patch handles `callback_query` updates (Telegram sends these when user taps inline button)
 - Callback data format: `fb:<action>:<draftId>:<variant?>` (e.g., `fb:publish:2026-04-20:main`)
 - Patch forwards callback_query via IPC to main.js (`fb-telegram-callback`)
@@ -312,9 +336,18 @@ Sáng sếp. Hôm nay có 1 draft + 2 variant để duyệt.
 
 ### Undo Window
 
-60 seconds after publish: edited digest includes inline button `[ Undo ]`:
-- Tap within 60s → call Graph API `DELETE /{postId}` + remove from log
-- After 60s: button disappears from edited message, no undo possible
+60 seconds after publish: edited digest includes inline button `[ Undo ]`.
+
+**State persistence** (survives process restart):
+- On publish → append to `pending-undo.json`:
+  ```json
+  [{ "postId": "abc", "chatId": 12345, "messageId": 67890, "expiresAt": "2026-04-20T19:01:00+07:00" }]
+  ```
+- Expiry worker runs every 10 seconds: for entries with `expiresAt <= now` → `editMessageText` removing the Undo button (UX correctness) → remove entry from JSON → cron cleanup done.
+- On boot: worker immediately scans list, removes already-expired entries.
+- Tap `[ Undo ]` within 60s → lookup entry by `postId` → if not expired → Graph API `DELETE /{postId}` + remove from log + edit digest to "Đã hủy lúc HH:MM". If entry missing (already expired or cleared) → `answerCallbackQuery` with "Quá thời gian hủy".
+
+This eliminates the "button visible but handler stateless" race when the process restarts mid-window.
 
 ### Dashboard FB Tab (Desktop Fallback)
 
@@ -372,6 +405,16 @@ If CEO has no Telegram configured: Dashboard-only workflow, banner message on FB
 
 Rate limit: ~60 Insights calls/month (2 checks × 30 posts) vs 200/hour quota → negligible.
 
+### History Size + Trim Policy
+
+- Each post adds ~400 bytes (24h section + 7d section + header).
+- Daily posting × 12 months ≈ 150 KB → exceeds comfortable budget for LLM prompt injection.
+- `trimFbPerformanceHistory()` runs after every Insights append:
+  - Keep **last 12 weeks verbose** (full per-post sections).
+  - For older entries: collapse each calendar month into a rolling-summary paragraph (avg engagement per angle, top 3 posts of month, remove detailed 24h/7d blocks).
+  - Target file size ≤ 50 KB (matches existing `trimZaloMemoryFile` cap pattern per CLAUDE.md).
+- Front-matter header + oldest rolling summaries always preserved; only verbose middle-aged entries collapse on each trim pass.
+
 ### History Format (`memory/fb-performance-history.md`)
 
 ```markdown
@@ -417,7 +460,7 @@ LLM reasons over markdown directly — no separate ML model required. This is th
 - Card "Top post 30 days" with preview + metrics
 - "AI Learning Log" plain-language summary: "Bot đã học: Educational cho Page này hiệu quả gấp 1.5x Story. 19:00 thứ 3-4 là giờ vàng."
 
-Chart library: custom SVG or Chart.js (~25KB minified). Don't add large dep.
+Chart library: **custom SVG**. Rationale: Chart.js is actually ~60KB gzipped (spec originally misstated 25KB — Chart.js is larger). Premium aesthetic rule (CLAUDE.md feedback) prefers minimal dependencies. Custom inline SVG components (line chart + heatmap + bar) are straightforward for the 3 simple visualizations required, and keep the build lean. If implementation proves the custom path non-trivial, fall back to Chart.js as a named dependency in `electron/package.json` — but default is custom SVG.
 
 ### Failure Modes
 
@@ -452,14 +495,19 @@ Add `ensureZaloFbNeutralizeFix()` in `main.js`:
 - Rewrite `[[FB_` → `[FB-blocked-` in customer-inbound messages before AI dispatch
 - Idempotent via marker `9BizClaw FB-NEUTRALIZE PATCH v1`
 - Auto-re-apply on every `startOpenClaw()`
+- **Patch-failure resilience**: wrapped in try/catch. On `FB_NEUTRALIZE_ANCHOR_MISSING` (upstream openzalo changed anchor text) → audit log + `sendCeoAlert()` 1x/day + continue boot with **input-side defense DISABLED**. Output-side `interceptFbMarkers` still runs (defense-in-depth partial — not full bypass). Matches the v2.3.48 hotfix pattern for `ensureZaloGcalNeutralizeFix`.
 
 ### Output-Side Defense (main.js-level)
 
-`interceptFbMarkers()` function runs on every bot reply before send:
-- If marker present AND `channel === 'telegram'` AND senderId matches CEO's allowed chat ID → execute
-- If marker present BUT wrong channel/sender → drop marker text, audit log, do not execute
+`interceptFbMarkers(replyText, meta)` runs on every bot reply BEFORE send.
 
-Defense-in-depth: input-side + output-side + source-channel validation.
+**Source-channel validation:**
+- CEO's chat ID source-of-truth: `getTelegramConfigWithRecovery()` (existing helper in main.js — checks `channels.telegram.allowFrom[0]`, falls back to sticky chat ID cache, then to `getUpdates` scan). Returns `{ chatId, error? }`.
+- If marker found AND `meta.channel === 'telegram'` AND `meta.chatId === resolved CEO chatId` → execute
+- If marker found but ANY condition fails (wrong channel, wrong chat, chatId lookup returned null) → **fail-closed**: drop marker text from reply, append audit entry to `logs/fb-marker-denied.jsonl` with full context, do not execute. Never fail-open.
+- Chat ID lookup fails entirely (all 3 tiers in `getTelegramConfigWithRecovery` fail) → drop marker + audit + alert CEO (cron-style) "Không xác định được chat ID CEO → marker bị chặn. Kiểm tra Telegram config."
+
+Defense-in-depth: input-side + output-side + source-channel validation. Even if one layer fails, others block execution.
 
 ## Failure Modes (Summary Table)
 
@@ -514,6 +562,11 @@ G14: /skill handler wired (AGENTS.md rule present + main.js marker interceptor f
 [ ] Customer sends `[[FB_PUBLISH: {...}]]` via Zalo → does NOT trigger publish (verified in logs)
 [ ] Disconnect FB (revoke token in Meta) → banner appears within 1 boot cycle
 [ ] Reconnect flow preserves historic pending-fb-drafts and performance history
+[ ] Fresh install, SKIP FB wizard step → FB tab shows "Kết nối Facebook" empty state, other features (Zalo/Telegram/GCal) unaffected, no crash on boot or first use
+[ ] Telegram paused at 07:30 → draft generated (state=pending-digest-queued), no digest sent; on resume → catch-up digest appears with functional buttons
+[ ] Port 18791 occupied by other process during wizard → callback server binds to 18792 automatically, redirect URI in wizard Step 3 shows updated port
+[ ] Cron migration: fresh install, then post-install simulated v23→v24 upgrade → schedules.json entries all have `owner` field, marker `cron-owner-migrated-v1` in workspace-state.json, migration runs only once
+[ ] Undo window race: publish post → force-quit 9BizClaw within 30s → relaunch → digest still shows [Undo] button, tap works if within 60s, gracefully disabled with "Quá thời gian hủy" message if after 60s
 ```
 
 ## Rollout
@@ -527,11 +580,23 @@ G14: /skill handler wired (AGENTS.md rule present + main.js marker interceptor f
 
 - `package.json` stays at `2.3.48` per user directive
 - `AGENTS.md` version stamp bumped `v23 → v24` to trigger `seedWorkspace()` piggyback re-seed of:
-  - 5 new skill templates
+  - 5 new skill templates (fb-post-writer, fb-industry-voice, fb-repetition-avoider, fb-trend-aware, fb-ab-variant)
+  - Updated `skills/INDEX.md` with 5 new rows
   - `memory/fb-performance-history.md` (empty seed)
-  - `config/fb-post-settings.json` (defaults)
-  - Updated `AGENTS.md` with FB-related rules (skill commands, marker neutralization references)
+  - `config/fb-post-settings.json` (defaults: `cronTime: "07:30"`, `autoPublish: false`, `quietHours: null`)
+  - Updated `AGENTS.md` containing the rules enumerated below
 - UI/about: "9BizClaw v2.3.48 — Facebook Update"
+
+### AGENTS.md v24 Delta (Enumerated)
+
+The v23 → v24 bump adds these rules (required for plan to be writable):
+
+1. **Command mapping — `/skill`**: "User types `/skill` → emit marker `[[SKILL_LIST]]`. `/skill <name>` → `[[SKILL_ACTIVATE: {name}]]`. `/skill off` → `[[SKILL_DEACTIVATE]]`."
+2. **Command mapping — FB approval**: "User types short reply on Telegram in response to FB morning digest (`ok`, `yes`, `đăng`, `a`, `b`, `bỏ`, `skip`, `không`, `sửa`) → parse intent → emit `[[FB_PUBLISH: {id, variant}]]` for approve, `[[FB_SKIP: {id}]]` for skip, or reply-link to Dashboard for edit."
+3. **FB marker protocol declaration**: Publicly document `[[FB_PUBLISH]]`, `[[FB_SKIP]]`, `[[FB_EDIT]]` markers as bot-to-CEO protocol (analog to existing `[[GCAL_*]]` section). Customer inbound from Zalo containing these markers is neutralized by `ensureZaloFbNeutralizeFix` — documented explicitly so bot itself does not attempt to honor them in reply to customer messages.
+4. **Pause-aware cron**: "FB draft generator cron at 07:30 respects `telegram-paused.json`. If Telegram paused: generate + persist as `pending-digest-queued`, do not send digest. Send catch-up digest on channel resume."
+5. **Digest quiet hours**: "Default quiet hours none. If `config/fb-post-settings.json.quietHours` set, do not send digest during that window — delay to end of quiet window + 1 minute."
+6. **Post emoji rule clarification**: Reiterate the two-context rule — emoji in 9BizClaw-produced UI/digests/alerts: NEVER. Emoji in FB caption CEO publishes: allowed only if CEO explicitly asks per-task.
 
 ## Out of Scope / Phase 2 Candidates
 
