@@ -972,7 +972,7 @@ section("G14 workspace seed files");
 const seedFiles = [
   { p: path.join(__dirname, '..', '..', 'memory', 'fb-performance-history.md'), check: 'FB Post Performance History' },
   { p: path.join(__dirname, '..', '..', 'config', 'fb-post-settings.json'), check: '"cronTime": "07:30"' },
-  { p: path.join(__dirname, '..', '..', 'AGENTS.md'), check: 'modoroclaw-agents-version: 50' },
+  { p: path.join(__dirname, '..', '..', 'AGENTS.md'), check: 'modoroclaw-agents-version: 51' },
 ];
 for (const s of seedFiles) {
   if (fs.existsSync(s.p)) {
