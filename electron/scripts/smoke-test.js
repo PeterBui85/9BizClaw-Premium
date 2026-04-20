@@ -841,6 +841,17 @@ for (const f of fbFiles) {
   else fail(`G7.${f} — electron/fb/${f} missing`, p);
 }
 
+try {
+  const fbConfig = require('../fb/config.js');
+  const required = ['getFbDir', 'getSettingsPath', 'readSettings', 'writeSettings', 'DEFAULT_SETTINGS'];
+  for (const name of required) {
+    if (typeof fbConfig[name] !== 'undefined') pass(`G13.config.${name} — exported`);
+    else fail(`G13.config.${name} — missing export`, `require('../fb/config.js').${name} is undefined`);
+  }
+} catch (e) {
+  fail('G13.config — require failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
