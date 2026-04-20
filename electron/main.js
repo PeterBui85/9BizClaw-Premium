@@ -5613,7 +5613,7 @@ function ensureZaloOutputFilterFix() {
     let content = fs.readFileSync(pluginFile, 'utf-8');
     const originalLength = content.length;
 
-    const CURRENT_VERSION = '9BizClaw OUTPUT-FILTER PATCH v6';
+    const CURRENT_VERSION = '9BizClaw OUTPUT-FILTER PATCH v7';
 
     // Fast path: file is already on the current version, nothing to do.
     if (content.includes(CURRENT_VERSION)) return;
@@ -5638,9 +5638,9 @@ function ensureZaloOutputFilterFix() {
 
     const injection = `
 
-  // === 9BizClaw OUTPUT-FILTER PATCH v6 ===
+  // === 9BizClaw OUTPUT-FILTER PATCH v7 ===
   // Scan outbound Zalo text for sensitive patterns + AI failure modes.
-  // See main.js ensureZaloOutputFilterFix for v6 changelog vs v5.
+  // See main.js ensureZaloOutputFilterFix for v7 changelog vs v6.
   try {
     const __ofFs = require("node:fs");
     const __ofPath = require("node:path");
@@ -5823,6 +5823,10 @@ function ensureZaloOutputFilterFix() {
       // Threshold raised 40→200: product listings like "iPhone 15 Pro 256GB: 25,900,000 VND"
       // are all-Latin but legitimate CS replies. CoT leaks are long walls of English (>200c).
       { name: "no-vietnamese-diacritic", re: /^(?!.*https?:\\/\\/)(?=[\\s\\S]{200,})(?!.*[àáảãạâấầẩẫậăắằẳẵặèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]).+/s },
+      // --- Layer I: FB OAuth credential leakage ---
+      { name: "fb-access-token-leak", re: /\\baccess_token\\s*=\\s*[A-Za-z0-9|_\\-]{20,}/i },
+      { name: "fb-app-secret-leak", re: /\\bclient_secret\\s*=\\s*[A-Za-z0-9]{20,}/i },
+      { name: "fb-app-id-leak", re: /\\bclient_id\\s*=\\s*\\d{15,}/i },
     ];
     let __ofBlocked: string | null = null;
     for (const __ofP of __ofBlockPatterns) {
@@ -11951,6 +11955,10 @@ const _outputFilterPatterns = [
   { name: 'fake-discount-percent', re: /(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
   { name: 'fake-booking-confirmed', re: /(?:đã\s*(?:đặt|book|giữ|xác\s*nhận))\s*(?:lịch|bàn|phòng|chỗ|slot|lịch\s*hẹn|cuộc\s*hẹn)/i },
   { name: 'fake-payment-received', re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
+  // Layer I: FB OAuth credential leakage
+  { name: 'fb-access-token-leak', re: /\baccess_token\s*=\s*[A-Za-z0-9|_\-]{20,}/i },
+  { name: 'fb-app-secret-leak', re: /\bclient_secret\s*=\s*[A-Za-z0-9]{20,}/i },
+  { name: 'fb-app-id-leak', re: /\bclient_id\s*=\s*\d{15,}/i },
 ];
 
 const _outputFilterSafeMsgs = [

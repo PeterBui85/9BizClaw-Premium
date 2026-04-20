@@ -898,6 +898,19 @@ try {
   fail('G13.preload — read failed', e.message);
 }
 
+try {
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const patternNames = ['fb-access-token-leak', 'fb-app-secret-leak', 'fb-app-id-leak'];
+  for (const name of patternNames) {
+    const occurrences = (mainText.match(new RegExp(`name:\\s*['"\`]${name}['"\`]`, 'g')) || []).length;
+    if (occurrences >= 2) pass(`G13.filter.${name} — present in both JS array + TS-injected block (${occurrences}x)`);
+    else if (occurrences === 1) fail(`G13.filter.${name} — present only once (need 2)`, `occurrences: ${occurrences}`);
+    else fail(`G13.filter.${name} — missing`, 'Add to both _outputFilterPatterns and ensureZaloOutputFilterFix');
+  }
+} catch (e) {
+  fail('G13.filter — read failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
