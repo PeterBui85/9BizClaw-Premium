@@ -83,6 +83,16 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Campaign analytics | `campaign-analytics.md` | Phân tích chiến dịch |
 | Email template builder | `email-template-builder.md` | Thiết kế template email |
 
+### Facebook Marketing (5 skills) — `skills/`
+
+| Skill | File | Khi nào dùng |
+|---|---|---|
+| FB Post Writer | `fb-post-writer.md` | Soạn hook + body + CTA + 80-200 từ cho mọi bài FB |
+| FB Industry Voice | `fb-industry-voice.md` | Adjust tone per industry: F&B, SaaS, Edu, Retail, BĐS |
+| FB Repetition Avoider | `fb-repetition-avoider.md` | Tránh trùng topic/angle 14 ngày qua |
+| FB Trend Aware | `fb-trend-aware.md` | Weave hook theo lịch VN (Tết, 30/4, 20/10, 20/11, 8/3, Trung Thu...) |
+| FB A/B Variant | `fb-ab-variant.md` | Generate 1 Main + 2 Variant với 3 angle khác nhau |
+
 ---
 **Tổng: 35 (marketing) + 44 (business) = 79 skills chuyên gia**
 Nguồn: coreyhaines31/marketingskills (19.8k stars) + alirezarezvani/claude-skills (522 skills, lọc business-relevant)

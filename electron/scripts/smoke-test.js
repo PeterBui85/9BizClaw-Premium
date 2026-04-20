@@ -936,6 +936,18 @@ for (const s of fbSkills) {
   } else fail(`G8.${s} — missing`, p);
 }
 
+try {
+  const indexText = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'INDEX.md'), 'utf-8');
+  const skills = ['fb-post-writer', 'fb-industry-voice', 'fb-repetition-avoider',
+                  'fb-trend-aware', 'fb-ab-variant'];
+  for (const s of skills) {
+    if (indexText.includes(s)) pass(`G12.index.${s} — linked in INDEX.md`);
+    else fail(`G12.index.${s} — missing from INDEX.md`, `search for ${s}`);
+  }
+} catch (e) {
+  fail('G12.index — read failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
