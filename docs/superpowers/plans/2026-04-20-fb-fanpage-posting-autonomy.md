@@ -1671,6 +1671,11 @@ function writeDraftForDate(dateIsoOrLocal, draftObj) {
   fs.writeFileSync(p, JSON.stringify(draftObj, null, 2), 'utf-8');
 }
 
+function _workspaceDir() {
+  // Re-export: shared helper used by other fb/*.js modules
+  return module.exports._workspaceDirInternal;
+}
+
 function markStatus(dateIsoOrLocal, variantId, newStatus) {
   if (!DRAFT_STATUSES.includes(newStatus)) {
     throw new Error(`Invalid status: ${newStatus}`);
@@ -1701,6 +1706,9 @@ function listPendingDrafts() {
   } catch { return []; }
 }
 
+// Compute workspace dir once, expose via module.exports for other fb/* modules
+const _WORKSPACE_DIR = _workspaceDir();  // capture early
+
 module.exports = {
   DRAFT_STATUSES,
   getDraftPath,
@@ -1708,6 +1716,7 @@ module.exports = {
   writeDraftForDate,
   markStatus,
   listPendingDrafts,
+  getWorkspaceDir: () => _WORKSPACE_DIR,  // public accessor — used by performance.js
 };
 ```
 
@@ -2005,9 +2014,16 @@ function _nowInsideQuietHours(qh) {
 }
 ```
 
-- [ ] **Step 17.4: Add schedule entry**
+- [ ] **Step 17.4: Add schedule entry to schedules.json (create template if missing)**
 
-In `schedules.json` at repo root, add:
+Check repo root: `ls schedules.json`. If missing (fresh repo state — schedules.json is created by seedWorkspace from a source-tree template), create `schedules.json` at repo root with minimal shape:
+
+```json
+[]
+```
+
+Then regardless of whether file existed, append/merge the fb-draft-generator entry:
+
 ```json
 {
   "name": "fb-draft-generator",
@@ -2016,6 +2032,8 @@ In `schedules.json` at repo root, add:
   "label": "Tạo draft FB sáng"
 }
 ```
+
+Also verify `seedWorkspace()` copies `schedules.json` from repo root to workspace on fresh install (search `main.js` for `schedules.json` string — should appear in seed list). If not seeded, add to seedWorkspace piggyback list.
 
 - [ ] **Step 17.5: Run smoke, verify G14.cron-fb passes**
 
@@ -2044,6 +2062,99 @@ git tag -a fb-chunk-3 -m "Chunk 3 complete: drafts lifecycle + generator pipelin
 ## Chunk 4: Approval UX — Telegram Inline Buttons + Dashboard FB Tab
 
 **Goal:** CEO taps "Đăng Main" on Telegram → bot publishes → digest edited to "Đã đăng". Dashboard FB tab with full editor. Undo window 60s persisted.
+
+**CRITICAL PRE-CHUNK ARCHITECTURAL NOTES (resolved in Task 18b below before Task 19):**
+
+1. **openclaw Telegram is built-in, not a plugin at `~/.openclaw/extensions/telegram/`.** Task 18b confirms the actual source file inside `electron/vendor/node_modules/openclaw/` that handles `callback_query`. If openclaw has no patch seam, the fallback is polling Telegram's `getUpdates` from main.js directly (parallel to gateway's consumption, using a distinct `offset` cursor).
+
+2. **Gateway is spawned via `spawn()` not `fork()`** — there is NO IPC channel (`process.send`/`process.on('message')` won't work). Callback transport must be HTTP: main.js listens on `127.0.0.1:18796` for callback POSTs from the gateway's patched handler. Task 18b sets up this local HTTP sink.
+
+3. **Brand rename**: existing shipped anchors use `9BizClaw BLOCKLIST PATCH` (not `MODOROClaw`). All `ensureXxxFix` markers must use `9BizClaw` prefix.
+
+### Task 18b: Architectural spike — locate openclaw callback seam + set up local HTTP sink
+
+**Files:** Create `electron/fb/callback-sink.js`, Modify `electron/main.js`
+
+- [ ] **Step 18b.1: Locate openclaw Telegram callback handler**
+
+Run in bash:
+```bash
+grep -r "callback_query" electron/vendor/node_modules/openclaw/ 2>/dev/null | head -5
+grep -r "ipcMain\\|onUpdate\\|handleUpdate" electron/vendor/node_modules/openclaw/src/channels/telegram 2>/dev/null | head -10
+```
+
+Record findings inline in Task 19 before writing the patch. If openclaw has:
+- **Case A**: An extension point or handler registry for `callback_query` → patch that file directly (mirror `ensureZaloBlocklistFix` pattern).
+- **Case B**: No seam (all inside compiled gateway code) → fallback to Task 18c polling mode.
+
+- [ ] **Step 18b.2: Implement local HTTP sink**
+
+Create `electron/fb/callback-sink.js`:
+
+```js
+// electron/fb/callback-sink.js
+// Local HTTP sink for callback_query events forwarded from openclaw Telegram patch.
+// Gateway (spawn()-based, no IPC) POSTs to http://127.0.0.1:18796/fb-callback
+const http = require('http');
+
+const SINK_PORT = 18796;
+const SINK_PATH = '/fb-callback';
+
+function startCallbackSink(onCallback) {
+  const server = http.createServer((req, res) => {
+    if (req.method !== 'POST' || req.url !== SINK_PATH) {
+      res.writeHead(404); res.end(); return;
+    }
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body);
+        await onCallback(payload);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(SINK_PORT, '127.0.0.1', () => resolve(server));
+  });
+}
+
+module.exports = { startCallbackSink, SINK_PORT, SINK_PATH };
+```
+
+Call in `app.whenReady()` inside main.js:
+
+```js
+const fbCallbackSink = require('./fb/callback-sink');
+await fbCallbackSink.startCallbackSink(handleFbTelegramCallback);
+```
+
+Replace earlier `process.on('message', ...)` approach from stale plan draft — no IPC listener needed.
+
+- [ ] **Step 18b.3: Smoke guard G13.callback-sink**
+
+```js
+try {
+  const sink = require('../fb/callback-sink.js');
+  if (typeof sink.startCallbackSink === 'function' && sink.SINK_PORT === 18796) {
+    pass('G13.callback-sink.exports — present');
+  } else fail('G13.callback-sink.exports — missing', 'check exports');
+} catch (e) { fail('G13.callback-sink — require failed', e.message); }
+```
+
+- [ ] **Step 18b.4: Commit**
+
+```bash
+git add electron/fb/callback-sink.js electron/main.js electron/scripts/smoke-test.js
+git commit -m "feat(fb): local HTTP callback sink on 127.0.0.1:18796 (replaces broken process.send IPC)"
+```
+
+**Task 19 onward uses the HTTP sink.** Patch the located openclaw file to POST callback_query payloads to `http://127.0.0.1:18796/fb-callback` instead of `process.send`.
 
 ### Task 19: ensureTelegramCallbackFix — openclaw Telegram plugin patch
 
@@ -2102,10 +2213,21 @@ function ensureTelegramCallbackFix() {
       const cb = update.callback_query;
       const data = cb.data || '';
       if (data.startsWith('fb:')) {
-        // Forward via IPC to main.js
-        if (process.send) {
-          process.send({ type: 'fb-telegram-callback', data, chatId: cb.message?.chat?.id, messageId: cb.message?.message_id, userId: cb.from?.id, callbackQueryId: cb.id });
-        }
+        // Forward via HTTP to local sink (main.js on 127.0.0.1:18796)
+        // Gateway is spawned via spawn() not fork() — no IPC channel available.
+        try {
+          await fetch('http://127.0.0.1:18796/fb-callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'fb-telegram-callback', data,
+              chatId: cb.message?.chat?.id,
+              messageId: cb.message?.message_id,
+              userId: cb.from?.id,
+              callbackQueryId: cb.id,
+            }),
+          });
+        } catch (e) { /* sink unreachable — still ACK Telegram below */ }
         // ACK immediately to prevent spinner timeout
         fetch(\`https://api.telegram.org/bot\${this.token}/answerCallbackQuery\`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2133,20 +2255,11 @@ Add call inside `_startOpenClawImpl()` right after other `ensureXxxFix()` calls:
 ensureTelegramCallbackFix();
 ```
 
-- [ ] **Step 19.4: Handle callback IPC in main.js**
+- [ ] **Step 19.4: Define handleFbTelegramCallback (called by HTTP sink from Task 18b)**
 
-Add (outside any function, near other `process.on` listeners):
+Add (no `process.on` — HTTP sink handles transport):
 
 ```js
-// Process message handler for openclaw child process
-// Note: the openclaw gateway is spawned via spawn(); we get IPC via process.send
-// from the forked process. If openclaw is run in non-IPC mode, this no-ops.
-process.on('message', async (msg) => {
-  if (msg?.type === 'fb-telegram-callback' && typeof msg.data === 'string') {
-    try { await handleFbTelegramCallback(msg); } catch (e) { console.error('[fb-tg-callback]', e); }
-  }
-});
-
 async function handleFbTelegramCallback({ data, chatId, messageId, userId }) {
   const parts = data.split(':'); // fb:<action>:<draftId>[:<variant>]
   const action = parts[1];
@@ -2260,9 +2373,19 @@ async function _fbHandlePublish(draftId, variantSuffix, chatId, messageId) {
     _writeUndoList(undoList);
 
     // Edit digest message
-    await _editTelegramMessage(chatId, messageId, `Đã đăng ${variantId}. Post ID: ${postId}\nhttps://www.facebook.com/${postId}\n\nHủy trong 60s: bấm [Undo] bên dưới.`, [
-      [{ text: 'Undo', callback_data: `fb:undo:${postId}` }]
-    ]);
+    // If called from Telegram (chatId+messageId present): edit digest with Undo button.
+    // If called from Dashboard (chatId null): send a new Telegram confirmation to CEO chat.
+    if (chatId && messageId) {
+      await _editTelegramMessage(chatId, messageId, `Đã đăng ${variantId}. Post ID: ${postId}\nhttps://www.facebook.com/${postId}\n\nHủy trong 60s: bấm [Undo] bên dưới.`, [
+        [{ text: 'Undo', callback_data: `fb:undo:${postId}` }]
+      ]);
+    } else {
+      const tgCfg = await getTelegramConfigWithRecovery();
+      if (tgCfg?.chatId) {
+        await sendTelegramWithButtons(`Đã đăng ${variantId} từ Dashboard. Post ID: ${postId}\nhttps://www.facebook.com/${postId}`,
+          [[{ text: 'Undo', callback_data: `fb:undo:${postId}` }]]);
+      }
+    }
     auditLog('fb_published', { postId, draftId: variantId });
   } catch (e) {
     console.error('[fb publish] failed:', e);
@@ -2302,9 +2425,10 @@ async function _fbHandleUndo(postId, chatId, messageId) {
   }
   try {
     const loaded = fbAuth.loadPageToken(safeStorage);
-    await fbGraph._graphRequest?.('DELETE', `/${encodeURIComponent(postId)}`, {}, loaded.token);
-    // Note: graph.js _graphRequest is private; expose deletePost in a later sub-task or
-    // add directly here via fetch.
+    // Inline DELETE call — no need to add deletePost to graph.js for this one-shot path
+    await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(postId)}?access_token=${encodeURIComponent(loaded.token)}`, {
+      method: 'DELETE',
+    });
     undoList.splice(idx, 1); _writeUndoList(undoList);
     await _editTelegramMessage(chatId, messageId, 'Đã hủy post.', []);
   } catch (e) {
@@ -2314,13 +2438,13 @@ async function _fbHandleUndo(postId, chatId, messageId) {
 
 async function _fbHandleEdit(draftId, chatId, messageId) {
   // Focus Electron window + navigate FB tab
-  if (_mainBrowserWindow && !_mainBrowserWindow.isDestroyed()) {
-    _mainBrowserWindow.focus();
-    _mainBrowserWindow.webContents.send('navigate-to-fb-draft', draftId);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    mainWindow.webContents.send('navigate-to-fb-draft', draftId);
   } else {
     // If window closed, open it
     createWindow();
-    setTimeout(() => _mainBrowserWindow?.webContents.send('navigate-to-fb-draft', draftId), 1500);
+    setTimeout(() => mainWindow?.webContents.send('navigate-to-fb-draft', draftId), 1500);
   }
   await _answerCallbackQueryInline(chatId, 'Mở Dashboard...');
 }
@@ -2350,8 +2474,15 @@ setInterval(() => {
     const kept = [];
     for (const e of list) {
       if (new Date(e.expiresAt).getTime() <= now) {
-        _editTelegramMessage(e.chatId, e.messageId,
-          null, []).catch(() => {});
+        // Strip the Undo button; don't null out text (Telegram rejects null text).
+        // Use editMessageReplyMarkup to remove only the inline keyboard.
+        const tgCfg = getTelegramConfigWithRecovery ? await getTelegramConfigWithRecovery() : null;
+        if (tgCfg?.token) {
+          fetch(`https://api.telegram.org/bot${tgCfg.token}/editMessageReplyMarkup`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: e.chatId, message_id: e.messageId, reply_markup: { inline_keyboard: [] } }),
+          }).catch(() => {});
+        }
       } else kept.push(e);
     }
     if (kept.length !== list.length) _writeUndoList(kept);
@@ -2716,13 +2847,38 @@ async function runInsightsSweep({ pageToken, fbPosts }) {
   _writeQueue(remaining);
 }
 
+function _extractReactionsTotal(graphData) {
+  // post_reactions_by_type_total returns object of { like: N, love: M, ... } — sum them.
+  const metric = (graphData?.data || []).find((m) => m.name === 'post_reactions_by_type_total');
+  if (!metric?.values?.[0]?.value) return 0;
+  const v = metric.values[0].value;
+  if (typeof v === 'object') return Object.values(v).reduce((s, n) => s + (Number(n) || 0), 0);
+  return Number(v) || 0;
+}
+
+function _extractImpressions(graphData) {
+  const m = (graphData?.data || []).find((x) => x.name === 'post_impressions');
+  return Number(m?.values?.[0]?.value || 0);
+}
+
+function _extractEngaged(graphData) {
+  const m = (graphData?.data || []).find((x) => x.name === 'post_engaged_users');
+  return Number(m?.values?.[0]?.value || 0);
+}
+
 function appendPerformanceEntry(postId, metrics, meta = {}) {
   const hp = _historyPath();
   let content = '';
   try { content = fs.readFileSync(hp, 'utf-8'); } catch { content = '# FB Post Performance History\n\n'; }
 
+  // Machine-parseable single-line metric summary (parser in Dashboard reads these).
+  const reactions = _extractReactionsTotal(metrics);
+  const impressions = _extractImpressions(metrics);
+  const engaged = _extractEngaged(metrics);
+
   const section = `\n## ${meta.date || new Date().toISOString().slice(0, 10)} | ${meta.angle || 'unknown'} | ${postId}\n\n` +
-    `### ${metrics.t}\n${JSON.stringify(metrics.data || metrics, null, 2)}\n\n---\n`;
+    `### ${metrics.t}\nReactions: ${reactions} | Impressions: ${impressions} | Engaged: ${engaged}\n\n` +
+    `<!-- raw: ${JSON.stringify(metrics.data || metrics)} -->\n\n---\n`;
 
   fs.writeFileSync(hp, content + section, 'utf-8');
   trimFbPerformanceHistory();
@@ -2863,10 +3019,14 @@ ipcMain.handle('fb-get-performance', async () => {
   while ((m = sectionRe.exec(raw))) {
     const date = m[1];
     const body = m[2];
-    const reactMatch = body.match(/Reactions\s+(\d+)/i) || body.match(/"post_reactions[^"]*"[^:]*:\s*\[?{?"value":?\s*(\d+)/);
-    const impMatch = body.match(/Impressions\s+([\d,]+)/i) || body.match(/"post_impressions"[^:]*:[^[]*\[?{?"value":?\s*(\d+)/);
-    days[date] = { reactions: parseInt(reactMatch?.[1]?.replace(/,/g, '') || '0', 10),
-                    impressions: parseInt(impMatch?.[1]?.replace(/,/g, '') || '0', 10) };
+    // Parse the machine-readable line written by appendPerformanceEntry:
+    //   "Reactions: 47 | Impressions: 4320 | Engaged: 112"
+    const lineMatch = body.match(/Reactions:\s*(\d+)\s*\|\s*Impressions:\s*(\d+)\s*\|\s*Engaged:\s*(\d+)/);
+    days[date] = {
+      reactions: lineMatch ? parseInt(lineMatch[1], 10) : 0,
+      impressions: lineMatch ? parseInt(lineMatch[2], 10) : 0,
+      engaged: lineMatch ? parseInt(lineMatch[3], 10) : 0,
+    };
   }
   return { ok: true, days };
 });
@@ -3137,7 +3297,10 @@ function ensureZaloFbNeutralizeFix() {
     let content = fs.readFileSync(inboundPath, 'utf-8');
     if (content.includes('9BizClaw FB-NEUTRALIZE PATCH v1')) return;
 
-    const anchor = /\/\/ === END MODOROClaw BLOCKLIST PATCH ===/;
+    // Anchor: existing shipped `ensureZaloGcalNeutralizeFix` anchors on the rawBody guard line.
+    // Use the same anchor to stay close to shipped convention; if that shifts upstream,
+    // fall back to BLOCKLIST marker.
+    const anchor = /if \(!rawBody && !hasMedia\) \{\s*return;\s*\}/;
     const m = content.match(anchor);
     if (!m) {
       const err = new Error('FB_NEUTRALIZE_ANCHOR_MISSING');
@@ -3487,4 +3650,32 @@ git tag -a v2.3.48-fb -m "v2.3.48 Facebook Update — CEO-owned fanpage autonomy
 **Version:** `package.json` stays 2.3.48. AGENTS.md bumps v23→v24. UI/about shows "9BizClaw v2.3.48 — Facebook Update".
 
 **Ready to execute** via `superpowers:subagent-driven-development`.
+
+---
+
+## Known Implementation-Time Discovery Items (verify before writing code)
+
+These were surfaced during plan review but require reading the actual codebase to resolve fully. Implementer should verify + fix as the relevant task lands — none block starting Chunk 1.
+
+1. **Task 18b Step 18b.1** — locate the actual openclaw file that handles `callback_query` inside `electron/vendor/node_modules/openclaw/`. If openclaw has no patch seam at all, fall back to a polling strategy: main.js directly polls Telegram `getUpdates` with a distinct `offset` cursor (parallel to gateway's consumption). Rewrite Task 19 patch accordingly.
+
+2. **Task 17, generator cron `sendTelegram` meta** — `sendTelegram` / `sendZalo` signatures may not currently accept a `meta` parameter for source-channel validation by `interceptFbMarkers`. Task 28 Step 28.4 wires meta-passing; verify existing function signatures and extend if needed.
+
+3. **Task 17 Step 17.3 `_fbGeneratorFailCount`** — in-memory counter resets on Electron restart. Spec semantic is "2 consecutive DAYS"; implementation will persist count to `logs/fb-generator-errors.jsonl` and compute consecutive-day count from the log tail when deciding to alert.
+
+4. **Task 17 Step 17.3 quiet-hours TODO** — the "shift to end of quiet window + 1 minute" logic is noted TODO in Chunk 3; implement in-line at Task 17 rather than deferring to Chunk 4 or 5.
+
+5. **Task 22/Task 28 `skills/active.md`** — confirm AGENTS.md bootstrap actually loads `skills/active.md` content when present. If not, `_handleSkillActivate` is a no-op. If needed, extend AGENTS.md bootstrap rule to include `@skills/active.md` load.
+
+6. **Task 24 performance.js `runInsightsSweep` — `fbPosts.findById`** — the `meta` enrichment (date + angle from posts log) is unimplemented. Add a helper that reads `logs/fb-posts-log.jsonl` and returns the matching entry by postId.
+
+7. **Task 28 `interceptFbMarkers` regex** — payload `[^}]*` fails on nested braces or escaped quotes. Upgrade to a balanced-brace parser or reject payloads with nested objects for v1 (payloads are currently flat).
+
+8. **Task 30 `schedules.json` seed source** — verify `seedWorkspace()` copies `schedules.json` from a source-tree template. If not, Task 17.4's file creation fallback covers fresh install, but upgrade installs may have stale schedules.json without `owner` fields until `migrateCronOwnerFields` runs.
+
+9. **Task 29 AGENTS.md v24 Rule #2 smoke guard** — current G14.agents guards check for `SKILL_LIST`, `/skill`, `FB_PUBLISH` but not the short-reply trigger phrases (`đăng main`, `variant a`, `bỏ`, `sửa`). Add a guard to verify these phrases are documented in AGENTS.md.
+
+10. **Task 22 Dashboard navigation** — `document.querySelector('[data-page="facebook"]').click()` assumes sidebar click handler switches pages. Verify against existing `side-item` click wiring and use the actual router pattern.
+
+These items are surfaced here so no implementer is surprised mid-execution. Each is scoped small enough that a subagent can resolve in-task.
 
