@@ -168,8 +168,13 @@ CEO-owned Meta Developer app, Dev Mode (no App Review needed since CEO is the ap
 Bước 1/6: [Open Meta Developers] button → developers.facebook.com
 Bước 2/6: Create App → Type "Business" → Name "9BizClaw-<CEO_name>"
 Bước 3/6: Dashboard → Add Product "Facebook Login for Business"
-          Paste OAuth redirect URI:
-          ┌─ http://localhost:18791/fb-callback ─[Copy]
+          Paste 5 OAuth redirect URIs vào field "Valid OAuth Redirect URIs"
+          (mỗi dòng 1 URI) — Meta không support wildcard nên cần list cả 5:
+          ┌─ http://localhost:18791/fb-callback
+          │  http://localhost:18792/fb-callback
+          │  http://localhost:18793/fb-callback
+          │  http://localhost:18794/fb-callback
+          │  http://localhost:18795/fb-callback        [Copy tất cả]
 Bước 4/6: Settings → Basic → copy App ID + App Secret into 9BizClaw fields
 Bước 5/6: [Connect with Facebook] → FB login → grant → redirect
 Bước 6/6: Pick Page from dropdown → Save
@@ -186,7 +191,17 @@ Bước 6/6: Pick Page from dropdown → Save
 Mirrors `gcal/auth.js` pattern with its listen-vs-openExternal race fix.
 
 1. `buildAuthUrl(appId, state, port)` — FB authorize URL with 3 scopes + CSRF state + dynamic port (used in redirect URI)
-2. `startCallbackServer()` — attempts to bind ports **18791..18795** in order until one succeeds. Returns `{tokens, ready, port}`. If all 5 ports busy → error with actionable message "Vui lòng đóng ứng dụng khác đang dùng port 18791-18795 rồi thử lại". Redirect URI in wizard Step 3 shows the actually-bound port. GCal uses port 18790; FB port range is disjoint to avoid collision.
+2. `startCallbackServer()` — attempts to bind ports **18791..18795** in order until one succeeds. Returns `{tokens, ready, port}`. If all 5 ports busy → error with actionable message "Vui lòng đóng ứng dụng khác đang dùng port 18791-18795 rồi thử lại". GCal uses port 18790; FB port range is disjoint to avoid collision.
+
+**Meta redirect URI constraint** (important — Meta does NOT support wildcard URIs): Wizard Step 3 must instruct CEO to paste **all 5 candidate redirect URIs** into the Meta App's "Valid OAuth Redirect URIs" field (one per line), covering the full fallback range:
+```
+http://localhost:18791/fb-callback
+http://localhost:18792/fb-callback
+http://localhost:18793/fb-callback
+http://localhost:18794/fb-callback
+http://localhost:18795/fb-callback
+```
+At OAuth time, `buildAuthUrl(appId, state, port)` passes the actually-bound port's URI. Without all 5 pre-registered, a fallback-port bind produces "URL blocked: This redirect failed because the redirect URI is not white-listed in the app's client OAuth settings." Wizard Step 3 UI should render this as 5 copyable lines with a single "Copy tất cả" button.
 3. Callback handler: verify state from `_pendingOauthStates` Map (10-min TTL, per-flow), extract `code`
 4. `exchangeCodeForToken(code, appId, appSecret)` → short-lived user token (1h)
 5. `exchangeLongLived(userToken, appId, appSecret)` → long-lived user token (60d)
@@ -292,6 +307,21 @@ Cron `fb-draft-generator` fires default 07:30 (configurable via Dashboard → Se
 }
 ```
 
+### Schema Contract
+
+**`variants` array size**: min 0, max 2. Generator may return empty array if the content-safety filter trimmed all variants or if the LLM declined to produce multiple angles. UI handles all three cases gracefully:
+- 0 variants → show only Main (2 buttons: Đăng Main, Bỏ hôm nay)
+- 1 variant → show Main + Variant A (3 action buttons)
+- 2 variants → show Main + A + B (4 action buttons)
+
+**`status` enum** (applies to each `main` and each `variants[i]`):
+- `pending` — initial state, awaiting CEO action
+- `pending-digest-queued` — generated while Telegram paused, digest not yet sent
+- `approved` — CEO tapped approve, not yet published (in-app scheduling window)
+- `published` — Graph API POST succeeded, postId recorded
+- `skipped` — CEO explicitly skipped, or expired after 7 days backlog
+- `failed` — Graph API POST failed after retry exhaustion
+
 ### Prompt Budget
 
 Target ≤ 32k tokens (9router routes to gpt-5-mini or similar with 32k context):
@@ -356,7 +386,9 @@ This eliminates the "button visible but handler stateless" race when the process
 ### Dashboard FB Tab (Desktop Fallback)
 
 - Cards per draft: full text + image preview + editable textarea + image picker (from `knowledge/san-pham/files/` dropdown or local upload)
-- Buttons: "Đăng ngay" / "Lên lịch giờ X" (time picker) / "Bỏ"
+- Buttons: "Đăng ngay" / "Lên lịch giờ X" (time picker, in-app scheduling only — see note) / "Bỏ"
+
+**Scheduling clarification:** "Lên lịch giờ X" means the app stores the approved draft with a target publish time in `pending-scheduled-posts.json`; a cron job fires at the target time and calls Graph API `POST /{pageId}/feed` at that moment. This is **NOT** Meta's native `scheduled_publish_time` parameter (which would require `pages_manage_posts` + schedule-specific flow and couples ship dates to Meta's scheduler). Local-only scheduling keeps the post queue inspectable + cancellable without Graph round-trips, and matches existing 9BizClaw cron patterns.
 - Shared backing store with Telegram path (same `pending-fb-drafts/*.json`) → state syncs both directions
 - If CEO edits textarea then approves → updated text used for publish
 
@@ -530,7 +562,7 @@ Defense-in-depth: input-side + output-side + source-channel validation. Even if 
 
 | Scenario | Handling |
 |---|---|
-| Token revoked/expired | Boot check + weekly cron `fb-token-check`. Invalid → Dashboard banner "Reconnect FB", morning cron skip + Telegram alert 1x/day |
+| Token revoked/expired | 3 detection paths (defense-in-depth): (1) Boot check on app start — `debugToken()` once; (2) Weekly cron `fb-token-check` every Monday 08:00; (3) **On-demand**: any publish that returns HTTP 401/403 immediately triggers `debugToken()` → if invalid, Dashboard banner "Reconnect FB" + morning cron skip + Telegram alert 1x/day. On-demand path closes the weekly-check lag window (up to 7 days between scheduled checks). |
 | Graph API down / network fail | Generator retry 3x with exponential backoff (1s, 4s, 16s) → still fail → Telegram alert "không gen được draft hôm nay, em thử lại sáng mai" |
 | Post publish HTTP 400/403 | Dashboard toast + log. Rate limit (429) → retry +15min. Image upload fail → fallback to text-only post with warn |
 | LLM gen fail (9router down) | Retry once with simpler prompt → still fail → Telegram alert to CEO |
@@ -602,7 +634,9 @@ G14: /skill handler wired (AGENTS.md rule present + main.js marker interceptor f
   - 5 new skill templates (fb-post-writer, fb-industry-voice, fb-repetition-avoider, fb-trend-aware, fb-ab-variant)
   - Updated `skills/INDEX.md` with 5 new rows
   - `memory/fb-performance-history.md` (empty seed)
-  - `config/fb-post-settings.json` (full default shape: `{ "cronTime": "07:30", "autoPublish": false, "quietHours": null, "defaultAngle": null, "autoPublishApprovedAt": null }`)
+  - `config/fb-post-settings.json` (full default shape: `{ "cronTime": "07:30", "quietHours": null, "defaultAngle": null }`)
+
+  **Fields dropped from earlier drafts**: `autoPublish` and `autoPublishApprovedAt` removed — approval is always CEO-initiated in MVP (tap button or Dashboard click). No auto-publish-after-timeout feature. Re-add to config shape only when that feature is explicitly scoped for phase 2.
   - Updated `AGENTS.md` containing the rules enumerated below
 - UI/about: "9BizClaw v2.3.48 — Facebook Update"
 
@@ -626,7 +660,7 @@ The v23 → v24 bump adds these rules (required for plan to be writable):
 - Auto-image generation (DALL-E / Imagen integration)
 - Unified content calendar (merge GCal events + FB posts in FullCalendar view)
 - Multi-Page support (CEO manages >1 Page — current scope: 1 Page per install)
-- Scheduled post (vs post-now) — Graph API supports but adds UI complexity; defer
+- Native Meta scheduled-post (`scheduled_publish_time` parameter) — in-app cron-based scheduling is supported (see "Scheduling clarification" in Approval UX), but native Meta scheduling is out of scope
 
 ## Open Questions
 
