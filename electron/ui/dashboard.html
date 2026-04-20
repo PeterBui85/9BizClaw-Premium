@@ -3480,10 +3480,15 @@
         title: 'Bước 4/6 — Tạo OAuth Client ID',
         body: `
           <p>Bước cuối ở Google Cloud — tạo "chìa khóa" (Client ID + Secret) cho 9BizClaw dùng.</p>
-          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/oauthclient')">Mở trang tạo OAuth Client</button>
+          <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/oauthclient')">Mở trang Clients</button>
           <ol style="margin-top:12px;padding-left:20px;line-height:1.7;font-size:13px">
-            <li><strong>Application type</strong>: chọn <code>Web application</code> từ dropdown (KHÔNG chọn Desktop/iOS/Android).</li>
+            <li><strong>⚠️ Kiểm tra project ở thanh trên cùng</strong> — bên cạnh chữ "Google Cloud". PHẢI đúng project sếp tạo ở Bước 1 (ví dụ <code>9BizClaw Lich</code>).<br>
+              <small style="color:var(--text-muted)">Nếu thấy <code>Default Gemini Project</code> hoặc tên project khác → bấm vào dropdown project, chọn đúng project. Tạo Client ở sai project = làm lại từ đầu.</small>
+            </li>
+            <li><strong>Bấm nút <code>+ Create client</code></strong> (phía trên bảng "OAuth 2.0 Client IDs"). Bảng hiện "No OAuth clients to display" là đúng (chưa tạo bao giờ).</li>
+            <li><strong>Application type</strong>: chọn <code>Web application</code> từ dropdown (KHÔNG chọn Desktop/iOS/Android/TVs).</li>
             <li><strong>Name</strong>: đặt bất kỳ (ví dụ <code>9BizClaw Client</code>). Không ảnh hưởng gì.</li>
+            <li><strong>Authorized JavaScript origins</strong>: <strong>để TRỐNG</strong> (không bấm + ADD URI ở mục này).</li>
             <li><strong>Authorized redirect URIs</strong> — bấm <code>+ ADD URI</code> và dán ĐÚNG chuỗi này (copy từ nút dưới, không gõ tay):<br>
               <div style="display:flex;gap:8px;margin-top:6px">
                 <code id="gcal-redirect-uri" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:12px">http://127.0.0.1:20199/gcal/callback</code>
@@ -3491,17 +3496,16 @@
               </div>
               <small style="color:var(--text-muted)">Lưu ý: <strong>http</strong> không phải https, <strong>127.0.0.1</strong> không phải localhost. Sai 1 ký tự là không login được.</small>
             </li>
-            <li>Authorized JavaScript origins: <strong>để TRỐNG</strong> (không bấm ADD).</li>
             <li>Bấm nút xanh <code>CREATE</code> ở cuối form.</li>
             <li><strong>Popup "OAuth client created" xuất hiện</strong> — có 2 chuỗi:
               <ul style="margin-top:4px;padding-left:20px">
                 <li><strong>Client ID</strong> (kết thúc bằng <code>.apps.googleusercontent.com</code>)</li>
                 <li><strong>Client Secret</strong> (bắt đầu bằng <code>GOCSPX-</code>)</li>
               </ul>
-              <strong style="color:var(--danger, #e74c3c)">ĐỪNG ĐÓNG POPUP NÀY.</strong> Nút <code>DOWNLOAD JSON</code> bấm cũng được nhưng không cần — chỉ cần copy 2 chuỗi trên sang Bước 5.
+              <strong style="color:var(--danger, #e74c3c)">ĐỪNG ĐÓNG POPUP NÀY.</strong> Nút <code>DOWNLOAD JSON</code> bấm cũng được nhưng không cần — chỉ copy 2 chuỗi trên sang Bước 5.
             </li>
           </ol>
-          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Lỡ đóng popup?</strong> Vào tab <code>Clients</code> trong sidebar, tìm client vừa tạo, bấm icon bút chì → thấy Client ID ngay, nhưng Secret thì phải bấm <code>RESET SECRET</code> để tạo mới (secret cũ bị huỷ).</p>
+          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)"><strong>Lỡ đóng popup?</strong> Vào tab <code>Clients</code> ở sidebar, bấm vào client vừa tạo (cột Name), bấm biểu tượng <code>👁</code> hoặc <code>Copy</code> cạnh Client ID để lấy lại. Secret phải bấm <code>RESET SECRET</code> tạo mới (secret cũ bị huỷ — nhớ dán lại vào Bước 5 sau khi reset).</p>
         `,
       },
       {
