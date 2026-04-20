@@ -852,6 +852,21 @@ try {
   fail('G13.config — require failed', e.message);
 }
 
+try {
+  const fbGraph = require('../fb/graph.js');
+  const required = ['GRAPH_API_VERSION', 'postToFeed', 'uploadPhoto', 'fetchInsights',
+                    'fetchRecentPosts', 'debugToken', 'fetchPageTokens',
+                    'exchangeCodeForToken', 'exchangeLongLived'];
+  for (const name of required) {
+    if (typeof fbGraph[name] !== 'undefined') pass(`G13.graph.${name} — exported`);
+    else fail(`G13.graph.${name} — missing export`, `${name} is undefined`);
+  }
+  if (fbGraph.GRAPH_API_VERSION === 'v21.0') pass('G13.graph.version — pinned v21.0');
+  else fail('G13.graph.version — wrong pin', `got ${fbGraph.GRAPH_API_VERSION}`);
+} catch (e) {
+  fail('G13.graph — require failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
