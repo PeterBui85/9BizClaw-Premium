@@ -862,6 +862,28 @@ function seedWorkspace() {
   const schedulesFile = path.join(ws, 'schedules.json');
   if (!fs.existsSync(schedulesFile)) {
     try { writeJsonAtomic(schedulesFile, DEFAULT_SCHEDULES_JSON); } catch {}
+  } else {
+    // Upsert missing schedule entries for existing installs. Without this,
+    // CEOs who upgraded from a previous version keep their old schedules.json
+    // and never get newly-added cron ids (e.g. fb-draft-generator shipped in
+    // a later version). User-edited fields (time, enabled) of existing
+    // entries are preserved — we only append new ids.
+    try {
+      const existing = JSON.parse(fs.readFileSync(schedulesFile, 'utf-8'));
+      if (Array.isArray(existing)) {
+        let changed = false;
+        for (const d of DEFAULT_SCHEDULES_JSON) {
+          if (!existing.find((e) => e && e.id === d.id)) {
+            existing.push(d);
+            changed = true;
+            console.log(`[seedWorkspace] upsert schedule entry: ${d.id}`);
+          }
+        }
+        if (changed) writeJsonAtomic(schedulesFile, existing);
+      }
+    } catch (e) {
+      console.warn('[seedWorkspace] schedule upsert failed:', e.message);
+    }
   }
   // INTENTIONAL: custom-crons.json is NOT in `templateFiles` above. It is user
   // data, never a template. Packaged fresh installs always get an empty list
@@ -11709,6 +11731,69 @@ function _nowInsideQuietHours(qh) {
   return hhmm >= qh.start || hhmm <= qh.end;
 }
 
+// FB draft generator — shared body used by BOTH the scheduled cron fire AND
+// the "Test ngay" button so test fires are byte-identical to production fires.
+// `label` is used for audit log tagging ('Tạo draft FB sáng' in prod, 'TEST'
+// variants for manual fires). Returns {ok: boolean, reason?: string}.
+// The caller is responsible for _cronInFlight bookkeeping to avoid double-fire.
+async function runFbDraftGenerator({ label = 'Tạo draft FB sáng' } = {}) {
+  const loaded = fbAuth.loadPageToken(safeStorage);
+  if (!loaded) {
+    console.log('[fb-draft-generator] no token, skipping');
+    return { ok: false, reason: 'FB chưa kết nối' };
+  }
+  const tgPaused = isChannelPaused('telegram');
+  const settings = fbConfig.readSettings();
+  const inQuietHours = settings.quietHours && _nowInsideQuietHours(settings.quietHours);
+  if (inQuietHours) {
+    console.log('[fb-draft-generator] inside quiet hours — generating but NOT sending digest (CEO sẽ thấy trong Dashboard hoặc sau khi hết quiet window)');
+  }
+
+  const llmCall = async (prompt) => {
+    const res = await fetch('http://127.0.0.1:18789/v1/chat/completions', {
+      method: 'POST',
+      signal: AbortSignal.timeout(60000),  // 60s guard — prevents hung 9router freezing _cronInFlight flag
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-5-mini',
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: "Generate today's FB drafts per the schema above." },
+        ],
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
+      }),
+    });
+    const json = await res.json();
+    if (!json.choices?.[0]?.message?.content) {
+      throw new Error('Empty LLM response: ' + JSON.stringify(json).slice(0, 300));
+    }
+    return json.choices[0].message.content;
+  };
+
+  const draft = await fbGenerator.generateDrafts({
+    pageId: loaded.config.pageId, pageToken: loaded.token, llmCall,
+  });
+
+  const digestSuppressed = tgPaused || inQuietHours;
+  if (digestSuppressed) {
+    draft.main.status = 'pending-digest-queued';
+    for (const v of (draft.variants || [])) v.status = 'pending-digest-queued';
+  }
+  fbDrafts.writeDraftForDate(draft.date, draft);
+
+  if (!digestSuppressed) {
+    await sendTelegram(_renderFbDigest(draft));
+  }
+  try {
+    auditLog('fb_draft_generated', {
+      date: draft.date, mainId: draft.main.id, variantCount: (draft.variants || []).length,
+      digestSuppressed, reason: tgPaused ? 'tg-paused' : (inQuietHours ? 'quiet-hours' : undefined),
+    });
+  } catch {}
+  return { ok: true, date: draft.date, mainId: draft.main.id, digestSuppressed };
+}
+
 // Manually trigger a cron handler (for "Test ngay" button in Dashboard).
 // CRITICAL: test fires MUST be byte-identical to scheduled cron fires so the
 // customer's test preview matches what they'll receive in production. No
@@ -11753,6 +11838,20 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
         const prompt = buildMemoryCleanupPrompt();
         const ok = await runCronAgentPrompt(prompt, { label: 'TEST — memory-cleanup' });
         return { success: ok, sent: ok };
+      } else if (id === 'fb-draft-generator') {
+        // Byte-identical to scheduled fire: same helper, same _cronInFlight guard.
+        if (global._cronInFlight?.get('fb-draft-generator')) {
+          return { success: false, error: 'Đang có phiên generate khác chạy' };
+        }
+        global._cronInFlight?.set('fb-draft-generator', true);
+        try {
+          const r = await runFbDraftGenerator({ label: 'TEST — fb-draft-generator' });
+          return { success: !!r.ok, sent: !!r.ok && !r.digestSuppressed, error: r.ok ? undefined : r.reason };
+        } catch (e) {
+          return { success: false, error: e.message };
+        } finally {
+          global._cronInFlight?.delete('fb-draft-generator');
+        }
       }
       return { success: false, error: 'Unknown schedule id' };
     } else if (type === 'custom') {
@@ -14667,58 +14766,7 @@ function _startCronJobsImpl() {
           }
           global._cronInFlight?.set('fb-draft-generator', true);
           try {
-            const loaded = fbAuth.loadPageToken(safeStorage);
-            if (!loaded) {
-              console.log('[fb-draft-generator] no token, skipping');
-              return;
-            }
-            const tgPaused = isChannelPaused('telegram');
-            const settings = fbConfig.readSettings();
-            // Quiet hours shift is minor — implement or leave as TODO with comment
-            if (settings.quietHours && _nowInsideQuietHours(settings.quietHours)) {
-              console.log('[fb-draft-generator] inside quiet hours, generating but deferring digest to after window');
-              // For v1 simplicity: generate as normal, digest delivery naturally skipped if paused
-            }
-
-            const llmCall = async (prompt) => {
-              const res = await fetch('http://127.0.0.1:18789/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  model: 'gpt-5-mini',
-                  messages: [
-                    { role: 'system', content: prompt },
-                    { role: 'user', content: "Generate today's FB drafts per the schema above." },
-                  ],
-                  max_tokens: 2000,
-                  response_format: { type: 'json_object' },
-                }),
-              });
-              const json = await res.json();
-              if (!json.choices?.[0]?.message?.content) {
-                throw new Error('Empty LLM response: ' + JSON.stringify(json).slice(0, 300));
-              }
-              return json.choices[0].message.content;
-            };
-
-            const draft = await fbGenerator.generateDrafts({
-              pageId: loaded.config.pageId, pageToken: loaded.token, llmCall,
-            });
-
-            if (tgPaused) {
-              draft.main.status = 'pending-digest-queued';
-              for (const v of (draft.variants || [])) v.status = 'pending-digest-queued';
-            }
-            fbDrafts.writeDraftForDate(draft.date, draft);
-
-            if (!tgPaused) {
-              await sendTelegram(_renderFbDigest(draft));
-            }
-            try {
-              auditLog('fb_draft_generated', {
-                date: draft.date, mainId: draft.main.id, variantCount: (draft.variants || []).length,
-              });
-            } catch {}
+            await runFbDraftGenerator({ label: s.label || 'Tạo draft FB sáng' });
             _fbGeneratorFailCount = 0;  // reset on success
           } catch (e) {
             console.error('[fb-draft-generator] failed:', e);
