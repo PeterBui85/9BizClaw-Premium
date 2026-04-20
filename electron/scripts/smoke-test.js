@@ -948,6 +948,22 @@ try {
   fail('G12.index — read failed', e.message);
 }
 
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  const extraRes = pkg.build?.extraResources || [];
+  const expected = [
+    'fb-performance-history.md',
+    'fb-post-settings.json',
+  ];
+  const allFromPaths = JSON.stringify(extraRes);
+  for (const e of expected) {
+    if (allFromPaths.includes(e)) pass(`G12.extraresources.${e} — in build config`);
+    else fail(`G12.extraresources.${e} — missing from build.extraResources`, e);
+  }
+} catch (e) {
+  fail('G12.extraresources — read failed', e.message);
+}
+
 // =========================================================================
 // TEST G14: Workspace seed files — memory/fb-performance-history.md,
 //           config/fb-post-settings.json, AGENTS.md version stamp

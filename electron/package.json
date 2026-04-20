@@ -124,6 +124,14 @@
         ]
       },
       {
+        "from": "../memory/fb-performance-history.md",
+        "to": "workspace-templates/memory/fb-performance-history.md"
+      },
+      {
+        "from": "../config/fb-post-settings.json",
+        "to": "workspace-templates/config/fb-post-settings.json"
+      },
+      {
         "from": "../tools",
         "to": "workspace-templates/tools"
       },
