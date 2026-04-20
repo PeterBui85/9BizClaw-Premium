@@ -3351,8 +3351,51 @@
             }
           }
         }
+        await renderFbPerformanceChart();
       } catch (e) {
         console.error('[fb tab] load failed:', e);
+      }
+    }
+
+    // Task 26: 4-week performance chart — custom inline SVG (no Chart.js
+    // dependency). Parses per-day metrics from fb-get-performance IPC, renders
+    // Reactions (solid blue) + Impressions (dashed pink) polylines with shared
+    // X-axis. Empty-state message when no history yet.
+    async function renderFbPerformanceChart() {
+      try {
+        const { days } = await window.claw.fbGetPerformance();
+        const chart = document.getElementById('fb-performance-chart');
+        if (!chart) return;
+        const entries = Object.entries(days || {}).sort((a, b) => a[0].localeCompare(b[0])).slice(-28);
+        if (!entries.length) {
+          chart.innerHTML = '<p class="fb-empty-state">Biểu đồ sẽ hiện khi có post đầu tiên + ≥ 24h insights data.</p>';
+          return;
+        }
+        const maxR = Math.max(1, ...entries.map((e) => e[1].reactions || 0));
+        const maxI = Math.max(1, ...entries.map((e) => e[1].impressions || 0));
+        const w = 800, h = 240, padL = 50, padB = 30, padT = 10, padR = 10;
+        const chartW = w - padL - padR, chartH = h - padT - padB;
+        const xStep = chartW / Math.max(1, entries.length - 1);
+        const toY = (val, max) => padT + chartH - (val / max) * chartH;
+
+        const reactPath = entries.map(([, v], i) => `${i === 0 ? 'M' : 'L'} ${padL + i * xStep} ${toY(v.reactions || 0, maxR)}`).join(' ');
+        const impPath = entries.map(([, v], i) => `${i === 0 ? 'M' : 'L'} ${padL + i * xStep} ${toY(v.impressions || 0, maxI)}`).join(' ');
+
+        chart.innerHTML = `
+          <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;max-height:240px;">
+            <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + chartH}" stroke="#888" />
+            <line x1="${padL}" y1="${padT + chartH}" x2="${padL + chartW}" y2="${padT + chartH}" stroke="#888" />
+            <path d="${reactPath}" stroke="#4a90e2" fill="none" stroke-width="2" />
+            <path d="${impPath}" stroke="#e24a90" fill="none" stroke-width="2" stroke-dasharray="4 2" />
+            <text x="${padL}" y="${padT + chartH + 20}" font-size="10" fill="#888">
+              ${entries[0][0]} → ${entries[entries.length - 1][0]}
+            </text>
+            <text x="${padL + chartW - 180}" y="${padT + 12}" font-size="11" fill="#4a90e2">— Reactions (max ${maxR})</text>
+            <text x="${padL + chartW - 180}" y="${padT + 28}" font-size="11" fill="#e24a90">--- Impressions (max ${maxI})</text>
+          </svg>
+        `;
+      } catch (e) {
+        console.error('[fb perf chart] render failed:', e);
       }
     }
 

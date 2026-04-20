@@ -19577,6 +19577,34 @@ ipcMain.handle('fb-compose-publish', async (_e, { text, image }) => {
     return { ok: false, error: e.message };
   }
 });
+
+// fb-get-performance: parse fb-performance-history.md into per-day metrics
+// for the Dashboard 4-week SVG chart (Task 26). Returns { days: { "YYYY-MM-DD":
+// { reactions, impressions, engaged } } } — renderer sorts + picks last 28.
+ipcMain.handle('fb-get-performance', async () => {
+  try {
+    const raw = fbPerformance.readRecentPerformance() || '';
+    // Parse history sections to extract per-day metrics
+    const days = {};
+    const sectionRe = /^## (\d{4}-\d{2}-\d{2}).*?\n([\s\S]*?)(?=\n## |\n---\n|$)/gm;
+    let m;
+    while ((m = sectionRe.exec(raw))) {
+      const date = m[1];
+      const body = m[2];
+      const lineMatch = body.match(/Reactions:\s*(\d+)\s*\|\s*Impressions:\s*(\d+)\s*\|\s*Engaged:\s*(\d+)/);
+      if (lineMatch) {
+        days[date] = {
+          reactions: parseInt(lineMatch[1], 10),
+          impressions: parseInt(lineMatch[2], 10),
+          engaged: parseInt(lineMatch[3], 10),
+        };
+      }
+    }
+    return { ok: true, days };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
 // === END FB IPC handlers ===
 
 // ============================================

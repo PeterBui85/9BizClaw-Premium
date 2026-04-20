@@ -1114,6 +1114,21 @@ try {
   }
 } catch (e) { fail('G11.fb-tab — read failed', e.message); }
 
+// G11.fb-perf-chart: Dashboard performance chart (Task 26) — SVG chart
+// rendering, fb-get-performance IPC handler + render function wired into
+// loadFbTab lifecycle.
+try {
+  const dash = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  if (dash.includes('renderFbPerformanceChart')) pass('G11.fb-perf-chart.fn — present');
+  else fail('G11.fb-perf-chart.fn — missing', 'add renderFbPerformanceChart');
+  if (dash.includes('<svg') && dash.includes('fb-performance-chart')) pass('G11.fb-perf-chart.svg — structure present');
+  else fail('G11.fb-perf-chart.svg — missing', 'add inline SVG rendering');
+  // Verify IPC handler exists
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes("'fb-get-performance'")) pass('G11.fb-perf-chart.ipc — handler present');
+  else fail('G11.fb-perf-chart.ipc — missing', "'fb-get-performance' handler");
+} catch (e) { fail('G11.fb-perf-chart — read failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
