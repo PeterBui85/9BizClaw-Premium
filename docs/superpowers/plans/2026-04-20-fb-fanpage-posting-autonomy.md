@@ -693,7 +693,7 @@ git commit -m "feat(fb): OAuth callback server with port fallback 18791..18795 +
 - Modify: `electron/main.js`
 - Modify: `electron/preload.js`
 
-- [ ] **Step 5.1: Add smoke guard G13.ipc for preload exports (TDD-first)**
+- [ ] **Step 5.1: Add smoke guard G13.preload for IPC bridges (TDD-first)**
 
 In `electron/scripts/smoke-test.js`, append to the FB section:
 
@@ -913,7 +913,7 @@ In `electron/main.js`, find `ensureZaloOutputFilterFix` function. Inside it, fin
     ];
 ```
 
-Note: inside the template-literal, `\\b` is the intended TS source `\b` (one backslash is swallowed by the JS string literal). If the file uses a raw template literal or different escaping convention, mirror the existing entries' escaping style exactly.
+Note: inside the template-literal, `\\b` is the intended TS source `\b` (one backslash is swallowed by the JS string literal). **Before pasting, grep one existing regex entry in the same template-literal block** to confirm the single-vs-double-backslash convention (e.g., `grep -A 1 'cot-en-the-actor' electron/main.js`) — mirror that escaping style exactly to avoid regex-in-string errors at patch-apply time.
 
 **Also bump the patch marker version** at the top of the TS-injected block (find comment like `// === 9BizClaw OUTPUT-FILTER PATCH v3 ===`): bump version by one (e.g., v3 → v4) so `ensureZaloOutputFilterFix()` re-applies the updated patch on existing installs instead of skipping due to matching marker.
 
@@ -941,9 +941,9 @@ If missing, add it. If present, proceed.
 - [ ] **Step 7.2: Full smoke run**
 
 Run: `cd electron && npm run smoke`
-Expected: ALL guards PASS (pre-existing G1-G14 + all new Chunk 1 guards: G7.×8, G13.config.×5, G13.graph.×9+1 version pin, G13.auth.×7, G13.preload.×5, G13.filter.×3). If any FAIL, fix root cause before proceeding — do NOT move to Chunk 2.
+Expected: ALL guards PASS (pre-existing G1-G14 + all new Chunk 1 guards: G7.×8, G13.config.×5, G13.graph.×10 (9 function exports + 1 version pin), G13.auth.×7, G13.preload.×5, G13.filter.×3). If any FAIL, fix root cause before proceeding — do NOT move to Chunk 2.
 
-- [ ] **Step 7.2: Tag the chunk completion**
+- [ ] **Step 7.3: Tag the chunk completion**
 
 ```bash
 git tag -a fb-chunk-1 -m "Chunk 1 complete: fb/ skeleton + config + graph + auth + IPC + output filter"
