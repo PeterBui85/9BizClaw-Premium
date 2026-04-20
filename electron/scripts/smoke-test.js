@@ -1002,6 +1002,19 @@ try {
   fail('G14.seed-logic — read failed', e.message);
 }
 
+try {
+  const fbDrafts = require('../fb/drafts.js');
+  const required = ['readDraftForDate', 'writeDraftForDate', 'markStatus',
+                    'listPendingDrafts', 'getDraftPath', 'DRAFT_STATUSES', 'getWorkspaceDir'];
+  for (const name of required) {
+    if (typeof fbDrafts[name] !== 'undefined') pass(`G13.drafts.${name} — exported`);
+    else fail(`G13.drafts.${name} — missing`, name);
+  }
+  if (Array.isArray(fbDrafts.DRAFT_STATUSES) && fbDrafts.DRAFT_STATUSES.includes('pending-digest-queued')) {
+    pass('G13.drafts.statuses — includes pending-digest-queued');
+  } else fail('G13.drafts.statuses — enum incomplete', JSON.stringify(fbDrafts.DRAFT_STATUSES));
+} catch (e) { fail('G13.drafts — require failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
