@@ -18901,8 +18901,13 @@ ipcMain.handle('fb-connect-start', async (_e, appId, appSecret) => {
   try {
     const flow = await fbAuth.startCallbackServer({ appId, appSecret });
     _fbOauthInFlight = {
-      tokens: flow.tokens, port: flow.port, ready: flow.ready,
-      appId, appSecret,
+      // tokens is a cached Promise — safe to await from multiple IPC handlers
+      // (fb-connect-await-pages + fb-connect-complete both consume it)
+      tokens: flow.tokens,
+      port: flow.port,
+      ready: flow.ready,
+      appId,
+      appSecret,
     };
     return { ok: true, authUrl: flow.ready.authUrl, port: flow.ready.port };
   } catch (e) {
@@ -18912,9 +18917,12 @@ ipcMain.handle('fb-connect-start', async (_e, appId, appSecret) => {
 });
 
 ipcMain.handle('fb-connect-await-pages', async () => {
-  if (!_fbOauthInFlight) return { ok: false, error: 'No OAuth flow in progress' };
+  // Snapshot ref locally — concurrent fb-connect-start could swap _fbOauthInFlight
+  // during the await below. Defensive (symmetry with fb-connect-complete).
+  const inFlight = _fbOauthInFlight;
+  if (!inFlight) return { ok: false, error: 'No OAuth flow in progress' };
   try {
-    const result = await _fbOauthInFlight.tokens;
+    const result = await inFlight.tokens;
     if (result.error) return { ok: false, error: result.error };
     return { ok: true, pages: result.pages || [] };
   } catch (e) {
@@ -18923,9 +18931,14 @@ ipcMain.handle('fb-connect-await-pages', async () => {
 });
 
 ipcMain.handle('fb-connect-complete', async (_e, pickedPage) => {
-  if (!_fbOauthInFlight) return { ok: false, error: 'No OAuth flow in progress' };
+  // Snapshot ref locally BEFORE awaiting — concurrent fb-connect-start could
+  // swap _fbOauthInFlight during the await, causing credentials from flow A
+  // to be stored under flow B's appId/appSecret. Must use this local snapshot
+  // for the rest of the handler.
+  const inFlight = _fbOauthInFlight;
+  if (!inFlight) return { ok: false, error: 'No OAuth flow in progress' };
   try {
-    const result = await _fbOauthInFlight.tokens;
+    const result = await inFlight.tokens;
     if (result.error) {
       _fbOauthInFlight = null;
       return { ok: false, error: result.error };
@@ -18936,8 +18949,8 @@ ipcMain.handle('fb-connect-complete', async (_e, pickedPage) => {
       return { ok: false, error: 'Page not found in list', pages: result.pages };
     }
     await fbAuth.completeOAuth({
-      appId: _fbOauthInFlight.appId,
-      appSecret: _fbOauthInFlight.appSecret,
+      appId: inFlight.appId,
+      appSecret: inFlight.appSecret,
       pageId: page.id,
       pageName: page.name,
       pageToken: page.access_token,
@@ -18946,6 +18959,7 @@ ipcMain.handle('fb-connect-complete', async (_e, pickedPage) => {
     _fbOauthInFlight = null;
     return { ok: true, pageId: page.id, pageName: page.name };
   } catch (e) {
+    _fbOauthInFlight = null;
     return { ok: false, error: e.message };
   }
 });
