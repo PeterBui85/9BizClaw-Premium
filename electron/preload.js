@@ -148,6 +148,13 @@ contextBridge.exposeInMainWorld('claw', {
   gcalCheckLegacyArchive: () => ipcRenderer.invoke('gcal-check-legacy-archive'),
   gcalOpenLegacyArchive: () => ipcRenderer.invoke('gcal-open-legacy-archive'),
 
+  // Facebook Fanpage
+  fbConnectStart: (appId, appSecret) => ipcRenderer.invoke('fb-connect-start', appId, appSecret),
+  fbConnectAwaitPages: () => ipcRenderer.invoke('fb-connect-await-pages'),
+  fbConnectComplete: (pickedPage) => ipcRenderer.invoke('fb-connect-complete', pickedPage),
+  fbGetStatus: () => ipcRenderer.invoke('fb-get-status'),
+  fbDisconnect: () => ipcRenderer.invoke('fb-disconnect'),
+
   // Channel pause/resume (symmetric for Telegram + Zalo)
   pauseTelegram: (minutes) => ipcRenderer.invoke('pause-telegram', { minutes }),
   resumeTelegram: () => ipcRenderer.invoke('resume-telegram'),

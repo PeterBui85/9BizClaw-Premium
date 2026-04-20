@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, powerSaveBlocker, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, powerSaveBlocker, powerMonitor, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
@@ -18598,6 +18598,12 @@ const gcalAuth = require('./gcal/auth');
 const gcalCalendar = require('./gcal/calendar');
 const gcalConfig = require('./gcal/config');
 
+// === FB (Fanpage) module requires + OAuth in-flight state ===
+const fbAuth = require('./fb/auth');
+const fbGraph = require('./fb/graph');
+const fbConfig = require('./fb/config');
+let _fbOauthInFlight = null;
+
 // Recursively filter audit-log args through an allowlist. Prevents token
 // smuggling through nested paths (e.g., patch.access_token). Unit-tested
 // in smoke-gcal.js testAuditTokenExclusion with ya29./1///GOCSPX- prefixes.
@@ -18888,6 +18894,87 @@ ipcMain.handle('gcal-open-legacy-archive', async () => {
     return { success: false, error: e.message };
   }
 });
+
+// === FB IPC handlers ===
+ipcMain.handle('fb-connect-start', async (_e, appId, appSecret) => {
+  if (_fbOauthInFlight) _fbOauthInFlight = null;
+  try {
+    const flow = await fbAuth.startCallbackServer({ appId, appSecret });
+    _fbOauthInFlight = {
+      tokens: flow.tokens, port: flow.port, ready: flow.ready,
+      appId, appSecret,
+    };
+    return { ok: true, authUrl: flow.ready.authUrl, port: flow.ready.port };
+  } catch (e) {
+    _fbOauthInFlight = null;
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('fb-connect-await-pages', async () => {
+  if (!_fbOauthInFlight) return { ok: false, error: 'No OAuth flow in progress' };
+  try {
+    const result = await _fbOauthInFlight.tokens;
+    if (result.error) return { ok: false, error: result.error };
+    return { ok: true, pages: result.pages || [] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('fb-connect-complete', async (_e, pickedPage) => {
+  if (!_fbOauthInFlight) return { ok: false, error: 'No OAuth flow in progress' };
+  try {
+    const result = await _fbOauthInFlight.tokens;
+    if (result.error) {
+      _fbOauthInFlight = null;
+      return { ok: false, error: result.error };
+    }
+    const page = (result.pages || []).find((p) => p.id === pickedPage?.id);
+    if (!page) {
+      _fbOauthInFlight = null;
+      return { ok: false, error: 'Page not found in list', pages: result.pages };
+    }
+    await fbAuth.completeOAuth({
+      appId: _fbOauthInFlight.appId,
+      appSecret: _fbOauthInFlight.appSecret,
+      pageId: page.id,
+      pageName: page.name,
+      pageToken: page.access_token,
+      safeStorage,
+    });
+    _fbOauthInFlight = null;
+    return { ok: true, pageId: page.id, pageName: page.name };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('fb-get-status', async () => {
+  try {
+    const loaded = fbAuth.loadPageToken(safeStorage);
+    if (!loaded) return { ok: true, connected: false };
+    return {
+      ok: true,
+      connected: true,
+      pageId: loaded.config.pageId,
+      pageName: loaded.config.pageName,
+      grantedAt: loaded.config.grantedAt,
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('fb-disconnect', async () => {
+  try {
+    fbAuth.clearCredentials();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+// === END FB IPC handlers ===
 
 // ============================================
 //  APP LIFECYCLE

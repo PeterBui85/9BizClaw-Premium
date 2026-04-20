@@ -886,6 +886,18 @@ try {
   fail('G13.auth — require failed', e.message);
 }
 
+try {
+  const preloadText = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+  const required = ['fbConnectStart', 'fbConnectAwaitPages', 'fbConnectComplete',
+                    'fbGetStatus', 'fbDisconnect'];
+  for (const name of required) {
+    if (preloadText.includes(name + ':')) pass(`G13.preload.${name} — wired`);
+    else fail(`G13.preload.${name} — missing in preload.js`, `${name}: not found`);
+  }
+} catch (e) {
+  fail('G13.preload — read failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================

@@ -36,6 +36,7 @@
       "ui/**/*",
       "scripts/**/*",
       "gcal/**/*",
+      "fb/**/*",
       "patches/**/*",
       "data/**/*",
       "node_modules/**/*",
