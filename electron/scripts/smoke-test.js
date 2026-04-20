@@ -1015,6 +1015,15 @@ try {
   } else fail('G13.drafts.statuses — enum incomplete', JSON.stringify(fbDrafts.DRAFT_STATUSES));
 } catch (e) { fail('G13.drafts — require failed', e.message); }
 
+try {
+  const gen = require('../fb/generator.js');
+  const required = ['gatherContext', 'buildPrompt', 'parseGeneratorOutput', 'generateDrafts'];
+  for (const name of required) {
+    if (typeof gen[name] !== 'undefined') pass(`G13.generator.${name} — exported`);
+    else fail(`G13.generator.${name} — missing`, name);
+  }
+} catch (e) { fail('G13.generator — require failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
