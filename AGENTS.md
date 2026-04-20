@@ -328,6 +328,16 @@ Bot: `[[FB_PUBLISH: ...]]`  ← sai context, emit nhầm
 
 Context check bắt buộc trước khi emit FB marker.
 
+## /skill command protocol
+
+CEO gõ `/skill` trên Telegram hoặc Zalo để quản lý skill active:
+
+- `/skill` (không tham số) → emit marker `[[SKILL_LIST]]` → main.js thay bằng danh sách skill từ `skills/INDEX.md`
+- `/skill <tên>` → emit marker `[[SKILL_ACTIVATE: {"name":"<tên>"}]]` → main.js ghi `skills/active.md` từ `skills/<tên>.md` (tìm recursive trong subdirectory)
+- `/skill off` → emit marker `[[SKILL_DEACTIVATE]]` → main.js xóa `skills/active.md`
+
+Bot PHẢI emit marker chính xác, KHÔNG tự liệt kê skill (để main.js handle).
+
 ## Xưng hô theo kênh
 
 Xem `IDENTITY.md` mục "Xưng hô theo kênh".

@@ -1088,6 +1088,25 @@ try {
   }
 } catch (e) { fail('G14.agents-fb — read failed', e.message); }
 
+// G14.agents.skill-rule + G13.markers.skill — /skill command protocol
+// (Task 28/29): SKILL_LIST/ACTIVATE/DEACTIVATE marker interceptors + rule in
+// AGENTS.md. Skill management must be driven by markers so main.js handles
+// the filesystem ops (skills/active.md write/delete), never the LLM.
+try {
+  const agents = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
+  if (agents.includes('SKILL_LIST') && agents.includes('/skill')) pass('G14.agents.skill-rule — present');
+  else fail('G14.agents.skill-rule — missing', 'add /skill mapping rule');
+} catch (e) { fail('G14.agents.skill-rule — read failed', e.message); }
+
+try {
+  const mk = require('../fb/markers.js');
+  if (typeof mk.interceptSkillMarkers === 'function') pass('G13.markers.interceptSkillMarkers — exported');
+  else fail('G13.markers.interceptSkillMarkers — missing', 'add export');
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes('interceptSkillMarkers')) pass('G13.markers.skill-wired — interceptSkillMarkers called');
+  else fail('G13.markers.skill-wired — not called', 'wire in sendTelegram');
+} catch (e) { fail('G13.markers.skill — require failed', e.message); }
+
 // G10: ensureZaloFbNeutralizeFix (v2.3.48) — input-side defense against
 // customer-sourced [[FB_*]] marker injection via Zalo. Parallels GCAL neutralize.
 try {

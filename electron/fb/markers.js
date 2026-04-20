@@ -76,4 +76,59 @@ async function interceptFbMarkers(replyText, meta, { ceoChatId, workspace, handl
   return result;
 }
 
-module.exports = { interceptFbMarkers, extractFbMarkers, validateSource };
+// =========================================================================
+// Skill marker protocol (Task 28/29): [[SKILL_LIST]],
+// [[SKILL_ACTIVATE: {"name":"..."}]], [[SKILL_DEACTIVATE]]
+//
+// Bot emits a marker on /skill commands; main.js replaces the marker in the
+// outgoing Telegram text with the actual result (list / confirmation). This
+// keeps skill management deterministic — LLM never touches the filesystem.
+// =========================================================================
+
+const SKILL_LIST_RE = /\[\[SKILL_LIST\]\]/g;
+const SKILL_ACTIVATE_RE = /\[\[SKILL_ACTIVATE:\s*(\{[^}]*\})\]\]/g;
+const SKILL_DEACTIVATE_RE = /\[\[SKILL_DEACTIVATE\]\]/g;
+
+async function interceptSkillMarkers(replyText, { handlers }) {
+  if (!replyText) return replyText;
+  let result = replyText;
+
+  // SKILL_LIST
+  if (new RegExp(SKILL_LIST_RE.source, 'g').test(result)) {
+    try {
+      const listText = await handlers.list();
+      result = result.replace(new RegExp(SKILL_LIST_RE.source, 'g'), listText);
+    } catch (e) {
+      result = result.replace(new RegExp(SKILL_LIST_RE.source, 'g'), `Lỗi list skill: ${e.message}`);
+    }
+  }
+
+  // SKILL_ACTIVATE
+  const activateRe = new RegExp(SKILL_ACTIVATE_RE.source, 'g');
+  let m;
+  while ((m = activateRe.exec(result)) !== null) {
+    try {
+      const args = JSON.parse(m[1]);
+      const text = await handlers.activate(args.name);
+      result = result.replace(m[0], text);
+      activateRe.lastIndex = 0;  // reset because result changed
+    } catch (e) {
+      result = result.replace(m[0], `Lỗi activate: ${e.message}`);
+      activateRe.lastIndex = 0;
+    }
+  }
+
+  // SKILL_DEACTIVATE
+  if (new RegExp(SKILL_DEACTIVATE_RE.source, 'g').test(result)) {
+    try {
+      const text = await handlers.deactivate();
+      result = result.replace(new RegExp(SKILL_DEACTIVATE_RE.source, 'g'), text);
+    } catch (e) {
+      result = result.replace(new RegExp(SKILL_DEACTIVATE_RE.source, 'g'), `Lỗi deactivate: ${e.message}`);
+    }
+  }
+
+  return result;
+}
+
+module.exports = { interceptFbMarkers, interceptSkillMarkers, extractFbMarkers, validateSource };

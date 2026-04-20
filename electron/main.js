@@ -12026,6 +12026,97 @@ async function _fbHandleUndo({ postId }) {
   }
 }
 
+// =========================================================================
+// Skill marker handlers (Task 28/29): /skill command flow. Bot emits
+// [[SKILL_LIST]] / [[SKILL_ACTIVATE: {...}]] / [[SKILL_DEACTIVATE]] and
+// sendTelegram → fbMarkers.interceptSkillMarkers replaces markers with
+// these handler outputs. Filesystem ops live here, NOT in the LLM.
+// =========================================================================
+async function _handleSkillList() {
+  const ws = getWorkspace();
+  const indexPath = path.join(ws, 'skills', 'INDEX.md');
+  try {
+    const content = fs.readFileSync(indexPath, 'utf-8');
+    // Extract category headings (### level) + first 5 rows per table
+    const sections = [];
+    const lines = content.split('\n');
+    let currentSection = null;
+    let tableRowCount = 0;
+    for (const line of lines) {
+      if (/^### /.test(line)) {
+        currentSection = line.replace(/^###\s+/, '').trim();
+        sections.push({ name: currentSection, rows: [] });
+        tableRowCount = 0;
+      } else if (currentSection && /^\|/.test(line) && !line.includes('---') && tableRowCount < 5) {
+        const cells = line.split('|').map((c) => c.trim()).filter(Boolean);
+        if (cells.length >= 2 && !/^Skill/i.test(cells[0])) {
+          sections.push({ header: false, row: cells.slice(0, 2).join(' — ') });
+          sections[sections.length - 2].rows.push(cells.slice(0, 2).join(' — '));
+          tableRowCount++;
+        }
+      }
+    }
+    // Format
+    let out = 'Danh sách skill hiện có:\n\n';
+    const seen = new Set();
+    for (const s of sections) {
+      if (!s.name || seen.has(s.name)) continue;
+      seen.add(s.name);
+      out += `**${s.name}:**\n`;
+      for (const r of (s.rows || []).slice(0, 5)) {
+        out += `- ${r}\n`;
+      }
+      out += '\n';
+    }
+    out += '\nGõ `/skill <tên>` để kích hoạt, `/skill off` để tắt.';
+    return out;
+  } catch (e) {
+    return 'Không đọc được skills/INDEX.md: ' + e.message;
+  }
+}
+
+async function _handleSkillActivate(name) {
+  if (!name) return 'Thiếu tên skill. VD: `/skill ceo-advisor`.';
+  const ws = getWorkspace();
+  // Search for skill by name in skills/ dir
+  const skillsDir = path.join(ws, 'skills');
+  let foundPath = null;
+  try {
+    const walk = (dir) => {
+      for (const f of fs.readdirSync(dir)) {
+        const full = path.join(dir, f);
+        const stat = fs.statSync(full);
+        if (stat.isDirectory()) walk(full);
+        else if (f === `${name}.md` || f.endsWith(`/${name}.md`)) {
+          foundPath = full;
+          return;
+        }
+      }
+    };
+    walk(skillsDir);
+  } catch {}
+  if (!foundPath) return `Không tìm thấy skill "${name}". Gõ /skill để xem danh sách.`;
+  const activePath = path.join(skillsDir, 'active.md');
+  try {
+    const content = fs.readFileSync(foundPath, 'utf-8');
+    fs.writeFileSync(activePath, content, 'utf-8');
+    return `Đã kích hoạt skill: ${name}. Bot sẽ áp dụng skill này cho các task tiếp theo.`;
+  } catch (e) {
+    return `Lỗi activate: ${e.message}`;
+  }
+}
+
+async function _handleSkillDeactivate() {
+  const ws = getWorkspace();
+  const activePath = path.join(ws, 'skills', 'active.md');
+  try {
+    if (fs.existsSync(activePath)) fs.unlinkSync(activePath);
+    return 'Đã tắt skill active. Bot dùng AGENTS.md mặc định.';
+  } catch (e) {
+    return `Lỗi tắt skill: ${e.message}`;
+  }
+}
+
 // Manually trigger a cron handler (for "Test ngay" button in Dashboard).
 // CRITICAL: test fires MUST be byte-identical to scheduled cron fires so the
 // customer's test preview matches what they'll receive in production. No
@@ -12784,6 +12875,26 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
   } else if (skipFilter && typeof text === 'string' && text.includes('[[FB_')) {
     // Neutralize marker-looking text for system alerts (don't execute).
     text = text.replace(/\[\[FB_/g, '[FB-blocked-');
+  }
+  // v2.4.2: intercept SKILL markers ([[SKILL_LIST|ACTIVATE|DEACTIVATE]]) —
+  // /skill command protocol. Replaces markers with skill list or
+  // activate/deactivate confirmation text. main.js handles filesystem ops
+  // (skills/active.md), LLM only emits the marker.
+  if (!skipFilter && typeof text === 'string' && text.includes('[[SKILL_')) {
+    try {
+      text = await fbMarkers.interceptSkillMarkers(text, {
+        handlers: {
+          list: _handleSkillList,
+          activate: _handleSkillActivate,
+          deactivate: _handleSkillDeactivate,
+        },
+      });
+    } catch (e) {
+      console.error('[sendTelegram] SKILL marker intercept failed:', e.message);
+    }
+  } else if (skipFilter && typeof text === 'string' && text.includes('[[SKILL_')) {
+    // Neutralize marker-looking text for system alerts (don't execute).
+    text = text.replace(/\[\[SKILL_/g, '[SKILL-blocked-');
   }
   // Output filter — same patterns as Zalo transport filter
   if (!skipFilter) {
