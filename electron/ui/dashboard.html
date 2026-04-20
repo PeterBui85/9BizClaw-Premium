@@ -1646,6 +1646,16 @@
     #fb-compose-status { margin-left:12px; font-size:12px; color:var(--text-muted); }
     .fb-performance-chart { min-height:240px; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
     .fb-empty-state { color:var(--text-muted); font-style:italic; font-size:13px; margin:0; }
+
+    /* Task 30: Cron Dashboard redesign — grouped by owner */
+    .cron-filter-pills { display:flex; gap:8px; margin-bottom:16px; }
+    .filter-pill { padding:6px 12px; border-radius:16px; background:transparent; border:1px solid var(--border, #e5e7eb); cursor:pointer; }
+    .filter-pill.active { background:var(--primary, #3b82f6); color:white; border-color:var(--primary, #3b82f6); }
+    .cron-group { margin-bottom:20px; }
+    .cron-group h3 { font-size:14px; font-weight:600; color:var(--text-muted); margin:0 0 8px; letter-spacing:.5px; }
+    .cron-row { display:grid; grid-template-columns: 2fr 1fr 60px auto; gap:12px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border, #e5e7eb); }
+    .cron-name { font-weight:500; }
+    .cron-time { color:var(--text-muted); font-size:13px; }
   </style>
   <script src="vendor/fullcalendar/index.global.min.js"></script>
   <script src="vendor/fullcalendar/locale-vi.global.min.js"></script>
@@ -1811,15 +1821,38 @@
       <div class="page" id="page-schedules">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
-          <div><h2>Lịch tự động <span class="tip" data-tooltip="Bot chạy tự động theo lịch này">?</span></h2><div class="page-sub">Lịch bot chạy hàng ngày</div></div>
-          <button class="btn btn-secondary btn-small" onclick="loadSchedules()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
+          <div><h2>Lịch tự động <span class="tip" data-tooltip="Bot chạy tự động theo lịch này">?</span></h2><div class="page-sub">Lịch bot chạy hàng ngày — nhóm theo chủ sở hữu</div></div>
+          <button class="btn btn-secondary btn-small" onclick="renderCronPage()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
         </div>
         <div class="main-card">
-          <div id="schedule-list" style="display:flex;flex-direction:column;gap:6px">
-            <div class="skeleton skeleton-row"></div>
-            <div class="skeleton skeleton-row" style="width:85%"></div>
-            <div class="skeleton skeleton-row" style="width:70%"></div>
+          <div class="cron-filter-pills">
+            <button id="cron-filter-all" class="filter-pill active" data-filter="all">Tất cả</button>
+            <button id="cron-filter-zalo" class="filter-pill" data-filter="zalo">Zalo</button>
+            <button id="cron-filter-facebook" class="filter-pill" data-filter="facebook">Facebook</button>
+            <button id="cron-filter-ceo" class="filter-pill" data-filter="ceo">Cá nhân</button>
+            <button id="cron-filter-system" class="filter-pill" data-filter="system">Hệ thống</button>
           </div>
+
+          <div id="cron-group-zalo" class="cron-group" data-owner="zalo">
+            <h3>ZALO</h3>
+            <div class="cron-rows"></div>
+          </div>
+          <div id="cron-group-facebook" class="cron-group" data-owner="facebook">
+            <h3>FACEBOOK</h3>
+            <div class="cron-rows"></div>
+          </div>
+          <div id="cron-group-ceo" class="cron-group" data-owner="ceo">
+            <h3>CÁ NHÂN CEO</h3>
+            <div class="cron-rows"></div>
+          </div>
+          <div id="cron-group-system" class="cron-group" data-owner="system">
+            <h3>HỆ THỐNG (chỉ đọc)</h3>
+            <div class="cron-rows"></div>
+          </div>
+
+          <!-- Legacy schedule-list kept hidden so existing loadSchedules()/renderSchedules()
+               callers (sidebar counters, overview card) still function without throwing. -->
+          <div id="schedule-list" style="display:none"></div>
         </div>
       </div>
 
@@ -3112,6 +3145,71 @@
     // Schedules (fixed + custom)
     let currentSchedules = [];
     let customCrons = [];
+
+    // Task 30: grouped "Lịch tự động" tab renderer.
+    // Reads raw schedules.json + custom-crons.json via get-cron-entries IPC,
+    // groups by `owner` field (zalo / facebook / ceo / system), renders filter
+    // pills + per-row "Sửa nhóm" action. System entries are read-only (no edit).
+    async function renderCronPage() {
+      try {
+        const { schedules, custom } = await window.claw.getCronEntries();
+        const all = [...(schedules || []), ...(custom || [])];
+        for (const g of ['zalo', 'facebook', 'ceo', 'system']) {
+          const container = document.querySelector(`#cron-group-${g} .cron-rows`);
+          if (!container) continue;
+          container.innerHTML = '';
+          const entries = all.filter((x) => (x.owner || 'system') === g);
+          if (!entries.length) {
+            container.innerHTML = '<p class="fb-empty-state">(không có)</p>';
+            continue;
+          }
+          for (const e of entries) {
+            const row = document.createElement('div');
+            row.className = 'cron-row';
+            row.innerHTML = `
+              <span class="cron-name">${cronEscapeHtml(e.label || e.id || e.name || '(unnamed)')}</span>
+              <span class="cron-time">${cronEscapeHtml(e.time || '')}</span>
+              <span class="cron-status">${e.enabled === false ? 'OFF' : 'ON'}</span>
+              <span class="cron-actions">
+                ${g !== 'system' ? `<button class="btn-small cron-owner-edit" data-name="${cronEscapeHtml(e.id || e.name || '')}">Sửa nhóm</button>` : ''}
+              </span>
+            `;
+            container.appendChild(row);
+          }
+        }
+        // Wire "Sửa nhóm"
+        document.querySelectorAll('.cron-owner-edit').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const newOwner = prompt('Nhóm mới (zalo / facebook / ceo / system):', 'ceo');
+            if (!newOwner) return;
+            if (!['zalo', 'facebook', 'ceo', 'system'].includes(newOwner.trim())) {
+              alert('Chỉ chấp nhận: zalo / facebook / ceo / system');
+              return;
+            }
+            const res = await window.claw.setCronOwner(btn.dataset.name, newOwner.trim());
+            if (res && res.ok) renderCronPage();
+            else alert('Lỗi: ' + ((res && res.error) || 'unknown'));
+          });
+        });
+        // Wire filter pills
+        document.querySelectorAll('.cron-filter-pills button').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const g = btn.dataset.filter;
+            document.querySelectorAll('.cron-group').forEach((el) => {
+              el.style.display = (g === 'all' || el.dataset.owner === g) ? 'block' : 'none';
+            });
+            document.querySelectorAll('.cron-filter-pills button').forEach((b) => b.classList.toggle('active', b === btn));
+          });
+        });
+      } catch (e) { console.error('[cron page]', e); }
+    }
+
+    function cronEscapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
     async function loadSchedules() {
       // 2s fallback: if IPC hasn't responded, replace skeletons with friendly empty-state
       let _loaded = false;
@@ -3278,6 +3376,8 @@
       }
       if (page === 'schedules') {
         loadSchedules();
+        // Task 30: render the grouped cron view on top of legacy loadSchedules()
+        try { renderCronPage(); } catch (e) { console.warn('[cron page] render failed:', e); }
       }
       if (page === 'knowledge') {
         // Reset user-touched flag so nudge logic runs again on this visit

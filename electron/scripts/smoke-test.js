@@ -1148,6 +1148,23 @@ try {
   else fail('G11.fb-perf-chart.ipc — missing', "'fb-get-performance' handler");
 } catch (e) { fail('G11.fb-perf-chart — read failed', e.message); }
 
+// G11.cron-dashboard: Task 30 — Cron Dashboard redesign grouped by owner.
+// Verifies filter pill / group container IDs in dashboard.html, and
+// set-cron-owner IPC + migrateCronOwnerFields call-site in main.js.
+try {
+  const dash = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  const ids = ['cron-filter-all', 'cron-group-zalo', 'cron-group-facebook', 'cron-group-ceo', 'cron-group-system'];
+  let missing = 0;
+  for (const id of ids) if (!dash.includes(`id="${id}"`)) missing++;
+  if (missing === 0) pass('G11.cron-dashboard.groups — all 5 filter/group IDs present');
+  else fail('G11.cron-dashboard.groups — missing IDs', `${missing} of 5 missing`);
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes("'set-cron-owner'")) pass('G11.cron-dashboard.ipc — set-cron-owner handler present');
+  else fail('G11.cron-dashboard.ipc — missing', "add 'set-cron-owner' IPC");
+  if (mainText.includes('migrateCronOwnerFields')) pass('G11.cron-dashboard.migrate — owner migration wired');
+  else fail('G11.cron-dashboard.migrate — not wired', 'add migrateCronOwnerFields call');
+} catch (e) { fail('G11.cron-dashboard — read failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================

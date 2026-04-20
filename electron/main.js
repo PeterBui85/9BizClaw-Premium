@@ -183,14 +183,16 @@ function invalidateWorkspaceCache() { _workspaceCached = null; _appPackaged = nu
 // Default schedules (also used as template when seeding fresh install)
 const DEFAULT_SCHEDULES_JSON = [
   // `icon` legacy field kept empty — Dashboard uses lucide icons via SCHEDULE_ICON_MAP, not emoji.
-  { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: true, icon: '', description: 'Doanh thu, lịch họp, việc cần xử lý' },
-  { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true, icon: '', description: 'Kết quả ngày, vấn đề tồn đọng' },
-  { id: 'heartbeat', label: 'Kiểm tra tự động', time: 'Mỗi 30 phút', enabled: true, icon: '', description: 'Gateway, kênh liên lạc' },
-  { id: 'meditation', label: 'Tối ưu ban đêm', time: '01:00', enabled: true, icon: '', description: 'Bot tự review bài học, tối ưu bộ nhớ' },
-  { id: 'weekly', label: 'Báo cáo tuần', time: '08:00', enabled: true, icon: '', description: 'Tổng kết tuần, khách mới, ưu tiên tuần tới' },
-  { id: 'monthly', label: 'Báo cáo tháng', time: '08:30', enabled: true, icon: '', description: 'Tổng kết tháng, trend, kế hoạch tháng tới' },
-  { id: 'zalo-followup', label: 'Follow-up khách Zalo', time: '09:30', enabled: true, icon: '', description: 'Nhắc CEO khách mới chưa tương tác, khách hỏi chưa reply' },
-  { id: 'memory-cleanup', label: 'Dọn dẹp memory', time: '02:00', enabled: false, icon: '', description: 'Tổng hợp journal cũ, dọn dẹp memory rời rạc' },
+  // `owner` field (Task 30) groups entries in Dashboard "Lịch tự động" tab:
+  //   zalo / facebook / ceo / system (system = read-only, managed by platform).
+  { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: true, icon: '', description: 'Doanh thu, lịch họp, việc cần xử lý', owner: 'zalo' },
+  { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true, icon: '', description: 'Kết quả ngày, vấn đề tồn đọng', owner: 'zalo' },
+  { id: 'heartbeat', label: 'Kiểm tra tự động', time: 'Mỗi 30 phút', enabled: true, icon: '', description: 'Gateway, kênh liên lạc', owner: 'system' },
+  { id: 'meditation', label: 'Tối ưu ban đêm', time: '01:00', enabled: true, icon: '', description: 'Bot tự review bài học, tối ưu bộ nhớ', owner: 'system' },
+  { id: 'weekly', label: 'Báo cáo tuần', time: '08:00', enabled: true, icon: '', description: 'Tổng kết tuần, khách mới, ưu tiên tuần tới', owner: 'zalo' },
+  { id: 'monthly', label: 'Báo cáo tháng', time: '08:30', enabled: true, icon: '', description: 'Tổng kết tháng, trend, kế hoạch tháng tới', owner: 'zalo' },
+  { id: 'zalo-followup', label: 'Follow-up khách Zalo', time: '09:30', enabled: true, icon: '', description: 'Nhắc CEO khách mới chưa tương tác, khách hỏi chưa reply', owner: 'zalo' },
+  { id: 'memory-cleanup', label: 'Dọn dẹp memory', time: '02:00', enabled: false, icon: '', description: 'Tổng hợp journal cũ, dọn dẹp memory rời rạc', owner: 'system' },
   { id: 'fb-draft-generator', label: 'Tạo draft FB sáng', time: '07:30', enabled: true, icon: '', description: 'Sinh bài FB sáng + gửi digest Telegram để duyệt', owner: 'facebook' },
   { id: 'fb-insights-sweep', label: 'FB Insights sweep', time: 'Mỗi 15 phút', enabled: true, icon: '', description: 'Fetch Insights cho post FB đã publish (24h + 7d check)', owner: 'facebook' },
   { id: 'fb-token-check', label: 'FB token validity check', time: 'Mon 08:00', enabled: true, icon: '', description: 'Kiểm tra token FB còn hợp lệ (tuần 1 lần)', owner: 'facebook' },
@@ -894,6 +896,18 @@ function seedWorkspace() {
   const customCronsFile = path.join(ws, 'custom-crons.json');
   if (!fs.existsSync(customCronsFile)) {
     try { writeJsonAtomic(customCronsFile, []); } catch {}
+  }
+
+  // Task 30: one-shot migration to add `owner` field to legacy cron entries
+  // (schedules.json + custom-crons.json). Marker-gated via workspace-state.json
+  // so this runs exactly once per install after upgrade. Necessary for the
+  // grouped "Lịch tự động" tab to display existing entries under the correct
+  // category (zalo / facebook / ceo / system).
+  try {
+    const fbMigrate = require('./fb/migrate');
+    fbMigrate.migrateCronOwnerFields(ws);
+  } catch (e) {
+    console.warn('[seedWorkspace] cron owner migration failed:', e.message);
   }
   const blocklistFile = path.join(ws, 'zalo-blocklist.json');
   if (!fs.existsSync(blocklistFile)) {
@@ -11324,6 +11338,41 @@ ipcMain.handle('get-custom-crons', async () => {
   }
   // Merge: OpenClaw entries first (they're the ones bot created), then MODOROClaw
   return [...openclawEntries, ...modoroEntries];
+});
+
+// Task 30: raw read of both schedule files for the grouped "Lịch tự động" tab.
+// Separate from get-schedules / get-custom-crons because the redesigned tab
+// renders fixed + custom entries in ONE merged list, grouped by `owner`.
+ipcMain.handle('get-cron-entries', async () => {
+  const ws = getWorkspace();
+  const read = (f) => {
+    try { return JSON.parse(fs.readFileSync(path.join(ws, f), 'utf-8')); }
+    catch { return []; }
+  };
+  return { schedules: read('schedules.json'), custom: read('custom-crons.json') };
+});
+
+// Task 30: allow CEO to re-categorize an existing cron entry via the "Sửa nhóm"
+// button in the grouped tab. Writes owner field to whichever file contains
+// an entry matching `name` (id or name). Rejects invalid owner values.
+ipcMain.handle('set-cron-owner', async (_e, name, owner) => {
+  if (!['zalo', 'facebook', 'telegram', 'ceo', 'system'].includes(owner)) {
+    return { ok: false, error: 'invalid owner' };
+  }
+  const ws = getWorkspace();
+  for (const f of ['schedules.json', 'custom-crons.json']) {
+    try {
+      const arr = JSON.parse(fs.readFileSync(path.join(ws, f), 'utf-8'));
+      if (!Array.isArray(arr)) continue;
+      const entry = arr.find((x) => x.id === name || x.name === name);
+      if (entry) {
+        entry.owner = owner;
+        fs.writeFileSync(path.join(ws, f), JSON.stringify(arr, null, 2) + '\n', 'utf-8');
+        return { ok: true };
+      }
+    } catch {}
+  }
+  return { ok: false, error: 'entry not found' };
 });
 
 ipcMain.handle('save-custom-crons', async (_event, crons) => {

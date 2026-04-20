@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('claw', {
   saveSchedules: (schedules) => ipcRenderer.invoke('save-schedules', schedules),
   getCustomCrons: () => ipcRenderer.invoke('get-custom-crons'),
   saveCustomCrons: (crons) => ipcRenderer.invoke('save-custom-crons', crons),
+  // Task 30: grouped cron tab — raw read + owner mutation
+  getCronEntries: () => ipcRenderer.invoke('get-cron-entries'),
+  setCronOwner: (name, owner) => ipcRenderer.invoke('set-cron-owner', name, owner),
   // CRIT #10: Always removeAllListeners before re-registering so renderer
   // hot-reloads / PIN re-lock don't stack N listeners that all fire per event.
   onCustomCronsUpdated: (cb) => {
