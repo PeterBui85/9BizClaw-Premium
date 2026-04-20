@@ -1080,6 +1080,17 @@ try {
   } else fail('G10.fb-neutralize.invoke — not called in _startOpenClawImpl', 'add call');
 } catch (e) { fail('G10.fb-neutralize — read failed', e.message); }
 
+// G11.fb-tab: Dashboard FB tab wiring (Task 22) — status bar, drafts list,
+// compose box, perf chart container + sidebar nav item all present.
+try {
+  const dashText = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  const ids = ['page-facebook', 'fb-status-bar', 'fb-drafts-list', 'fb-compose', 'fb-performance-chart'];
+  for (const id of ids) {
+    if (dashText.includes(`id="${id}"`)) pass(`G11.fb-tab.${id} — present`);
+    else fail(`G11.fb-tab.${id} — missing`, id);
+  }
+} catch (e) { fail('G11.fb-tab — read failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================

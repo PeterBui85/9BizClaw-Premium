@@ -1627,6 +1627,25 @@
     #gcal-fc-container .fc-list-day-cushion { background:var(--bg); }
     #gcal-fc-container .fc-timegrid-slot-label-cushion { color:var(--text-muted); font-size:11px; }
     #gcal-fc-container .fc-scrollgrid { border-color:var(--border); }
+
+    /* === Facebook page (Task 22) === */
+    .fb-status-bar { display:flex; align-items:center; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; margin-bottom:16px; }
+    .fb-status-dot { width:10px; height:10px; border-radius:50%; background:#9ca3af; display:inline-block; flex-shrink:0; }
+    .fb-status-text { font-size:13px; color:var(--text); flex:1; }
+    .fb-section { margin-bottom:24px; }
+    .fb-section h2 { margin:0 0 12px; font-size:15px; font-weight:600; color:var(--text); }
+    .fb-drafts-list { display:flex; flex-direction:column; gap:12px; }
+    .fb-draft-card { padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+    .fb-draft-head { font-weight:600; margin-bottom:8px; color:var(--text-muted); font-size:12px; }
+    .fb-draft-msg { width:100%; font-family:inherit; font-size:13px; padding:10px; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); resize:vertical; }
+    .fb-draft-meta { font-size:11px; color:var(--text-muted); margin:6px 0; }
+    .fb-draft-actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
+    .fb-draft-status { font-size:12px; color:var(--text-muted); }
+    .fb-compose textarea, .fb-compose input { width:100%; font-family:inherit; font-size:13px; padding:10px; margin-bottom:10px; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); }
+    .fb-compose textarea { resize:vertical; }
+    #fb-compose-status { margin-left:12px; font-size:12px; color:var(--text-muted); }
+    .fb-performance-chart { min-height:240px; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+    .fb-empty-state { color:var(--text-muted); font-style:italic; font-size:13px; margin:0; }
   </style>
   <script src="vendor/fullcalendar/index.global.min.js"></script>
   <script src="vendor/fullcalendar/locale-vi.global.min.js"></script>
@@ -1679,6 +1698,9 @@
         </div>
         <div class="sidebar-menu-item" data-page="calendar" onclick="switchPage('calendar')">
           <span class="icon" data-icon="calendar"></span><span class="label">Google Calendar</span>
+        </div>
+        <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
+          <span class="icon" data-icon="facebook"></span><span class="label">Facebook</span>
         </div>
 
         <div class="sidebar-menu-header">Kênh</div>
@@ -2466,6 +2488,49 @@
         </div>
       </div>
 
+      <!-- PAGE: Facebook (Task 22) — status bar, today's drafts, compose box,
+           perf chart container (SVG injected by Task 26) -->
+      <div class="page" id="page-facebook">
+        <div class="page-header">
+          <span class="page-icon" data-icon="facebook" data-icon-size="26"></span>
+          <div>
+            <h2>Facebook</h2>
+            <div class="page-sub">Duyệt bài viết tự động, soạn bài thủ công, xem hiệu quả</div>
+          </div>
+        </div>
+
+        <div id="fb-status-bar" class="fb-status-bar">
+          <span class="fb-status-dot"></span>
+          <span class="fb-status-text">Đang kiểm tra...</span>
+          <button id="fb-connect-cta" class="btn btn-secondary btn-small" style="display:none">Kết nối</button>
+          <button id="fb-disconnect-btn" class="btn btn-secondary btn-small" style="display:none">Ngắt kết nối</button>
+        </div>
+
+        <section class="fb-section">
+          <h2>Duyệt hôm nay</h2>
+          <div id="fb-drafts-list" class="fb-drafts-list">
+            <p class="fb-empty-state">Chưa có draft nào. Cron 07:30 sáng mai sẽ tạo draft đầu tiên.</p>
+          </div>
+        </section>
+
+        <section class="fb-section">
+          <h2>Soạn bài mới</h2>
+          <div id="fb-compose" class="fb-compose">
+            <textarea id="fb-compose-text" rows="6" placeholder="Nội dung bài đăng FB..."></textarea>
+            <input id="fb-compose-image" type="text" placeholder="Đường dẫn ảnh (VD: knowledge/san-pham/files/iPhone.jpg) — bỏ trống để đăng text-only" />
+            <button id="fb-compose-publish" class="btn btn-primary btn-small">Đăng ngay</button>
+            <span id="fb-compose-status"></span>
+          </div>
+        </section>
+
+        <section class="fb-section">
+          <h2>Hiệu quả (4 tuần gần nhất)</h2>
+          <div id="fb-performance-chart" class="fb-performance-chart">
+            <p class="fb-empty-state">Biểu đồ sẽ hiện khi có post đầu tiên + ≥ 24h insights data.</p>
+          </div>
+        </section>
+      </div>
+
     </div>
 
     <!-- ACTIVITY PANEL (shown on Overview) -->
@@ -3238,9 +3303,154 @@
       if (page === 'calendar') {
         gcalRefreshStatus();
       }
+      if (page === 'facebook') {
+        loadFbTab();
+      }
     }
     // Alias used by overview card buttons (matches what onclick handlers call)
     function setActivePage(page) { switchPage(page); }
+
+    // ============================================
+    //  FACEBOOK TAB (Task 22) — status bar, drafts list, compose box
+    // ============================================
+    async function loadFbTab() {
+      try {
+        const status = await window.claw.fbGetStatus();
+        const bar = document.getElementById('fb-status-bar');
+        if (!bar) return;
+        const dot = bar.querySelector('.fb-status-dot');
+        const text = bar.querySelector('.fb-status-text');
+        const connectCta = document.getElementById('fb-connect-cta');
+        const disconnectBtn = document.getElementById('fb-disconnect-btn');
+
+        if (status && status.connected) {
+          if (dot) dot.style.background = '#22c55e';
+          if (text) text.textContent = `Kết nối: ${status.pageName || '(chưa có tên)'}`;
+          if (connectCta) connectCta.style.display = 'none';
+          if (disconnectBtn) disconnectBtn.style.display = 'inline-block';
+        } else {
+          if (dot) dot.style.background = '#9ca3af';
+          if (text) text.textContent = 'Chưa kết nối FB';
+          if (connectCta) connectCta.style.display = 'inline-block';
+          if (disconnectBtn) disconnectBtn.style.display = 'none';
+        }
+
+        const res = await window.claw.fbListPendingDrafts();
+        const list = document.getElementById('fb-drafts-list');
+        if (!list) return;
+        const items = (res && res.items) ? res.items : [];
+        if (!items.length) {
+          list.innerHTML = '<p class="fb-empty-state">Chưa có draft nào. Cron 07:30 sáng mai sẽ tạo draft đầu tiên.</p>';
+        } else {
+          list.innerHTML = '';
+          for (const { date, draft } of items) {
+            if (draft && draft.main) renderFbDraftCard(list, date, draft.main, 'main');
+            const variants = (draft && draft.variants) ? draft.variants : [];
+            for (let i = 0; i < variants.length; i++) {
+              renderFbDraftCard(list, date, variants[i], i === 0 ? 'a' : 'b');
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[fb tab] load failed:', e);
+      }
+    }
+
+    function renderFbDraftCard(container, date, entry, variantLabel) {
+      if (!entry || !entry.id) return;
+      const card = document.createElement('div');
+      card.className = 'fb-draft-card';
+      card.id = `fb-draft-${entry.id}`;
+      const head = variantLabel === 'main' ? '[Main]' : `[Variant ${variantLabel.toUpperCase()}]`;
+      const angleText = entry.angle || '(no angle)';
+      const imgLine = entry.imageHint ? `Ảnh: ${fbEscapeHtml(entry.imageHint)}` : '';
+      const timeLine = (entry.suggestedTimes && entry.suggestedTimes.length) ? `Giờ đề xuất: ${fbEscapeHtml(entry.suggestedTimes.join(', '))}` : '';
+      card.innerHTML = `
+        <div class="fb-draft-head">${head} ${fbEscapeHtml(angleText)}</div>
+        <textarea class="fb-draft-msg" rows="5">${fbEscapeHtml(entry.message || '')}</textarea>
+        <div class="fb-draft-meta">${imgLine}${imgLine && timeLine ? ' · ' : ''}${timeLine}</div>
+        <div class="fb-draft-actions">
+          <button class="btn btn-primary btn-small fb-publish-btn" data-id="${fbEscapeHtml(entry.id)}">Đăng ngay</button>
+          <button class="btn btn-secondary btn-small fb-skip-btn" data-date="${fbEscapeHtml(date)}" data-id="${fbEscapeHtml(entry.id)}">Bỏ</button>
+          <span class="fb-draft-status"></span>
+        </div>
+      `;
+      const publishBtn = card.querySelector('.fb-publish-btn');
+      publishBtn.addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        const statusEl = btn.parentElement.querySelector('.fb-draft-status');
+        const msg = card.querySelector('.fb-draft-msg').value;
+        btn.disabled = true;
+        statusEl.textContent = 'Đang đăng...';
+        try {
+          const r = await window.claw.fbPublishDraft({ id: btn.dataset.id, text: msg });
+          statusEl.textContent = r && r.ok ? 'Đã đăng' : ('Lỗi: ' + ((r && r.error) || 'unknown'));
+          if (r && r.ok) setTimeout(loadFbTab, 1000);
+        } catch (e) {
+          statusEl.textContent = 'Lỗi: ' + e.message;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      const skipBtn = card.querySelector('.fb-skip-btn');
+      skipBtn.addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        btn.disabled = true;
+        try {
+          await window.claw.fbSkipDraft({ id: btn.dataset.id });
+          setTimeout(loadFbTab, 500);
+        } finally { btn.disabled = false; }
+      });
+      container.appendChild(card);
+    }
+
+    function fbEscapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    // Wire compose + disconnect buttons (DOMContentLoaded already fired for
+    // most handlers in this file, so wire inline after DOM is available).
+    document.addEventListener('DOMContentLoaded', () => {
+      const publishBtn = document.getElementById('fb-compose-publish');
+      if (publishBtn) {
+        publishBtn.addEventListener('click', async () => {
+          const textEl = document.getElementById('fb-compose-text');
+          const imageEl = document.getElementById('fb-compose-image');
+          const statusEl = document.getElementById('fb-compose-status');
+          const text = (textEl.value || '').trim();
+          const image = (imageEl.value || '').trim();
+          if (!text) { statusEl.textContent = 'Thiếu nội dung'; return; }
+          publishBtn.disabled = true;
+          statusEl.textContent = 'Đang đăng...';
+          try {
+            const r = await window.claw.fbComposePublish({ text, image: image || null });
+            if (r && r.ok) {
+              statusEl.textContent = 'Đã đăng. ' + (r.url || '');
+              textEl.value = '';
+              imageEl.value = '';
+            } else {
+              statusEl.textContent = 'Lỗi: ' + ((r && r.error) || 'unknown');
+            }
+          } catch (e) {
+            statusEl.textContent = 'Lỗi: ' + e.message;
+          } finally {
+            publishBtn.disabled = false;
+          }
+        });
+      }
+      const disconnectBtn = document.getElementById('fb-disconnect-btn');
+      if (disconnectBtn) {
+        disconnectBtn.addEventListener('click', async () => {
+          if (!confirm('Ngắt kết nối Facebook? Bot sẽ không đăng bài được cho tới khi kết nối lại.')) return;
+          try {
+            await window.claw.fbDisconnect();
+            loadFbTab();
+          } catch (e) { alert('Lỗi: ' + e.message); }
+        });
+      }
+    });
 
     // ============================================
     //  GOOGLE CALENDAR — CEO key + wizard + events

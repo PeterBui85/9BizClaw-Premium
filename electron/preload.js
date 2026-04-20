@@ -154,6 +154,10 @@ contextBridge.exposeInMainWorld('claw', {
   fbConnectComplete: (pickedPage) => ipcRenderer.invoke('fb-connect-complete', pickedPage),
   fbGetStatus: () => ipcRenderer.invoke('fb-get-status'),
   fbDisconnect: () => ipcRenderer.invoke('fb-disconnect'),
+  fbListPendingDrafts: () => ipcRenderer.invoke('fb-list-pending-drafts'),
+  fbPublishDraft: (args) => ipcRenderer.invoke('fb-publish-draft', args),
+  fbSkipDraft: (args) => ipcRenderer.invoke('fb-skip-draft', args),
+  fbComposePublish: (args) => ipcRenderer.invoke('fb-compose-publish', args),
 
   // Channel pause/resume (symmetric for Telegram + Zalo)
   pauseTelegram: (minutes) => ipcRenderer.invoke('pause-telegram', { minutes }),

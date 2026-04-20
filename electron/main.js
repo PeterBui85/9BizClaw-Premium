@@ -19462,6 +19462,74 @@ ipcMain.handle('fb-disconnect', async () => {
     return { ok: false, error: e.message };
   }
 });
+
+// Task 22: Dashboard FB tab backend — list pending drafts, publish a draft
+// (honoring any inline edits from the textarea), skip a draft, and publish a
+// manual compose-box post. All delegate to the FB helper modules + reuse
+// _fbHandlePublish / _fbHandleSkip so the Telegram digest flow and the
+// dashboard share one code path.
+ipcMain.handle('fb-list-pending-drafts', async () => {
+  try {
+    const items = fbDrafts.listPendingDrafts();
+    return { ok: true, items };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('fb-publish-draft', async (_e, { id, text }) => {
+  try {
+    if (!id) return { ok: false, error: 'missing id' };
+    const date = id.slice(0, 10);
+    const draft = fbDrafts.readDraftForDate(date);
+    if (!draft) return { ok: false, error: 'draft not found' };
+    const target = draft.main?.id === id
+      ? draft.main
+      : (draft.variants || []).find((v) => v.id === id);
+    if (!target) return { ok: false, error: 'variant not found' };
+    if (text !== undefined) target.message = text;  // honor inline edits
+    fbDrafts.writeDraftForDate(date, draft);
+    const result = await _fbHandlePublish({ id });
+    return result;
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('fb-skip-draft', async (_e, { id }) => {
+  try {
+    const result = await _fbHandleSkip({ id });
+    return result;
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('fb-compose-publish', async (_e, { text, image }) => {
+  try {
+    if (!text || !text.trim()) return { ok: false, error: 'empty text' };
+    const loaded = fbAuth.loadPageToken(safeStorage);
+    if (!loaded) return { ok: false, error: 'not connected' };
+    let mediaFbids = [];
+    if (image && image.startsWith('knowledge/')) {
+      const imgPath = path.join(getWorkspace(), image);
+      if (fs.existsSync(imgPath)) {
+        try {
+          const up = await fbGraph.uploadPhoto(loaded.config.pageId, loaded.token, { filePath: imgPath });
+          if (up?.id) mediaFbids = [up.id];
+        } catch (e) { console.warn('[fb compose] photo upload failed:', e.message); }
+      }
+    }
+    const res = await fbGraph.postToFeed(loaded.config.pageId, loaded.token, {
+      message: text, mediaFbids,
+    });
+    const postId = res.id || res.post_id;
+    if (!postId) return { ok: false, error: 'Graph returned no postId' };
+    const pageUrl = `https://www.facebook.com/${loaded.config.pageId}/posts/${postId.split('_').pop()}`;
+    try {
+      fs.appendFileSync(path.join(getWorkspace(), 'logs', 'fb-posts-log.jsonl'),
+        JSON.stringify({ t: new Date().toISOString(), postId, source: 'compose' }) + '\n');
+    } catch {}
+    auditLog('fb_compose_published', { postId });
+    return { ok: true, postId, url: pageUrl };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
 // === END FB IPC handlers ===
 
 // ============================================
