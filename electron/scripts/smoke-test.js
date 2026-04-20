@@ -828,6 +828,20 @@ if (!fs.existsSync(dashboardHtmlPath)) {
 }
 
 // =========================================================================
+// TEST G7: FB Fanpage module — all 8 stub files must exist
+// =========================================================================
+section("FB Fanpage module");
+const fbFiles = [
+  'auth.js', 'config.js', 'graph.js', 'drafts.js',
+  'generator.js', 'performance.js', 'markers.js', 'migrate.js',
+];
+for (const f of fbFiles) {
+  const p = path.join(__dirname, '..', 'fb', f);
+  if (fs.existsSync(p)) pass(`G7.${f} — electron/fb/${f} exists`);
+  else fail(`G7.${f} — electron/fb/${f} missing`, p);
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
