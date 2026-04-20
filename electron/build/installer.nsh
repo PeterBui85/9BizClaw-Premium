@@ -1,3 +1,24 @@
+; 9BizClaw custom installer hooks — MUST go before uninstaller section
+;
+; PROBLEM: Windows file locks. When 9BizClaw is running and user launches
+; the new installer, Windows silently prevents overwriting app.asar and the
+; main .exe because the running process has them open. NSIS reports "install
+; succeeded" but the on-disk files are unchanged — user sees the SAME bugs
+; despite "upgrading", with zero indication why.
+;
+; FIX: taskkill the running process BEFORE copy phase. Also kill spawned
+; child processes (openclaw gateway, openzca listener, 9router) so their
+; child .exe files can also be replaced cleanly.
+
+!macro customInit
+  DetailPrint "Dong 9BizClaw dang chay (neu co) de cai ban moi..."
+  nsExec::ExecToLog 'taskkill /F /IM "9BizClaw.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "openclaw.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "openzca.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /IM "9router.exe" /T'
+  Sleep 1500
+!macroend
+
 ; 9BizClaw custom uninstaller cleanup
 ;
 ; DESIGN PRINCIPLE: Uninstaller NEVER touches user data. Windows convention —
