@@ -3438,11 +3438,15 @@
         title: 'Bước 3/6 — OAuth consent screen',
         body: `
           <button class="btn btn-primary" onclick="gcalOpenExternal('https://console.cloud.google.com/apis/credentials/consent')">Mở OAuth consent screen</button>
-          <ol style="margin-top:12px;padding-left:20px;line-height:1.8">
-            <li>Chọn <code>External</code>, bấm <code>CREATE</code>.</li>
-            <li>App name: bất kỳ. Support email + developer email = email sếp.</li>
-            <li>Bấm <code>SAVE AND CONTINUE</code> qua 4 màn (Scopes / Test users / Summary — để trống).</li>
-            <li><strong>Quan trọng:</strong> sau Summary sẽ quay về trang "OAuth consent screen". Tìm nút xanh <code>PUBLISH APP</code>, bấm → xác nhận <code>CONFIRM</code>. Đây là bước bắt buộc cho refresh token bền.</li>
+          <p style="margin-top:10px;font-size:12px;color:var(--text-muted)">Google đã đổi UI cuối 2024 — làm theo các bước dưới đúng thứ tự, bỏ qua bước nào không thấy trên màn hình sếp.</p>
+          <ol style="margin-top:8px;padding-left:20px;line-height:1.7">
+            <li>Nếu thấy nút lớn <code>GET STARTED</code> (hoặc <code>Configure consent screen</code>) → bấm vào.</li>
+            <li><strong>App name</strong>: bất kỳ (ví dụ <code>9BizClaw</code>).</li>
+            <li><strong>User support email</strong>: email sếp.</li>
+            <li><strong>Audience</strong> (chỗ này hay bị lạc — sếp ĐANG tìm "External"): chọn <code>External</code> (không chọn Internal — Internal chỉ dùng cho Google Workspace).</li>
+            <li><strong>Developer contact email</strong>: email sếp.</li>
+            <li>Bấm <code>CREATE</code>. Nếu UI cũ hiện ra các màn Scopes / Test users / Summary → bấm <code>SAVE AND CONTINUE</code> qua hết, để trống.</li>
+            <li><strong>Quan trọng — PUBLISH APP:</strong> Ở sidebar trái của trang consent, bấm tab <code>Audience</code> → thấy "Publishing status: Testing" → bấm nút xanh <code>PUBLISH APP</code> → xác nhận <code>CONFIRM</code>. (UI cũ: nút xanh hiện ngay trên trang OAuth consent screen.) Bước này BẮT BUỘC — không publish thì refresh token hết hạn sau 7 ngày.</li>
           </ol>
         `,
       },
