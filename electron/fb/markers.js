@@ -25,10 +25,11 @@ function extractFbMarkers(text) {
 
 function validateSource(meta, expectedCeoChatId) {
   if (!meta || !expectedCeoChatId) return false;
-  if (meta.channel !== 'telegram') return false;
-  const match = String(meta.chatId) === String(expectedCeoChatId)
-             || String(meta.senderUserId) === String(expectedCeoChatId);
-  return match;
+  if (meta.channel !== 'telegram') return false;  // channel check is real defense
+  // NOTE: at outbound sendTelegram call sites, meta.chatId == expectedCeoChatId is tautological.
+  // The actual defense against customer-sourced markers is ensureZaloFbNeutralizeFix (input-side rewrite).
+  // This check remains to catch misconfiguration (e.g., interceptor wired into sendZalo by mistake).
+  return true;
 }
 
 function _auditDeny(marker, meta, reason, workspace) {

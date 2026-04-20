@@ -4811,6 +4811,50 @@ function ensureZaloGcalNeutralizeFix() {
   console.log('[gcal-neutralize] injected into inbound.ts');
 }
 
+// v2.3.48 SECURITY — FB marker neutralize (mirrors GCAL neutralize exactly).
+// Rewrites '[[FB_' to '[FB-blocked-' in inbound Zalo text so the agent cannot
+// be tricked into quoting customer-typed FB markers back into its output where
+// interceptFbMarkers would execute them (spec §Input-side defense).
+// Batch 1 hotfix parity with GCAL: on anchor-miss, logs + alerts CEO and
+// continues boot (output-side interceptor still runs; defense-in-depth partial).
+function ensureZaloFbNeutralizeFix() {
+  try {
+    const home = require('os').homedir();
+    const inboundPath = path.join(home, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
+    if (!fs.existsSync(inboundPath)) {
+      console.warn('[ensureZaloFbNeutralizeFix] openzalo inbound.ts not found, skipping');
+      return;
+    }
+    let content = fs.readFileSync(inboundPath, 'utf-8');
+    if (content.includes('9BizClaw FB-NEUTRALIZE PATCH v1')) {
+      return; // already applied
+    }
+    // Same anchor as GCAL neutralize
+    const anchor = /if \(!rawBody && !hasMedia\) \{\s*return;\s*\}/;
+    const m = content.match(anchor);
+    if (!m) {
+      try {
+        auditLog('patch_anchor_missing', { patch: 'ensureZaloFbNeutralizeFix' });
+        sendCeoAlert('[FB] Zalo FB neutralize anchor missing — input defense disabled, output defense still runs').catch(() => {});
+      } catch {}
+      console.warn('[ensureZaloFbNeutralizeFix] anchor not found — patch skipped');
+      return;
+    }
+    const injection = `
+// === 9BizClaw FB-NEUTRALIZE PATCH v1 ===
+if (typeof rawBody === 'string') {
+  rawBody = rawBody.replace(/\\[\\[FB_/g, '[FB-blocked-');
+}
+// === END 9BizClaw FB-NEUTRALIZE PATCH v1 ===
+`;
+    content = content.replace(m[0], m[0] + injection);
+    fs.writeFileSync(inboundPath, content, 'utf-8');
+    console.log('[ensureZaloFbNeutralizeFix] patched openzalo inbound.ts');
+  } catch (e) {
+    console.error('[ensureZaloFbNeutralizeFix] failed:', e.message);
+  }
+}
+
 // 9BizClaw PAUSE PATCH: When CEO/staff types /pause in Zalo, bot stops
 // replying for 30 min so human can take over. Also auto-detect staff reply.
 //
@@ -6913,6 +6957,8 @@ async function _startOpenClawImpl() {
       throw e; // unknown error — don't swallow
     }
   }
+  // v2.3.48 SECURITY: FB marker neutralize (mirrors GCAL).
+  ensureZaloFbNeutralizeFix();
   // Force-one-message PART 2+3: patches inbound.ts (include in batch)
   // PART 1 (channel.ts) uses direct fs I/O internally — safe.
   ensureOpenzaloForceOneMessageFix();
@@ -9104,6 +9150,8 @@ async function _ensureZaloPluginImpl() {
               throw e; // unknown error — don't swallow
             }
           }
+          // v2.3.48 SECURITY: FB marker neutralize (mirrors GCAL).
+          try { ensureZaloFbNeutralizeFix(); } catch (e) { console.warn('[ensureZaloPlugin] FbNeutralize patch error:', e?.message); }
           _zaloReady = true;
           return;
         } catch (e) {
@@ -11806,7 +11854,12 @@ function _readUndoList() {
   try { return JSON.parse(fs.readFileSync(_fbUndoPath(), 'utf-8')); } catch { return []; }
 }
 function _writeUndoList(list) {
-  try { fs.writeFileSync(_fbUndoPath(), JSON.stringify(list, null, 2) + '\n', 'utf-8'); } catch {}
+  try {
+    writeJsonAtomic(_fbUndoPath(), list);
+  } catch (e) {
+    console.error('[fb undo] write failed:', e.message);
+    try { auditLog('fb_undo_write_failed', { error: e.message }); } catch {}
+  }
 }
 function _cleanupExpiredUndo() {
   const list = _readUndoList();
@@ -11815,6 +11868,10 @@ function _cleanupExpiredUndo() {
   if (kept.length !== list.length) _writeUndoList(kept);
   return kept;
 }
+
+// v2.3.48 FIX 5: Simple async lock — prevents race between publish's undo-list
+// write and concurrent undo handler. Both read-modify-write the same file.
+let _fbUndoLock = false;
 
 async function _fbHandlePublish({ id }) {
   try {
@@ -11848,6 +11905,12 @@ async function _fbHandlePublish({ id }) {
       message: content.message, mediaFbids,
     });
     const postId = res.id || res.post_id;
+    // v2.3.48 FIX 4: Guard against Graph API returning no postId. Without this,
+    // downstream undo registration + logs + return value all contain `undefined`.
+    if (!postId) {
+      console.error('[fb publish] Graph API returned no postId:', res);
+      return { ok: false, text: 'Lỗi: Graph API không trả về postId' };
+    }
 
     fbDrafts.markStatus(date, variantId, 'published');
 
@@ -11858,10 +11921,15 @@ async function _fbHandlePublish({ id }) {
         JSON.stringify({ t: new Date().toISOString(), postId, draftId: variantId, angle: content.angle, imageHint: content.imageHint || null }) + '\n');
     } catch {}
 
-    // Register 60s undo window
-    const undoList = _cleanupExpiredUndo();
-    undoList.push({ postId, variantId, expiresAt: new Date(Date.now() + 60_000).toISOString() });
-    _writeUndoList(undoList);
+    // Register 60s undo window. v2.3.48 FIX 5: lock to prevent concurrent
+    // publish + undo read-modify-write race on pending-undo.json.
+    while (_fbUndoLock) await new Promise(r => setTimeout(r, 50));
+    _fbUndoLock = true;
+    try {
+      const undoList = _cleanupExpiredUndo();
+      undoList.push({ postId, variantId, expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      _writeUndoList(undoList);
+    } finally { _fbUndoLock = false; }
 
     try { auditLog('fb_published', { postId, draftId: variantId }); } catch {}
 
@@ -11894,8 +11962,9 @@ async function _fbHandleSkip({ id }) {
     const date = id.slice(0, 10);
     const draft = fbDrafts.readDraftForDate(date);
     if (!draft) return { ok: false, text: 'Lỗi: không tìm thấy draft' };
-    // Mark all entries as skipped
-    fbDrafts.markStatus(date, `${date}-main`, 'skipped');
+    // v2.3.48 FIX 7: Use actual draft.main.id (not hardcoded `${date}-main`).
+    // Draft schema may evolve; hardcoded pattern silently fails to mark status.
+    if (draft.main?.id) fbDrafts.markStatus(date, draft.main.id, 'skipped');
     for (const v of (draft.variants || [])) {
       fbDrafts.markStatus(date, v.id, 'skipped');
     }
@@ -11909,24 +11978,40 @@ async function _fbHandleSkip({ id }) {
 async function _fbHandleUndo({ postId }) {
   try {
     if (!postId) return { ok: false, text: 'Lỗi: thiếu postId' };
-    const undoList = _cleanupExpiredUndo();
-    const idx = undoList.findIndex((e) => e.postId === postId);
-    if (idx < 0) return { ok: false, text: 'Quá thời gian hủy (60s đã trôi qua).' };
+    // v2.3.48 FIX 5: lock for concurrent publish/undo safety.
+    while (_fbUndoLock) await new Promise(r => setTimeout(r, 50));
+    _fbUndoLock = true;
+    try {
+      const undoList = _cleanupExpiredUndo();
+      const idx = undoList.findIndex((e) => e.postId === postId);
+      if (idx < 0) return { ok: false, text: 'Quá thời gian hủy (60s đã trôi qua).' };
 
-    const loaded = fbAuth.loadPageToken(safeStorage);
-    if (!loaded) return { ok: false, text: 'Chưa kết nối FB.' };
+      const loaded = fbAuth.loadPageToken(safeStorage);
+      if (!loaded) return { ok: false, text: 'Chưa kết nối FB.' };
 
-    // DELETE via Graph API
-    const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(postId)}?access_token=${encodeURIComponent(loaded.token)}`, {
-      method: 'DELETE',
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, text: `Lỗi hủy: ${body.error?.message || res.status}` };
+      // DELETE via Graph API
+      const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(postId)}?access_token=${encodeURIComponent(loaded.token)}`, {
+        method: 'DELETE',
+      });
+      const body = await res.json().catch(() => ({}));
+      // v2.3.48 FIX 6: 404 = post already gone (treat as success), 403 = token lost perms (alert CEO).
+      if (res.status === 404) {
+        undoList.splice(idx, 1);
+        _writeUndoList(undoList);
+        try { auditLog('fb_undone_already_gone', { postId }); } catch {}
+        return { ok: true, text: 'Post đã bị xóa trước đó.' };
+      }
+      if (res.status === 403) {
+        try { await sendCeoAlert('[FB] Undo fail — token không có quyền xóa post. Kiểm tra permissions FB.'); } catch {}
+        return { ok: false, text: 'Lỗi hủy: token không có quyền xóa (403)' };
+      }
+      if (!res.ok) return { ok: false, text: `Lỗi hủy: ${body.error?.message || res.status}` };
 
-    undoList.splice(idx, 1);
-    _writeUndoList(undoList);
-    try { auditLog('fb_undone', { postId }); } catch {}
-    return { ok: true, text: 'Đã hủy post.' };
+      undoList.splice(idx, 1);
+      _writeUndoList(undoList);
+      try { auditLog('fb_undone', { postId }); } catch {}
+      return { ok: true, text: 'Đã hủy post.' };
+    } finally { _fbUndoLock = false; }
   } catch (e) {
     return { ok: false, text: `Lỗi: ${e.message}` };
   }

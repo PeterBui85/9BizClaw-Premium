@@ -1065,6 +1065,21 @@ try {
   }
 } catch (e) { fail('G14.agents-fb — read failed', e.message); }
 
+// G10: ensureZaloFbNeutralizeFix (v2.3.48) — input-side defense against
+// customer-sourced [[FB_*]] marker injection via Zalo. Parallels GCAL neutralize.
+try {
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes('ensureZaloFbNeutralizeFix')) pass('G10.fb-neutralize.fn — defined');
+  else fail('G10.fb-neutralize.fn — missing', 'add function');
+  if (mainText.includes('9BizClaw FB-NEUTRALIZE PATCH v1')) pass('G10.fb-neutralize.marker — patch marker in source');
+  else fail('G10.fb-neutralize.marker — missing', 'v1 marker');
+  // Verify call-site in _startOpenClawImpl
+  const impl = mainText.match(/function\s+_startOpenClawImpl[\s\S]+?\n\}\s*\n\s*async\s+function/);
+  if (impl && impl[0].includes('ensureZaloFbNeutralizeFix()')) {
+    pass('G10.fb-neutralize.invoke — called from _startOpenClawImpl');
+  } else fail('G10.fb-neutralize.invoke — not called in _startOpenClawImpl', 'add call');
+} catch (e) { fail('G10.fb-neutralize — read failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
