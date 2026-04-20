@@ -2401,6 +2401,13 @@
 
         <!-- Connected state: FullCalendar grid view -->
         <div id="gcal-connected" style="display:none">
+          <div id="gcal-fc-hint" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+            <span><strong style="color:var(--text)">Mẹo dùng:</strong></span>
+            <span>• Click vào ô trống để <strong style="color:var(--text)">thêm lịch</strong></span>
+            <span>• Kéo sự kiện sang ngày/giờ khác để <strong style="color:var(--text)">đổi lịch</strong></span>
+            <span>• Kéo cạnh dưới sự kiện để <strong style="color:var(--text)">đổi thời lượng</strong></span>
+            <span>• Click vào sự kiện để <strong style="color:var(--text)">sửa hoặc xoá</strong></span>
+          </div>
           <div id="gcal-fc-container"></div>
         </div>
       </div>
@@ -3271,29 +3278,31 @@
         locale: 'vi',
         timeZone: 'Asia/Ho_Chi_Minh',
         firstDay: 1,           // tuần bắt đầu Thứ Hai
-        slotMinTime: '06:00:00',
-        slotMaxTime: '23:00:00',
+        slotMinTime: '07:00:00',
+        slotMaxTime: '21:00:00',
         nowIndicator: true,
         height: '100%',
         expandRows: true,
         allDaySlot: true,
+        // 2 views duy nhất — Tuần (mặc định) + Tháng. Bỏ Day + List để CEO
+        // không tech đỡ hoa mắt. Day view ít dùng hơn Week, List view trùng
+        // nặng với Month view.
         headerToolbar: {
           left: 'prev,next today',
           center: 'title',
-          right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
+          right: 'timeGridWeek,dayGridMonth',
         },
         buttonText: {
           today: 'Hôm nay',
           month: 'Tháng',
           week: 'Tuần',
-          day: 'Ngày',
-          list: 'Lịch biểu',
         },
-        editable: true,         // cho phép kéo-thả + resize
+        editable: true,         // kéo-thả để đổi ngày/giờ
         eventResizableFromStart: false,
+        eventDurationEditable: true, // kéo cạnh dưới để đổi thời lượng
         selectable: true,       // click-drag vào slot trống = tạo event
         selectMirror: true,
-        dayMaxEvents: true,
+        dayMaxEvents: 3,        // hiện tối đa 3 event/ngày, còn lại gộp "+N thêm"
         events: async (info, success, failure) => {
           try {
             const r = await window.claw.gcalListEvents({
@@ -3327,21 +3336,42 @@
           info.jsEvent.preventDefault();
           gcalOpenEventDetailPopover(info.event, info.jsEvent);
         },
+        // Single click vào ô trống (không drag) → mở modal tạo với start + 30 phút
+        dateClick: (info) => {
+          const start = info.date;
+          const end = new Date(start.getTime() + 30 * 60 * 1000);
+          gcalOpenCreateModalFromSlot(start, end);
+        },
+        // Click-drag để chọn range → mở modal tạo với duration theo range
         select: (info) => {
-          // Click-drag vào slot trống → mở create modal với start/duration pre-fill
           gcalOpenCreateModalFromSlot(info.start, info.end);
           _gcalFc.unselect();
         },
         eventDrop: async (info) => {
           const ok = await gcalRescheduleFromFc(info.event);
           if (!ok) info.revert();
+          else gcalToast('Đã đổi giờ: ' + info.event.title);
         },
         eventResize: async (info) => {
           const ok = await gcalRescheduleFromFc(info.event);
           if (!ok) info.revert();
+          else gcalToast('Đã đổi thời lượng: ' + info.event.title);
         },
       });
       _gcalFc.render();
+    }
+
+    // Toast xuất hiện 2 giây ở góc dưới phải — phản hồi trực quan sau drag-drop.
+    // Non-tech CEO cần thấy "đã làm gì đó" để tin là backend chạy đúng.
+    function gcalToast(message) {
+      const old = document.getElementById('gcal-toast');
+      if (old) old.remove();
+      const t = document.createElement('div');
+      t.id = 'gcal-toast';
+      t.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:6000;background:var(--surface);color:var(--text);border:1px solid var(--border);border-left:3px solid #16a34a;border-radius:8px;padding:10px 16px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-width:320px';
+      t.textContent = message;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 2200);
     }
 
     function gcalOpenCreateModalFromSlot(startDate, endDate) {
@@ -3361,37 +3391,36 @@
       document.getElementById('gcal-event-modal').style.display = 'flex';
     }
 
-    // Popover hiển thị chi tiết khi click event; có Sửa / Xóa / Mở Google.
+    // Popover chi tiết khi click event. 2 nút lớn rõ ràng: Sửa + Xoá.
+    // "Mở Google" là link nhỏ dưới cùng (ít dùng, không cần làm lớn).
     function gcalOpenEventDetailPopover(fcEvent, jsEvent) {
       const id = fcEvent.id;
       const title = fcEvent.title;
       const ext = fcEvent.extendedProps || {};
-      // Đóng popover cũ nếu có
       const old = document.getElementById('gcal-event-popover');
       if (old) old.remove();
       const pop = document.createElement('div');
       pop.id = 'gcal-event-popover';
-      pop.style.cssText = 'position:fixed;z-index:5500;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.25);padding:14px;max-width:340px;font-size:13px';
+      pop.style.cssText = 'position:fixed;z-index:5500;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.25);padding:16px;min-width:280px;max-width:360px;font-size:13px';
       const ds = fcEvent.start;
       const de = fcEvent.end || fcEvent.start;
       const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
       pop.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
-          <strong style="font-size:14px;flex:1;min-width:0;word-break:break-word">${esc(title)}</strong>
-          <button class="btn btn-secondary btn-small" onclick="document.getElementById('gcal-event-popover')?.remove()" style="padding:2px 8px">×</button>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px">
+          <strong style="font-size:15px;flex:1;min-width:0;word-break:break-word;line-height:1.3">${esc(title)}</strong>
+          <button onclick="document.getElementById('gcal-event-popover')?.remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;padding:0 4px" aria-label="Đóng">×</button>
         </div>
-        <div style="color:var(--text-muted);margin-bottom:8px">${fmt(ds)} – ${fmt(de)}</div>
-        ${ext.location ? `<div style="margin-bottom:6px"><strong>Địa điểm:</strong> ${esc(ext.location)}</div>` : ''}
-        ${ext.attendees && ext.attendees.length ? `<div style="margin-bottom:6px"><strong>Khách:</strong> ${ext.attendees.map(esc).join(', ')}</div>` : ''}
-        ${ext.description ? `<div style="margin-bottom:10px;white-space:pre-wrap;color:var(--text)">${esc(ext.description)}</div>` : ''}
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${ext.htmlLink ? `<button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('${escJs(ext.htmlLink)}')">Mở Google</button>` : ''}
-          <button class="btn btn-secondary btn-small" onclick="document.getElementById('gcal-event-popover')?.remove();gcalEditEvent('${escJs(id)}')">Sửa</button>
-          <button class="btn btn-secondary btn-small" onclick="gcalDeleteEventClick('${escJs(id)}', '${escJs(title)}')" style="color:var(--danger)">Xóa</button>
+        <div style="color:var(--text-muted);margin-bottom:12px;font-size:12px">${fmt(ds)} – ${fmt(de)}</div>
+        ${ext.location ? `<div style="margin-bottom:8px;font-size:12px"><span style="color:var(--text-muted)">Địa điểm:</span> ${esc(ext.location)}</div>` : ''}
+        ${ext.attendees && ext.attendees.length ? `<div style="margin-bottom:8px;font-size:12px"><span style="color:var(--text-muted)">Khách:</span> ${ext.attendees.map(esc).join(', ')}</div>` : ''}
+        ${ext.description ? `<div style="margin-bottom:12px;white-space:pre-wrap;color:var(--text);font-size:12px;max-height:120px;overflow-y:auto">${esc(ext.description)}</div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="document.getElementById('gcal-event-popover')?.remove();gcalEditEvent('${escJs(id)}')" style="flex:1">Sửa</button>
+          <button class="btn btn-secondary" onclick="gcalDeleteEventClick('${escJs(id)}', '${escJs(title)}')" style="color:var(--danger)">Xoá</button>
         </div>
+        ${ext.htmlLink ? `<div style="margin-top:10px;text-align:center"><a href="#" onclick="event.preventDefault();window.claw.openExternal('${escJs(ext.htmlLink)}')" style="color:var(--text-muted);font-size:11px;text-decoration:underline">Mở trong Google Calendar</a></div>` : ''}
       `;
       document.body.appendChild(pop);
-      // Position near click, keep in viewport
       const rect = { x: jsEvent.clientX, y: jsEvent.clientY };
       const w = pop.offsetWidth; const h = pop.offsetHeight;
       const vw = window.innerWidth; const vh = window.innerHeight;
@@ -3400,7 +3429,6 @@
       if (y + h > vh - 8) y = vh - h - 8;
       pop.style.left = Math.max(8, x) + 'px';
       pop.style.top = Math.max(8, y) + 'px';
-      // Close on outside click (next tick)
       setTimeout(() => {
         const onDoc = (ev) => {
           if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', onDoc); }
