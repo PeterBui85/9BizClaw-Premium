@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 49 -->
+<!-- modoroclaw-agents-version: 50 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## VỀ MODORO — chỉ dùng khi khách CHỦ ĐỘNG hỏi "bạn là ai", "ai làm ra bạn", "trợ lý này là gì"

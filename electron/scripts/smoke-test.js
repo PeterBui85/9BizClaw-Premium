@@ -949,6 +949,25 @@ try {
 }
 
 // =========================================================================
+// TEST G14: Workspace seed files — memory/fb-performance-history.md,
+//           config/fb-post-settings.json, AGENTS.md version stamp
+// =========================================================================
+section("G14 workspace seed files");
+const seedFiles = [
+  { p: path.join(__dirname, '..', '..', 'memory', 'fb-performance-history.md'), check: 'FB Post Performance History' },
+  { p: path.join(__dirname, '..', '..', 'config', 'fb-post-settings.json'), check: '"cronTime": "07:30"' },
+  { p: path.join(__dirname, '..', '..', 'AGENTS.md'), check: 'modoroclaw-agents-version: 50' },
+];
+for (const s of seedFiles) {
+  if (fs.existsSync(s.p)) {
+    const content = fs.readFileSync(s.p, 'utf-8');
+    const name = path.basename(s.p);
+    if (content.includes(s.check)) pass(`G14.seed.${name} — marker present`);
+    else fail(`G14.seed.${name} — marker missing`, `expected: ${s.check}`);
+  } else fail(`G14.seed — file missing`, s.p);
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
