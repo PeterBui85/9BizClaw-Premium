@@ -47,9 +47,6 @@ contextBridge.exposeInMainWorld('claw', {
   savePersonalization: (opts) => ipcRenderer.invoke('save-personalization', opts),
   saveBusinessProfile: (opts) => ipcRenderer.invoke('save-business-profile', opts),
 
-  // Google
-  setupGoogle: () => ipcRenderer.invoke('setup-google'),
-
   // OpenClaw installation
   installOpenClaw: (onProgress) => {
     ipcRenderer.removeAllListeners('install-progress');

@@ -176,11 +176,34 @@ function loadTokens() {
 // FIX 4: CSRF state token generated per OAuth flow, verified in callback.
 // Without state param an attacker could trick CEO into clicking a crafted
 // callback URL that binds their own Google account to CEO's 9BizClaw install.
-let _oauthState = null;
+//
+// v2.3.48 hardening: was a singleton `_oauthState = null`. If CEO
+// double-clicked "Kết nối" the second getAuthUrl() overwrote the first,
+// and the first browser tab's callback then failed CSRF. Now a Map tracks
+// multiple concurrent flows (each with a 10-minute TTL). First tab to
+// arrive wins; later flows with the same state are rejected.
+const _pendingOauthStates = new Map(); // state → expiresAt (ms)
+const _OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+function _pruneExpiredStates() {
+  const now = Date.now();
+  for (const [state, exp] of _pendingOauthStates) {
+    if (exp < now) _pendingOauthStates.delete(state);
+  }
+}
+
+function _isValidOauthState(state) {
+  _pruneExpiredStates();
+  if (!state || !_pendingOauthStates.has(state)) return false;
+  _pendingOauthStates.delete(state); // single-use
+  return true;
+}
 
 function getAuthUrl() {
   const { clientId } = getCreds();
-  _oauthState = require('node:crypto').randomBytes(16).toString('hex');
+  _pruneExpiredStates();
+  const state = require('node:crypto').randomBytes(16).toString('hex');
+  _pendingOauthStates.set(state, Date.now() + _OAUTH_STATE_TTL_MS);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: REDIRECT_URI,
@@ -188,7 +211,7 @@ function getAuthUrl() {
     scope: SCOPES,
     access_type: 'offline',
     prompt: 'consent',
-    state: _oauthState, // CSRF binding
+    state, // CSRF binding (per-flow, not singleton)
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
@@ -427,10 +450,19 @@ let _callbackServer = null;
 
 /**
  * Start a temp HTTP server on port 20199 that waits for the OAuth callback.
- * Returns a promise that resolves with the tokens once the code is exchanged.
+ *
+ * Returns { tokens: Promise<Tokens>, ready: Promise<void> }.
+ *   - `ready` resolves when the server has bound to the port (or rejects on
+ *     EADDRINUSE). Main process MUST await this before `shell.openExternal`
+ *     the auth URL — otherwise Google may redirect before we're listening,
+ *     and Windows sometimes serves browsers faster than the server binds.
+ *   - `tokens` resolves with fetched tokens after the callback arrives.
  */
 function startCallbackServer() {
-  return new Promise((resolve, reject) => {
+  let readyResolve, readyReject;
+  const ready = new Promise((res, rej) => { readyResolve = res; readyReject = rej; });
+
+  const tokens = new Promise((resolve, reject) => {
     if (_callbackServer) {
       try { _callbackServer.close(); } catch {}
       _callbackServer = null;
@@ -457,18 +489,16 @@ function startCallbackServer() {
           return;
         }
 
-        // FIX 4: verify CSRF state token set in getAuthUrl — reject if missing
-        // or mismatched. Do NOT exchange the code (that would bind an attacker's
-        // Google account to this install). Reset state so replays fail too.
-        if (!_oauthState || !state || state !== _oauthState) {
+        // FIX 4: verify CSRF state token — reject if missing or not in
+        // the pending-states Map. Map handles concurrent flows correctly;
+        // singleton version trampled on double-click.
+        if (!_isValidOauthState(state)) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Loi bao mat</h2><p>State khong khop (CSRF). Dong tab nay va thu lai tu Dashboard.</p></body></html>');
-          _oauthState = null;
           stopCallbackServer();
           reject(new Error('OAUTH_STATE_MISMATCH'));
           return;
         }
-        _oauthState = null; // single-use
 
         try {
           const tokens = await exchangeCode(code);
@@ -491,17 +521,23 @@ function startCallbackServer() {
     server.listen(20199, '127.0.0.1', () => {
       _callbackServer = server;
       console.log('[gcal] OAuth callback server listening on http://127.0.0.1:20199');
+      readyResolve();
     });
 
     server.on('error', (err) => {
       console.error('[gcal] Callback server error:', err.message);
       // FIX 8: actionable Vietnamese error for port-busy case. Another Electron
       // process (crashed prior instance, rogue wizard) may still hold 20199.
+      let wrapped;
       if (err && err.code === 'EADDRINUSE') {
-        reject(new Error('OAUTH_PORT_BUSY: Port 20199 dang bi app khac su dung. Dong cac Electron/9BizClaw khac va thu lai, hoac khoi dong lai may.'));
-        return;
+        wrapped = new Error('OAUTH_PORT_BUSY: Port 20199 dang bi app khac su dung. Dong cac Electron/9BizClaw khac va thu lai, hoac khoi dong lai may.');
+      } else {
+        wrapped = err;
       }
-      reject(err);
+      // Reject BOTH promises so main-side await resolves/fails cleanly regardless
+      // of whether it waited for ready or tokens.
+      readyReject(wrapped);
+      reject(wrapped);
     });
 
     // Auto-close after 5 minutes if no callback received
@@ -512,6 +548,8 @@ function startCallbackServer() {
       }
     }, 5 * 60 * 1000);
   });
+
+  return { tokens, ready };
 }
 
 function stopCallbackServer() {

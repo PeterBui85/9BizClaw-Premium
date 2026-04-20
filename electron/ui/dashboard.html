@@ -538,6 +538,7 @@
     @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
     .btn-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
+    .btn:disabled, .btn[disabled] { opacity:0.5; cursor:not-allowed; pointer-events:none; filter:grayscale(0.2); }
     .zalo-saving-overlay { position:absolute; inset:0; background:var(--bg, rgba(0,0,0,0.15)); opacity:0.35; pointer-events:none; border-radius:inherit; transition:opacity 0.2s; z-index:5; }
     .page-header { display:flex; align-items:center; gap:12px; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
     /* Telegram + Zalo: freeze header at top while body scrolls */
@@ -1035,6 +1036,7 @@
     .ov-schedule-label {
       color: var(--text);
       flex: 1;
+      min-width: 0; /* UI-REGRESSION-RULES.md R3: flex child with ellipsis text needs min-width:0 or flexbox default auto lets content push the row wider and break layout */
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -2786,7 +2788,7 @@
 
     async function checkChannels() {
       const btn = document.getElementById('check-btn');
-      btn.disabled = true; btn.classList.add('loading');
+      btn.disabled = true; btn.classList.add('is-loading');
       setAllChannels('checking');
 
       try {
@@ -2806,7 +2808,7 @@
         console.error('Channel check failed:', e);
         setAllChannels('error');
       }
-      btn.disabled = false; btn.classList.remove('loading');
+      btn.disabled = false; btn.classList.remove('is-loading');
     }
 
     function updateBotStatus(running, error) {
@@ -2821,7 +2823,7 @@
     async function toggleBot() {
       const btn = document.getElementById('toggle-btn');
       const wasRunning = btn.textContent === 'Dừng';
-      btn.disabled = true; btn.classList.add('loading');
+      btn.disabled = true; btn.classList.add('is-loading');
       btn.textContent = wasRunning ? 'Đang dừng...' : 'Đang khởi động...';
       document.getElementById('status-text').textContent = wasRunning ? 'Đang dừng...' : 'Đang khởi động...';
       if (!wasRunning) { setAllChannels('checking'); addActivity('Đang khởi động trợ lý...'); }
@@ -2851,7 +2853,7 @@
       } catch (e) {
         updateBotStatus(false, 'Lỗi: ' + e.message);
       } finally {
-        btn.disabled = false; btn.classList.remove('loading');
+        btn.disabled = false; btn.classList.remove('is-loading');
       }
     }
 
@@ -2861,7 +2863,7 @@
       // Defensive null-check: button id must match markup. Previous version
       // silently crashed on getElementById returning null → modal never opened.
       const btn = document.getElementById('reconnect-zalo-btn');
-      if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+      if (btn) { btn.disabled = true; btn.classList.add('is-loading'); }
       // Open modal FIRST so CEO sees progress even if backend is slow
       const modal = document.getElementById('zalo-modal');
       if (!modal) { console.error('[reconnectZalo] zalo-modal element missing'); return; }
@@ -2881,13 +2883,13 @@
         console.error('[reconnectZalo] setupZalo failed:', e);
         if (loading) loading.textContent = 'Lỗi tạo QR. Thử lại.';
       } finally {
-        if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+        if (btn) { btn.disabled = false; btn.classList.remove('is-loading'); }
       }
       startZaloQRPoll();
     }
     async function refreshZaloQR() {
       const btn = document.getElementById('zalo-modal-refresh');
-      if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+      if (btn) { btn.disabled = true; btn.classList.add('is-loading'); }
       const loading = document.getElementById('zalo-modal-loading');
       const qrImg = document.getElementById('zalo-modal-qr');
       const success = document.getElementById('zalo-modal-success');
@@ -2897,7 +2899,7 @@
       try {
         await window.claw.setupZalo();
       } catch (e) { console.error('[refreshZaloQR] failed:', e); }
-      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+      if (btn) { btn.disabled = false; btn.classList.remove('is-loading'); }
       startZaloQRPoll();
     }
     function startZaloQRPoll() {
@@ -3388,8 +3390,17 @@
     }
 
     async function gcalSaveSettings() {
+      const calSel = document.getElementById('gcal-st-calendar');
+      // If calendar list load failed (network/error), sel.options.length === 0
+      // and sel.value === "". Saving empty calendarId would corrupt config —
+      // all API paths would fall back to 'primary' silently. Block with a
+      // clear message instead.
+      if (!calSel.options.length || !calSel.value) {
+        alert('Chưa tải được danh sách lịch. Thử mở lại Cài đặt hoặc kiểm tra mạng.');
+        return;
+      }
       const cfg = {
-        calendarId: document.getElementById('gcal-st-calendar').value,
+        calendarId: calSel.value,
         workingHours: {
           start: document.getElementById('gcal-st-wh-start').value,
           end: document.getElementById('gcal-st-wh-end').value,

@@ -627,6 +627,60 @@ if (missingPrefixes.length > 0) {
 }
 
 // =========================================================================
+// Runtime dependency version pins (electron/package.json)
+// ---------------------------------------------------------------
+// These packages have ABI or API compat requirements that bite hard if
+// drift. Pin EXACT versions (no caret/tilde) for ones we've personally
+// verified. Build failure here means the postinstall will regenerate the
+// wrong native binary and first Knowledge upload will crash.
+// =========================================================================
+section('Runtime dependency pins');
+const electronPkgPath = path.join(__dirname, '..', 'package.json');
+const electronPkg = JSON.parse(fs.readFileSync(electronPkgPath, 'utf-8'));
+const deps = { ...(electronPkg.dependencies || {}), ...(electronPkg.devDependencies || {}) };
+const PINNED_DEPS = {
+  'better-sqlite3': '11.10.0',       // EXACT — Electron 28 ABI sweet-spot; any drift re-triggers Knowledge-tab crash
+  'pdf-parse': '1.1.1',              // EXACT — 2.x pulls in DOMMatrix (browser-only), breaks PDF extraction in Node main process
+};
+for (const [name, expected] of Object.entries(PINNED_DEPS)) {
+  const actual = deps[name];
+  if (!actual) {
+    fail(`dep ${name}`, `electron/package.json missing dependency "${name}" — add "${name}": "${expected}"`);
+  } else if (actual !== expected) {
+    fail(`dep ${name} exact pin`, `electron/package.json has "${name}": "${actual}" — MUST be exact "${expected}" (no caret/tilde). Drift reintroduces a fixed bug. See CLAUDE.md.`);
+  } else {
+    pass(`dep ${name} pinned at ${expected}`);
+  }
+}
+
+// =========================================================================
+// loadFile(...) path existence
+// ---------------------------------------------------------------
+// Electron's BrowserWindow.loadFile() fails silently (blank window) if the
+// resolved path doesn't exist. Easy to introduce by renaming ui/X.html
+// without updating the loadFile call. Build-time grep catches it.
+// =========================================================================
+section('loadFile paths resolve');
+const mainJsForLoadFile = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+const loadFileRe = /loadFile\s*\(\s*path\.join\(\s*__dirname\s*,\s*(['"][^'"]+['"]\s*(?:,\s*['"][^'"]+['"]\s*)*)\)/g;
+let loadFileMatch;
+const loadFileFailures = [];
+while ((loadFileMatch = loadFileRe.exec(mainJsForLoadFile)) !== null) {
+  const segs = loadFileMatch[1].match(/['"]([^'"]+)['"]/g).map((s) => s.slice(1, -1));
+  const resolved = path.join(__dirname, '..', ...segs);
+  if (!fs.existsSync(resolved)) {
+    loadFileFailures.push({ call: loadFileMatch[0].slice(0, 80), resolved });
+  }
+}
+if (loadFileFailures.length > 0) {
+  for (const f of loadFileFailures) {
+    fail('loadFile path', `${f.call} → ${f.resolved} does NOT exist. loadFile silently shows blank window when path missing.`);
+  }
+} else {
+  pass('all loadFile paths resolve');
+}
+
+// =========================================================================
 // IPC parity guards (preload.js ↔ main.js ↔ dashboard.html)
 // ---------------------------------------------------------------
 // Closest structural analog to the v2.3.48 silent-reject bug: a preload

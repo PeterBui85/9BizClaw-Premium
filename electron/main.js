@@ -1288,12 +1288,22 @@ let _cachedNodeBin = null;
 function findNodeBin() {
   if (_cachedNodeBin !== null) return _cachedNodeBin || null;
 
-  // Packaged Mac .app: bundled Node always wins. User has zero Node setup.
+  // Packaged Mac .app / Windows NSIS: bundled Node always wins. User has
+  // zero Node setup. If packaged but bundled missing → vendor extraction
+  // partial. DO NOT fall through to system PATH — a stale Node (e.g. Node 14)
+  // picked up from PATH would fail openclaw's >=22.14 requirement with a
+  // confusing ESM import error. Fail loudly so the user re-runs the
+  // installer or re-extracts.
   const bundled = getBundledNodeBin();
   if (bundled) {
     _cachedNodeBin = bundled;
     console.log('[findNodeBin] using bundled vendor node:', bundled);
     return bundled;
+  }
+  if (app && app.isPackaged) {
+    console.error('[findNodeBin] packaged build but bundled vendor/node missing — refusing to fall through to system PATH (would risk Node version mismatch). Re-run installer or clear vendor dir to trigger re-extract.');
+    _cachedNodeBin = '';
+    return null;
   }
 
   const isWin = process.platform === 'win32';
@@ -7945,7 +7955,11 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           console.log('[setup-9router-auto] 9router not running — starting');
           start9Router();
         }
-        let ready = await waitFor9RouterReady(10000);
+        // Bumped 10s → 30s: cold-start Node module loading on slower Windows
+        // machines (older SSDs, Defender scanning vendored .node binaries) can
+        // exceed 10s. Short timeout caused wizard "Thiết lập AI" to false-fail
+        // on first-install machines that would have succeeded at 15s.
+        let ready = await waitFor9RouterReady(30000);
         if (!ready) {
           // Distinguish crash (5xx = native module broken) from not-started (ECONNREFUSED)
           const ping = await nineRouterApi('GET', '/api/settings', null, 1500);
@@ -10968,16 +10982,10 @@ ipcMain.handle('save-business-profile', async (_event, payload) => {
 // Until a working Google integration is shipped, this handler returns a
 // graceful "not implemented" response so the wizard can show a clear message
 // instead of throwing. The Dashboard's "Google" channel chip stays at
-// `not_configured` (handled by check-all-channels which only looks for
-// ~/.gog/token.json — won't exist).
-ipcMain.handle('setup-google', async () => {
-  return {
-    success: false,
-    error: 'Google integration chưa sẵn sàng (gog-cli chưa publish). ' +
-           'Tích hợp Calendar/Gmail sẽ có trong bản cập nhật sau.',
-    notImplemented: true,
-  };
-});
+// setup-google handler removed in v2.3.48 — Google Calendar integration now
+// lives at the gcal-* handlers (gcal/auth.js + dashboard Lịch tab). The
+// legacy stub was a trap: any UI that still invoked it would get a confusing
+// "chưa sẵn sàng" message. Preload bridge also removed.
 
 // Batch config set (for complex nested objects like model providers)
 // Batch config set — write JSON directly
@@ -12115,21 +12123,31 @@ function isChannelPaused(channel) {
 
 function pauseChannel(channel, durationMin = 30) {
   const p = _getPausePath(channel);
-  if (!p) return false;
+  if (!p) return { ok: false, error: `unknown channel: ${channel}` };
   const until = new Date(Date.now() + durationMin * 60 * 1000).toISOString();
   try {
     writeJsonAtomic(p, { pausedUntil: until, pausedAt: new Date().toISOString() });
     console.log(`[pause] ${channel} paused until ${until}`);
-    return true;
-  } catch (e) { console.error(`[pause] ${channel} error:`, e.message); return false; }
+    return { ok: true };
+  } catch (e) {
+    const msg = e?.message || 'write failed';
+    console.error(`[pause] ${channel} error:`, msg);
+    return { ok: false, error: msg };
+  }
 }
 
 function resumeChannel(channel) {
   const p = _getPausePath(channel);
-  if (!p) return false;
-  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
-  console.log(`[pause] ${channel} resumed`);
-  return true;
+  if (!p) return { ok: false, error: `unknown channel: ${channel}` };
+  try {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+    console.log(`[pause] ${channel} resumed`);
+    return { ok: true };
+  } catch (e) {
+    const msg = e?.message || 'unlink failed';
+    console.error(`[pause] ${channel} resume error:`, msg);
+    return { ok: false, error: msg };
+  }
 }
 
 function getChannelPauseStatus(channel) {
@@ -13014,16 +13032,19 @@ ipcMain.handle('telegram-self-test', async () => {
 
 // --- Channel pause/resume (symmetric for both Telegram + Zalo) ---
 ipcMain.handle('pause-telegram', async (_e, { minutes } = {}) => {
-  return { success: pauseChannel('telegram', minutes || 30) };
+  const r = pauseChannel('telegram', minutes || 30);
+  return { success: r.ok, error: r.error };
 });
 ipcMain.handle('resume-telegram', async () => {
-  return { success: resumeChannel('telegram') };
+  const r = resumeChannel('telegram');
+  return { success: r.ok, error: r.error };
 });
 ipcMain.handle('get-telegram-pause-status', async () => {
   return getChannelPauseStatus('telegram');
 });
 ipcMain.handle('pause-zalo', async (_e, { minutes } = {}) => {
-  return { success: pauseChannel('zalo', minutes || 30) };
+  const r = pauseChannel('zalo', minutes || 30);
+  return { success: r.ok, error: r.error };
 });
 ipcMain.handle('resume-zalo', async () => {
   const booting = rejectIfBooting('resume-zalo');
@@ -13051,7 +13072,8 @@ ipcMain.handle('resume-zalo', async () => {
           wasDisabled = cfg?.channels?.openzalo?.enabled === false;
         }
       } catch {}
-      const resumed = resumeChannel('zalo');
+      const resumedRes = resumeChannel('zalo');
+      const resumed = resumedRes.ok;
       const enabled = setZaloChannelEnabled(true);
       const cleared = clearChannelPermanentPause('zalo');
       if (enabled && cleared) markOnboardingComplete('resume-zalo');
@@ -13086,7 +13108,7 @@ ipcMain.handle('resume-zalo', async () => {
           })();
         }
       }
-      return { success: resumed && enabled && cleared };
+      return { success: resumed && enabled && cleared, error: resumedRes.error };
     });
   } finally { _ipcInFlightCount--; }
 });
@@ -17062,6 +17084,12 @@ ipcMain.handle('delete-document', async (_event, filename) => {
 });
 
 ipcMain.handle('test-telegram', async (_event, { token, chatId }) => {
+  // Surface SPECIFIC failure reasons: wrong token, wrong chatId, Telegram
+  // down, timeout. Previously all collapsed to {success:false} with no hint
+  // → wizard "Thất bại" was useless for CEO debugging.
+  if (!token || !chatId) {
+    return { success: false, error: 'Thiếu token hoặc chat ID' };
+  }
   return new Promise((resolve) => {
     const https = require('https');
     const payload = JSON.stringify({
@@ -17073,11 +17101,24 @@ ipcMain.handle('test-telegram', async (_event, { token, chatId }) => {
       (res) => {
         let data = '';
         res.on('data', (c) => (data += c));
-        res.on('end', () => { try { resolve({ success: JSON.parse(data).ok }); } catch { resolve({ success: false }); } });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.ok) return resolve({ success: true });
+            // Telegram returned an API-level error with description
+            const desc = parsed.description || `HTTP ${res.statusCode}`;
+            const hint = /chat not found|chat_id/i.test(desc) ? ' (chat ID sai — hỏi @userinfobot lại)'
+                       : /unauthorized|token/i.test(desc) ? ' (token sai — copy lại từ @BotFather)'
+                       : '';
+            resolve({ success: false, error: desc + hint });
+          } catch (e) {
+            resolve({ success: false, error: 'Phản hồi không hợp lệ từ Telegram: ' + (e?.message || 'parse error') });
+          }
+        });
       }
     );
-    req.on('error', () => resolve({ success: false }));
-    req.setTimeout(10000, () => { req.destroy(); resolve({ success: false }); });
+    req.on('error', (e) => resolve({ success: false, error: 'Lỗi mạng: ' + (e?.message || 'network error') }));
+    req.setTimeout(10000, () => { req.destroy(); resolve({ success: false, error: 'Timeout — Telegram không phản hồi trong 10 giây' }); });
     req.write(payload);
     req.end();
   });
@@ -18118,11 +18159,16 @@ ipcMain.handle('get-gateway-token', async () => {
   try {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const config = JSON.parse(raw);
       return config.gateway?.auth?.token || null;
     }
-  } catch {}
-  return null;
+    return null;
+  } catch (e) {
+    // Corrupt JSON or lock → surface so "Copy token" isn't a silent no-op.
+    console.error('[get-gateway-token] failed:', e?.message);
+    return null;
+  }
 });
 
 ipcMain.handle('get-bot-status', async () => ({ running: botRunning }));
@@ -18581,8 +18627,11 @@ ipcMain.handle('gcal-validate-credentials', async (_event, { clientId, clientSec
 ipcMain.handle('gcal-connect', async () => {
   try {
     const authUrl = gcalAuth.getAuthUrl();
-    // Start callback server BEFORE opening browser so it's ready when redirect arrives
-    const tokenPromise = gcalAuth.startCallbackServer();
+    // Start callback server BEFORE opening browser so it's ready when redirect arrives.
+    // AWAIT the `ready` promise to eliminate the race where Google redirects
+    // faster than server.listen binds (rare but real on slow Windows boxes).
+    const { tokens: tokenPromise, ready } = gcalAuth.startCallbackServer();
+    await ready;
     // Open Google OAuth in user's default browser
     const { shell } = require('electron');
     shell.openExternal(authUrl);
@@ -19082,7 +19131,13 @@ app.whenReady().then(async () => {
   }
 
   // Pre-install Zalo plugin in background (so QR is fast when user clicks)
-  ensureZaloPlugin().catch(() => {});
+  // Errors go to main log + audit trail so a silently-failed patch (e.g. vendor
+  // extraction partial, extension dir locked by Defender) doesn't result in
+  // "customer Zalo msg never gets a reply" mystery 4 hours later.
+  ensureZaloPlugin().catch((e) => {
+    console.error('[ensureZaloPlugin] background prep failed:', e?.message || e);
+    try { auditLog('zalo_plugin_prep_failed', { error: String(e?.message || e).slice(0, 300) }); } catch {}
+  });
   // Re-index any Knowledge files that exist on disk but are missing from DB
   // (e.g. uploaded while better-sqlite3 was broken). Non-blocking.
   try { ensureKnowledgeFolders(); } catch {}
