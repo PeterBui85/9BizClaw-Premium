@@ -1678,7 +1678,7 @@
           <span class="label">Tình trạng hôm nay</span>
         </div>
         <div class="sidebar-menu-item" data-page="calendar" onclick="switchPage('calendar')">
-          <span class="icon" data-icon="calendar"></span><span class="label">Lịch hẹn</span>
+          <span class="icon" data-icon="calendar"></span><span class="label">Google Calendar</span>
         </div>
 
         <div class="sidebar-menu-header">Kênh</div>
@@ -2396,8 +2396,8 @@
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
           <div>
-            <h2>Lịch hẹn</h2>
-            <div class="page-sub">Kết nối Google Calendar để bot tự đặt lịch + nhắc sếp</div>
+            <h2>Google Calendar</h2>
+            <div class="page-sub">Lịch hẹn đồng bộ Google — bot tự đặt lịch và nhắc sếp qua Google notifications</div>
           </div>
           <div id="gcal-header-actions" style="margin-left:auto;display:none;gap:8px">
             <span id="gcal-email" style="font-size:12px;color:var(--text-muted);padding:4px 8px"></span>
@@ -3313,21 +3313,25 @@
         slotMinTime: '07:00:00',
         slotMaxTime: '21:00:00',
         nowIndicator: true,
-        height: 'auto',        // tự fit theo container, tránh 100% calc sai khi hint bar chiếm 40px
+        height: '100%',        // fill container → timeGrid tự scroll trong khung
         expandRows: true,
         allDaySlot: true,
         // 2 views duy nhất — Tuần (mặc định) + Tháng. Bỏ Day + List để CEO
-        // không tech đỡ hoa mắt. Day view ít dùng hơn Week, List view trùng
-        // nặng với Month view.
+        // không tech đỡ hoa mắt.
         headerToolbar: {
           left: 'prev,next today',
           center: 'title',
           right: 'timeGridWeek,dayGridMonth',
         },
+        // Tắt icon SVG (FC global bundle không ship font icon → hiện ô vuông).
+        // Dùng text thuần cho prev/next, đồng bộ ký tự tiếng Việt quen thuộc.
+        buttonIcons: false,
         buttonText: {
           today: 'Hôm nay',
           month: 'Tháng',
           week: 'Tuần',
+          prev: '‹ Trước',
+          next: 'Tiếp ›',
         },
         editable: true,         // kéo-thả để đổi ngày/giờ
         eventResizableFromStart: false,
