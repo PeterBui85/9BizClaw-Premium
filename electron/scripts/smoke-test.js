@@ -1024,6 +1024,16 @@ try {
   }
 } catch (e) { fail('G13.generator — require failed', e.message); }
 
+try {
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes("'fb-draft-generator'") || mainText.includes('"fb-draft-generator"')) {
+    pass('G14.cron-fb.handler — fb-draft-generator case present');
+  } else fail('G14.cron-fb.handler — missing case', 'Add to startCronJobs');
+  if (mainText.includes('fbGenerator.generateDrafts') || mainText.includes("require('./fb/generator')")) {
+    pass('G14.cron-fb.import — generator module imported');
+  } else fail('G14.cron-fb.import — not imported', 'require fb/generator');
+} catch (e) { fail('G14.cron-fb — read failed', e.message); }
+
 // =========================================================================
 // SUMMARY
 // =========================================================================

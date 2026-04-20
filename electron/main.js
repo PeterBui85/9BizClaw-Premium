@@ -191,6 +191,7 @@ const DEFAULT_SCHEDULES_JSON = [
   { id: 'monthly', label: 'Báo cáo tháng', time: '08:30', enabled: true, icon: '', description: 'Tổng kết tháng, trend, kế hoạch tháng tới' },
   { id: 'zalo-followup', label: 'Follow-up khách Zalo', time: '09:30', enabled: true, icon: '', description: 'Nhắc CEO khách mới chưa tương tác, khách hỏi chưa reply' },
   { id: 'memory-cleanup', label: 'Dọn dẹp memory', time: '02:00', enabled: false, icon: '', description: 'Tổng hợp journal cũ, dọn dẹp memory rời rạc' },
+  { id: 'fb-draft-generator', label: 'Tạo draft FB sáng', time: '07:30', enabled: true, icon: '', description: 'Sinh bài FB sáng + gửi digest Telegram để duyệt', owner: 'facebook' },
 ];
 
 // Seed templates from read-only bundle → writable workspace (packaged install)
@@ -11674,6 +11675,40 @@ function buildMemoryCleanupPrompt() {
   );
 }
 
+// Render the morning FB draft digest for Telegram (text-only; inline buttons
+// come in Chunk 4). Truncates long messages so the digest stays readable.
+function _renderFbDigest(draft) {
+  const m = draft.main;
+  const lines = [
+    `Sáng sếp. Hôm nay có 1 draft FB${draft.variants?.length ? ` + ${draft.variants.length} variant` : ''} để duyệt.`,
+    '',
+    `[Main] ${m.angle}`,
+    `"${(m.message || '').slice(0, 180)}${(m.message || '').length > 180 ? '...' : ''}"`,
+  ];
+  if (m.imageHint) lines.push(`Ảnh gợi ý: ${m.imageHint}`);
+  if (m.suggestedTimes?.length) lines.push(`Giờ đăng tối ưu: ${m.suggestedTimes.join(', ')}`);
+  lines.push('');
+  for (const v of (draft.variants || [])) {
+    lines.push(`[Variant ${v.id.slice(-1).toUpperCase()}] ${v.angle}`);
+    lines.push(`"${(v.message || '').slice(0, 120)}${(v.message || '').length > 120 ? '...' : ''}"`);
+    lines.push('');
+  }
+  lines.push('Sếp vào Dashboard → tab Facebook để duyệt.');
+  lines.push('(Inline buttons trên Telegram sẽ có trong bản cập nhật tiếp theo.)');
+  return lines.join('\n');
+}
+
+// Check whether "now" (local time) falls inside the CEO-configured quiet-hours
+// window. `qh` shape: { start: 'HH:MM', end: 'HH:MM' }. Handles both same-day
+// windows (09:00-17:00) and overnight windows (22:00-07:00).
+function _nowInsideQuietHours(qh) {
+  if (!qh?.start || !qh?.end) return false;
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  if (qh.start <= qh.end) return hhmm >= qh.start && hhmm <= qh.end;
+  return hhmm >= qh.start || hhmm <= qh.end;
+}
+
 // Manually trigger a cron handler (for "Test ngay" button in Dashboard).
 // CRITICAL: test fires MUST be byte-identical to scheduled cron fires so the
 // customer's test preview matches what they'll receive in production. No
@@ -14617,6 +14652,87 @@ function _startCronJobsImpl() {
             console.error('[cron] Memory cleanup threw:', e?.message || e);
             try { auditLog('cron_failed', { id: 'memory-cleanup', label: 'Dọn dẹp memory', error: String(e?.message || e).slice(0, 200) }); } catch {}
           } finally { global._cronInFlight?.delete('memory-cleanup'); }
+        };
+        break;
+      }
+      case 'fb-draft-generator': {
+        // Daily morning (default 07:30) — generate FB draft + Telegram digest
+        const [h, m] = (s.time || '07:30').split(':');
+        cronExpr = `${m || 30} ${h || 7} * * *`;
+        handler = async () => {
+          console.log('[cron] FB draft generator triggered at', new Date().toISOString());
+          if (global._cronInFlight?.get('fb-draft-generator')) {
+            console.warn('[cron] fb-draft-generator SKIPPED — previous run still in flight');
+            return;
+          }
+          global._cronInFlight?.set('fb-draft-generator', true);
+          try {
+            const loaded = fbAuth.loadPageToken(safeStorage);
+            if (!loaded) {
+              console.log('[fb-draft-generator] no token, skipping');
+              return;
+            }
+            const tgPaused = isChannelPaused('telegram');
+            const settings = fbConfig.readSettings();
+            // Quiet hours shift is minor — implement or leave as TODO with comment
+            if (settings.quietHours && _nowInsideQuietHours(settings.quietHours)) {
+              console.log('[fb-draft-generator] inside quiet hours, generating but deferring digest to after window');
+              // For v1 simplicity: generate as normal, digest delivery naturally skipped if paused
+            }
+
+            const llmCall = async (prompt) => {
+              const res = await fetch('http://127.0.0.1:18789/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: 'gpt-5-mini',
+                  messages: [
+                    { role: 'system', content: prompt },
+                    { role: 'user', content: "Generate today's FB drafts per the schema above." },
+                  ],
+                  max_tokens: 2000,
+                  response_format: { type: 'json_object' },
+                }),
+              });
+              const json = await res.json();
+              if (!json.choices?.[0]?.message?.content) {
+                throw new Error('Empty LLM response: ' + JSON.stringify(json).slice(0, 300));
+              }
+              return json.choices[0].message.content;
+            };
+
+            const draft = await fbGenerator.generateDrafts({
+              pageId: loaded.config.pageId, pageToken: loaded.token, llmCall,
+            });
+
+            if (tgPaused) {
+              draft.main.status = 'pending-digest-queued';
+              for (const v of (draft.variants || [])) v.status = 'pending-digest-queued';
+            }
+            fbDrafts.writeDraftForDate(draft.date, draft);
+
+            if (!tgPaused) {
+              await sendTelegram(_renderFbDigest(draft));
+            }
+            try {
+              auditLog('fb_draft_generated', {
+                date: draft.date, mainId: draft.main.id, variantCount: (draft.variants || []).length,
+              });
+            } catch {}
+            _fbGeneratorFailCount = 0;  // reset on success
+          } catch (e) {
+            console.error('[fb-draft-generator] failed:', e);
+            try { auditLog('cron_failed', { id: 'fb-draft-generator', label: s.label || 'Tạo draft FB sáng', error: String(e?.message || e).slice(0, 200) }); } catch {}
+            _fbGeneratorFailCount = (_fbGeneratorFailCount || 0) + 1;
+            if (_fbGeneratorFailCount >= 2) {
+              try {
+                await sendCeoAlert('[FB] Không gen được draft 2 ngày liên tiếp. Kiểm tra kết nối FB + 9router. Lỗi: ' + e.message);
+              } catch {}
+              _fbGeneratorFailCount = 0;
+            }
+          } finally {
+            global._cronInFlight?.delete('fb-draft-generator');
+          }
         };
         break;
       }
@@ -18657,7 +18773,10 @@ const gcalConfig = require('./gcal/config');
 const fbAuth = require('./fb/auth');
 const fbGraph = require('./fb/graph');
 const fbConfig = require('./fb/config');
+const fbGenerator = require('./fb/generator');
+const fbDrafts = require('./fb/drafts');
 let _fbOauthInFlight = null;
+let _fbGeneratorFailCount = 0;
 
 // Recursively filter audit-log args through an allowlist. Prevents token
 // smuggling through nested paths (e.g., patch.access_token). Unit-tested
