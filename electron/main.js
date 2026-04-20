@@ -921,6 +921,36 @@ function seedWorkspace() {
     console.warn('[seedWorkspace] appointment migration failed:', e.message);
   }
 
+  // FB v2.3.48 seed (memory + config) — only on missing, never overwrite.
+  // fb-performance-history.md: CEO's accumulated FB post history — MUST NOT
+  // be overwritten on upgrade. Seed only when file is absent (fresh install).
+  // fb-post-settings.json: FB cron/post config — same policy as other config
+  // files (seed if missing, don't force-refresh).
+  try {
+    const fbPiggybackFiles = [
+      'memory/fb-performance-history.md',
+      'config/fb-post-settings.json',
+    ];
+    for (const f of fbPiggybackFiles) {
+      const target = path.join(ws, f);
+      if (fs.existsSync(target)) continue; // preserve CEO's existing file (perf history especially)
+      const source = path.join(templateRoot, f);
+      if (!fs.existsSync(source)) {
+        console.warn(`[seedWorkspace] fb source missing: ${source}`);
+        continue;
+      }
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(source, target);
+        console.log(`[seedWorkspace] seeded ${f}`);
+      } catch (e) {
+        console.warn(`[seedWorkspace] ${f} seed failed:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[seedWorkspace] fb seed block error:', e.message);
+  }
+
   return ws;
 }
 

@@ -984,6 +984,25 @@ for (const s of seedFiles) {
 }
 
 // =========================================================================
+// TEST G14.seed-logic: main.js references fb seed filenames + seedWorkspace
+// =========================================================================
+section("G14.seed-logic — main.js references");
+try {
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const checks = [
+    'fb-performance-history.md',
+    'fb-post-settings.json',
+    'seedWorkspace',
+  ];
+  for (const c of checks) {
+    if (mainText.includes(c)) pass(`G14.seed-logic.${c} — referenced in main.js`);
+    else fail(`G14.seed-logic.${c} — not referenced`, c);
+  }
+} catch (e) {
+  fail('G14.seed-logic — read failed', e.message);
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
