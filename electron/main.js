@@ -5555,7 +5555,17 @@ function ensureOpenzcaFriendEventFix() {
   }
 }
 
-// 9BizClaw OUTPUT-FILTER PATCH v6 — Security Layer 2
+// 9BizClaw OUTPUT-FILTER PATCH v7 — Security Layer 2
+// v7 changes vs v6:
+//   - Layer I: FB credential leak prevention (fb-access-token-leak, fb-app-secret-leak, fb-app-id-leak)
+//     — blocks access_token=..., client_secret=..., client_id=... patterns in bot replies
+//     — protects CEO FB OAuth credentials from accidental leak
+//   - FB patterns grouped into Layer A (credentials) so audit attribution is
+//     accurate: long all-English CoT dumps containing access_token=... now
+//     match fb-access-token-leak FIRST instead of the Layer D no-vietnamese
+//     -diacritic fallback. Reply still blocked either way, but post-mortem
+//     gets the correct block reason.
+//
 // v6 changes vs v5:
 //   - Extend the transport kill-switch into a full policy kill-switch. Besides
 //     pause/disable, the outbound send now re-checks user blocklist and group
@@ -5791,6 +5801,14 @@ function ensureZaloOutputFilterFix() {
       { name: "win-user-path", re: /[A-Z]:[\\\\\\/]Users[\\\\\\/]/i },
       { name: "api-key-sk", re: /\\bsk-[a-zA-Z0-9_\\-]{16,}/i },
       { name: "bearer-token", re: /\\bBearer\\s+[a-zA-Z0-9_\\-.]{20,}/i },
+      // --- Layer A (FB OAuth credential leakage) ---
+      // Placed here (not at tail of array) so long all-English CoT dumps
+      // containing access_token=... match fb-* FIRST rather than falling
+      // through to the Layer D no-vietnamese-diacritic catch-all. Audit
+      // log then shows the correct block reason for post-mortem.
+      { name: "fb-access-token-leak", re: /\\baccess_token\\s*=\\s*[A-Za-z0-9|_\\-]{20,}/i },
+      { name: "fb-app-secret-leak", re: /\\bclient_secret\\s*=\\s*[A-Za-z0-9]{20,}/i },
+      { name: "fb-app-id-leak", re: /\\bclient_id\\s*=\\s*\\d{15,}/i },
       { name: "botToken-field", re: /\\bbotToken\\b/i },
       { name: "apiKey-field", re: /\\bapiKey\\b/i },
       // --- Layer A1.5: bot "silent" tokens leaked as reply ---
@@ -5823,10 +5841,6 @@ function ensureZaloOutputFilterFix() {
       // Threshold raised 40→200: product listings like "iPhone 15 Pro 256GB: 25,900,000 VND"
       // are all-Latin but legitimate CS replies. CoT leaks are long walls of English (>200c).
       { name: "no-vietnamese-diacritic", re: /^(?!.*https?:\\/\\/)(?=[\\s\\S]{200,})(?!.*[àáảãạâấầẩẫậăắằẳẵặèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]).+/s },
-      // --- Layer I: FB OAuth credential leakage ---
-      { name: "fb-access-token-leak", re: /\\baccess_token\\s*=\\s*[A-Za-z0-9|_\\-]{20,}/i },
-      { name: "fb-app-secret-leak", re: /\\bclient_secret\\s*=\\s*[A-Za-z0-9]{20,}/i },
-      { name: "fb-app-id-leak", re: /\\bclient_id\\s*=\\s*\\d{15,}/i },
     ];
     let __ofBlocked: string | null = null;
     for (const __ofP of __ofBlockPatterns) {
@@ -11879,6 +11893,13 @@ const _outputFilterPatterns = [
   { name: 'win-user-path', re: /[A-Z]:[/\\]Users[/\\]/i },
   { name: 'api-key-sk', re: /\bsk-[a-zA-Z0-9_\-]{16,}/i },
   { name: 'bearer-token', re: /\bBearer\s+[a-zA-Z0-9_\-.]{20,}/i },
+  // Layer A (FB OAuth credential leakage) — placed here (not at tail of array)
+  // so long all-English CoT dumps containing access_token=... match fb-* FIRST
+  // rather than falling through to Layer D no-vietnamese-diacritic catch-all.
+  // Audit log then shows the correct block reason for post-mortem.
+  { name: 'fb-access-token-leak', re: /\baccess_token\s*=\s*[A-Za-z0-9|_\-]{20,}/i },
+  { name: 'fb-app-secret-leak', re: /\bclient_secret\s*=\s*[A-Za-z0-9]{20,}/i },
+  { name: 'fb-app-id-leak', re: /\bclient_id\s*=\s*\d{15,}/i },
   { name: 'botToken-field', re: /\bbotToken\b/i },
   { name: 'apiKey-field', re: /\bapiKey\b/i },
   // Layer A1.7: PII masking — bot MUST NOT echo sensitive customer data
@@ -11955,10 +11976,6 @@ const _outputFilterPatterns = [
   { name: 'fake-discount-percent', re: /(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
   { name: 'fake-booking-confirmed', re: /(?:đã\s*(?:đặt|book|giữ|xác\s*nhận))\s*(?:lịch|bàn|phòng|chỗ|slot|lịch\s*hẹn|cuộc\s*hẹn)/i },
   { name: 'fake-payment-received', re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
-  // Layer I: FB OAuth credential leakage
-  { name: 'fb-access-token-leak', re: /\baccess_token\s*=\s*[A-Za-z0-9|_\-]{20,}/i },
-  { name: 'fb-app-secret-leak', re: /\bclient_secret\s*=\s*[A-Za-z0-9]{20,}/i },
-  { name: 'fb-app-id-leak', re: /\bclient_id\s*=\s*\d{15,}/i },
 ];
 
 const _outputFilterSafeMsgs = [
