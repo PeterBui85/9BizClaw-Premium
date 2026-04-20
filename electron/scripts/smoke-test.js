@@ -1062,6 +1062,19 @@ try {
 } catch (e) { fail('G14.cron-fb — read failed', e.message); }
 
 try {
+  const mainText = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (mainText.includes("'fb-insights-sweep'") || mainText.includes('"fb-insights-sweep"')) {
+    pass('G14.cron-fb.insights — case present');
+  } else fail('G14.cron-fb.insights — missing', 'Add fb-insights-sweep case');
+  if (mainText.includes("'fb-token-check'") || mainText.includes('"fb-token-check"')) {
+    pass('G14.cron-fb.token-check — case present');
+  } else fail('G14.cron-fb.token-check — missing', 'Add fb-token-check case');
+  if (mainText.includes('fbPerformance.runInsightsSweep') || mainText.includes('fbPerformance.queueInsightsCheck')) {
+    pass('G14.cron-fb.performance-import — used');
+  } else fail('G14.cron-fb.performance-import — not used', 'require fb/performance');
+} catch (e) { fail('G14.cron-fb.insights — read failed', e.message); }
+
+try {
   const agents = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
   const requiredSnippets = [
     'FB_PUBLISH',

@@ -192,6 +192,8 @@ const DEFAULT_SCHEDULES_JSON = [
   { id: 'zalo-followup', label: 'Follow-up khách Zalo', time: '09:30', enabled: true, icon: '', description: 'Nhắc CEO khách mới chưa tương tác, khách hỏi chưa reply' },
   { id: 'memory-cleanup', label: 'Dọn dẹp memory', time: '02:00', enabled: false, icon: '', description: 'Tổng hợp journal cũ, dọn dẹp memory rời rạc' },
   { id: 'fb-draft-generator', label: 'Tạo draft FB sáng', time: '07:30', enabled: true, icon: '', description: 'Sinh bài FB sáng + gửi digest Telegram để duyệt', owner: 'facebook' },
+  { id: 'fb-insights-sweep', label: 'FB Insights sweep', time: 'Mỗi 15 phút', enabled: true, icon: '', description: 'Fetch Insights cho post FB đã publish (24h + 7d check)', owner: 'facebook' },
+  { id: 'fb-token-check', label: 'FB token validity check', time: 'Mon 08:00', enabled: true, icon: '', description: 'Kiểm tra token FB còn hợp lệ (tuần 1 lần)', owner: 'facebook' },
 ];
 
 // Seed templates from read-only bundle → writable workspace (packaged install)
@@ -11931,6 +11933,13 @@ async function _fbHandlePublish({ id }) {
       _writeUndoList(undoList);
     } finally { _fbUndoLock = false; }
 
+    // Queue Insights checks (24h + 7d) so fb-insights-sweep cron fetches them.
+    try {
+      fbPerformance.queueInsightsCheck(postId, new Date().toISOString());
+    } catch (e) {
+      console.warn('[fb publish] queueInsightsCheck failed:', e.message);
+    }
+
     try { auditLog('fb_published', { postId, draftId: variantId }); } catch {}
 
     const pageUrl = `https://www.facebook.com/${loaded.config.pageId}/posts/${String(postId).split('_').pop()}`;
@@ -15031,6 +15040,37 @@ function _startCronJobsImpl() {
             }
           } finally {
             global._cronInFlight?.delete('fb-draft-generator');
+          }
+        };
+        break;
+      }
+      case 'fb-insights-sweep': {
+        // Every 15 min — fetch Insights for recently-published FB posts (24h + 7d checks).
+        // `time` label 'Mỗi 15 phút' is display-only; cron expr hardcoded here.
+        cronExpr = '*/15 * * * *';
+        handler = async () => {
+          try {
+            const loaded = fbAuth.loadPageToken(safeStorage);
+            if (!loaded) return;
+            await fbPerformance.runInsightsSweep({ pageToken: loaded.token });
+          } catch (e) { console.error('[fb-insights-sweep]', e.message); }
+        };
+        break;
+      }
+      case 'fb-token-check': {
+        // Weekly Monday 08:00 — verify FB page token still valid; alert CEO if not.
+        // `time` label 'Mon 08:00' is display-only; cron expr hardcoded here.
+        cronExpr = '0 8 * * 1';
+        handler = async () => {
+          try {
+            const loaded = fbAuth.loadPageToken(safeStorage);
+            if (!loaded) return;
+            const dbg = await fbGraph.debugToken(loaded.token, loaded.config.appId, loaded.secret);
+            if (!dbg?.data?.is_valid) {
+              await sendCeoAlert('[FB] Token invalid — mở Dashboard reconnect Facebook.');
+            }
+          } catch (e) {
+            console.error('[fb-token-check]', e.message);
           }
         };
         break;
@@ -19075,6 +19115,7 @@ const fbConfig = require('./fb/config');
 const fbGenerator = require('./fb/generator');
 const fbDrafts = require('./fb/drafts');
 const fbMarkers = require('./fb/markers');
+const fbPerformance = require('./fb/performance');
 let _fbOauthInFlight = null;
 let _fbGeneratorFailCount = 0;
 
@@ -19524,6 +19565,12 @@ ipcMain.handle('fb-compose-publish', async (_e, { text, image }) => {
       fs.appendFileSync(path.join(getWorkspace(), 'logs', 'fb-posts-log.jsonl'),
         JSON.stringify({ t: new Date().toISOString(), postId, source: 'compose' }) + '\n');
     } catch {}
+    // Queue Insights checks (24h + 7d) so fb-insights-sweep cron tracks this post too.
+    try {
+      fbPerformance.queueInsightsCheck(postId, new Date().toISOString());
+    } catch (e) {
+      console.warn('[fb compose-publish] queueInsightsCheck failed:', e.message);
+    }
     auditLog('fb_compose_published', { postId });
     return { ok: true, postId, url: pageUrl };
   } catch (e) {
