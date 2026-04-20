@@ -7,6 +7,16 @@
 const GRAPH_API_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
+function _buildGraphError(res, json, fallbackMsg) {
+  const err = new Error(json?.error?.message || fallbackMsg || `Graph API ${res.status}`);
+  err.status = res.status;
+  err.code = json?.error?.code;
+  err.subcode = json?.error?.error_subcode;
+  err.fbtrace = json?.error?.fbtrace_id;
+  err.raw = json;
+  return err;
+}
+
 async function _graphRequest(method, pathPart, params = {}, token = null, body = null) {
   const url = new URL(GRAPH_BASE + pathPart);
   for (const [k, v] of Object.entries(params)) {
@@ -21,13 +31,7 @@ async function _graphRequest(method, pathPart, params = {}, token = null, body =
   const res = await fetch(url.toString(), opts);
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error) {
-    const err = new Error(json.error?.message || `Graph API ${res.status}`);
-    err.status = res.status;
-    err.code = json.error?.code;
-    err.subcode = json.error?.error_subcode;
-    err.fbtrace = json.error?.fbtrace_id;
-    err.raw = json;
-    throw err;
+    throw _buildGraphError(res, json);
   }
   return json;
 }
@@ -55,9 +59,7 @@ async function uploadPhoto(pageId, pageToken, { imageUrl, filePath } = {}) {
     const res = await fetch(url, { method: 'POST', body: form });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json.error) {
-      const err = new Error(json.error?.message || `Graph photo upload ${res.status}`);
-      err.status = res.status;
-      throw err;
+      throw _buildGraphError(res, json, `Graph photo upload ${res.status}`);
     }
     return json;
   }
@@ -65,14 +67,19 @@ async function uploadPhoto(pageId, pageToken, { imageUrl, filePath } = {}) {
 }
 
 async function fetchInsights(postId, pageToken, metrics) {
+  if (!Array.isArray(metrics) || metrics.length === 0) {
+    throw new Error('fetchInsights: metrics must be a non-empty array');
+  }
   return _graphRequest('GET', `/${encodeURIComponent(postId)}/insights`, {
     metric: metrics.join(','),
   }, pageToken);
 }
 
 async function fetchRecentPosts(pageId, pageToken, sinceIso) {
+  const sinceTs = Math.floor(new Date(sinceIso).getTime() / 1000);
+  if (isNaN(sinceTs)) throw new Error('fetchRecentPosts: invalid sinceIso');
   return _graphRequest('GET', `/${encodeURIComponent(pageId)}/posts`, {
-    since: Math.floor(new Date(sinceIso).getTime() / 1000),
+    since: sinceTs,
     fields: 'id,message,created_time',
   }, pageToken);
 }
