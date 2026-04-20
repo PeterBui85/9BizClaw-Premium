@@ -925,6 +925,17 @@ try {
   fail('G11.wizard — read failed', e.message);
 }
 
+const fbSkills = ['fb-post-writer', 'fb-industry-voice', 'fb-repetition-avoider',
+                  'fb-trend-aware', 'fb-ab-variant'];
+for (const s of fbSkills) {
+  const p = path.join(__dirname, '..', '..', 'skills', s + '.md');
+  if (fs.existsSync(p)) {
+    const content = fs.readFileSync(p, 'utf-8');
+    if (content.length > 500) pass(`G8.${s} — exists + non-trivial (${content.length} bytes)`);
+    else fail(`G8.${s} — file too short`, `${content.length} bytes, needs >500`);
+  } else fail(`G8.${s} — missing`, p);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
