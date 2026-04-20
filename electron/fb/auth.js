@@ -104,9 +104,14 @@ async function startCallbackServer({ appId, appSecret, onResult } = {}) {
     expiresAt: Date.now() + STATE_TTL_MS, port, appId, appSecret,
   });
 
+  const timeoutHandle = setTimeout(() => {
+    resolveResult({ error: 'timeout' });
+  }, STATE_TTL_MS);
+
   const ready = { state, port, authUrl: buildAuthUrl(appId, state, port) };
   const tokens = (async () => {
     const cb = await resultPromise;
+    clearTimeout(timeoutHandle);
     server.close();
     if (cb.error) return { error: cb.error };
     const redirectUri = `http://localhost:${cb.port}${CALLBACK_PATH}`;
@@ -135,8 +140,8 @@ async function completeOAuth({ appId, appSecret, pageId, pageName, pageToken, sa
     scopes: ['pages_show_list', 'pages_manage_posts', 'pages_read_engagement'],
   };
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
-  fs.writeFileSync(tokenPath, safeStorage.encryptString(pageToken));
-  fs.writeFileSync(secretPath, safeStorage.encryptString(appSecret));
+  fs.writeFileSync(tokenPath, safeStorage.encryptString(pageToken), { mode: 0o600 });
+  fs.writeFileSync(secretPath, safeStorage.encryptString(appSecret), { mode: 0o600 });
   return cfg;
 }
 
@@ -146,8 +151,12 @@ function _readConfig() {
 }
 
 async function storePageToken(pageId, pageName, pageToken, appSecret, safeStorage) {
+  const existingCfg = _readConfig();
+  if (!existingCfg.appId) {
+    throw new Error('storePageToken requires existing config.json with appId — call completeOAuth first');
+  }
   return completeOAuth({
-    appId: _readConfig().appId, appSecret,
+    appId: existingCfg.appId, appSecret,
     pageId, pageName, pageToken, safeStorage,
   });
 }
