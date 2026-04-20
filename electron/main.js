@@ -14242,7 +14242,24 @@ ipcMain.handle('queue-follow-up', async (_event, { channel, recipientId, recipie
   }
 });
 
+// All startCronJobs callers (boot, wizard-complete, restartCronJobs,
+// file watchers, IPC handlers) funnel through here. Guard prevents
+// concurrent calls from racing stopCronJobs + push and leaking cron
+// jobs into node-cron's internal registry (= duplicate firings).
+let _startCronJobsInFlight = false;
 function startCronJobs() {
+  if (_startCronJobsInFlight) {
+    console.warn('[cron] startCronJobs already in flight — skipping duplicate call');
+    return;
+  }
+  _startCronJobsInFlight = true;
+  try {
+    _startCronJobsImpl();
+  } finally {
+    _startCronJobsInFlight = false;
+  }
+}
+function _startCronJobsImpl() {
   stopCronJobs();
   // Kick off the openclaw-agent CLI self-test (non-blocking). Sets _agentFlagProfile
   // / _agentCliHealthy so that when a cron fires it already knows which flags to use.
@@ -14653,12 +14670,34 @@ function surfaceCronConfigError(c, reason) {
 }
 
 function stopCronJobs() {
-  for (const { job } of cronJobs) { try { job.stop(); } catch {} }
+  // `.stop()` pauses the timer. `.destroy()` (node-cron 3+) additionally
+  // frees internal registry references. Call destroy if available so
+  // stopped jobs can't possibly resurface when node-cron's internal
+  // registry iterates (e.g. schedule file load + re-register race).
+  for (const { job } of cronJobs) {
+    try { if (typeof job.destroy === 'function') job.destroy(); else job.stop(); } catch {}
+  }
   cronJobs = [];
 }
 
+// Re-entrancy guard: multiple near-simultaneous callers (boot +
+// wizard-complete + file watcher + IPC save) would each call
+// stopCronJobs + push. If one hadn't finished pushing when another
+// called stop, the un-pushed jobs wouldn't get stopped, leaking a
+// second instance. The guard makes concurrent callers merge into the
+// in-flight run's completion.
+let _cronRestartInFlight = false;
 function restartCronJobs() {
-  startCronJobs();
+  if (_cronRestartInFlight) {
+    console.warn('[cron] restartCronJobs already in flight — skipping duplicate call');
+    return;
+  }
+  _cronRestartInFlight = true;
+  try {
+    startCronJobs();
+  } finally {
+    _cronRestartInFlight = false;
+  }
 }
 
 // ============================================
