@@ -1296,7 +1296,7 @@
           <!-- ============ STEP 4b: Facebook Fanpage (Optional) ============ -->
           <section class="wz-step" id="step-4b">
             <h2>Facebook Fanpage <span style="font-size:14px;font-weight:500;color:var(--text-tertiary);margin-left:8px;padding:3px 10px;border:1px solid var(--border);border-radius:999px;vertical-align:middle">Tùy chọn</span></h2>
-            <p class="wz-step-desc">Kết nối để bot tự soạn và đăng bài cho Fanpage. Bước này <strong>không bắt buộc</strong> — có thể làm sau ở Dashboard. Bấm <strong>Bỏ qua</strong> bên dưới để hoàn tất cài đặt ngay.</p>
+            <p class="wz-step-desc">Kết nối để bot tự soạn và đăng bài cho Fanpage. Bước này <strong>không bắt buộc</strong> — có thể làm sau ở Dashboard. Bấm <strong>Hoàn tất thiết lập</strong> bên dưới để bỏ qua bước này.</p>
 
             <div class="wz-instruction">
               <div class="wz-instruction-head">
@@ -1615,8 +1615,8 @@ http://localhost:18795/fb-callback</textarea>
       }
       if (currentStep === '4b') {
         // FB step is fully optional — CEO may skip without any validation.
-        // If CEO connected a Page, window._fbPageSaved is set by the save
-        // handler below; otherwise we just proceed to finishSetup.
+        // Save state is tracked locally inside bindFbWizard (fbPageSaved);
+        // save handler persists the choice via fbConnectComplete IPC.
         finishSetup();
         return;
       }
@@ -2160,6 +2160,8 @@ http://localhost:18795/fb-callback</textarea>
     // (fbConnectStart → fbConnectAwaitPages → fbConnectComplete). Errors
     // surface in #wiz-fb-connect-status; CEO can always skip via nav Next.
     function bindFbWizard() {
+      let fbPageSaved = false;
+
       const connectBtn = document.getElementById('wiz-fb-connect-btn');
       const saveBtn = document.getElementById('wiz-fb-save-btn');
       const statusEl = document.getElementById('wiz-fb-connect-status');
@@ -2170,8 +2172,6 @@ http://localhost:18795/fb-callback</textarea>
       const copyBtn = document.getElementById('wiz-fb-copy-redirects');
       const copyStatus = document.getElementById('wiz-fb-copy-status');
       const redirects = document.getElementById('wiz-fb-redirects');
-
-      if (!connectBtn || !saveBtn) return; // FB step not rendered in this build
 
       // "Mở Meta for Developers" + similar external-link buttons in the FB step
       document.querySelectorAll('#step-4b [data-fb-open]').forEach(btn => {
@@ -2212,11 +2212,13 @@ http://localhost:18795/fb-callback</textarea>
 
         statusEl.textContent = 'Đang mở Facebook...';
         connectBtn.disabled = true;
+        connectBtn.classList.add('loading');
         try {
           const startRes = await window.claw.fbConnectStart(appId, secret);
           if (!startRes || !startRes.ok) {
-            statusEl.textContent = 'Lỗi: ' + ((startRes && startRes.error) || 'không bind được port');
+            statusEl.textContent = 'Lỗi: ' + String((startRes && startRes.error) || 'không bind được port');
             connectBtn.disabled = false;
+            connectBtn.classList.remove('loading');
             return;
           }
           if (startRes.authUrl && window.claw && typeof window.claw.openExternal === 'function') {
@@ -2226,14 +2228,16 @@ http://localhost:18795/fb-callback</textarea>
 
           const pagesRes = await window.claw.fbConnectAwaitPages();
           if (!pagesRes || !pagesRes.ok) {
-            statusEl.textContent = 'Lỗi: ' + ((pagesRes && pagesRes.error) || 'không lấy được Page list');
+            statusEl.textContent = 'Lỗi: ' + String((pagesRes && pagesRes.error) || 'không lấy được Page list');
             connectBtn.disabled = false;
+            connectBtn.classList.remove('loading');
             return;
           }
           const pages = pagesRes.pages || [];
           if (pages.length === 0) {
             statusEl.textContent = 'Sếp chưa là admin của Fanpage nào. Tạo hoặc nhận quyền Fanpage trước khi kết nối.';
             connectBtn.disabled = false;
+            connectBtn.classList.remove('loading');
             return;
           }
           dropdown.innerHTML = pages.map(p => {
@@ -2243,9 +2247,12 @@ http://localhost:18795/fb-callback</textarea>
           }).join('');
           picker.classList.remove('wz-hidden');
           statusEl.textContent = 'Chọn Fanpage bên dưới rồi bấm "Lưu Fanpage".';
-        } catch (e) {
-          statusEl.textContent = 'Lỗi: ' + ((e && e.message) || e);
           connectBtn.disabled = false;
+          connectBtn.classList.remove('loading');
+        } catch (e) {
+          statusEl.textContent = 'Lỗi: ' + String(e?.message || e || 'unknown');
+          connectBtn.disabled = false;
+          connectBtn.classList.remove('loading');
         }
       });
 
@@ -2253,17 +2260,22 @@ http://localhost:18795/fb-callback</textarea>
         const pickedId = dropdown.value;
         const pickedName = (dropdown.options[dropdown.selectedIndex] && dropdown.options[dropdown.selectedIndex].text) || '';
         if (!pickedId) { statusEl.textContent = 'Chưa chọn Fanpage.'; return; }
+        saveBtn.disabled = true;
+        saveBtn.classList.add('loading');
         try {
           const res = await window.claw.fbConnectComplete({ id: pickedId, name: pickedName });
           if (res && res.ok) {
-            window._fbPageSaved = true;
+            fbPageSaved = true;
             statusEl.textContent = 'Đã kết nối Fanpage: ' + (res.pageName || pickedName);
             picker.classList.add('wz-hidden');
           } else {
-            statusEl.textContent = 'Lỗi lưu: ' + ((res && res.error) || 'unknown');
+            statusEl.textContent = 'Lỗi lưu: ' + String((res && res.error) || 'unknown');
           }
         } catch (e) {
-          statusEl.textContent = 'Lỗi lưu: ' + ((e && e.message) || e);
+          statusEl.textContent = 'Lỗi lưu: ' + String(e?.message || e || 'unknown');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('loading');
         }
       });
     }
