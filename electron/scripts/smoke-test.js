@@ -867,6 +867,25 @@ try {
   fail('G13.graph — require failed', e.message);
 }
 
+try {
+  const fbAuth = require('../fb/auth.js');
+  const required = ['buildAuthUrl', 'startCallbackServer', 'completeOAuth',
+                    'storePageToken', 'loadPageToken', 'clearCredentials',
+                    'PORT_RANGE'];
+  for (const name of required) {
+    if (typeof fbAuth[name] !== 'undefined') pass(`G13.auth.${name} — exported`);
+    else fail(`G13.auth.${name} — missing export`, `${name} is undefined`);
+  }
+  if (Array.isArray(fbAuth.PORT_RANGE) && fbAuth.PORT_RANGE.length === 5 &&
+      fbAuth.PORT_RANGE[0] === 18791 && fbAuth.PORT_RANGE[4] === 18795) {
+    pass('G13.auth.PORT_RANGE — 18791..18795');
+  } else {
+    fail('G13.auth.PORT_RANGE — wrong range', JSON.stringify(fbAuth.PORT_RANGE));
+  }
+} catch (e) {
+  fail('G13.auth — require failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
