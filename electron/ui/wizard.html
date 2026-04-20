@@ -1293,6 +1293,91 @@
             </div>
           </section>
 
+          <!-- ============ STEP 4b: Facebook Fanpage (Optional) ============ -->
+          <section class="wz-step" id="step-4b">
+            <h2>Facebook Fanpage <span style="font-size:14px;font-weight:500;color:var(--text-tertiary);margin-left:8px;padding:3px 10px;border:1px solid var(--border);border-radius:999px;vertical-align:middle">Tùy chọn</span></h2>
+            <p class="wz-step-desc">Kết nối để bot tự soạn và đăng bài cho Fanpage. Bước này <strong>không bắt buộc</strong> — có thể làm sau ở Dashboard. Bấm <strong>Bỏ qua</strong> bên dưới để hoàn tất cài đặt ngay.</p>
+
+            <div class="wz-instruction">
+              <div class="wz-instruction-head">
+                <div class="wz-instruction-num">1</div>
+                <div class="wz-instruction-title">Mở Meta for Developers và tạo App</div>
+              </div>
+              <div class="wz-instruction-body">
+                <p>Bấm nút bên dưới, đăng nhập Facebook rồi chọn <strong>Create App</strong> → loại <strong>Doanh nghiệp</strong>. Đặt tên App là <code>9BizClaw-[tên sếp]</code>.</p>
+                <div style="margin-top:12px">
+                  <button class="wz-btn wz-btn-ghost" type="button" data-fb-open="https://developers.facebook.com/apps/">Mở Meta for Developers</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="wz-instruction" style="margin-top:18px">
+              <div class="wz-instruction-head">
+                <div class="wz-instruction-num">2</div>
+                <div class="wz-instruction-title">Thêm Facebook Login for Business</div>
+              </div>
+              <div class="wz-instruction-body">
+                <p>Trong Dashboard App vừa tạo: <strong>Add Product</strong> → <strong>Facebook Login for Business</strong> → <strong>Settings</strong>.</p>
+                <p>Dán 5 dòng redirect URI dưới đây vào ô <strong>Valid OAuth Redirect URIs</strong> (Meta không hỗ trợ wildcard nên cần dán đủ 5 dòng):</p>
+                <textarea id="wiz-fb-redirects" class="wz-textarea" readonly rows="5" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;margin-top:8px">http://localhost:18791/fb-callback
+http://localhost:18792/fb-callback
+http://localhost:18793/fb-callback
+http://localhost:18794/fb-callback
+http://localhost:18795/fb-callback</textarea>
+                <div style="margin-top:10px">
+                  <button class="wz-btn wz-btn-ghost" type="button" id="wiz-fb-copy-redirects">Copy tất cả</button>
+                  <span id="wiz-fb-copy-status" style="margin-left:10px;font-size:12px;color:var(--text-tertiary)"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="wz-instruction" style="margin-top:18px">
+              <div class="wz-instruction-head">
+                <div class="wz-instruction-num">3</div>
+                <div class="wz-instruction-title">Lấy App ID và App Secret</div>
+              </div>
+              <div class="wz-instruction-body">
+                <p>Vào <strong>Settings → Basic</strong> trong Dashboard App. Copy <strong>App ID</strong> và <strong>App Secret</strong> vào 2 ô dưới đây.</p>
+                <div class="wz-field" style="margin-top:12px">
+                  <label class="wz-label" for="wiz-fb-appid">App ID (15+ chữ số)</label>
+                  <input type="text" class="wz-input" id="wiz-fb-appid" placeholder="Ví dụ: 1234567890123456" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="wz-field" style="margin-bottom:0">
+                  <label class="wz-label" for="wiz-fb-secret">App Secret (32 ký tự hex)</label>
+                  <input type="password" class="wz-input" id="wiz-fb-secret" placeholder="Chuỗi 32 ký tự hex" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+            </div>
+
+            <div class="wz-instruction" style="margin-top:18px">
+              <div class="wz-instruction-head">
+                <div class="wz-instruction-num">4</div>
+                <div class="wz-instruction-title">Kết nối với Facebook</div>
+              </div>
+              <div class="wz-instruction-body">
+                <p>Bấm nút dưới, trình duyệt sẽ mở ra để sếp cấp quyền. Sau khi xong, quay lại đây để chọn Fanpage.</p>
+                <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                  <button class="wz-btn wz-btn-primary" type="button" id="wiz-fb-connect-btn">Kết nối với Facebook</button>
+                  <span id="wiz-fb-connect-status" style="font-size:13px;color:var(--text-tertiary)"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="wz-instruction wz-hidden" id="wiz-fb-page-picker" style="margin-top:18px">
+              <div class="wz-instruction-head">
+                <div class="wz-instruction-num">5</div>
+                <div class="wz-instruction-title">Chọn Fanpage cho bot quản lý</div>
+              </div>
+              <div class="wz-instruction-body">
+                <p>Chọn Fanpage mà bot sẽ soạn và đăng bài thay sếp.</p>
+                <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <select id="wiz-fb-pages-dropdown" class="wz-select" style="min-width:280px"></select>
+                  <button class="wz-btn wz-btn-primary" type="button" id="wiz-fb-save-btn">Lưu Fanpage</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <!-- ============ STEP 5: Done ============ -->
           <section class="wz-step" id="step-5">
             <div class="wz-done-icon"><span data-icon="check" data-icon-size="32"></span></div>
@@ -1422,13 +1507,14 @@
     let selectedPronouns = 'em-anh-chi';
     let zaloMode = 'auto';
 
-    const STEP_ORDER = [1, '1b', 2, 3, 4, 5];
+    const STEP_ORDER = [1, '1b', 2, 3, 4, '4b', 5];
     const STEP_META = {
-      1:    { eyebrow: 'Bước 1 / 6', headline: 'Chào mừng đến với 9BizClaw', subhead: 'Trợ lý AI 1-click giúp anh/chị quản lý khách hàng Zalo, Telegram và báo cáo doanh nghiệp tự động. Hướng dẫn cài đặt hoàn tất trong vài phút.' },
-      '1b': { eyebrow: 'Bước 2 / 6', headline: 'Cá nhân hóa theo ngành', subhead: 'Trợ lý được tối ưu kỹ năng khác nhau cho mỗi ngành — F&B, bất động sản, công nghệ, giáo dục… Chọn đúng ngành để trợ lý hiểu khách hàng của anh/chị tốt hơn.' },
-      2:    { eyebrow: 'Bước 3 / 6', headline: 'Kết nối trí tuệ nhân tạo', subhead: 'Trợ lý cần một AI model để hoạt động. Ollama cho miễn phí, chỉ mất 2 phút lấy API key.' },
-      3:    { eyebrow: 'Bước 4 / 6', headline: 'Kết nối Telegram', subhead: 'Telegram là kênh anh/chị nhận thông báo, ra lệnh, và đọc báo cáo. Hướng dẫn tạo bot từ BotFather ở bên dưới.' },
-      4:    { eyebrow: 'Bước 5 / 6 · Tùy chọn', headline: 'Kết nối Zalo', subhead: 'Bước này không bắt buộc. Anh/chị có thể bỏ qua và thiết lập Zalo sau trong Dashboard. Nếu dùng Zalo: đăng nhập QR — không cần mật khẩu, không cần API.' },
+      1:    { eyebrow: 'Bước 1 / 7', headline: 'Chào mừng đến với 9BizClaw', subhead: 'Trợ lý AI 1-click giúp anh/chị quản lý khách hàng Zalo, Telegram và báo cáo doanh nghiệp tự động. Hướng dẫn cài đặt hoàn tất trong vài phút.' },
+      '1b': { eyebrow: 'Bước 2 / 7', headline: 'Cá nhân hóa theo ngành', subhead: 'Trợ lý được tối ưu kỹ năng khác nhau cho mỗi ngành — F&B, bất động sản, công nghệ, giáo dục… Chọn đúng ngành để trợ lý hiểu khách hàng của anh/chị tốt hơn.' },
+      2:    { eyebrow: 'Bước 3 / 7', headline: 'Kết nối trí tuệ nhân tạo', subhead: 'Trợ lý cần một AI model để hoạt động. Ollama cho miễn phí, chỉ mất 2 phút lấy API key.' },
+      3:    { eyebrow: 'Bước 4 / 7', headline: 'Kết nối Telegram', subhead: 'Telegram là kênh anh/chị nhận thông báo, ra lệnh, và đọc báo cáo. Hướng dẫn tạo bot từ BotFather ở bên dưới.' },
+      4:    { eyebrow: 'Bước 5 / 7 · Tùy chọn', headline: 'Kết nối Zalo', subhead: 'Bước này không bắt buộc. Anh/chị có thể bỏ qua và thiết lập Zalo sau trong Dashboard. Nếu dùng Zalo: đăng nhập QR — không cần mật khẩu, không cần API.' },
+      '4b': { eyebrow: 'Bước 6 / 7 · Tùy chọn', headline: 'Kết nối Facebook Fanpage', subhead: 'Bước này không bắt buộc. Có thể làm sau ở Dashboard. Nếu kết nối, bot sẽ tự soạn và đăng bài cho Fanpage doanh nghiệp.' },
       5:    { eyebrow: 'Hoàn tất', headline: 'Trợ lý đã sẵn sàng', subhead: 'Tất cả đã được thiết lập. Anh/chị có thể mở Dashboard và bắt đầu sử dụng 9BizClaw ngay bây giờ.' },
     };
 
@@ -1457,7 +1543,8 @@
 
       // Adjust next button label per step
       const nextBtn = document.getElementById('nav-next');
-      if (step === 4) nextBtn.textContent = 'Hoàn tất thiết lập';
+      if (step === 4) nextBtn.textContent = 'Tiếp tục';
+      else if (step === '4b') nextBtn.textContent = 'Hoàn tất thiết lập';
       else if (step === 5) nextBtn.style.display = 'none';
       else { nextBtn.textContent = 'Tiếp tục'; nextBtn.style.display = 'inline-flex'; }
     }
@@ -1521,6 +1608,15 @@
           );
           if (!ok) return;
         }
+        // Continue to FB step (step 4b). Bot-to-Fanpage is optional; CEO
+        // can skip via "Bỏ qua" or the primary Next button directly.
+        showStep('4b');
+        return;
+      }
+      if (currentStep === '4b') {
+        // FB step is fully optional — CEO may skip without any validation.
+        // If CEO connected a Page, window._fbPageSaved is set by the save
+        // handler below; otherwise we just proceed to finishSetup.
         finishSetup();
         return;
       }
@@ -2057,6 +2153,122 @@
     // sau khi wizard xong. Bot đọc knowledge/*/index.md khi trả lời khách,
     // không dùng COMPANY.md/PRODUCTS.md nữa.
 
+    // === FB wizard handlers ===
+    // FB (Facebook Fanpage) step is fully optional. CEO pastes App ID + App
+    // Secret from Meta for Developers, runs OAuth round-trip in browser,
+    // picks a Page, and saves. All 3 IPC calls route through preload bridges
+    // (fbConnectStart → fbConnectAwaitPages → fbConnectComplete). Errors
+    // surface in #wiz-fb-connect-status; CEO can always skip via nav Next.
+    function bindFbWizard() {
+      const connectBtn = document.getElementById('wiz-fb-connect-btn');
+      const saveBtn = document.getElementById('wiz-fb-save-btn');
+      const statusEl = document.getElementById('wiz-fb-connect-status');
+      const appidEl = document.getElementById('wiz-fb-appid');
+      const secretEl = document.getElementById('wiz-fb-secret');
+      const picker = document.getElementById('wiz-fb-page-picker');
+      const dropdown = document.getElementById('wiz-fb-pages-dropdown');
+      const copyBtn = document.getElementById('wiz-fb-copy-redirects');
+      const copyStatus = document.getElementById('wiz-fb-copy-status');
+      const redirects = document.getElementById('wiz-fb-redirects');
+
+      if (!connectBtn || !saveBtn) return; // FB step not rendered in this build
+
+      // "Mở Meta for Developers" + similar external-link buttons in the FB step
+      document.querySelectorAll('#step-4b [data-fb-open]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const url = btn.getAttribute('data-fb-open');
+          if (url && window.claw && typeof window.claw.openExternal === 'function') {
+            try { await window.claw.openExternal(url); } catch {}
+          }
+        });
+      });
+
+      if (copyBtn && redirects) {
+        copyBtn.addEventListener('click', async () => {
+          const text = redirects.value || '';
+          let ok = false;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text);
+              ok = true;
+            } else {
+              redirects.select();
+              ok = document.execCommand('copy');
+              redirects.setSelectionRange(0, 0);
+            }
+          } catch { ok = false; }
+          if (copyStatus) {
+            copyStatus.textContent = ok ? 'Đã copy 5 dòng.' : 'Không copy được — chọn thủ công trong ô rồi Ctrl+C.';
+            setTimeout(() => { if (copyStatus) copyStatus.textContent = ''; }, 3500);
+          }
+        });
+      }
+
+      connectBtn.addEventListener('click', async () => {
+        const appId = (appidEl.value || '').trim();
+        const secret = (secretEl.value || '').trim();
+        if (!appId || !secret) { statusEl.textContent = 'Thiếu App ID hoặc App Secret.'; return; }
+        if (!/^\d{15,}$/.test(appId)) { statusEl.textContent = 'App ID phải là số nguyên 15+ chữ số.'; return; }
+
+        statusEl.textContent = 'Đang mở Facebook...';
+        connectBtn.disabled = true;
+        try {
+          const startRes = await window.claw.fbConnectStart(appId, secret);
+          if (!startRes || !startRes.ok) {
+            statusEl.textContent = 'Lỗi: ' + ((startRes && startRes.error) || 'không bind được port');
+            connectBtn.disabled = false;
+            return;
+          }
+          if (startRes.authUrl && window.claw && typeof window.claw.openExternal === 'function') {
+            try { await window.claw.openExternal(startRes.authUrl); } catch {}
+          }
+          statusEl.textContent = 'Đang chờ sếp hoàn tất đăng nhập trên Facebook...';
+
+          const pagesRes = await window.claw.fbConnectAwaitPages();
+          if (!pagesRes || !pagesRes.ok) {
+            statusEl.textContent = 'Lỗi: ' + ((pagesRes && pagesRes.error) || 'không lấy được Page list');
+            connectBtn.disabled = false;
+            return;
+          }
+          const pages = pagesRes.pages || [];
+          if (pages.length === 0) {
+            statusEl.textContent = 'Sếp chưa là admin của Fanpage nào. Tạo hoặc nhận quyền Fanpage trước khi kết nối.';
+            connectBtn.disabled = false;
+            return;
+          }
+          dropdown.innerHTML = pages.map(p => {
+            const id = String(p.id || '').replace(/"/g, '&quot;');
+            const name = esc(String(p.name || id));
+            return `<option value="${id}">${name}</option>`;
+          }).join('');
+          picker.classList.remove('wz-hidden');
+          statusEl.textContent = 'Chọn Fanpage bên dưới rồi bấm "Lưu Fanpage".';
+        } catch (e) {
+          statusEl.textContent = 'Lỗi: ' + ((e && e.message) || e);
+          connectBtn.disabled = false;
+        }
+      });
+
+      saveBtn.addEventListener('click', async () => {
+        const pickedId = dropdown.value;
+        const pickedName = (dropdown.options[dropdown.selectedIndex] && dropdown.options[dropdown.selectedIndex].text) || '';
+        if (!pickedId) { statusEl.textContent = 'Chưa chọn Fanpage.'; return; }
+        try {
+          const res = await window.claw.fbConnectComplete({ id: pickedId, name: pickedName });
+          if (res && res.ok) {
+            window._fbPageSaved = true;
+            statusEl.textContent = 'Đã kết nối Fanpage: ' + (res.pageName || pickedName);
+            picker.classList.add('wz-hidden');
+          } else {
+            statusEl.textContent = 'Lỗi lưu: ' + ((res && res.error) || 'unknown');
+          }
+        } catch (e) {
+          statusEl.textContent = 'Lỗi lưu: ' + ((e && e.message) || e);
+        }
+      });
+    }
+    // === END FB wizard handlers ===
+
     // ===== Init =====
     document.addEventListener('DOMContentLoaded', () => {
       // Restore theme
@@ -2069,6 +2281,7 @@
       bindMixChips();
       syncMixUI();
       updateMixPreview();
+      bindFbWizard();
       setProgress(1);
 
       // Theme toggle

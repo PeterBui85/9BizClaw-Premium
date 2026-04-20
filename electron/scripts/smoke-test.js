@@ -911,6 +911,20 @@ try {
   fail('G13.filter — read failed', e.message);
 }
 
+try {
+  const wizardText = fs.readFileSync(path.join(__dirname, '..', 'ui', 'wizard.html'), 'utf-8');
+  const domIds = ['wiz-fb-appid', 'wiz-fb-secret', 'wiz-fb-connect-btn',
+                  'wiz-fb-redirects', 'wiz-fb-pages-dropdown', 'wiz-fb-save-btn'];
+  for (const id of domIds) {
+    if (wizardText.includes(`id="${id}"`)) pass(`G11.wizard.${id} — present`);
+    else fail(`G11.wizard.${id} — missing DOM id`, `id="${id}" not found in wizard.html`);
+  }
+  if (wizardText.includes('18791') && wizardText.includes('18795')) pass('G11.wizard.port-range — 5 URIs rendered');
+  else fail('G11.wizard.port-range', 'redirect URI 18791..18795 not found');
+} catch (e) {
+  fail('G11.wizard — read failed', e.message);
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================
