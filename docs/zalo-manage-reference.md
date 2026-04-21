@@ -21,24 +21,13 @@ Bot KHÔNG dùng `exec` tool. Tra cứu bằng cách **đọc file trực tiếp
 
 ## Thay đổi cài đặt nhóm/user
 
-Khi CEO yêu cầu thay đổi (bật/tắt nhóm, block user):
+Bot KHÔNG ĐƯỢC ghi trực tiếp vào file config (`zalo-blocklist.json`, `zalo-group-settings.json`, v.v.). Mọi thay đổi phải qua Dashboard.
 
-1. Đọc file cài đặt hiện tại:
-   - Nhóm: `zalo-group-settings.json` trong workspace — JSON object `{"<groupId>": {"mode": "off"|"mention"|"all"}}`
-   - User: `zalo-blocklist.json` trong workspace — JSON array `[{"id":"<userId>","name":"..."}]`
-2. **Chỉ thay đổi entry liên quan**, giữ nguyên các entry khác. KHÔNG ghi đè toàn bộ file.
-3. Confirm CEO trước khi ghi: "Em sẽ [tắt nhóm ABC / block user XYZ]. Anh confirm?"
-4. Ghi JSON bằng `write_file` tool. Đảm bảo JSON hợp lệ (có thể dùng `JSON.stringify` nếu cần).
-5. Dashboard tự cập nhật trong 30 giây.
+Khi CEO yêu cầu (bật/tắt nhóm, block user):
 
-## Quy trình
-
-1. CEO nói "tắt nhóm ABC" hoặc "block user XYZ"
-2. Tra cứu ID theo mục trên
-3. Đọc file config hiện tại
-4. Confirm CEO
-5. Ghi file config (merge, không ghi đè)
-6. Báo kết quả: "Đã [tắt nhóm ABC / block user XYZ]."
+1. Tra cứu ID theo mục trên
+2. Confirm CEO: "Em tìm thấy [nhóm ABC / user XYZ]. Anh vào Dashboard > Zalo > [Bạn bè / Nhóm] để thay đổi nhé."
+3. Nếu CEO hỏi lại → nhắc: "Vì lý do bảo mật, chỉ Dashboard mới thay đổi được blocklist và cài đặt nhóm."
 
 ## Lưu ý
 

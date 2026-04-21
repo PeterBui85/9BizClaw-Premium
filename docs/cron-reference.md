@@ -1,38 +1,85 @@
-# Lịch tự động — Tham khảo chi tiết
+# Lich tu dong — Tham khao chi tiet
 
-## File cấu hình
+## File cau hinh
 
-- `schedules.json` — built-in cron jobs
-- `custom-crons.json` — CEO-created cron jobs
+- `schedules.json` — built-in cron jobs (bot KHONG duoc ghi)
+- `custom-crons.json` — CEO-created cron jobs (bot DUOC ghi khi CEO yeu cau)
 
 ## Built-in schedules
 
-| Job | Thời gian | Mô tả |
+| Job | Thoi gian | Mo ta |
 |-----|-----------|-------|
-| morning | 07:30 | Báo cáo sáng |
-| evening | 21:00 | Báo cáo tối |
-| weekly | T2 08:00 | Tổng kết tuần |
-| monthly | ngày-1 08:30 | Tổng kết tháng |
+| morning | 07:30 | Bao cao sang |
+| evening | 21:00 | Bao cao toi |
+| weekly | T2 08:00 | Tong ket tuan |
+| monthly | ngay-1 08:30 | Tong ket thang |
 | zalo-followup | 09:30 | Follow up Zalo |
-| heartbeat | 30 phút | Kiểm tra hệ thống |
-| meditation | 01:00 | Dọn dẹp |
-| memory-cleanup | CN 02:00 | Dọn dẹp memory (OFF) |
+| heartbeat | 30 phut | Kiem tra he thong |
+| meditation | 01:00 | Don dep |
+| memory-cleanup | CN 02:00 | Don dep memory (OFF) |
 
-## Tạo custom cron
+## Tao / sua / xoa custom cron
 
-1. Đọc `custom-crons.json`
-2. Ghi `[..., {"id":"custom_<ts>","label":"...","cronExpr":"0 */2 8-18 * * *","prompt":"...","enabled":true,"createdAt":"<ISO>"}]`
-3. Verify đọc lại. Chưa verify = KHÔNG nói "đã tạo".
+Bot DUOC GHI `custom-crons.json` khi CEO yeu cau qua Telegram.
 
-## cronExpr ví dụ
+### Format JSON bat buoc
 
-- `0 */2 8-18 * * *` = nhắc 2h ban ngày
+```json
+[
+  {
+    "id": "unique-id-slug",
+    "label": "Ten hien thi (tieng Viet, khong emoji)",
+    "cronExpr": "0 9 * * 1-5",
+    "prompt": "exec: openzca msg send <groupId> \"<noi dung>\" --group",
+    "enabled": true
+  }
+]
+```
+
+### Quy trinh tao cron
+
+1. CEO nhan Telegram: "tao cron gui nhom X moi sang 9h noi dung Y"
+2. Bot doc `custom-crons.json` hien tai (co the rong `[]`)
+3. Bot tra `groups.json` lay groupId theo ten nhom CEO noi
+4. Bot CONFIRM voi CEO truoc khi ghi: "Em se tao cron [label] chay luc [gio] gui [ten nhom]. Anh xac nhan nhe?"
+5. CEO xac nhan -> bot APPEND entry moi vao array hien tai, ghi lai file
+6. He thong tu dong reload cron trong vai giay
+
+### Gui nhieu nhom (broadcast)
+
+GroupId cach nhau dau phay, KHONG co khoang trang:
+
+```json
+{
+  "id": "morning-broadcast",
+  "label": "Chao sang nhom khach",
+  "cronExpr": "0 9 * * 1-5",
+  "prompt": "exec: openzca msg send 111,222,333 \"Chao buoi sang! Chuc anh chi ngay tot lanh.\" --group",
+  "enabled": true
+}
+```
+
+Delay 1.5s giua moi nhom. Neu co nhom fail, CEO nhan alert tong hop.
+
+### Sua / xoa cron
+
+- **Sua:** Bot doc file, tim entry theo `id`, thay doi field can thiet, ghi lai.
+- **Xoa:** Bot doc file, loai bo entry theo `id`, ghi lai.
+- **Tam dung:** Set `"enabled": false` (khong xoa).
+- Moi thao tac deu phai CONFIRM voi CEO truoc.
+
+### cronExpr vi du
+
+- `0 9 * * 1-5` = 9h thu 2-6
+- `0 */2 8-18 * * *` = nhac 2h ban ngay (6 fields voi giay)
 - `0 9 * * 1` = T2 9am
-- `0 15 * * 1-5` = 15h thứ 2-6
+- `0 15 * * 1-5` = 15h thu 2-6
+- `0 7 1 * *` = 7h ngay 1 moi thang
 
-Nhắn Zalo group → đọc groups.json lấy groupId trước.
+### Luu y
 
-**1 nhóm:** `prompt = "exec: openzca msg send [groupId] \"[nội dung]\" --group"`
-
-**Nhiều nhóm (broadcast):** `prompt = "exec: openzca msg send [id1],[id2],[id3] \"[nội dung]\" --group"`
-GroupId cách nhau dấu phẩy, không có khoảng trắng. Delay 1.5s giữa mỗi nhóm. Nếu có nhóm fail, CEO nhận alert tổng hợp.
+- `id` phai unique, dung slug (chu thuong, gach ngang, khong dau)
+- `label` tieng Viet, KHONG emoji
+- `prompt` bat dau bang `exec: ` de chay truc tiep, khong qua agent
+- GroupId phai ton tai trong `groups.json` (tra truoc khi ghi)
+- File watcher tu detect thay doi va reload cron — KHONG can restart app

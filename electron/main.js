@@ -607,7 +607,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 47;
+const CURRENT_AGENTS_MD_VERSION = 49;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -2427,7 +2427,7 @@ function parseSafeOpenzcaMsgSend(shellCmd) {
   const unsupported = trailing.filter(t => t !== '--group');
   if (unsupported.length > 0) return null;
   const targetIds = targetIdRaw.split(',').map(s => s.trim()).filter(Boolean);
-  if (!targetIds.length) return null;
+  if (!targetIds.length || targetIds.length > 50) return null;
   return { profile: profile || getZcaProfile(), targetIds, text, isGroup };
 }
 
@@ -3656,26 +3656,21 @@ async function ensureDefaultConfig() {
       config.agents.defaults.contextInjection = 'continuation-skip';
       changed = true;
     }
-    // TOOL-BLOAT FIX: openclaw default `tools.profile = "coding"` ships ~24 tools
-    // descriptions in every system prompt (~10-20KB). Media-generation tools
-    // (image_generate, music_generate, video_generate) are NEVER triggered in
-    // a Zalo customer-support flow and we explicitly deny them at the gateway
-    // output filter anyway — they only bloat the system prompt and nudge the
-    // model toward unnecessary tool calls. Deny them at config level so they're
-    // not even advertised to the LLM. `exec` + `process` we also deny because
-    // bot is forbidden from shell exec by AGENTS.md rule "KHÔNG chạy openclaw
-    // CLI qua exec tool". Keeps coding profile intact for read/write/edit/memory
-    // (needed by CEO Telegram admin flow + cron agent journaling).
+    // TOOL-BLOAT FIX: deny media-generation tools (unused in support flow).
+    // exec + process ALLOWED — needed for CEO "gửi Zalo từ Telegram" flow
+    // (agent runs send-zalo-safe.js). AGENTS.md restricts exec to only
+    // send-zalo-safe.js + forbids config/blocklist writes.
     //
     // Safe: `tools.deny` is deny-list — everything else remains. Config key
     // verified in openclaw 2026.4.x runtime-schema at "tools.deny".
     if (!config.tools) config.tools = {};
     const DENY_TOOLS = [
       'image_generate', 'music_generate', 'video_generate',  // media gen unused in support
-      'exec', 'process',                                     // shell forbidden per AGENTS.md
     ];
     const existingDeny = Array.isArray(config.tools.deny) ? config.tools.deny : [];
-    const mergedDeny = Array.from(new Set([...existingDeny, ...DENY_TOOLS])).sort();
+    const REMOVE_TOOLS = ['exec', 'process'];
+    const cleaned = existingDeny.filter(t => !REMOVE_TOOLS.includes(t));
+    const mergedDeny = Array.from(new Set([...cleaned, ...DENY_TOOLS])).sort();
     if (JSON.stringify(existingDeny.slice().sort()) !== JSON.stringify(mergedDeny)) {
       config.tools.deny = mergedDeny;
       changed = true;
@@ -6742,23 +6737,39 @@ async function _startOpenClawImpl() {
       botRunning = true;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bot-status', { running: true });
       createTray();
-      // Auto-confirm channel readiness when adopting — gateway is already
-      // running so no new stdout markers will be emitted for scanForReadiness.
-      // Without this, dots stay grey forever after a steady-state restart.
+      // Adopting existing gateway — verify it's actually serving before
+      // confirming channels. Without the alive check, dots flash green
+      // immediately even if gateway is mid-restart or hung.
       if (!global._readyNotifyState) global._readyNotifyState = {};
       for (const ch of ['telegram', 'zalo']) {
         if (!global._readyNotifyState[ch]) global._readyNotifyState[ch] = {};
         const st = global._readyNotifyState[ch];
         if (!st.confirmedAt) {
-          st.confirmedAt = Date.now();
-          st.confirmedBy = 'adopt';
           st.markerSeen = true;
           st.markerSeenAt = Date.now();
-          st.awaitingConfirmation = false;
+          st.awaitingConfirmation = true;
           st.lastError = '';
         }
       }
       setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 500);
+      // Delayed confirm: wait 10s then verify gateway alive before green dot
+      setTimeout(async () => {
+        const alive = await isGatewayAlive(5000);
+        for (const ch of ['telegram', 'zalo']) {
+          const st = global._readyNotifyState[ch];
+          if (st && !st.confirmedAt) {
+            if (alive) {
+              st.confirmedAt = Date.now();
+              st.confirmedBy = 'adopt';
+              st.awaitingConfirmation = false;
+              st.lastError = '';
+            } else {
+              st.lastError = 'Gateway adopted nhưng không phản hồi.';
+            }
+          }
+        }
+        try { broadcastChannelStatusOnce(); } catch {}
+      }, 10000);
       return;
     }
   }
@@ -7177,19 +7188,31 @@ async function _startOpenClawImpl() {
   const scanForReadiness = (chunk) => {
     try {
       const text = chunk.toString('utf8');
-      // Telegram marker
+      // Telegram marker — "starting provider" means channel plugin is LOADING,
+      // not that it's ready to receive messages. On slow machines, 15-30s gap
+      // between marker and actual readiness. We mark markerSeen but delay
+      // confirmation to avoid premature green dot.
       if (!notifyState.telegram.markerSeen && /\[telegram\]\s*\[\w+\]\s*starting provider/i.test(text)) {
         notifyState.telegramReady = true;
         notifyState.telegram.markerSeen = true;
         notifyState.telegram.markerSeenAt = Date.now();
         notifyState.telegram.awaitingConfirmation = true;
         notifyState.telegram.lastError = '';
-        console.log('[ready-notify] Telegram channel confirmed ready via gateway marker');
+        console.log('[ready-notify] Telegram marker seen — waiting 10s for channel init before confirming');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         if (readyNotifyThrottled('telegram')) {
-          markChannelConfirmed('telegram', 'throttle');
-          console.log('[ready-notify] Telegram notify throttled (same channel already confirmed <10min ago)');
-          setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+          // Even on throttle path, wait 10s for channel to finish init
+          setTimeout(async () => {
+            const alive = await isGatewayAlive(5000);
+            if (alive) {
+              markChannelConfirmed('telegram', 'throttle');
+              console.log('[ready-notify] Telegram confirmed after post-marker delay (throttle)');
+            } else {
+              notifyState.telegram.lastError = 'Gateway không phản hồi sau khi marker xuất hiện.';
+              console.log('[ready-notify] Telegram throttle-confirm deferred — gateway not alive');
+            }
+            setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+          }, 10000);
         } else {
           // skipFilter: these are OUR system notifications, not AI output.
           // The output filter is meant to catch AI leaking internal info to
@@ -7218,19 +7241,28 @@ async function _startOpenClawImpl() {
           });
         }
       }
-      // Zalo marker — openzca listener connected = inbound pipeline live
+      // Zalo marker — "openzca connected" means WebSocket connected but
+      // inbound pipeline may still be initializing. Delay before confirming.
       if (!notifyState.zalo.markerSeen && /\[openzalo\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
         notifyState.zaloReady = true;
         notifyState.zalo.markerSeen = true;
         notifyState.zalo.markerSeenAt = Date.now();
         notifyState.zalo.awaitingConfirmation = true;
         notifyState.zalo.lastError = '';
-        console.log('[ready-notify] Zalo channel confirmed ready via gateway marker');
+        console.log('[ready-notify] Zalo marker seen — waiting 10s for pipeline init before confirming');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         if (readyNotifyThrottled('zalo')) {
-          markChannelConfirmed('zalo', 'throttle');
-          console.log('[ready-notify] Zalo notify throttled (same channel already confirmed <10min ago)');
-          setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+          setTimeout(async () => {
+            const alive = await isGatewayAlive(5000);
+            if (alive) {
+              markChannelConfirmed('zalo', 'throttle');
+              console.log('[ready-notify] Zalo confirmed after post-marker delay (throttle)');
+            } else {
+              notifyState.zalo.lastError = 'Gateway không phản hồi sau khi marker xuất hiện.';
+              console.log('[ready-notify] Zalo throttle-confirm deferred — gateway not alive');
+            }
+            setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+          }, 10000);
         } else {
           sendTelegram(
             'Zalo đã sẵn sàng.\n\n' +
@@ -7335,20 +7367,35 @@ async function _startOpenClawImpl() {
           botRunning = true;
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bot-status', { running: true });
           createTray();
-          // Auto-confirm channels on adopt (same as steady-state restart)
+          // Adopt path: mark markerSeen but delay confirm until gateway proven alive
           if (global._readyNotifyState) {
             for (const ch of ['telegram', 'zalo']) {
               const st = global._readyNotifyState[ch];
               if (st && !st.confirmedAt) {
-                st.confirmedAt = Date.now();
-                st.confirmedBy = 'adopt';
                 st.markerSeen = true;
                 st.markerSeenAt = Date.now();
-                st.awaitingConfirmation = false;
+                st.awaitingConfirmation = true;
                 st.lastError = '';
               }
             }
             setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 500);
+            setTimeout(async () => {
+              const alive = await isGatewayAlive(5000);
+              for (const ch of ['telegram', 'zalo']) {
+                const st = global._readyNotifyState[ch];
+                if (st && !st.confirmedAt) {
+                  if (alive) {
+                    st.confirmedAt = Date.now();
+                    st.confirmedBy = 'adopt';
+                    st.awaitingConfirmation = false;
+                    st.lastError = '';
+                  } else {
+                    st.lastError = 'Gateway adopted nhưng không phản hồi.';
+                  }
+                }
+              }
+              try { broadcastChannelStatusOnce(); } catch {}
+            }, 10000);
           }
           return;
         }
@@ -9149,7 +9196,7 @@ function readZaloChannelState() {
     const bp = getZaloBlocklistPath();
     if (fs.existsSync(bp)) {
       const raw = JSON.parse(fs.readFileSync(bp, 'utf-8'));
-      state.userBlocklist = Array.isArray(raw) ? raw.map(String) : [];
+      state.userBlocklist = Array.isArray(raw) ? raw.map(e => String(e?.id || e)) : [];
     }
   } catch (e) {
     state.blocklistError = e?.message || String(e);
@@ -13982,6 +14029,7 @@ function healCustomCronEntries(arr) {
 }
 function loadCustomCrons() {
   const customCronsPath = getCustomCronsPath();
+  let modoroEntries = [];
   try {
     if (fs.existsSync(customCronsPath)) {
       const raw = fs.readFileSync(customCronsPath, 'utf-8');
@@ -14012,11 +14060,8 @@ function loadCustomCrons() {
             console.log('[custom-crons] healed entries (alias/defaults) and rewrote file');
           } catch (e) { console.warn('[custom-crons] heal-writeback failed:', e.message); }
         }
-        return parsed;
+        modoroEntries = parsed;
       } catch (parseErr) {
-        // CRITICAL: do NOT silently return [] on corrupt file. Backup the bad
-        // file, log loudly, and try to alert the CEO. Returning [] would
-        // silently drop ALL the user's custom crons.
         const backupPath = customCronsPath + '.corrupt-' + Date.now();
         try { fs.copyFileSync(customCronsPath, backupPath); } catch {}
         console.error(`[custom-crons] CORRUPT JSON in ${customCronsPath}: ${parseErr.message}. Backed up to ${backupPath}`);
@@ -14026,31 +14071,64 @@ function loadCustomCrons() {
           fs.appendFileSync(errFile, `\n## ${new Date().toISOString()} — custom-crons.json corrupt\n\nError: ${parseErr.message}\nBackup: ${backupPath}\nAll custom crons disabled until fixed. Restore from backup or recreate via Dashboard.\n`, 'utf-8');
         } catch {}
         try {
-          // Best-effort Telegram alert (sendTelegram is sync-callable)
           sendCeoAlert(`Cảnh báo: custom-crons.json bị lỗi JSON\n\n${parseErr.message}\n\nFile gốc đã backup về: ${path.basename(backupPath)}. Tất cả custom cron sẽ KHÔNG chạy cho tới khi sửa file. Vào Dashboard, tab Cron để recreate hoặc khôi phục từ backup.`);
         } catch {}
-        return [];
       }
-    }
-    // One-time migration from legacy paths
-    for (const p of legacyCustomCronsPaths) {
-      if (p !== customCronsPath && fs.existsSync(p)) {
-        try {
-          const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    } else {
+      // One-time migration from legacy paths
+      for (const p of legacyCustomCronsPaths) {
+        if (p !== customCronsPath && fs.existsSync(p)) {
           try {
-            writeJsonAtomic(customCronsPath, data);
-            console.log('[custom-crons] Migrated:', p, '→', customCronsPath);
-          } catch {}
-          return data;
-        } catch (e) {
-          console.error(`[custom-crons] legacy file ${p} is corrupt:`, e.message);
+            const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+            try {
+              writeJsonAtomic(customCronsPath, data);
+              console.log('[custom-crons] Migrated:', p, '→', customCronsPath);
+            } catch {}
+            modoroEntries = data;
+            break;
+          } catch (e) {
+            console.error(`[custom-crons] legacy file ${p} is corrupt:`, e.message);
+          }
         }
       }
     }
   } catch (e) {
     console.error('[custom-crons] load error:', e.message);
   }
-  return [];
+
+  // Merge OpenClaw cron/jobs.json — bot creates crons via openclaw `cron` tool
+  // which writes to this file, not to custom-crons.json. Without this merge
+  // the scheduler would never run bot-created crons.
+  let openclawEntries = [];
+  try {
+    const ocJobsPath = path.join(HOME, '.openclaw', 'cron', 'jobs.json');
+    if (fs.existsSync(ocJobsPath)) {
+      const raw = JSON.parse(fs.readFileSync(ocJobsPath, 'utf-8'));
+      const jobs = Array.isArray(raw?.jobs) ? raw.jobs : [];
+      const modoroIds = new Set(modoroEntries.map(c => c?.id).filter(Boolean));
+      for (const j of jobs) {
+        if (!j || !j.id) continue;
+        if (modoroIds.has('oc_' + j.id)) continue;
+        const schedExpr = j.schedule?.expr || j.schedule?.at || '';
+        if (!schedExpr) continue;
+        openclawEntries.push({
+          id: 'oc_' + j.id,
+          label: j.name || 'OpenClaw cron',
+          cronExpr: schedExpr,
+          prompt: j.payload?.text || j.payload?.message || '',
+          enabled: j.enabled !== false,
+          source: 'openclaw',
+        });
+      }
+      if (openclawEntries.length > 0) {
+        console.log(`[custom-crons] merged ${openclawEntries.length} OpenClaw cron(s) into scheduler`);
+      }
+    }
+  } catch (e) {
+    console.warn('[custom-crons] failed to read OpenClaw cron/jobs.json:', e?.message);
+  }
+
+  return [...modoroEntries, ...openclawEntries];
 }
 
 // Watch custom-crons.json + schedules.json for changes — auto-reload when bot edits them
@@ -14059,6 +14137,7 @@ let schedulesWatcher = null;
 let _watchPollerInterval = null;
 let _lastCustomCronsMtime = 0;
 let _lastSchedulesMtime = 0;
+let _lastOcJobsMtime = 0;
 function watchCustomCrons() {
   try {
     if (customCronWatcher) { try { customCronWatcher.close(); } catch {} customCronWatcher = null; }
@@ -14076,6 +14155,8 @@ function watchCustomCrons() {
     // Snapshot current mtimes so we don't trigger a spurious reload on first poll.
     try { _lastCustomCronsMtime = fs.statSync(customCronsPath).mtimeMs; } catch {}
     try { _lastSchedulesMtime = fs.statSync(schedulesPath).mtimeMs; } catch {}
+    const ocJobsPath = path.join(HOME, '.openclaw', 'cron', 'jobs.json');
+    try { _lastOcJobsMtime = fs.statSync(ocJobsPath).mtimeMs; } catch {}
 
     let debounce1 = null;
     let debounce2 = null;
@@ -14187,6 +14268,14 @@ function watchCustomCrons() {
           _lastSchedulesMtime = m2;
           console.log('[cron] poller detected schedules.json mtime change');
           reloadSchedules();
+        }
+      } catch {}
+      try {
+        const m3 = fs.statSync(ocJobsPath).mtimeMs;
+        if (m3 !== _lastOcJobsMtime) {
+          _lastOcJobsMtime = m3;
+          console.log('[cron] poller detected OpenClaw jobs.json mtime change');
+          reloadCustom();
         }
       } catch {}
     }, 2000);
@@ -14317,7 +14406,13 @@ ipcMain.handle('queue-follow-up', async (_event, { channel, recipientId, recipie
   }
 });
 
+let _startCronJobsInFlight = false;
 function startCronJobs() {
+  if (_startCronJobsInFlight) { console.log('[cron] startCronJobs skipped — already in flight'); return; }
+  _startCronJobsInFlight = true;
+  try { _startCronJobsInner(); } finally { _startCronJobsInFlight = false; }
+}
+function _startCronJobsInner() {
   stopCronJobs();
   // Kick off the openclaw-agent CLI self-test (non-blocking). Sets _agentFlagProfile
   // / _agentCliHealthy so that when a cron fires it already knows which flags to use.

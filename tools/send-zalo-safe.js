@@ -87,7 +87,10 @@ if (isGroup) {
         process.exit(1);
       }
     }
-  } catch {}
+  } catch (e) {
+    process.stderr.write('BLOCKED: Cannot read group allowlist config (fail closed): ' + (e.message || e) + '\n');
+    process.exit(1);
+  }
 }
 
 // --- Gate 4: User blocklist (only for DM sends) ---
@@ -104,7 +107,10 @@ if (!isGroup) {
         process.exit(1);
       }
     }
-  } catch {}
+  } catch (e) {
+    process.stderr.write('BLOCKED: Cannot read blocklist (fail closed): ' + (e.message || e) + '\n');
+    process.exit(1);
+  }
 }
 
 // --- Gate 5: Target validation (verify targetId exists in cache) ---

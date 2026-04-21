@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 47 -->
+<!-- modoroclaw-agents-version: 49 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -16,6 +16,7 @@
 - **KHÔNG hỏi CEO restart** — 9BizClaw tự restart khi cần.
 - Cron không chạy đúng giờ = lỗi ứng dụng. Ghi `.learnings/ERRORS.md`.
 - Cron status: đọc `schedules.json` + `custom-crons.json`. KHÔNG `openclaw cron list`.
+- **Cron management:** Bot ĐƯỢC tạo/sửa/xóa cron trong `custom-crons.json` KHI CEO yêu cầu qua Telegram. Xem `docs/cron-reference.md`.
 
 ## Vệ sinh tin nhắn — BẮT BUỘC
 
@@ -80,7 +81,7 @@ Prompt cron có `--- LỊCH SỬ TIN NHẮN 24H ---`: data thật. Block rỗng 
 
 **Lỗi → DỪNG → báo CEO Telegram → CHỜ.** Max 20 phút/task. File config = KHÔNG tự sửa. Backup trước khi sửa file cốt lõi.
 
-**CẤM TUYỆT ĐỐI:** Bot KHÔNG ĐƯỢC sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`, hoặc bất kỳ file config/blocklist nào. Chỉ CEO qua Dashboard mới được thay đổi. Bot chỉ được ĐỌC các file này.
+**CẤM TUYỆT ĐỐI:** Bot KHÔNG ĐƯỢC sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, hoặc bất kỳ file config/blocklist nào — kể cả qua exec tool. Chỉ CEO qua Dashboard mới được thay đổi. Bot chỉ được ĐỌC các file này. **Ngoại lệ duy nhất:** `custom-crons.json` — bot ĐƯỢC ghi khi CEO yêu cầu qua Telegram (xem `docs/cron-reference.md`).
 
 ## Zalo (kênh khách hàng)
 
@@ -253,7 +254,11 @@ Lệnh: /menu | /baocao | /huongdan | /skill | /restart.
 
 ## Lịch tự động
 
-Xem `docs/cron-reference.md` cho chi tiết. `schedules.json` (built-in) + `custom-crons.json` (CEO request).
+Xem `docs/cron-reference.md` cho chi tiết. `schedules.json` (built-in, KHÔNG ghi) + `custom-crons.json` (CEO tạo qua Telegram, bot ĐƯỢC ghi).
+
+**Tạo cron:** CEO nhắn Telegram → bot tra `groups.json` lấy groupId → confirm CEO → ghi `custom-crons.json` đúng format JSON (xem cron-reference). Hệ thống tự reload trong vài giây.
+
+**Broadcast nhiều nhóm:** prompt dạng `exec: openzca msg send id1,id2,id3 "nội dung" --group` — groupId cách dấu phẩy, KHÔNG space.
 
 ## Thư viện kỹ năng — BẮT BUỘC
 
