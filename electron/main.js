@@ -4530,7 +4530,9 @@ function ensureZaloBlocklistFix() {
 
     const anchor = '  if (!rawBody && !hasMedia) {\n    return;\n  }';
     if (!content.includes(anchor)) {
-      console.error('[zalo-blocklist-fix] anchor not found, skipping');
+      console.error('[zalo-blocklist-fix] anchor not found — blocklist protection DISABLED');
+      try { auditLog('zalo_patch_anchor_missing', { patch: 'blocklist' }); } catch {}
+      sendCeoAlert('[Cảnh báo] Zalo blocklist patch không thể áp dụng — openzalo có thể đã cập nhật. Blocklist tạm không hoạt động.').catch(() => {});
       return;
     }
     const injection = `
@@ -4638,7 +4640,9 @@ function ensureZaloPauseFix() {
       ? '// === END 9BizClaw BLOCKLIST PATCH ==='
       : '  if (!rawBody && !hasMedia) {\n    return;\n  }';
     if (!content.includes(anchor)) {
-      console.error('[zalo-pause-fix] anchor not found');
+      console.error('[zalo-pause-fix] anchor not found — pause protection DISABLED');
+      try { auditLog('zalo_patch_anchor_missing', { patch: 'pause' }); } catch {}
+      sendCeoAlert('[Cảnh báo] Zalo pause patch không thể áp dụng — tính năng tạm dừng Zalo không hoạt động.').catch(() => {});
       return;
     }
     const configPaths = [
@@ -5484,7 +5488,9 @@ function ensureZaloOutputFilterFix() {
     // before the args construction. Stable in upstream 2026.3.31+.
     const anchor = '  if (!body) {\n    return { messageId: "empty", kind: "text" };\n  }';
     if (!content.includes(anchor)) {
-      console.warn('[zalo-output-filter-fix] anchor not found — upstream send.ts changed');
+      console.error('[zalo-output-filter-fix] anchor not found — output filter DISABLED');
+      try { auditLog('zalo_patch_anchor_missing', { patch: 'output-filter' }); } catch {}
+      sendCeoAlert('[Cảnh báo] Zalo output filter patch không thể áp dụng — openzalo có thể đã cập nhật. Tin nhắn nhạy cảm có thể lọt ra ngoài.').catch(() => {});
       return;
     }
 
@@ -5825,7 +5831,9 @@ function ensureOpenzaloForceOneMessageFix() {
         if (capRe.test(channelContent)) {
           const capReplacement = 'blockStreaming: false, // 9BizClaw FORCE-ONE-MESSAGE CAPABILITY: disable at capability level so gateway never tries to split-stream Zalo replies (fixes "Dạ" → "D" + "ạ..." in groups)';
           channelContent = channelContent.replace(capRe, capReplacement);
-          fs.writeFileSync(channelFile, channelContent, 'utf-8');
+          const tmpChannel = `${channelFile}.tmp.${Date.now()}`;
+          fs.writeFileSync(tmpChannel, channelContent, 'utf-8');
+          fs.renameSync(tmpChannel, channelFile);
           console.log('[zalo-force-one-msg] patched channel.ts capability flag');
         } else {
           console.warn('[zalo-force-one-msg] channel.ts capability anchor missing — skip');
