@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 45 -->
+<!-- modoroclaw-agents-version: 46 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA

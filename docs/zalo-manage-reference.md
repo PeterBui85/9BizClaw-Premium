@@ -1,19 +1,39 @@
-# Quan ly Zalo tu Telegram — Lenh chi tiet
+# Quản lý Zalo từ Telegram — Lệnh chi tiết
 
-CEO ra lenh bat/tat group hoac user qua `exec` tool:
+## Tra cứu nhóm / người dùng
 
-## Lenh
+Bot KHÔNG dùng `exec` tool. Tra cứu bằng cách **đọc file trực tiếp**:
 
-- `node tools/zalo-manage.js group <groupId> <mention|all|off>` — doi che do nhom
-- `node tools/zalo-manage.js user <userId> <on|off>` — bat/tat user
-- `node tools/zalo-manage.js list-groups` — xem danh sach nhom + trang thai
-- `node tools/zalo-manage.js list-users` — xem danh sach user + trang thai
-- `node tools/zalo-manage.js status` — tong quan nhanh
+### Tìm group ID
 
-## Quy trinh
+1. Đọc thư mục `memory/zalo-groups/` — mỗi file `<groupId>.md` có frontmatter `name:` chứa tên nhóm
+2. Hoặc đọc file `~/.openzca/profiles/default/cache/groups.json` — mảng JSON có `groupId`, `name`, `memberCount`
 
-1. CEO noi "tat nhom ABC" hoac "block user XYZ"
-2. Dung `list-groups`/`list-users` tim ID
+**Ví dụ CEO hỏi "group id của nhóm ABC":**
+- Dùng `list_dir` tool đọc `memory/zalo-groups/`
+- Đọc từng file `.md` → tìm file có `name:` khớp/gần giống "ABC"
+- Trả lời CEO: "Nhóm ABC có ID là 1234567890123456789"
+
+### Tìm user ID
+
+1. Đọc thư mục `memory/zalo-users/` — mỗi file `<senderId>.md` có frontmatter `name:`, `zaloName:`
+2. Hoặc đọc file `~/.openzca/profiles/default/cache/friends.json` — mảng JSON có `userId`, `displayName`, `zaloName`
+
+## Thay đổi cài đặt nhóm/user
+
+Khi CEO yêu cầu thay đổi (bật/tắt nhóm, block user):
+
+1. Đọc file cài đặt tương ứng:
+   - Nhóm: `zalo-group-settings.json` trong workspace
+   - User: `zalo-blocklist.json` trong workspace
+2. Sửa JSON trực tiếp bằng `write_file` tool
+3. Confirm CEO trước khi ghi
+4. Dashboard tự cập nhật trong 30s
+
+## Quy trình
+
+1. CEO nói "tắt nhóm ABC" hoặc "block user XYZ"
+2. Đọc `memory/zalo-groups/` hoặc `memory/zalo-users/` tìm ID
 3. Confirm CEO
-4. Chay lenh
-5. Bao ket qua. Dashboard tu cap nhat trong 30s.
+4. Ghi file config tương ứng
+5. Báo kết quả
