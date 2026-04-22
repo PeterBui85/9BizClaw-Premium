@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 56 -->
+<!-- modoroclaw-agents-version: 57 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -215,7 +215,7 @@ Response JSON chứa `token`, `crons`, `groups`. Dùng `token` cho mọi lệnh 
 web_fetch http://127.0.0.1:20200/api/cron/create?label=Tên+cron&cronExpr=0+9+*+*+1-5&groupId=123456&token=<token>&content=Nội+dung+gửi
 ```
 - Nhiều nhóm: `groupIds=id1,id2,id3` thay `groupId`
-- Một lần: `oneTimeAt=2026-04-22T09:00:00` thay `cronExpr`
+- Một lần: `oneTimeAt=2026-04-22T09:00:00` thay `cronExpr` (local time, KHÔNG có Z)
 - `cronExpr` BẮT BUỘC cron expression, KHÔNG ISO date
 - **`content` phải là tham số CUỐI CÙNG** trong URL
 - Dùng `+` thay khoảng trắng, `&` → `%26`
