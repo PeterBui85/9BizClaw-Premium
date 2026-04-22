@@ -607,7 +607,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 49;
+const CURRENT_AGENTS_MD_VERSION = 50;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -853,6 +853,20 @@ function seedWorkspace() {
   if (!fs.existsSync(schedulesFile)) {
     try { writeJsonAtomic(schedulesFile, DEFAULT_SCHEDULES_JSON); } catch {}
   }
+  // Strip entries with owner:"facebook" — FB features are v2.3.48+, not this version.
+  // Prevents stale dev/test data from showing up in Tổng quan timeline.
+  try {
+    if (fs.existsSync(schedulesFile)) {
+      const sched = JSON.parse(fs.readFileSync(schedulesFile, 'utf-8'));
+      if (Array.isArray(sched)) {
+        const cleaned = sched.filter(s => s?.owner !== 'facebook' && !/^fb-/.test(s?.id || ''));
+        if (cleaned.length < sched.length) {
+          writeJsonAtomic(schedulesFile, cleaned);
+          console.log(`[seedWorkspace] removed ${sched.length - cleaned.length} FB schedule(s) from schedules.json (not supported in this version)`);
+        }
+      }
+    }
+  } catch (e) { console.warn('[seedWorkspace] FB schedule cleanup error:', e?.message); }
   // INTENTIONAL: custom-crons.json is NOT in `templateFiles` above. It is user
   // data, never a template. Packaged fresh installs always get an empty list
   // here because their workspace=userData/ doesn't have the file. Devs cloning
@@ -14758,14 +14772,53 @@ function _startCronJobsInner() {
     if (!c) continue;
     if (!c.enabled) continue;
     // D3: warn loudly on misconfigured custom cron instead of silently skipping
+    if (!c.prompt || !c.prompt.trim()) {
+      console.warn(`[cron] custom cron ${c.id || '(no id)'} skipped — empty prompt`);
+      surfaceCronConfigError(c, 'empty prompt field');
+      continue;
+    }
+    // oneTimeAt support: schedule via setTimeout instead of cron expression
+    if (c.oneTimeAt && !c.cronExpr) {
+      try {
+        const fireAt = new Date(c.oneTimeAt);
+        const delayMs = fireAt.getTime() - Date.now();
+        if (isNaN(fireAt.getTime())) {
+          surfaceCronConfigError(c, `oneTimeAt invalid date: "${c.oneTimeAt}"`);
+          continue;
+        }
+        if (delayMs < -60000) {
+          console.log(`[cron] oneTime ${c.id} already past (${c.oneTimeAt}) — removing`);
+          _removeCustomCronById(c.id);
+          continue;
+        }
+        const effectiveDelay = Math.max(delayMs, 1000);
+        const timer = setTimeout(async () => {
+          console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
+          try {
+            await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time' }); } catch {}
+          } catch (e) {
+            console.error(`[cron] OneTime ${c.id} failed:`, e?.message);
+            try { await sendCeoAlert(`*Cron một lần "${c.label || c.id}" lỗi*\n\n\`${String(e?.message || e).slice(0, 300)}\``); } catch {}
+          }
+          _removeCustomCronById(c.id);
+        }, effectiveDelay);
+        cronJobs.push({ id: c.id, job: { stop: () => clearTimeout(timer) } });
+        console.log(`[cron] OneTime scheduled ${c.id}: ${c.oneTimeAt} (in ${Math.round(effectiveDelay / 1000)}s)`);
+      } catch (e) {
+        surfaceCronConfigError(c, `oneTimeAt setup failed: ${e.message}`);
+      }
+      continue;
+    }
     if (!c.cronExpr) {
       console.warn(`[cron] custom cron ${c.id || '(no id)'} skipped — missing cronExpr`);
       surfaceCronConfigError(c, 'missing cronExpr field');
       continue;
     }
-    if (!c.prompt || !c.prompt.trim()) {
-      console.warn(`[cron] custom cron ${c.id || '(no id)'} skipped — empty prompt`);
-      surfaceCronConfigError(c, 'empty prompt field');
+    // Hard gate: reject ISO dates/timestamps that LLM might write instead of cron expressions
+    if (/^\d{4}-\d{2}-\d{2}/.test(c.cronExpr) || /T\d{2}:\d{2}/.test(c.cronExpr)) {
+      console.error(`[cron] custom cron ${c.id} has ISO date instead of cron expression: "${c.cronExpr}"`);
+      surfaceCronConfigError(c, `invalid cron expression: "${c.cronExpr}" — dùng cron format (vd: "37 7 * * *"), KHÔNG dùng ISO date`);
       continue;
     }
     // D6: validate cronExpr syntax BEFORE scheduling, surface invalid expressions
@@ -14809,8 +14862,17 @@ function _startCronJobsInner() {
   }
 }
 
-// D6 helper: write cron config errors to ERRORS.md and (best-effort) Telegram.
-// Caller passes the offending cron config + a human-readable reason.
+function _removeCustomCronById(id) {
+  try {
+    const p = path.join(getWorkspace(), 'custom-crons.json');
+    if (!fs.existsSync(p)) return;
+    const arr = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const filtered = Array.isArray(arr) ? arr.filter(e => e?.id !== id) : arr;
+    fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf-8');
+    console.log(`[cron] removed one-time entry ${id} from custom-crons.json`);
+  } catch (e) { console.warn(`[cron] _removeCustomCronById(${id}) error:`, e?.message); }
+}
+
 function surfaceCronConfigError(c, reason) {
   try {
     const errFile = path.join(getWorkspace(), '.learnings', 'ERRORS.md');

@@ -2383,33 +2383,7 @@
           </div>
         </div>
 
-        <!-- RAG Settings -->
-        <div class="ds-section" style="margin-top:24px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
-          <h3 class="ds-section-title" style="margin:0 0 4px 0">Tìm kiếm tài liệu cho khách</h3>
-          <p class="ds-section-desc" style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted)">Khi khách hỏi gì đó, bot tra cứu tài liệu shop để trả lời chính xác.</p>
-
-          <label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:not-allowed;opacity:0.7">
-            <input type="checkbox" id="rag-tier1" checked disabled>
-            <span><strong>Tìm kiếm thông minh</strong> (luôn bật) — local model, miễn phí, hoạt động offline.</span>
-          </label>
-
-          <label style="display:flex;align-items:center;gap:8px;margin:8px 0">
-            <input type="checkbox" id="rag-tier2" onchange="saveRagConfig()">
-            <span><strong>Tự chuẩn hoá câu hỏi khó qua AI</strong> — khi khách gõ thiếu dấu hoặc sai chính tả. Chi phí ~$0.10-3/tháng.</span>
-          </label>
-
-          <div id="rag-tier2-model-row" style="margin-left:26px;display:none">
-            <label style="display:block;margin:4px 0;font-size:12px;color:var(--text-muted)">Model dùng cho rewrite:</label>
-            <select id="rag-rewrite-model" class="zs-select" style="max-width:300px" onchange="saveRagConfig()">
-              <option value="ninerouter/main">main (khuyến nghị nếu anh/chị dùng ChatGPT Plus)</option>
-              <option value="ninerouter/fast">fast (khuyến nghị nếu dùng API key trả tiền)</option>
-            </select>
-          </div>
-
-          <p style="margin-top:12px;font-size:11px;color:var(--text-muted)">
-            Reranker (tăng thêm độ chính xác) — sẽ có ở bản 2.4.
-          </p>
-        </div>
+        <!-- RAG settings removed — always-on, no user-facing config needed -->
 
       </div>
 
@@ -2420,17 +2394,6 @@
           <div>
             <h2>Tính cách bot</h2>
             <div class="page-sub">Kết hợp giọng và tính cách để tạo phong cách giao tiếp riêng cho bot. Thay đổi có hiệu lực ngay sau khi lưu.</div>
-          </div>
-        </div>
-
-        <div class="persona-section">
-          <div class="persona-label">Vùng miền</div>
-          <div class="persona-chips" data-pgroup="region">
-            <button type="button" class="persona-chip" data-pvalue="bac">Miền Bắc</button>
-            <button type="button" class="persona-chip" data-pvalue="trung">Miền Trung</button>
-            <button type="button" class="persona-chip" data-pvalue="nam">Miền Nam</button>
-            <button type="button" class="persona-chip" data-pvalue="tay">Miền Tây</button>
-            <button type="button" class="persona-chip" data-pvalue="trung-tinh">Trung tính</button>
           </div>
         </div>
 

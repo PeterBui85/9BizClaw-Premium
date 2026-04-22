@@ -68,18 +68,45 @@ Delay 1.5s giua moi nhom. Neu co nhom fail, CEO nhan alert tong hop.
 - **Tam dung:** Set `"enabled": false` (khong xoa).
 - Moi thao tac deu phai CONFIRM voi CEO truoc.
 
-### cronExpr vi du
+### cronExpr — BAT BUOC la cron expression
 
+**CAM TUYET DOI:** KHONG dung ISO date (`2026-04-22T00:37:00.000Z`), KHONG dung timestamp, KHONG dung date string. Chi chap nhan cron expression chuan.
+
+Vi du DUNG:
+- `37 7 22 4 *` = 7:37 ngay 22/4 (mot lan trong nam)
 - `0 9 * * 1-5` = 9h thu 2-6
-- `0 */2 8-18 * * *` = nhac 2h ban ngay (6 fields voi giay)
 - `0 9 * * 1` = T2 9am
 - `0 15 * * 1-5` = 15h thu 2-6
 - `0 7 1 * *` = 7h ngay 1 moi thang
+- `0 */2 8-18 * * *` = nhac 2h ban ngay (6 fields voi giay)
+
+Vi du SAI (he thong SE REJECT):
+- `2026-04-22T00:37:00.000Z` — ISO date, KHONG phai cron
+- `7:37 AM` — gio thuong, KHONG phai cron
+- `tomorrow 9am` — text, KHONG phai cron
+
+### Lich mot lan (one-time)
+
+CEO noi "gui luc 7:37 hom nay" → dung `oneTimeAt` thay vi `cronExpr`:
+
+```json
+{
+  "id": "one-time-greet-demo",
+  "label": "Chao nhom Demo luc 7:37",
+  "oneTimeAt": "2026-04-22T07:37:00",
+  "prompt": "exec: openzca msg send <groupId> \"Chao buoi sang!\" --group",
+  "enabled": true
+}
+```
+
+He thong se tu dong chay dung gio roi xoa entry sau khi hoan thanh.
 
 ### Luu y
 
 - `id` phai unique, dung slug (chu thuong, gach ngang, khong dau)
 - `label` tieng Viet, KHONG emoji
+- `cronExpr` PHAI la cron expression chuan (5 hoac 6 fields). KHONG BAO GIO dung ISO date/timestamp
+- Neu CEO muon gui 1 lan → dung `oneTimeAt` (ISO local time, KHONG co Z)
 - `prompt` bat dau bang `exec: ` de chay truc tiep, khong qua agent
 - GroupId phai ton tai trong `groups.json` (tra truoc khi ghi)
 - File watcher tu detect thay doi va reload cron — KHONG can restart app

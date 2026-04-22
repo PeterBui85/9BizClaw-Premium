@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 49 -->
+<!-- modoroclaw-agents-version: 50 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -256,7 +256,7 @@ Lệnh: /menu | /baocao | /huongdan | /skill | /restart.
 
 Xem `docs/cron-reference.md` cho chi tiết. `schedules.json` (built-in, KHÔNG ghi) + `custom-crons.json` (CEO tạo qua Telegram, bot ĐƯỢC ghi).
 
-**Tạo cron:** CEO nhắn Telegram → bot tra `groups.json` lấy groupId → confirm CEO → ghi `custom-crons.json` đúng format JSON (xem cron-reference). Hệ thống tự reload trong vài giây.
+**Tạo cron:** CEO nhắn Telegram → bot tra `groups.json` lấy groupId → confirm CEO → ghi `custom-crons.json` đúng format JSON (xem cron-reference). `cronExpr` BẮT BUỘC là cron expression (`37 7 * * *`), TUYỆT ĐỐI KHÔNG dùng ISO date/timestamp. Lịch một lần → dùng `oneTimeAt`. Hệ thống tự reload trong vài giây.
 
 **Broadcast nhiều nhóm:** prompt dạng `exec: openzca msg send id1,id2,id3 "nội dung" --group` — groupId cách dấu phẩy, KHÔNG space.
 
