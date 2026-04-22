@@ -5,33 +5,33 @@ metadata:
   version: 1.0.0
 ---
 
-# Tra cuu kien thuc doanh nghiep
+# Tra cứu kiến thức doanh nghiệp
 
-## 3 nguon duy nhat
+## 3 nguồn duy nhất
 
-| Cau hoi ve | Doc file | VI DU |
+| Câu hỏi về | Đọc file | VÍ DỤ |
 |---|---|---|
-| Cong ty (gio mo cua, dia chi, hotline, chi nhanh) | `knowledge/cong-ty/index.md` | "Gio mo cua?" → doc cong-ty |
-| San pham (gia, thong so, khuyen mai, bao hanh) | `knowledge/san-pham/index.md` | "iPhone 15 bao nhieu?" → doc san-pham |
-| Nhan su (quy dinh, chinh sach) | `knowledge/nhan-vien/index.md` | "Chinh sach bao hanh?" → doc san-pham |
+| Công ty (giờ mở cửa, địa chỉ, hotline, chi nhánh) | `knowledge/cong-ty/index.md` | "Giờ mở cửa?" → đọc cong-ty |
+| Sản phẩm (giá, thông số, khuyến mãi, bảo hành) | `knowledge/san-pham/index.md` | "iPhone 15 bao nhiêu?" → đọc san-pham |
+| Nhân sự (quy định, chính sách) | `knowledge/nhan-vien/index.md` | "Chính sách bảo hành?" → đọc san-pham |
 
-## Quy tac doc file
+## Quy tắc đọc file
 
-- CHI doc khi khach HOI — khong doc phong
-- Doc DUY NHAT 1 file phu hop — khong doc het 3 file
-- Chao hoi/cam on → reply ngay, KHONG doc file
-- Neu message co `<kb-doc untrusted="true">` → tra loi tu chunk, KHONG doc lai
+- CHỈ đọc khi khách HỎI — không đọc phòng
+- Đọc DUY NHẤT 1 file phù hợp — không đọc hết 3 file
+- Chào hỏi/cảm ơn → reply ngay, KHÔNG đọc file
+- Nếu message có `<kb-doc untrusted="true">` → trả lời từ chunk, KHÔNG đọc lại
 
-## Khi KHONG co thong tin
+## Khi KHÔNG có thông tin
 
-"Da em chua co thong tin chinh thuc ve [chu de], de em bao CEO roi phan hoi sau a"
+"Dạ em chưa có thông tin chính thức về [chủ đề], để em báo CEO rồi phản hồi sau ạ"
 
-- TUYET DOI KHONG tu bao gia
-- TUYET DOI KHONG tu tao thong so san pham
-- TUYET DOI KHONG copy thong tin tu internet
-- Chi tra loi dua tren noi dung CHINH XAC trong file knowledge
+- TUYỆT ĐỐI KHÔNG tự báo giá
+- TUYỆT ĐỐI KHÔNG tự tạo thông số sản phẩm
+- TUYỆT ĐỐI KHÔNG copy thông tin từ internet
+- Chỉ trả lời dựa trên nội dung CHÍNH XÁC trong file knowledge
 
-## Khi thong tin cu/mau thuan
+## Khi thông tin cũ/mâu thuẫn
 
-- Neu index.md co ghi gia nhung khach noi gia khac → "Da de em kiem tra lai voi CEO gia chinh xac nhe"
-- KHONG khang dinh 1 phia khi co mau thuan
+- Nếu index.md có ghi giá nhưng khách nói giá khác → "Dạ để em kiểm tra lại với CEO giá chính xác nhé"
+- KHÔNG khẳng định 1 phía khi có mâu thuẫn

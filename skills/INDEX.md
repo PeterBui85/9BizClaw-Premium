@@ -93,6 +93,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Tra cứu kiến thức | `knowledge-base.md` | Tra cứu tài liệu để trả lời khách |
 | Theo dõi khách hàng | `follow-up.md` | Follow-up khách chưa phản hồi |
 | Quản lý kênh | `channel-control.md` | Tạm dừng/tiếp tục kênh, blocklist, stranger |
+| Đọc Google Sheet | `google-sheet.md` | Đọc dữ liệu từ Google Sheet công khai qua CSV |
 
 ### Productivity — Công cụ CEO (1 skill)
 | Skill | File | Khi nào dùng |
@@ -100,5 +101,5 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Quản lý lịch hẹn | `appointments.md` | Tạo/sửa/xóa lịch hẹn, reminder, push Zalo group |
 
 ---
-**Tổng: 35 (marketing) + 44 (business) + 1 (productivity) = 80 skills chuyên gia**
+**Tổng: 35 (marketing) + 45 (business) + 1 (productivity) = 81 skills chuyên gia**
 Nguồn: coreyhaines31/marketingskills (19.8k stars) + alirezarezvani/claude-skills (522 skills, lọc business-relevant)

@@ -1,5 +1,9 @@
 # CLAUDE.md — Rules cho dev / Claude Code khi làm việc với repo này
 
+## RULE #0: Preflight checklist — ĐỌC TRƯỚC KHI THÊM TÍNH NĂNG
+
+**Trước khi thêm bất kỳ function/integration/patch nào, đọc [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) và chạy qua checklist tương ứng.** Doc này chứa known landmines, IPC parity check, bootstrap budget, và cross-cutting invariants. Bỏ qua = regression.
+
 ## RULE #1: Fresh-install parity — BẮT BUỘC
 
 **Mọi fix, patch, workaround ĐỀU PHẢI áp dụng được cho user mới cài fresh trên máy mới.**
@@ -502,3 +506,33 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 - Mac: `~/Library/Application Support/modoro-claw/logs/9router.log`
 - Win: `%APPDATA%\modoro-claw\logs\9router.log`
 **Verify:** On Mac arm64 with x64 vendor binary → wizard "Thiết lập AI" → spinner shows ~30-60s → auto-fix log `[9router-autofix] ✓ rebuilt via prebuild-install` in `main.log` → wizard completes successfully. If auto-fix fails: error shows "Mở thư mục log" link.
+
+### Zalo escalation auto-forward to CEO
+**Bug:** AGENTS.md instructs bot to "ESCALATE Telegram" for complaints/out-of-scope, but bot has NO tool to write `follow-up-queue.json` or call `sendCeoAlert()`. Bot says "em đã chuyển cho sếp" to the customer, but CEO receives NOTHING — pure theater.
+**Fix (code-level detection, 2 parts):**
+1. **send.ts injection (v7):** Added escalation keyword scanner to the existing output filter patch. Scans bot's outbound Zalo reply for 7 escalation patterns (e.g. "chuyển sếp", "ghi nhận khiếu nại", "ngoài khả năng", "em đã chuyển"). When matched, appends entry to `logs/escalation-queue.jsonl` with timestamp, target threadId, trigger phrase, and bot reply preview. Does NOT block the message — customer still gets the reply.
+2. **main.js poller:** `processEscalationQueue()` checks `escalation-queue.jsonl` every 30s. For each entry: looks up customer name from `memory/zalo-users/<id>.md`, calls `sendCeoAlert()` (dual Telegram + Zalo), logs to audit. Truncates file after processing.
+**Auto-apply:** Output filter v7 re-injects on every `ensureZaloOutputFilterFix()` (startup). Poller starts in boot sequence via `startEscalationChecker()`.
+**Verify:** Nhắn Zalo hỏi gì đó ngoài phạm vi → bot nói "em xin chuyển cho sếp" → CEO nhận alert trên Telegram + Zalo trong 30s với trigger keyword + bot reply + customer ID.
+
+### SECURITY: Zalo channel admin command isolation (v2.3.47.3)
+**Vulnerability:** Gateway agent shares ONE tools.allow config for ALL channels (Telegram + Zalo). Any tool available = available to ALL users. Previously `exec`, `process`, `cron` were in tools.allow → ANY Zalo stranger could execute shell commands, create crons, spawn processes.
+**Fix (3-layer defense-in-depth):**
+1. **tools.allow hardened** — global allowlist reduced to: `message`, `web_search`, `web_fetch`, `update_plan`. Removed: `exec` (RCE), `process` (spawn), `cron` (schedule abuse). Affects ALL channels equally.
+2. **COMMAND-BLOCK PATCH in inbound.ts** (`electron/patches/openzalo-fork/inbound.ts`) — code-level rawBody rewrite for 8 admin command patterns (cron, broadcast, exec, openzca msg send). Agent never sees original command text. Zalo-only (Telegram has separate plugin). Applied via `applyOpenzaloFork()` on every startup.
+3. **AGENTS.md soft rules** — backup layer instructing bot to refuse cron/admin from Zalo, redirect to Telegram.
+**One-way cron (CEO Telegram → Zalo groups):** Local HTTP Cron API on port 20200 (`startCronApi()`). Bot uses `web_fetch` tool (in tools.allow) to call `http://127.0.0.1:20200/api/cron/*`. API validates groupId against groups.json, validates cronExpr, writes custom-crons.json, restarts cron scheduler. **4-layer protection against Zalo abuse:** (a) command-block rewrites rawBody for admin patterns AND API URL mentions (`127.0.0.1:20200`, `/api/cron/`), (b) cron/exec tools removed from tools.allow, (c) rotating auth token (48 hex chars, regenerated every boot, stored in `cron-api-token.txt` — repo is open-source so static secrets are useless), (d) API binds localhost only. Write operations serialized via async mutex to prevent race conditions.
+**Endpoints:** `/api/cron/create` (label, cronExpr/oneTimeAt, groupId/groupIds, content), `/api/cron/list`, `/api/cron/delete` (id), `/api/cron/toggle` (id, enabled).
+**Boot:** `startCronApi()` called in both cold-boot and wizard-complete sequences after `startEscalationChecker()`.
+**Auto-apply:** All changes in source tree — tools.allow in `ensureDefaultConfig()`, fork in `applyOpenzaloFork()`, API in `startCronApi()`.
+**Verify:**
+- Zalo stranger sends "tạo cron gửi nhóm X" → agent sees `[nội dung nội bộ đã được lọc]`, refuses
+- CEO Telegram sends "tạo cron gửi nhóm X mỗi sáng 9h" → bot calls web_fetch API → cron created → appears in Dashboard
+- `curl http://127.0.0.1:20200/api/cron/list` → returns crons + groups JSON
+- Console: `[cron-api] listening on http://127.0.0.1:20200`
+
+### Dashboard cron delete for OpenClaw-sourced crons
+**Bug:** `deleteCustomCron()` only filtered from `customCrons` array and saved to `custom-crons.json`, but OpenClaw crons live in `~/.openclaw/cron/jobs.json`. On next Dashboard reload, deleted crons reappeared.
+**Fix:** New IPC handler `delete-openclaw-cron` reads `~/.openclaw/cron/jobs.json`, filters out matching job by id, writes back. Dashboard `deleteCustomCron()` checks `source === 'openclaw'` → calls `deleteOpenclawCron(id)` IPC, then saves modoro crons separately.
+**Auto-apply:** IPC handler in main.js, preload bridge in preload.js, UI logic in dashboard.html.
+**Verify:** Create cron via OpenClaw tool → appears in Dashboard → delete → does NOT reappear after refresh.

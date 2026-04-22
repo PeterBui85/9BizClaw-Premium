@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>9BizClaw — Hướng dẫn & Giải đáp</title>
+<style>
+  @page { size: A4; margin: 22mm 20mm 22mm 20mm; }
+  * { box-sizing: border-box; }
+  html { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.55; }
+  body { margin: 0; }
+  h1 { font-size: 26pt; font-weight: 700; margin: 0 0 8pt; color: #0a0a0a; letter-spacing: -0.02em; }
+  .subtitle { font-size: 12pt; color: #666; margin-bottom: 24pt; font-weight: 400; }
+  .meta { font-size: 9pt; color: #999; margin-bottom: 30pt; padding-bottom: 14pt; border-bottom: 1px solid #e5e5e5; }
+  h2 { font-size: 16pt; font-weight: 700; margin: 28pt 0 10pt; color: #0a0a0a; padding-bottom: 6pt; border-bottom: 2px solid #0a0a0a; page-break-after: avoid; }
+  h2 .num { color: #999; margin-right: 10pt; font-weight: 500; }
+  h3 { font-size: 11.5pt; font-weight: 700; margin: 14pt 0 4pt; color: #0a0a0a; page-break-after: avoid; }
+  h3::before { content: "Q. "; color: #0066cc; font-weight: 700; }
+  .a { margin: 0 0 10pt 0; page-break-inside: avoid; }
+  .a::before { content: "A. "; font-weight: 700; color: #888; }
+  p { margin: 4pt 0; }
+  ul, ol { margin: 4pt 0 8pt 0; padding-left: 20pt; }
+  li { margin: 2pt 0; }
+  code { font-family: "Consolas", "Menlo", monospace; font-size: 9.5pt; background: #f5f5f5; padding: 1pt 4pt; border-radius: 3pt; color: #c00; }
+  pre { background: #f7f7f7; border-left: 3pt solid #0066cc; padding: 8pt 12pt; font-family: "Consolas", monospace; font-size: 9pt; margin: 6pt 0; white-space: pre-wrap; page-break-inside: avoid; }
+  .tip { background: #fff8e1; border-left: 3pt solid #ffa000; padding: 8pt 12pt; margin: 8pt 0; font-size: 10pt; page-break-inside: avoid; }
+  .warn { background: #ffebee; border-left: 3pt solid #c62828; padding: 8pt 12pt; margin: 8pt 0; font-size: 10pt; page-break-inside: avoid; }
+  .ok { background: #e8f5e9; border-left: 3pt solid #2e7d32; padding: 8pt 12pt; margin: 8pt 0; font-size: 10pt; page-break-inside: avoid; }
+  strong { font-weight: 700; color: #0a0a0a; }
+  .page-break { page-break-before: always; }
+  .toc { background: #fafafa; border: 1px solid #e5e5e5; padding: 14pt 18pt; margin-bottom: 20pt; font-size: 10pt; }
+  .toc h3 { margin-top: 0; font-size: 11pt; }
+  .toc h3::before { content: ""; }
+  .toc ol { margin: 0; padding-left: 18pt; }
+  .toc li { margin: 3pt 0; }
+  footer { margin-top: 40pt; padding-top: 14pt; border-top: 1px solid #e5e5e5; font-size: 9pt; color: #888; text-align: center; }
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 10pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #ddd; padding: 6pt 10pt; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>9BizClaw — Hướng dẫn & Giải đáp</h1>
+<div class="subtitle">Tài liệu tham khảo cho chủ shop dùng 9BizClaw làm trợ lý bán hàng</div>
+<div class="meta">Phiên bản v2.3.47 · Cập nhật 18/04/2026 · MODORO Tech Corp</div>
+
+<div class="toc">
+<h3>Mục lục</h3>
+<ol>
+  <li>Giới thiệu 9BizClaw</li>
+  <li>Cài đặt lần đầu</li>
+  <li>Thiết lập ban đầu (Wizard)</li>
+  <li>Tab Tổng quan (Dashboard)</li>
+  <li>Tab Telegram</li>
+  <li>Tab Zalo</li>
+  <li>Tab Knowledge — tài liệu doanh nghiệp</li>
+  <li>Lịch trình tự động (Cron)</li>
+  <li>Follow-up khách hàng</li>
+  <li>Bảo mật & quyền riêng tư</li>
+  <li>Các lỗi thường gặp — khắc phục từng bước</li>
+  <li>Cập nhật & bảo trì</li>
+</ol>
+</div>
+
+<h2><span class="num">1.</span>Giới thiệu 9BizClaw</h2>
+
+<h3>9BizClaw là gì?</h3>
+<div class="a">9BizClaw là phần mềm trợ lý bán hàng tự động chạy trên máy tính của anh/chị (Windows hoặc Mac). Phần mềm kết nối vào Telegram và Zalo, trả lời khách hàng 24/7 bằng AI theo đúng phong cách và dữ liệu của shop.</div>
+
+<h3>Khác gì chatbot thông thường?</h3>
+<div class="a">
+Ba điểm khác biệt quan trọng:
+<ul>
+  <li><strong>Chạy trên máy của anh/chị</strong>, không phải cloud. Dữ liệu khách, cookie Zalo, lịch sử chat đều nằm trong máy — không upload đi đâu</li>
+  <li><strong>Đọc tài liệu thật</strong>. Upload bảng giá, catalog, chính sách bảo hành (PDF/Word), bot sẽ trả lời khách như một nhân viên sales đã đọc thuộc toàn bộ tài liệu</li>
+  <li><strong>Đọc được ảnh</strong>. Khách gửi ảnh biên lai, sản phẩm, đơn hàng — bot đọc đúng nội dung thay vì trả lời chung chung</li>
+</ul>
+</div>
+
+<h3>Phù hợp với ai?</h3>
+<div class="a">Chủ shop bán lẻ qua Zalo/Telegram, có 100 – 5000 khách, muốn bot trả lời giai đoạn đầu (giá, tồn kho, chính sách) để nhân viên chỉ chốt đơn. Không phù hợp với sàn lớn (Shopee, Lazada) vì 9BizClaw không kết nối sàn.</div>
+
+<h3>Có miễn phí không?</h3>
+<div class="a">Phần mềm 9BizClaw miễn phí. Chi phí phát sinh là API model AI (ChatGPT Plus / Claude Pro / Gemini / Ollama). Dùng ChatGPT Plus $20/tháng thì bot trả lời không giới hạn số tin — không tính token lẻ.</div>
+
+<h2><span class="num">2.</span>Cài đặt lần đầu</h2>
+
+<h3>Yêu cầu máy tối thiểu?</h3>
+<div class="a">
+<ul>
+  <li>Windows 10/11 hoặc macOS 12+</li>
+  <li>RAM 8GB trở lên (khuyên 16GB nếu chạy Ollama local)</li>
+  <li>Ổ cứng trống 5GB</li>
+  <li>Kết nối internet khi chạy</li>
+</ul>
+</div>
+
+<h3>Cài trên Windows thế nào?</h3>
+<div class="a">
+<ol>
+  <li>Tải file <code>9BizClaw Setup 2.3.47.exe</code></li>
+  <li>Chạy file → installer tự động cài, mất 1-2 phút</li>
+  <li>Lần đầu mở app → hiện splash progress bar "Đang giải nén..." khoảng 30-60 giây (chỉ lần đầu). Các lần sau mở nhanh</li>
+  <li>Sau khi splash xong → hiện wizard thiết lập</li>
+</ol>
+</div>
+
+<h3>Cài trên Mac thế nào?</h3>
+<div class="a">
+<ol>
+  <li>Tải đúng bản: <strong>arm64.dmg</strong> cho Mac M1/M2/M3/M4, bản còn lại cho Mac Intel</li>
+  <li>Mở .dmg → kéo app vào thư mục Applications</li>
+  <li>Mở Terminal, copy và chạy lệnh sau (xử lý cảnh báo "app đến từ nhà phát triển không xác định"):</li>
+</ol>
+<pre>xattr -dr com.apple.quarantine /Applications/9BizClaw.app 2>/dev/null; echo "Xong — mở 9BizClaw bình thường"</pre>
+<ol start="4">
+  <li>Mở 9BizClaw từ Launchpad</li>
+</ol>
+<div class="tip"><strong>Mẹo:</strong> lệnh <code>xattr</code> không cần sudo, không cần mật khẩu — an toàn, chỉ gỡ cờ cách ly của macOS cho app này.</div>
+</div>
+
+<h3>Cài đè bản cũ có mất dữ liệu không?</h3>
+<div class="a">Không. Tất cả dữ liệu (cấu hình, Knowledge, lịch sử chat, follow-up queue) đều nằm trong thư mục riêng ngoài app. Cài đè chỉ thay phần mềm — dữ liệu giữ nguyên.</div>
+
+<h2><span class="num">3.</span>Thiết lập ban đầu (Wizard)</h2>
+
+<h3>Wizard có bao nhiêu bước?</h3>
+<div class="a">
+6 bước (hiển thị "Bước X trong 6" trên thanh tiến trình):
+<ol>
+  <li><strong>Thông tin cơ bản</strong> — tên công ty, cách xưng hô</li>
+  <li><strong>Lĩnh vực & phong cách</strong> — ngành hàng, giọng điệu bot</li>
+  <li><strong>Kết nối trí tuệ nhân tạo</strong> — lấy API key Ollama (miễn phí)</li>
+  <li><strong>Kết nối Telegram</strong> — token bot + chat ID cá nhân</li>
+  <li><strong>Kết nối Zalo</strong> — quét QR (tùy chọn, có thể bỏ qua làm sau)</li>
+  <li><strong>Sẵn sàng hoạt động</strong> — xác nhận + khởi động bot</li>
+</ol>
+</div>
+
+<h3>Bước 3 — AI dùng model nào?</h3>
+<div class="a">
+Wizard hướng dẫn lấy <strong>Ollama API key</strong> (miễn phí, đăng ký qua Google/GitHub). Ollama đóng vai trò fallback mặc định — đủ chạy cho shop nhỏ.
+<div class="tip"><strong>Muốn đổi sang provider khác?</strong> Sau khi hoàn tất wizard, mở <strong>tab 9Router</strong> (sidebar) → login mật khẩu <code>123456</code> → thêm/đổi provider: ChatGPT Plus (OAuth), Claude Pro (OAuth), Google Gemini, OpenAI API key, Anthropic API key, v.v. Có thể đặt thứ tự fallback — provider chính fail thì tự sang provider dự phòng.</div>
+<table>
+  <tr><th>Provider</th><th>Chi phí</th><th>Khuyến nghị</th></tr>
+  <tr><td>Ollama (default trong wizard)</td><td>Miễn phí (có hạn mức)</td><td>Bắt đầu + test nhanh</td></tr>
+  <tr><td>ChatGPT Plus (OAuth)</td><td>$20/tháng</td><td>Shop có volume — cân bằng giá/chất lượng</td></tr>
+  <tr><td>Claude Pro (OAuth)</td><td>$20/tháng</td><td>Trả lời dài, chính xác về chính sách</td></tr>
+  <tr><td>Gemini / OpenAI / Anthropic (API key)</td><td>Theo token</td><td>Shop đã có sẵn key</td></tr>
+</table>
+</div>
+
+<h3>Bước 4 — Tạo bot Telegram thế nào?</h3>
+<div class="a">
+<ol>
+  <li>Bấm nút <strong>@BotFather</strong> trong wizard → mở Telegram</li>
+  <li>Chat với BotFather, gõ <code>/newbot</code></li>
+  <li>Đặt tên bot và username (phải kết thúc bằng <code>bot</code>)</li>
+  <li>BotFather trả về token dạng <code>123456:ABC-DEF...</code> → copy token</li>
+  <li>Dán vào ô "Bot Token" trong wizard → bấm "Kiểm tra kết nối"</li>
+  <li>Bấm nút <strong>@userinfobot</strong> → chat với bot này để lấy Chat ID cá nhân của anh/chị</li>
+  <li>Dán Chat ID vào wizard → hoàn tất</li>
+</ol>
+</div>
+
+<h3>Bước 5 — Zalo có bắt buộc không?</h3>
+<div class="a">Không. Anh/chị có thể bỏ qua bước Zalo trong wizard. App vẫn chạy với riêng Telegram. Khi nào sẵn sàng, mở Dashboard → tab Zalo để cấu hình sau.</div>
+
+<h3>Quét QR Zalo thế nào?</h3>
+<div class="a">
+<ol>
+  <li>Bấm "Kết nối Zalo" trong wizard (hoặc tab Zalo của Dashboard)</li>
+  <li>Hiện mã QR — mở Zalo trên điện thoại → Menu → Quản lý Zalo trên máy tính → Quét QR</li>
+  <li>Xác nhận trên điện thoại → đóng dialog → app tự nhận cookie</li>
+</ol>
+<div class="warn"><strong>Lưu ý:</strong> cookie Zalo hết hạn sau khoảng 14 ngày. Dashboard sẽ hiện cảnh báo màu vàng "Cookie Zalo sắp hết hạn" → anh/chị vào tab Zalo → bấm "Kết nối lại" để quét QR mới.</div>
+</div>
+
+<h2><span class="num">4.</span>Tab Tổng quan (Dashboard)</h2>
+
+<h3>Dashboard hiển thị gì?</h3>
+<div class="a">
+Dashboard có 4 section trả lời 4 câu hỏi chủ shop cần biết mỗi sáng:
+<ol>
+  <li><strong>Chào buổi sáng</strong> — tên anh/chị, ngày giờ, tổng số sự kiện bot đã xử lý hôm nay</li>
+  <li><strong>Hoạt động gần đây</strong> — 8 sự kiện gần nhất (khởi động bot, tin bị chặn, cron đã chạy, máy Mac thức dậy...)</li>
+  <li><strong>Sắp tới</strong> — 6 cron kế tiếp sẽ chạy (follow-up 9h30, báo cáo tối, cron tự tạo)</li>
+  <li><strong>Cần anh để ý</strong> — cảnh báo có mức độ: bot dừng (đỏ), cookie Zalo cũ (vàng), tin bị filter chặn (vàng), khách mới Zalo (xanh)</li>
+</ol>
+</div>
+
+<h3>Sidebar có chấm xanh/đỏ nghĩa gì?</h3>
+<div class="a">
+<ul>
+  <li><strong>Xanh</strong> — kênh đang hoạt động, nhận được tin</li>
+  <li><strong>Đỏ</strong> — kênh không sẵn sàng (token sai, listener Zalo chết, cookie hết hạn)</li>
+  <li><strong>Xám</strong> — đang kiểm tra (thường chỉ thấy trong 1-2 giây đầu sau khi mở app)</li>
+</ul>
+<div class="tip">Dashboard tự kiểm tra trạng thái mỗi 45 giây. Muốn kiểm tra ngay → bấm "Kiểm tra" trong tab Telegram/Zalo.</div>
+</div>
+
+<h2><span class="num">5.</span>Tab Telegram</h2>
+
+<h3>Bot Telegram nhận tin thế nào?</h3>
+<div class="a">
+<ul>
+  <li><strong>Tin nhắn riêng</strong> (private): bot trả lời tất cả</li>
+  <li><strong>Tin trong group</strong>: bot chỉ trả lời khi được @mention</li>
+</ul>
+</div>
+
+<h3>Gửi tin test?</h3>
+<div class="a">Tab Telegram → bấm <strong>"Gửi tin test"</strong>. App gửi 1 tin nhắn mặc định cho Chat ID đã cấu hình. Nếu anh/chị nhận được trên Telegram → mọi thứ OK.</div>
+
+<h3>Tạm dừng bot 2 tiếng (ví dụ khi đang họp)?</h3>
+<div class="a">Tab Telegram → bấm "Tạm dừng" → chọn thời gian. Trong thời gian đó bot không trả lời. Bấm "Tiếp tục" để bật lại sớm hơn.</div>
+
+<h2><span class="num">6.</span>Tab Zalo</h2>
+
+<h3>Bot Zalo hoạt động ra sao?</h3>
+<div class="a">
+<ul>
+  <li>Tin nhắn 1-1 (bạn bè): bot trả lời tất cả</li>
+  <li>Tin nhắn group: bot chỉ trả lời khi được @mention bot</li>
+  <li>Tin hệ thống (thêm vào nhóm, rời nhóm): bot im lặng</li>
+</ul>
+</div>
+
+<h3>Tài khoản Zalo bot có cần riêng không?</h3>
+<div class="a">Không bắt buộc. Anh/chị có thể dùng chính tài khoản Zalo cá nhân làm bot. Bot chỉ tự động trả lời tin của người khác, không trả lời tin anh/chị chủ động gửi đi.</div>
+
+<h3>Chế độ chỉ trả lời khi @mention cho group?</h3>
+<div class="a">Tab Zalo → chọn group → bật "Chỉ trả lời khi @mention". Mặc định group nào cũng ở chế độ này để tránh bot chen vào hội thoại giữa người thật.</div>
+
+<h3>Chặn khách xấu?</h3>
+<div class="a">Tab Zalo → Bạn bè → chọn user → bấm "Chặn". User đó nhắn bot sẽ không trả lời. Bỏ chặn bất kỳ lúc nào.</div>
+
+<h2><span class="num">7.</span>Tab Knowledge — tài liệu doanh nghiệp</h2>
+
+<h3>Knowledge là gì?</h3>
+<div class="a">Knowledge là nơi anh/chị upload tài liệu shop — bảng giá, catalog sản phẩm, chính sách đổi trả, thông tin công ty, danh sách nhân viên. Bot đọc toàn bộ các file này và dùng làm nguồn trả lời khách.</div>
+
+<h3>3 folder nghĩa là gì?</h3>
+<div class="a">
+<ul>
+  <li><strong>Công ty</strong> — giấy phép kinh doanh, chính sách đổi trả, điều khoản bảo hành, giờ làm việc, địa chỉ</li>
+  <li><strong>Sản phẩm</strong> — bảng giá, catalog, mô tả sản phẩm, size chart, ảnh sản phẩm</li>
+  <li><strong>Nhân viên</strong> — danh sách sales, lịch trực, thông tin liên hệ nội bộ</li>
+</ul>
+</div>
+
+<h3>Upload được định dạng nào?</h3>
+<div class="a">PDF, Word (.docx), Excel (.xlsx), Text (.txt), Markdown (.md). File PDF là phổ biến nhất — bảng giá hoặc catalog in ra PDF upload thẳng.</div>
+
+<h3>Bot hiểu "có áo dưới 500k không" như thế nào?</h3>
+<div class="a">Hệ thống nhận diện "dưới 500k" là khoảng giá → lọc trước trong danh mục sản phẩm chỉ những item giá &lt; 500,000đ → rồi AI mới trả lời. Đây là điểm mạnh so với chatbot thường — không phải chỉ match từ khoá.</div>
+
+<h3>Khách gõ không dấu thì sao?</h3>
+<div class="a">Bot hiểu cả có dấu và không dấu. Ví dụ "co ao nao re khong" được xử lý như "có áo nào rẻ không". Tìm kiếm semantic giúp khớp ngữ nghĩa, không phụ thuộc từng chữ cái.</div>
+
+<h3>Có giới hạn số file?</h3>
+<div class="a">Không giới hạn cứng. Trên thực tế test ổn với khoảng 2000 chunk tài liệu (1 file PDF = 20-50 chunk tuỳ độ dài). Quá số này thì tìm kiếm theo ý nghĩa vẫn hoạt động nhưng ưu tiên file mới upload.</div>
+
+<h3>Đã upload nhưng bot không trích đúng?</h3>
+<div class="a">
+<ol>
+  <li>Kiểm tra tab Knowledge xem file có xuất hiện trong danh sách không</li>
+  <li>Nếu có → bấm vào file xem có trích được text không. Nếu là PDF scan (ảnh thuần), bot không đọc được → cần file text thật hoặc OCR trước khi upload</li>
+  <li>Restart app (tắt + mở lại) để force re-index</li>
+</ol>
+</div>
+
+<h2><span class="num">8.</span>Lịch trình tự động (Cron)</h2>
+
+<h3>Cron là gì?</h3>
+<div class="a">Cron là các task tự động chạy theo giờ cố định. App có sẵn một số cron mặc định và anh/chị có thể tạo cron mới.</div>
+
+<h3>Cron mặc định gồm gì?</h3>
+<div class="a">
+App cài sẵn 7 cron (1 cái tắt mặc định):
+<table>
+  <tr><th>Giờ</th><th>Tên</th><th>Làm gì</th></tr>
+  <tr><td>07:30</td><td>Báo cáo sáng</td><td>Doanh thu hôm qua, lịch họp, việc cần xử lý</td></tr>
+  <tr><td>08:00</td><td>Báo cáo tuần</td><td>Tổng kết tuần, khách mới, ưu tiên tuần tới (chạy thứ 2)</td></tr>
+  <tr><td>08:30</td><td>Báo cáo tháng</td><td>Tổng kết tháng, trend, kế hoạch (chạy ngày 1)</td></tr>
+  <tr><td>09:30</td><td>Follow-up khách Zalo</td><td>Danh sách khách cần chăm sóc</td></tr>
+  <tr><td>21:00</td><td>Tóm tắt cuối ngày</td><td>Kết quả ngày, vấn đề tồn đọng</td></tr>
+  <tr><td>01:00</td><td>Tối ưu ban đêm</td><td>Bot tự review bài học, tối ưu bộ nhớ</td></tr>
+  <tr><td>Mỗi 30 phút</td><td>Kiểm tra tự động</td><td>Heartbeat — gateway + kênh liên lạc còn chạy</td></tr>
+  <tr><td>02:00</td><td>Dọn dẹp memory</td><td>Tắt mặc định, bật nếu file memory to</td></tr>
+</table>
+<div class="tip">Tất cả đều tắt/bật được trong Dashboard → Lịch trình.</div>
+</div>
+
+<h3>Tạo cron mới?</h3>
+<div class="a">
+<ol>
+  <li>Dashboard → Lịch trình → "Tạo mới"</li>
+  <li>Đặt tên, giờ chạy (VD: "Mỗi ngày 14h30" hoặc "Mỗi 2 giờ")</li>
+  <li>Viết prompt muốn bot chạy (VD: "Tóm tắt 10 tin nhắn gần nhất trên Telegram, gửi lại cho tôi")</li>
+  <li>Bấm "Test" → thấy kết quả ngay để xác nhận prompt đúng ý</li>
+  <li>Lưu → cron kích hoạt</li>
+</ol>
+</div>
+
+<h3>Cron không chạy?</h3>
+<div class="a">
+<ol>
+  <li>Mở Dashboard → section "Sắp tới" — kiểm tra cron có trong danh sách không</li>
+  <li>Thời gian cron phải ở <strong>tương lai</strong>. Nếu đặt 9h sáng mà giờ là 10h thì phải chờ đến ngày mai</li>
+  <li>Xem "Hoạt động gần đây" có entry "Cron đã chạy" không — nếu có mà anh/chị không nhận được → prompt sai</li>
+  <li>Với Mac: nếu đóng lid máy, App Nap có thể dừng cron. App đã cài sẵn powerSaveBlocker để tránh, nhưng nếu vẫn bị — để máy mở lid</li>
+</ol>
+</div>
+
+<h2><span class="num">9.</span>Follow-up khách hàng</h2>
+
+<h3>Follow-up là gì?</h3>
+<div class="a">Mỗi sáng 9h30, bot quét lại khách Zalo có yêu cầu chưa chốt &gt; 48h và liệt kê cho anh/chị qua Telegram. Danh sách kèm tên khách, tin nhắn cuối, và ghi chú bot gợi ý.</div>
+
+<h3>Ai được liệt kê?</h3>
+<div class="a">Chỉ khách <strong>đã từng nhắn bot</strong> và có yêu cầu chưa giải quyết. Shop có 2000 bạn Zalo nhưng chỉ ai thật sự đã tương tác mới có trong danh sách — tránh bị flood.</div>
+
+<h3>Bot không gửi follow-up?</h3>
+<div class="a">
+<ol>
+  <li>Check giờ — có phải đã qua 9h30 chưa?</li>
+  <li>Dashboard → Hoạt động gần đây — có entry "Follow-up scan" hôm nay không?</li>
+  <li>Nếu scan đã chạy nhưng không có khách → nghĩa là không có khách nào đủ tiêu chí (đã nhắn &amp; chưa chốt &gt; 48h) — đây là trạng thái bình thường</li>
+</ol>
+</div>
+
+<h2><span class="num">10.</span>Bảo mật & quyền riêng tư</h2>
+
+<h3>Dữ liệu khách có bị upload lên cloud không?</h3>
+<div class="a">Không. Tin nhắn, danh bạ, Knowledge — tất cả nằm trong máy của anh/chị. Chỉ khi bot <strong>tạo câu trả lời</strong>, nó gửi câu hỏi (đã lọc PII) lên AI provider đã chọn (ChatGPT/Claude/Gemini/Ollama).</div>
+
+<h3>PII filter là gì?</h3>
+<div class="a">
+Tự động che các thông tin nhạy cảm trong câu trả lời bot gửi đi, tuân thủ <strong>Nghị định 13/2023</strong>:
+<ul>
+  <li>Số CCCD / CMND (12 hoặc 9 chữ số)</li>
+  <li>Số tài khoản ngân hàng</li>
+  <li>Số thẻ tín dụng</li>
+</ul>
+Nếu bot định trả lời có nhắc lại CCCD/số thẻ mà khách gửi — toàn bộ câu trả lời bị chặn, bot gửi tin mặc định an toàn thay thế.
+</div>
+
+<h3>Tạm dừng bot tất cả kênh?</h3>
+<div class="a">Hiện chức năng "Tạm dừng" áp dụng riêng từng kênh (Telegram hoặc Zalo). Muốn dừng cả hai — vào mỗi tab bấm tạm dừng, hoặc tắt hẳn app.</div>
+
+<h2><span class="num">11.</span>Các lỗi thường gặp — khắc phục từng bước</h2>
+
+<h3>"Gateway is restarting. Please wait a few seconds..."</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: gateway đang khởi động lại vì config thay đổi hoặc bị kill.<br>
+<strong>Khắc phục</strong>:
+<ol>
+  <li>Chờ 30 giây, thử nhắn lại — 95% sẽ ổn</li>
+  <li>Vẫn bị → kiểm tra sidebar: Telegram/Zalo có chấm xanh không?</li>
+  <li>Chấm đỏ → tắt app → mở lại</li>
+</ol>
+</div>
+
+<h3>"The model did not produce a response before the LLM idle timeout"</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: provider AI (OpenAI/Claude/Gemini) không trả lời trong 60 giây.<br>
+<strong>Khắc phục</strong>:
+<ol>
+  <li>Kiểm tra tab 9Router (mật khẩu <code>123456</code>) → xem provider nào báo đỏ</li>
+  <li>Đổi sang provider khác trong 9Router — bấm "Set active" vào provider còn hoạt động</li>
+  <li>Với ChatGPT Plus: kiểm tra OpenAI có đang down không (status.openai.com)</li>
+  <li>Với Ollama local: xem process Ollama còn chạy không</li>
+</ol>
+</div>
+
+<h3>"Something went wrong while processing your message. Please try again."</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: lỗi generic — thường sau khi LLM timeout, gateway ở trạng thái xấu.<br>
+<strong>Khắc phục 3 bước</strong>:
+<ol>
+  <li>Mở 9BizClaw → tab 9Router → đảm bảo provider active là provider đang hoạt động</li>
+  <li>Tab Telegram/Zalo → "Tạm dừng" → "Tiếp tục" — reset channel</li>
+  <li>Vẫn lỗi → Task Manager kill tiến trình <code>9BizClaw.exe</code> + các tiến trình <code>node.exe</code> liên quan → mở lại app</li>
+</ol>
+</div>
+
+<h3>Bot không reply trong 2-3 phút đầu sau khi mở app</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: gateway đang cold-start, chờ 9Router warm up và OAuth handshake.<br>
+<strong>Khắc phục</strong>: chờ thêm 30 giây. Sidebar phải chuyển xanh hoàn toàn. Nếu sau 3 phút vẫn đỏ → tắt app, mở lại.
+</div>
+
+<h3>9Router login mật khẩu 123456 không vào</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: 9Router chưa warm xong, hoặc cookie session bị block.<br>
+<strong>Khắc phục</strong>:
+<ol>
+  <li>Chờ 10-20 giây sau khi mở app rồi vào tab 9Router lần đầu</li>
+  <li>Dán mật khẩu <code>123456</code> chính xác (không space)</li>
+  <li>Nếu vẫn fail → tắt app, mở lại, chờ 30 giây, thử lại</li>
+</ol>
+</div>
+
+<h3>Zalo báo "Chưa sẵn sàng"</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: listener Zalo không chạy hoặc cookie hết hạn.<br>
+<strong>Khắc phục</strong>:
+<ol>
+  <li>Tab Zalo → bấm "Kiểm tra" → xem thông báo cụ thể</li>
+  <li>"Cookie cũ hơn 14 ngày" → bấm "Kết nối lại" → quét QR mới</li>
+  <li>"Listener process không chạy" → tắt app, mở lại</li>
+</ol>
+</div>
+
+<h3>Knowledge upload xong không thấy file trong danh sách</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: database SQLite chưa sẵn sàng (hiếm, thường xảy ra lần đầu sau cập nhật lớn).<br>
+<strong>Khắc phục</strong>:
+<ol>
+  <li>Đóng tab Knowledge → mở lại — backfill tự động chạy</li>
+  <li>Vẫn không thấy → tắt app, mở lại — app sẽ quét lại thư mục knowledge/ và index lại</li>
+</ol>
+<div class="tip">File vẫn an toàn trên ổ đĩa kể cả khi DB chưa hiện. Vị trí thực: <code>%APPDATA%\9bizclaw\knowledge\</code></div>
+</div>
+
+<h3>Bot trả lời bị cắt giữa chừng hoặc chỉ nửa câu</h3>
+<div class="a">
+<strong>Nguyên nhân</strong>: với Zalo, tin &gt; 780 ký tự được tự động chia nhỏ. Nếu thấy chỉ 1 phần → có thể phần sau đang gửi (delay 800ms giữa các phần).<br>
+<strong>Khắc phục</strong>: chờ 2-3 giây. Nếu sau 5 giây vẫn không có phần còn lại → có lỗi khi gửi, nhắn bot "kể tiếp đi" để bot gửi lại.
+</div>
+
+<h3>Log nằm ở đâu?</h3>
+<div class="a">
+<strong>Windows</strong>: <code>%APPDATA%\9bizclaw\logs\main.log</code><br>
+<strong>Mac</strong>: <code>~/Library/Application Support/9bizclaw/logs/main.log</code><br>
+Dashboard → menu góc phải → "Mở thư mục log" cũng mở ra thẳng.
+</div>
+
+<h2><span class="num">12.</span>Cập nhật & bảo trì</h2>
+
+<h3>Kiểm tra cập nhật mới?</h3>
+<div class="a">Sidebar → bấm <strong>"Kiểm tra cập nhật"</strong>. App so sánh với GitHub Release mới nhất. Có bản mới → app tự tải + cài đè. Dữ liệu giữ nguyên.</div>
+
+<h3>Cài đè bản mới bao lâu?</h3>
+<div class="a">Windows: 1-2 phút. Mac: 30-60 giây. Cần tắt hẳn app trước khi cài đè.</div>
+
+<h3>RESET là gì?</h3>
+<div class="a">
+<div class="warn"><strong>Thận trọng:</strong> RESET xoá toàn bộ dữ liệu (cấu hình, Knowledge, lịch sử, follow-up queue). Chỉ dùng khi muốn bắt đầu lại từ đầu.</div>
+Chỉ áp dụng bản dev/source. Bản installer không có RESET — để xoá toàn bộ: uninstall app + xoá thư mục <code>%APPDATA%\9bizclaw\</code>.
+</div>
+
+<h3>Backup dữ liệu?</h3>
+<div class="a">
+Copy toàn bộ thư mục:
+<ul>
+  <li>Windows: <code>%APPDATA%\9bizclaw\</code></li>
+  <li>Mac: <code>~/Library/Application Support/9bizclaw/</code></li>
+</ul>
+Phục hồi: copy ngược lại sau khi cài app trên máy mới.
+</div>
+
+<footer>
+9BizClaw v2.3.47 — MODORO Tech Corp — devops@modoro.com.vn<br>
+Hỗ trợ: gửi file main.log kèm mô tả lỗi + thời điểm xảy ra
+</footer>
+
+</body>
+</html>

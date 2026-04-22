@@ -30,7 +30,7 @@ async function listEvents(maxResults = 10) {
   );
   return (resp.items || []).map(ev => ({
     id: ev.id,
-    summary: ev.summary || '(Khong co tieu de)',
+    summary: ev.summary || '(Không có tiêu đề)',
     description: ev.description || '',
     start: ev.start?.dateTime || ev.start?.date || '',
     end: ev.end?.dateTime || ev.end?.date || '',

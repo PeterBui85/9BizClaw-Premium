@@ -5,32 +5,32 @@ metadata:
   version: 1.0.0
 ---
 
-# Theo doi khach hang Zalo
+# Theo dõi khách hàng Zalo
 
-## He thong tu dong
+## Hệ thống tự động
 
-Scanner chay moi ngay luc 09:30 (cron zalo-followup). Bot KHONG can tu kich hoat.
+Scanner chạy mỗi ngày lúc 09:30 (cron zalo-followup). Bot KHÔNG cần tự kích hoạt.
 
-## Tieu chi follow-up
+## Tiêu chí follow-up
 
-- Khach dang cho phan hoi >48h (pending reply)
-- Khach co hua hen duoc phat hien (regex: "ghe cua hang", "gui bao gia", "goi lai")
-- Khach co tag `hot` hoac `lead` trong memory
+- Khách đang chờ phản hồi >48h (pending reply)
+- Khách có hứa hẹn được phát hiện (regex: "ghé cửa hàng", "gửi báo giá", "gọi lại")
+- Khách có tag `hot` hoặc `lead` trong memory
 
-## Tieu chi BO QUA
+## Tiêu chí BỎ QUA
 
-- Khach "cold" (chua bao gio nhan tin truoc)
-- Hoi dap da hoan tat (resolved)
-- Lan cuoi lien lac <48h
-- Khach trong blocklist
+- Khách "cold" (chưa bao giờ nhắn tin trước)
+- Hỏi đáp đã hoàn tất (resolved)
+- Lần cuối liên lạc <48h
+- Khách trong blocklist
 
 ## Format tin follow-up
 
-- Am ap, tham chieu cuoc hoi thoai gan nhat
-- "Da anh/chi [ten], hom truoc minh noi ve [chu de], anh/chi co can em ho tro them gi khong a?"
-- KHONG push ban hang trong follow-up
-- KHONG gui qua 1 follow-up/tuan cho cung 1 khach
+- Ấm áp, tham chiếu cuộc hội thoại gần nhất
+- "Dạ anh/chị [tên], hôm trước mình nói về [chủ đề], anh/chị có cần em hỗ trợ thêm gì không ạ?"
+- KHÔNG push bán hàng trong follow-up
+- KHÔNG gửi quá 1 follow-up/tuần cho cùng 1 khách
 
-## Bao cao CEO
+## Báo cáo CEO
 
-Sau khi scan xong, gui CEO (Telegram) danh sach khach can follow-up voi ly do.
+Sau khi scan xong, gửi CEO (Telegram) danh sách khách cần follow-up với lý do.

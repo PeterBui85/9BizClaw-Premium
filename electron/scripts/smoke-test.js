@@ -199,7 +199,7 @@ if (!openclawCli) {
     models: { providers: { ninerouter: { baseUrl: 'http://127.0.0.1:20128/v1', apiKey: 'sk-fake', api: 'openai-completions', models: [{ id: 'main', name: 'fake' }] } } },
     agents: { defaults: { model: 'ninerouter/main', workspace: tmpDir, blockStreamingDefault: 'off', contextInjection: 'continuation-skip' } },
     tools: {
-      deny: ['image_generate', 'music_generate', 'video_generate'],
+      allow: ['message', 'web_search', 'web_fetch', 'cron', 'exec', 'process', 'update_plan'],
       loopDetection: { enabled: true },
       message: { crossContext: { allowAcrossProviders: true } },
       web: { search: { provider: 'duckduckgo' } },
@@ -368,18 +368,40 @@ if (openzaloSrc) {
 }
 
 // =========================================================================
-// TEST 5: Patch template files exist (for ensureOpenzaloShellFix to read)
+// TEST 5: Openzalo fork files exist with expected patch markers
 // =========================================================================
-section('Patch templates');
-const patchTemplate = path.join(__dirname, '..', 'patches', 'openzalo-openzca.ts');
-if (!fs.existsSync(patchTemplate)) {
-  fail('patches/openzalo-openzca.ts', `MISSING — ensureOpenzaloShellFix() will fail silently in production. Restore from git history.`);
-} else {
-  const content = fs.readFileSync(patchTemplate, 'utf-8');
-  if (!content.includes('9BizClaw PATCH')) {
-    fail('patches/openzalo-openzca.ts marker', 'file present but missing "9BizClaw PATCH" marker — ensureOpenzaloShellFix will refuse to apply it');
+section('Openzalo fork files');
+const forkDir = path.join(__dirname, '..', 'patches', 'openzalo-fork');
+const forkChecks = [
+  {
+    file: 'inbound.ts',
+    markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH'],
+  },
+  {
+    file: 'send.ts',
+    markers: ['OUTPUT-FILTER PATCH'],
+  },
+  {
+    file: 'channel.ts',
+    markers: ['FORCE-ONE-MESSAGE'],
+  },
+  {
+    file: 'openzca.ts',
+    markers: ['9BizClaw PATCH'],
+  },
+];
+for (const check of forkChecks) {
+  const filePath = path.join(forkDir, check.file);
+  if (!fs.existsSync(filePath)) {
+    fail(`fork ${check.file}`, `MISSING at ${filePath} — openzalo fork will ship without this patched file. Restore from git history.`);
+    continue;
+  }
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const missingMarkers = check.markers.filter(marker => !content.includes(marker));
+  if (missingMarkers.length > 0) {
+    fail(`fork ${check.file} markers`, `file present but missing markers: [${missingMarkers.join(', ')}] — fork file may be stale or incomplete`);
   } else {
-    pass('patches/openzalo-openzca.ts (has 9BizClaw PATCH marker)');
+    pass(`fork ${check.file} (${check.markers.length} markers verified)`);
   }
 }
 

@@ -5,58 +5,58 @@ metadata:
   version: 1.0.0
 ---
 
-# Gui tin Zalo theo lenh CEO
+# Gửi tin Zalo theo lệnh CEO
 
-## Quy trinh bat buoc
+## Quy trình bắt buộc
 
-### Buoc 1: CEO yeu cau qua Telegram
+### Bước 1: CEO yêu cầu qua Telegram
 
-Vi du: "Nhan zalo cho anh Minh noi mai 9h gap" hoac "Gui nhom Demo noi chao buoi sang"
+Ví dụ: "Nhắn zalo cho anh Minh nói mai 9h gặp" hoặc "Gửi nhóm Demo nói chào buổi sáng"
 
-### Buoc 2: Tra cuu nguoi nhan
+### Bước 2: Tra cứu người nhận
 
-- **Khach hang:** doc `friends.json` → tim theo ten
-- **Nhom:** doc `groups.json` → tim theo ten nhom
-- Neu KHONG tim thay → bao CEO: "Em khong tim thay [ten]. Anh kiem tra lai giup em?"
-- TUYET DOI KHONG doan ID
+- **Khách hàng:** đọc `friends.json` → tìm theo tên
+- **Nhóm:** đọc `groups.json` → tìm theo tên nhóm
+- Nếu KHÔNG tìm thấy → báo CEO: "Em không tìm thấy [tên]. Anh kiểm tra lại giúp em?"
+- TUYỆT ĐỐI KHÔNG đoán ID
 
-### Buoc 3: CONFIRM voi CEO TRUOC khi gui
+### Bước 3: CONFIRM với CEO TRƯỚC khi gửi
 
-"Em se gui cho [ten nguoi/nhom]:
-[noi dung tin nhan]
-Anh xac nhan nhe?"
+"Em sẽ gửi cho [tên người/nhóm]:
+[nội dung tin nhắn]
+Anh xác nhận nhé?"
 
-CHO CEO tra loi. KHONG gui khi chua duoc xac nhan.
+CHỜ CEO trả lời. KHÔNG gửi khi chưa được xác nhận.
 
-### Buoc 4: Gui tin
+### Bước 4: Gửi tin
 
-Lenh: `exec: openzca msg send <id> "<noi dung>" --group`
-(Bo `--group` neu gui ca nhan)
+Lệnh: `exec: openzca msg send <id> "<nội dung>" --group`
+(Bỏ `--group` nếu gửi cá nhân)
 
-- `exec:` prefix BAT BUOC
-- Noi dung trong dau ngoac kep
-- ID lay tu buoc 2
+- `exec:` prefix BẮT BUỘC
+- Nội dung trong dấu ngoặc kép
+- ID lấy từ bước 2
 
-### Broadcast nhieu nhom
+### Broadcast nhiều nhóm
 
 ```
-exec: openzca msg send id1,id2,id3 "Noi dung" --group
+exec: openzca msg send id1,id2,id3 "Nội dung" --group
 ```
-- GroupId cach dau phay, KHONG space
-- Delay 1.5s giua moi nhom (he thong tu dong)
-- Nhom fail → CEO nhan alert tong hop
+- GroupId cách dấu phẩy, KHÔNG space
+- Delay 1.5s giữa mỗi nhóm (hệ thống tự động)
+- Nhóm fail → CEO nhận alert tổng hợp
 
-## Tin dai (>780 ky tu)
+## Tin dài (>780 ký tự)
 
-He thong tu dong split thanh nhieu tin:
-- Cat theo doan van → cau → tu
-- Moi phan toi da 780 ky tu
-- Delay 800ms giua moi tin
-- KHONG can bot tu cat — he thong lam
+Hệ thống tự động split thành nhiều tin:
+- Cắt theo đoạn văn → câu → từ
+- Mỗi phần tối đa 780 ký tự
+- Delay 800ms giữa mỗi tin
+- KHÔNG cần bot tự cắt — hệ thống làm
 
-## Luu y bao mat
+## Lưu ý bảo mật
 
-- CHI gui khi CEO xac nhan qua Telegram
-- KHONG gui thong tin noi bo (file path, config, API key)
-- KHONG gui noi dung khach hang nay cho khach hang khac
-- Output filter tu dong chan noi dung nhay cam
+- CHỈ gửi khi CEO xác nhận qua Telegram
+- KHÔNG gửi thông tin nội bộ (file path, config, API key)
+- KHÔNG gửi nội dung khách hàng này cho khách hàng khác
+- Output filter tự động chặn nội dung nhạy cảm

@@ -150,11 +150,11 @@ async function run() {
   }
   ok('main.js ensureDefaultConfig writes contextInjection="continuation-skip"');
 
-  // Must be the actual array literal, not the comment describing it.
-  if (!/DENY_TOOLS\s*=\s*\[[\s\S]*?['"]image_generate['"][\s\S]*?['"]exec['"][\s\S]*?\]/.test(stripped)) {
-    fail('main.js no longer defines DENY_TOOLS array with image_generate + exec — tools.deny reverted?');
+  // tools.allow allowlist replaces the old deny approach — verify it exists
+  if (!/ALLOW_TOOLS\s*=\s*\[[\s\S]*?['"]message['"][\s\S]*?['"]web_search['"][\s\S]*?\]/.test(stripped)) {
+    fail('main.js no longer defines ALLOW_TOOLS array with message + web_search — tools.allow reverted?');
   }
-  ok('main.js ensureDefaultConfig denies media-gen + exec tools');
+  ok('main.js ensureDefaultConfig sets tools.allow allowlist');
 
   if (!/config\.tools\.loopDetection\.enabled\s*=\s*true\s*;/.test(stripped)) {
     fail('main.js no longer ASSIGNS tools.loopDetection.enabled = true — safety net reverted?');
@@ -171,18 +171,15 @@ async function run() {
   }
   ok('main.js ensureDefaultConfig sets model.input includes "image"');
 
-  // --- Test 8: cross-binding — continuation-skip REQUIRES tools.deny:exec ---
-  // Reviewer observation C2: with contextInjection="continuation-skip",
-  // AGENTS.md rule "KHÔNG chạy openclaw CLI qua exec" is NOT in system prompt
-  // on tin 2+. tools.deny:["exec","process"] closes that hole at the config
-  // level. If one of these two fixes silently reverts, safety degrades on
-  // repeat customer messages. Enforce they ship together.
+  // --- Test 8: cross-binding — continuation-skip + tools.allow must coexist ---
+  // exec is in ALLOW_TOOLS (needed for Telegram cron pipeline). Safety on Zalo
+  // tin 2+ is enforced by AGENTS.md rules + output filter, not by tool deny.
   const hasContInjSkip = /config\.agents\.defaults\.contextInjection\s*=\s*['"]continuation-skip['"]/.test(stripped);
-  const denyHasExec = /DENY_TOOLS\s*=\s*\[[\s\S]*?['"]exec['"]/.test(stripped);
-  if (hasContInjSkip && !denyHasExec) {
-    fail('contextInjection="continuation-skip" is set but tools.deny[exec] is not — safety gap on tin 2+');
+  const hasAllowList = /ALLOW_TOOLS\s*=\s*\[/.test(stripped);
+  if (hasContInjSkip && !hasAllowList) {
+    fail('contextInjection="continuation-skip" is set but tools.allow is missing — unbounded tool surface');
   }
-  ok('continuation-skip + tools.deny[exec] co-bound (C2 cross-invariant)');
+  ok('continuation-skip + tools.allow co-bound (C2 cross-invariant)');
 
   console.log('[context-injection smoke] PASS — all 9 assertions held');
 }

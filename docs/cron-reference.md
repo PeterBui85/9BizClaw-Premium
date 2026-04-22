@@ -1,112 +1,123 @@
-# Lich tu dong — Tham khao chi tiet
+# Lịch tự động — Tham khảo chi tiết
 
-## File cau hinh
+## File cấu hình
 
-- `schedules.json` — built-in cron jobs (bot KHONG duoc ghi)
-- `custom-crons.json` — CEO-created cron jobs (bot DUOC ghi khi CEO yeu cau)
+- `schedules.json` — built-in cron jobs (bot KHÔNG được ghi)
+- `custom-crons.json` — CEO-created cron jobs (bot tạo qua API nội bộ)
 
 ## Built-in schedules
 
-| Job | Thoi gian | Mo ta |
+| Job | Thời gian | Mô tả |
 |-----|-----------|-------|
-| morning | 07:30 | Bao cao sang |
-| evening | 21:00 | Bao cao toi |
-| weekly | T2 08:00 | Tong ket tuan |
-| monthly | ngay-1 08:30 | Tong ket thang |
+| morning | 07:30 | Báo cáo sáng |
+| evening | 21:00 | Báo cáo tối |
+| weekly | T2 08:00 | Tổng kết tuần |
+| monthly | ngày-1 08:30 | Tổng kết tháng |
 | zalo-followup | 09:30 | Follow up Zalo |
-| heartbeat | 30 phut | Kiem tra he thong |
-| meditation | 01:00 | Don dep |
-| memory-cleanup | CN 02:00 | Don dep memory (OFF) |
+| heartbeat | 30 phút | Kiểm tra hệ thống |
+| meditation | 01:00 | Dọn dẹp |
+| memory-cleanup | CN 02:00 | Dọn dẹp memory (OFF) |
 
-## Tao / sua / xoa custom cron
+## Tạo / sửa / xóa custom cron — qua API nội bộ
 
-Bot DUOC GHI `custom-crons.json` khi CEO yeu cau qua Telegram.
+Bot dùng `web_fetch` gọi `http://127.0.0.1:20200/api/cron/*`. KHÔNG ghi file trực tiếp.
 
-### Format JSON bat buoc
+**Bảo mật:**
+- API chỉ bind localhost (127.0.0.1)
+- Mọi lệnh mutation (create/delete/toggle) yêu cầu `token`
+- Token nằm trong response của `/api/cron/list` (field `token`)
+- Token thay đổi mỗi lần app khởi động (rotating secret)
+- Inbound.ts command-block chặn mọi mention của API URL từ Zalo
+- Zalo customers KHÔNG có cách gọi API này
 
-```json
-[
-  {
-    "id": "unique-id-slug",
-    "label": "Ten hien thi (tieng Viet, khong emoji)",
-    "cronExpr": "0 9 * * 1-5",
-    "prompt": "exec: openzca msg send <groupId> \"<noi dung>\" --group",
-    "enabled": true
-  }
-]
+### Xác thực — BẮT BUỘC cho create/delete/toggle
+
+Gọi `web_fetch http://127.0.0.1:20200/api/cron/list` trước — response chứa `token` (48 hex chars). Dùng token này cho mọi lệnh mutation.
+
+### Quy tắc URL quan trọng
+
+- Dùng `+` thay khoảng trắng trong URL (`Chào+buổi+sáng`, KHÔNG `Chào buổi sáng`)
+- **`content` phải là tham số CUỐI CÙNG** — nội dung có thể chứa `&` hoặc ký tự đặc biệt, server sẽ lấy toàn bộ phần sau `content=`
+- Ký tự đặc biệt: `&` → `%26`, `"` → `%22`, `%` → `%25`
+
+### Tạo cron — gửi 1 nhóm
+
+```
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Chào+sáng+nhóm+VIP&cronExpr=0+9+*+*+1-5&groupId=6778716167335853128&token=<token>&content=Chào+buổi+sáng+các+anh+chị!
 ```
 
-### Quy trinh tao cron
+### Tạo cron — gửi nhiều nhóm (broadcast)
 
-1. CEO nhan Telegram: "tao cron gui nhom X moi sang 9h noi dung Y"
-2. Bot doc `custom-crons.json` hien tai (co the rong `[]`)
-3. Bot tra `groups.json` lay groupId theo ten nhom CEO noi
-4. Bot CONFIRM voi CEO truoc khi ghi: "Em se tao cron [label] chay luc [gio] gui [ten nhom]. Anh xac nhan nhe?"
-5. CEO xac nhan -> bot APPEND entry moi vao array hien tai, ghi lai file
-6. He thong tu dong reload cron trong vai giay
-
-### Gui nhieu nhom (broadcast)
-
-GroupId cach nhau dau phay, KHONG co khoang trang:
-
-```json
-{
-  "id": "morning-broadcast",
-  "label": "Chao sang nhom khach",
-  "cronExpr": "0 9 * * 1-5",
-  "prompt": "exec: openzca msg send 111,222,333 \"Chao buoi sang! Chuc anh chi ngay tot lanh.\" --group",
-  "enabled": true
-}
+```
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Broadcast+sáng&cronExpr=0+9+*+*+1-5&groupIds=111,222,333&token=<token>&content=Chào+buổi+sáng!
 ```
 
-Delay 1.5s giua moi nhom. Neu co nhom fail, CEO nhan alert tong hop.
+### Tạo cron — một lần (oneTimeAt)
 
-### Sua / xoa cron
-
-- **Sua:** Bot doc file, tim entry theo `id`, thay doi field can thiet, ghi lai.
-- **Xoa:** Bot doc file, loai bo entry theo `id`, ghi lai.
-- **Tam dung:** Set `"enabled": false` (khong xoa).
-- Moi thao tac deu phai CONFIRM voi CEO truoc.
-
-### cronExpr — BAT BUOC la cron expression
-
-**CAM TUYET DOI:** KHONG dung ISO date (`2026-04-22T00:37:00.000Z`), KHONG dung timestamp, KHONG dung date string. Chi chap nhan cron expression chuan.
-
-Vi du DUNG:
-- `37 7 22 4 *` = 7:37 ngay 22/4 (mot lan trong nam)
-- `0 9 * * 1-5` = 9h thu 2-6
-- `0 9 * * 1` = T2 9am
-- `0 15 * * 1-5` = 15h thu 2-6
-- `0 7 1 * *` = 7h ngay 1 moi thang
-- `0 */2 8-18 * * *` = nhac 2h ban ngay (6 fields voi giay)
-
-Vi du SAI (he thong SE REJECT):
-- `2026-04-22T00:37:00.000Z` — ISO date, KHONG phai cron
-- `7:37 AM` — gio thuong, KHONG phai cron
-- `tomorrow 9am` — text, KHONG phai cron
-
-### Lich mot lan (one-time)
-
-CEO noi "gui luc 7:37 hom nay" → dung `oneTimeAt` thay vi `cronExpr`:
-
-```json
-{
-  "id": "one-time-greet-demo",
-  "label": "Chao nhom Demo luc 7:37",
-  "oneTimeAt": "2026-04-22T07:37:00",
-  "prompt": "exec: openzca msg send <groupId> \"Chao buoi sang!\" --group",
-  "enabled": true
-}
+```
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo&oneTimeAt=2026-04-22T09:00:00&groupId=6778716167335853128&token=<token>&content=Khai+trương!
 ```
 
-He thong se tu dong chay dung gio roi xoa entry sau khi hoan thanh.
+### Xem danh sách cron + nhóm (KHÔNG cần token)
 
-### Luu y
+```
+web_fetch http://127.0.0.1:20200/api/cron/list
+```
 
-- `id` phai unique, dung slug (chu thuong, gach ngang, khong dau)
-- `label` tieng Viet, KHONG emoji
-- `cronExpr` PHAI la cron expression chuan (5 hoac 6 fields). KHONG BAO GIO dung ISO date/timestamp
-- Neu CEO muon gui 1 lan → dung `oneTimeAt` (ISO local time, KHONG co Z)
-- `prompt` bat dau bang `exec: ` de chay truc tiep, khong qua agent
-- GroupId phai ton tai trong `groups.json` (tra truoc khi ghi)
-- File watcher tu detect thay doi va reload cron — KHONG can restart app
+Trả JSON: `{ crons: [...], groups: [{ id, name }, ...], token: "..." }`
+Bot dùng `groups` để tra tên → groupId, dùng `token` cho mọi lệnh mutation.
+
+### Xóa cron
+
+```
+web_fetch http://127.0.0.1:20200/api/cron/delete?token=<token>&id=cron_1713765600000
+```
+
+### Tạm dừng / bật lại
+
+```
+web_fetch http://127.0.0.1:20200/api/cron/toggle?token=<token>&id=cron_1713765600000&enabled=false
+```
+
+## API response format
+
+Mọi endpoint trả JSON:
+- Thành công: `{ "success": true, "id": "...", "entry": {...} }`
+- Lỗi 403: `{ "error": "invalid or missing token..." }` — token sai hoặc thiếu
+- Lỗi 400: validation errors (groupId sai, cronExpr sai, oneTimeAt quá khứ)
+- Lỗi 404: cron không tìm thấy
+
+## cronExpr — BẮT BUỘC là cron expression
+
+**CẤM TUYỆT ĐỐI:** KHÔNG dùng ISO date, KHÔNG dùng timestamp, KHÔNG dùng date string.
+
+Ví dụ ĐÚNG:
+- `0 9 * * 1-5` = 9h thứ 2-6
+- `30 7 * * *` = 7:30 mỗi ngày
+- `37 7 22 4 *` = 7:37 ngày 22/4 (một lần trong năm)
+- `0 */2 * * *` = mỗi 2 giờ
+- `0 7 1 * *` = 7h ngày 1 mỗi tháng
+
+### Lịch một lần (one-time)
+
+CEO nói "gửi lúc 7:37 hôm nay" → dùng `oneTimeAt` thay vì `cronExpr`.
+Format: `YYYY-MM-DDTHH:MM:SS` (local time, KHÔNG có Z).
+API validate: reject nếu date không hợp lệ hoặc trong quá khứ.
+
+## Quy trình bắt buộc
+
+1. CEO nhắn Telegram: "tạo cron gửi nhóm X mỗi sáng 9h nội dung Y"
+2. Bot gọi `web_fetch .../api/cron/list` để xem nhóm available (không cần token)
+3. Bot đọc `cron-api-token.txt` lấy token
+4. Bot CONFIRM với CEO trước khi tạo
+5. CEO xác nhận → bot gọi `web_fetch .../api/cron/create?...&token=<token>&content=...`
+6. Hệ thống tự động reload cron
+
+## Lưu ý
+
+- Label tiếng Việt, KHÔNG emoji
+- GroupId phải tồn tại (API tự validate, trả lỗi + danh sách nhóm nếu sai)
+- cronExpr PHẢI là cron expression chuẩn (API tự validate)
+- oneTimeAt format `YYYY-MM-DDTHH:MM:SS` (local time, KHÔNG có Z)
+- Hệ thống tự reload sau mỗi thay đổi — KHÔNG cần restart
+- Write mutex: API serialize mọi write — an toàn khi gọi nhiều lần liên tiếp

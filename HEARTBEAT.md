@@ -1,55 +1,55 @@
-# HEARTBEAT.md — He Thong Kiem Tra Tu Dong
+# HEARTBEAT.md — Hệ Thống Kiểm Tra Tự Động
 
-Heartbeat chay moi 30 phut (cau hinh trong `schedules.json`). Muc dich: dam bao gateway + bot song, khong can hanh dong cua CEO.
-
----
-
-## Quy tac nen tang
-- **KHONG XOA GI** ma khong hoi CEO truoc
-- Khong spam — chi bao cao khi can hanh dong
-- Ghi nhat ky vao `memory/YYYY-MM-DD.md`
+Heartbeat chạy mỗi 30 phút (cấu hình trong `schedules.json`). Mục đích: đảm bảo gateway + bot sống, không cần hành động của CEO.
 
 ---
 
-## Nhung gi heartbeat kiem tra
+## Quy tắc nền tảng
+- **KHÔNG XÓA GÌ** mà không hỏi CEO trước
+- Không spam — chỉ báo cáo khi cần hành động
+- Ghi nhật ký vào `memory/YYYY-MM-DD.md`
 
-| Kiem tra | Tan suat | Mo ta |
+---
+
+## Những gì heartbeat kiểm tra
+
+| Kiểm tra | Tần suất | Mô tả |
 |----------|----------|-------|
-| Gateway alive | 30 phut | Ping gateway HTTP, 2 lan fail lien tiep moi restart |
-| Zalo listener | 30 phut | Check process dang chay + cookie age |
-| Telegram getMe | 30 phut | Verify bot token con hop le |
+| Gateway alive | 30 phút | Ping gateway HTTP, 2 lần fail liên tiếp mới restart |
+| Zalo listener | 30 phút | Check process đang chạy + cookie age |
+| Telegram getMe | 30 phút | Verify bot token còn hợp lệ |
 
-He thong 9BizClaw tu dong chay cac kiem tra nay. Bot KHONG can tu chay — chi doc ket qua tu `logs/audit.jsonl`.
-
----
-
-## Khi nao canh bao CEO
-
-- Gateway chet va khong tu restart duoc
-- Cookie Zalo sap het han (>14 ngay tuoi)
-- Telegram bot token khong hop le
-- Cron that bai lien tiep
-
-## Khi nao im lang
-
-- Dem khuya (23:00-08:00) tru khi khan cap
-- Khong co gi moi ke tu lan kiem tra truoc
-- Tat ca he thong binh thuong
-
-Tra ve `HEARTBEAT_OK` neu khong can chu y.
+Hệ thống 9BizClaw tự động chạy các kiểm tra này. Bot KHÔNG cần tự chạy — chỉ đọc kết quả từ `logs/audit.jsonl`.
 
 ---
 
-## Phan hoi im lang
-Khi khong co gi can noi, phan hoi: HEARTBEAT_OK
-- Day la response noi bo, KHONG gui cho khach hang
-- Khong bao gio ghep noi no vao phan hoi thuc
+## Khi nào cảnh báo CEO
+
+- Gateway chết và không tự restart được
+- Cookie Zalo sắp hết hạn (>14 ngày tuổi)
+- Telegram bot token không hợp lệ
+- Cron thất bại liên tiếp
+
+## Khi nào im lặng
+
+- Đêm khuya (23:00-08:00) trừ khi khẩn cấp
+- Không có gì mới kể từ lần kiểm tra trước
+- Tất cả hệ thống bình thường
+
+Trả về `HEARTBEAT_OK` nếu không cần chú ý.
 
 ---
 
-## Xu ly loi khi chay kiem tra
+## Phản hồi im lặng
+Khi không có gì cần nói, phản hồi: HEARTBEAT_OK
+- Đây là response nội bộ, KHÔNG gửi cho khách hàng
+- Không bao giờ ghép nó vào phản hồi thực
 
-Khi gap loi trong heartbeat/cron:
-1. DUNG ngay. Khong retry
-2. Bao CEO: ten task + loi nguyen van + buoc dang lam
-3. CHO lenh. Khong tu sua config, khong kill process
+---
+
+## Xử lý lỗi khi chạy kiểm tra
+
+Khi gặp lỗi trong heartbeat/cron:
+1. DỪNG ngay. Không retry
+2. Báo CEO: tên task + lỗi nguyên văn + bước đang làm
+3. CHỜ lệnh. Không tự sửa config, không kill process

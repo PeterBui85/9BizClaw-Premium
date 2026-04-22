@@ -41,37 +41,6 @@
     /* Main content */
     .main-content { flex:1; padding:20px 24px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; position:relative; }
 
-    /* Gateway boot chip — passive indicator during gateway startup */
-    .gw-boot-chip {
-      position: fixed;
-      top: 16px;
-      right: 20px;
-      z-index: 9000;
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 14px;
-      font-size: 12.5px;
-      font-weight: 500;
-      letter-spacing: 0.01em;
-      color: var(--zs-text-muted, #6b7280);
-      background: var(--zs-surface-alt, rgba(245,245,247,0.85));
-      border: 1px solid var(--zs-border, rgba(0,0,0,0.08));
-      border-radius: 999px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
-      pointer-events: none;
-      user-select: none;
-    }
-    .gw-boot-chip[hidden] { display: none; }
-    .gw-boot-dot {
-      display: inline-block;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--zs-brand, #dc2626);
-      margin-right: 8px;
-    }
-    .gw-active .gw-boot-dot { animation: gw-pulse 1.2s infinite ease-in-out; }
-    @keyframes gw-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 
     /* Activity panel */
     .activity-panel { width:300px; background:var(--bg); border-left:1px solid var(--border); display:none; flex-direction:column; flex-shrink:0; }
@@ -1822,7 +1791,6 @@
       </div>
 
       <button class="btn btn-primary btn-small sidebar-btn" id="toggle-btn" onclick="toggleBot()" data-tooltip="Tạm dừng bot. Bot sẽ không trả lời khách cho đến khi bật lại">Khởi động</button>
-      <button class="btn btn-secondary btn-small sidebar-btn" onclick="checkChannels()" id="check-btn">Kiểm tra kênh</button>
 
       <div class="sidebar-menu">
         <div class="sidebar-menu-header">Điều khiển</div>
@@ -1891,7 +1859,6 @@
 
     <!-- MAIN CONTENT -->
     <div class="main-content">
-      <div id="gateway-boot-chip" class="gw-boot-chip" hidden><span class="gw-boot-dot"></span>Trợ lý đang khởi động…</div>
 
       <!-- PAGE: Overview -->
       <div class="page active" id="page-overview">
@@ -1978,6 +1945,91 @@
 
       <!-- PAGE: Telegram -->
       <div class="page" id="page-telegram">
+        <style>
+          /* Telegram page — compact redesign */
+          #page-telegram .tg-capabilities { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; }
+          #page-telegram .tg-chip {
+            display:inline-flex; align-items:center; height:28px; padding:0 10px;
+            background:var(--surface); border:1px solid var(--border); border-radius:14px;
+            font-size:11.5px; font-weight:500; color:var(--text-secondary);
+            cursor:pointer; transition:border-color 0.15s, color 0.15s;
+            white-space:nowrap; position:relative;
+          }
+          #page-telegram .tg-chip:hover { border-color:var(--border-strong); color:var(--text); }
+          #page-telegram .tg-section-label {
+            font-size:11px; font-weight:600; color:var(--text-tertiary);
+            letter-spacing:0.4px; text-transform:uppercase; margin-bottom:8px;
+          }
+          #page-telegram .tg-cmds { display:flex; flex-direction:column; gap:1px; }
+          #page-telegram .tg-cmd-row {
+            display:flex; align-items:center; gap:10px; padding:7px 10px;
+            border-radius:6px; transition:background 0.1s; cursor:pointer;
+          }
+          #page-telegram .tg-cmd-row:hover { background:var(--surface-hover, var(--surface)); }
+          #page-telegram .tg-cmd-cat {
+            width:72px; flex-shrink:0; font-size:10.5px; font-weight:600;
+            color:var(--text-tertiary); letter-spacing:0.3px; text-transform:uppercase;
+          }
+          #page-telegram .tg-cmd-label {
+            font-size:12.5px; color:var(--text-secondary); flex-shrink:0; min-width:120px;
+          }
+          #page-telegram .tg-cmd-text {
+            flex:1; font-size:12.5px; color:var(--text); font-family:inherit;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+          }
+          #page-telegram .tg-cmd-copy {
+            width:26px; height:26px; flex-shrink:0; border:none; background:none;
+            border-radius:6px; cursor:pointer; display:inline-flex;
+            align-items:center; justify-content:center; opacity:0; transition:opacity 0.12s, background 0.12s;
+            color:var(--text-muted);
+          }
+          #page-telegram .tg-cmd-row:hover .tg-cmd-copy { opacity:0.6; }
+          #page-telegram .tg-cmd-copy:hover { opacity:1 !important; background:var(--surface); }
+          #page-telegram .tg-cmd-copy.copied { opacity:1 !important; color:var(--success); }
+          #page-telegram .tg-cmd-copy svg { width:14px; height:14px; }
+          #page-telegram .tg-debounce-row {
+            display:flex; align-items:center; gap:12px; padding:10px 0; flex-wrap:wrap;
+          }
+          #page-telegram .tg-debounce-row input[type="range"] { flex:1; min-width:160px; accent-color:var(--accent); }
+          #page-telegram .tg-debounce-label { font-weight:600; font-size:14px; min-width:40px; text-align:right; }
+          #page-telegram .tg-debounce-hint { font-size:11px; color:var(--text-tertiary); line-height:1.4; }
+          #page-telegram .tg-divider { height:1px; background:var(--border); margin:14px 0; }
+
+          /* Chip filter active state */
+          #page-telegram .tg-chip.active { border-color:var(--accent); color:var(--accent); background:rgba(99,102,241,0.08); }
+          #page-telegram .tg-cmd-row.filtered-out { display:none !important; }
+
+          /* Settings section */
+          #page-telegram .tg-settings { display:flex; flex-direction:column; gap:10px; }
+          #page-telegram .tg-field { display:flex; flex-direction:column; gap:4px; }
+          #page-telegram .tg-field-label { font-size:11px; font-weight:600; color:var(--text-tertiary); letter-spacing:0.3px; text-transform:uppercase; }
+          #page-telegram .tg-field-row { display:flex; align-items:center; gap:8px; }
+          #page-telegram .tg-field-input {
+            flex:1; height:36px; padding:0 12px; border:1px solid var(--border); border-radius:8px;
+            background:var(--surface); color:var(--text); font-size:13px; font-family:inherit;
+            outline:none; transition:border-color 0.15s;
+          }
+          #page-telegram .tg-field-input:focus { border-color:var(--accent); }
+          #page-telegram .tg-field-input::placeholder { color:var(--text-muted); }
+          #page-telegram .tg-toggle-vis {
+            width:36px; height:36px; border:1px solid var(--border); border-radius:8px;
+            background:var(--surface); cursor:pointer; display:inline-flex; align-items:center;
+            justify-content:center; color:var(--text-muted); transition:border-color 0.15s, color 0.15s;
+            flex-shrink:0;
+          }
+          #page-telegram .tg-toggle-vis:hover { border-color:var(--border-strong); color:var(--text); }
+          #page-telegram .tg-toggle-vis svg { width:16px; height:16px; }
+          #page-telegram .tg-save-row { display:flex; align-items:center; gap:10px; margin-top:4px; }
+          #page-telegram .tg-save-btn {
+            height:32px; padding:0 16px; border:none; border-radius:8px;
+            background:var(--accent); color:#fff; font-size:12px; font-weight:600;
+            cursor:pointer; transition:opacity 0.15s;
+          }
+          #page-telegram .tg-save-btn:hover { opacity:0.85; }
+          #page-telegram .tg-save-btn:disabled { opacity:0.4; cursor:not-allowed; }
+          #page-telegram .tg-save-status { font-size:11px; color:var(--text-tertiary); }
+        </style>
+
         <div class="page-header">
           <span class="page-icon" data-icon="send" data-icon-size="26"></span>
           <div>
@@ -1987,7 +2039,6 @@
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
             <button class="btn btn-secondary btn-small" onclick="recheckTelegram()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Kiểm tra</button>
-            <button class="btn btn-secondary btn-small" onclick="testTelegramSend()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="send" data-icon-size="14"></span>Gửi tin test</button>
             <button class="btn btn-secondary btn-small" id="telegram-pause-btn" onclick="toggleTelegramPause()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="telegram-pause-label">Tạm dừng</span></button>
           </div>
         </div>
@@ -1995,209 +2046,156 @@
           <span data-icon="pause-circle" data-icon-size="16"></span>
           <span>Bot Telegram đang tạm dừng. <span id="telegram-pause-until"></span></span>
         </div>
-        <!-- Tip -->
-        <div class="ds-tip">
-          <span class="ds-tip-icon" data-icon="lightbulb" data-icon-size="18"></span>
-          <div>Nhắn bất kỳ thứ gì cho bot qua Telegram. Bot hiểu tiếng Việt tự nhiên — không cần học lệnh. Dưới đây là gợi ý để khai thác tối đa.</div>
+
+        <!-- Capabilities chips -->
+        <div class="tg-section-label">Khả năng</div>
+        <div class="tg-capabilities">
+          <span class="tg-chip" data-filter="Khách hàng" data-tooltip="Trả lời tư vấn sản phẩm, giá, tình trạng hàng cho khách Zalo" onclick="filterTgCmds(this)">CSKH Zalo</span>
+          <span class="tg-chip" data-filter="Báo cáo" data-tooltip="Báo cáo sáng, báo cáo cuối ngày, tổng hợp hoạt động" onclick="filterTgCmds(this)">Báo cáo</span>
+          <span class="tg-chip" data-filter="Khách hàng" data-tooltip="Tìm kiếm và tra cứu tài liệu công ty, sản phẩm, nhân viên" onclick="filterTgCmds(this)">Tra cứu tài liệu</span>
+          <span class="tg-chip" data-filter="Cron" data-tooltip="Tạo, sửa, xóa cron job tự động qua Telegram" onclick="filterTgCmds(this)">Quản lý cron</span>
+          <span class="tg-chip" data-filter="Khách hàng" data-tooltip="Gửi tin nhắn vào nhóm hoặc cá nhân Zalo từ Telegram" onclick="filterTgCmds(this)">Gửi tin Zalo</span>
+          <span class="tg-chip" data-filter="Hệ thống" data-tooltip="Tạm dừng và tiếp tục bot trên từng kênh" onclick="filterTgCmds(this)">Tạm dừng bot</span>
+          <span class="tg-chip" data-filter="Marketing" data-tooltip="Viết bài quảng cáo, SEO, email marketing, content plan" onclick="filterTgCmds(this)">Marketing</span>
+          <span class="tg-chip" data-filter="Marketing" data-tooltip="Phân tích đối thủ, chiến lược giá, go-to-market" onclick="filterTgCmds(this)">Chiến lược</span>
+          <span class="tg-chip" data-filter="Cố vấn" data-tooltip="Tư vấn tài chính, nhân sự, công nghệ cấp C-Level" onclick="filterTgCmds(this)">Cố vấn C-Level</span>
+          <span class="tg-chip" data-filter="Marketing" data-tooltip="Viết copy, landing page, bài tuyển dụng, content plan" onclick="filterTgCmds(this)">Nội dung</span>
+          <span class="tg-chip" data-filter="Marketing" data-tooltip="Cold email, referral, upsell, chăm sóc khách hàng" onclick="filterTgCmds(this)">Bán hàng</span>
+          <span class="tg-chip" data-filter="Khách hàng" data-tooltip="Ghi nhớ thông tin khách hàng, theo dõi đơn hàng, lịch hẹn" onclick="filterTgCmds(this)">Nhớ khách hàng</span>
+          <span class="tg-chip" data-filter="Khách hàng" data-tooltip="Xử lý ảnh, đọc nội dung ảnh khách gửi qua Zalo" onclick="filterTgCmds(this)">Đọc hình ảnh</span>
+          <span class="tg-chip" data-filter="Hệ thống" data-tooltip="Escalate vấn đề quan trọng đến CEO qua Telegram" onclick="filterTgCmds(this)">Escalate CEO</span>
         </div>
 
-        <!-- Debounce slider -->
-        <div class="ds-section">
-          <div class="ds-section-header">
-            <h3 class="ds-section-title">Thời gian gộp tin khách</h3>
+        <div class="tg-divider"></div>
+
+        <!-- Example commands — compact table -->
+        <div class="tg-section-label">Câu lệnh mẫu</div>
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Nhắn bất kỳ thứ gì cho bot qua Telegram. Click hàng để copy.</div>
+        <div class="tg-cmds">
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Báo cáo</span>
+            <span class="tg-cmd-label">Báo cáo sáng</span>
+            <span class="tg-cmd-text" data-cmd="Cho anh báo cáo sáng nay: tin nhắn mới, đơn hàng, sự kiện đáng chú ý">Cho anh báo cáo sáng nay: tin nhắn mới, đơn hàng, sự kiện đáng chú ý</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
-          <div class="ds-card" style="padding:16px 18px">
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-              <input type="range" id="tg-debounce-slider" min="0" max="5000" step="500" value="3000" oninput="onDebounceInput('telegram', this.value)" style="flex:1;min-width:200px;accent-color:var(--danger)">
-              <div style="min-width:80px;text-align:right"><span id="tg-debounce-label" style="font-weight:600;font-size:16px">3.0s</span></div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Báo cáo</span>
+            <span class="tg-cmd-label">Tóm tắt cuối ngày</span>
+            <span class="tg-cmd-text" data-cmd="Tóm tắt hoạt động hôm nay: khách mới, tin nhắn, vấn đề cần xử lý">Tóm tắt hoạt động hôm nay: khách mới, tin nhắn, vấn đề cần xử lý</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Cron</span>
+            <span class="tg-cmd-label">Tạo lịch nhắc</span>
+            <span class="tg-cmd-text" data-cmd="Tạo cron mỗi sáng 8h gửi báo cáo doanh số vào nhóm Kinh doanh">Tạo cron mỗi sáng 8h gửi báo cáo doanh số vào nhóm Kinh doanh</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Cron</span>
+            <span class="tg-cmd-label">Danh sách cron</span>
+            <span class="tg-cmd-text" data-cmd="Liệt kê tất cả cron đang chạy, giờ chạy và nội dung">Liệt kê tất cả cron đang chạy, giờ chạy và nội dung</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Cron</span>
+            <span class="tg-cmd-label">Xóa cron</span>
+            <span class="tg-cmd-text" data-cmd="Xóa cron báo cáo sáng">Xóa cron báo cáo sáng</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Khách hàng</span>
+            <span class="tg-cmd-label">Tra cứu sản phẩm</span>
+            <span class="tg-cmd-text" data-cmd="Tra cứu thông tin sản phẩm X: giá, tình trạng, thông số">Tra cứu thông tin sản phẩm X: giá, tình trạng, thông số</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Khách hàng</span>
+            <span class="tg-cmd-label">Gửi tin Zalo</span>
+            <span class="tg-cmd-text" data-cmd="Nhắn vào nhóm Zalo [tên nhóm]: Chào mọi người, shop có chương trình giảm giá 20%!">Nhắn vào nhóm Zalo [tên nhóm]: Chào mọi người, shop có chương trình giảm giá 20%!</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Hệ thống</span>
+            <span class="tg-cmd-label">Tạm dừng bot</span>
+            <span class="tg-cmd-text" data-cmd="Tạm dừng bot 30 phút, tôi tự xử lý khách">Tạm dừng bot 30 phút, tôi tự xử lý khách</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Hệ thống</span>
+            <span class="tg-cmd-label">Tiếp tục bot</span>
+            <span class="tg-cmd-text" data-cmd="Tiếp tục bot, bắt đầu trả lời khách lại">Tiếp tục bot, bắt đầu trả lời khách lại</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Marketing</span>
+            <span class="tg-cmd-label">Viết quảng cáo FB</span>
+            <span class="tg-cmd-text" data-cmd="Viết bài quảng cáo Facebook cho sản phẩm mới, target nữ 25-35">Viết bài quảng cáo Facebook cho sản phẩm mới, target nữ 25-35</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Marketing</span>
+            <span class="tg-cmd-label">Phân tích đối thủ</span>
+            <span class="tg-cmd-text" data-cmd="Phân tích đối thủ ABC, điểm mạnh yếu, cơ hội cho mình">Phân tích đối thủ ABC, điểm mạnh yếu, cơ hội cho mình</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+          <div class="tg-cmd-row" onclick="copyTgCmd(this)">
+            <span class="tg-cmd-cat">Cố vấn</span>
+            <span class="tg-cmd-label">Phân tích dòng tiền</span>
+            <span class="tg-cmd-text" data-cmd="Phân tích dòng tiền tháng này, đề xuất cắt giảm chi phí nào trước">Phân tích dòng tiền tháng này, đề xuất cắt giảm chi phí nào trước</span>
+            <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+        </div>
+
+        <div class="tg-divider"></div>
+
+        <!-- Debounce dropdown -->
+        <div class="tg-section-label">Thời gian gộp tin</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+          <select id="tg-debounce-select" onchange="onDebounceSelect('telegram', this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;min-width:180px;cursor:pointer">
+            <option value="0">Tắt (trả lời ngay)</option>
+            <option value="1000">1 giây</option>
+            <option value="2000">2 giây</option>
+            <option value="3000" selected>3 giây</option>
+            <option value="4000">4 giây</option>
+            <option value="5000">5 giây</option>
+          </select>
+        </div>
+        <div class="tg-debounce-hint" title="Khi khách gửi nhiều tin liên tiếp (VD: 3 tin trong 2 giây), bot sẽ chờ hết thời gian này rồi gộp tất cả lại trả lời 1 lần, tránh phản hồi 3 lần riêng lẻ">Khách gửi nhiều tin liên tiếp — bot chờ gộp lại trả lời 1 lần. 0s = mỗi tin trả lời riêng. 3s = chờ khách gõ xong.</div>
+
+        <div class="tg-divider"></div>
+
+        <!-- Telegram config — "Đổi tài khoản" style (matching Zalo) -->
+        <div class="tg-section-label">Tài khoản Telegram</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <span id="tg-cfg-summary" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+          <button class="btn btn-secondary btn-small" onclick="openTgChangeModal()" style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap">
+            <span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản
+          </button>
+        </div>
+
+        <!-- Telegram change modal (hidden) -->
+        <div class="modal-overlay" id="tg-change-modal" onclick="if(event.target===this)closeTgChangeModal()">
+          <div class="modal-box" style="max-width:460px;padding:32px 28px">
+            <h3 style="font-size:20px;font-weight:700;letter-spacing:-0.3px;margin:0 0 8px">Đổi tài khoản Telegram</h3>
+            <p style="font-size:13px;color:var(--text-secondary,var(--text-muted));margin:0 0 20px;line-height:1.6">Nhập Bot Token và User ID mới. Lấy token từ <strong>@BotFather</strong>, User ID từ <strong>@userinfobot</strong>.</p>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">Bot Token</div>
+                <input type="text" class="tg-field-input" id="tg-modal-token" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box">
+              </div>
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">User ID</div>
+                <input type="text" class="tg-field-input" id="tg-modal-uid" placeholder="987654321" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box">
+              </div>
             </div>
-            <p class="ds-section-desc" style="margin-top:10px;font-size:12px;line-height:1.5">Bot chờ X giây sau tin cuối của khách rồi mới trả lời, tránh phản hồi 3 lần khi khách gõ 3 tin liên tiếp. 0s = trả lời ngay mỗi tin (phù hợp bot không làm CSKH). 3-5s = CSKH kỹ, khách gõ xong mới reply.</p>
+            <div id="tg-modal-status" style="font-size:12px;color:var(--text-muted);margin-top:10px;min-height:18px"></div>
+            <div style="display:flex;gap:10px;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+              <button class="btn btn-primary btn-small" id="tg-modal-save" onclick="saveTgFromModal()" style="flex:1">Lưu và kiểm tra</button>
+              <button class="btn btn-secondary btn-small" onclick="closeTgChangeModal()" style="flex:1">Hủy</button>
+            </div>
           </div>
         </div>
 
-        <!-- Quick commands -->
-        <div class="ds-section">
-          <div class="ds-section-header">
-            <h3 class="ds-section-title">Lệnh nhanh</h3>
-          </div>
-          <div class="ds-card">
-            <div class="ds-grid-2">
-              <div class="ds-row"><span class="ds-cmd">/menu</span> <span class="ds-section-desc">Mẫu giao việc theo ngành</span></div>
-              <div class="ds-row"><span class="ds-cmd">/baocao</span> <span class="ds-section-desc">Báo cáo tổng hợp ngay</span></div>
-              <div class="ds-row"><span class="ds-cmd">/huongdan</span> <span class="ds-section-desc">Hướng dẫn chi tiết</span></div>
-              <div class="ds-row"><span class="ds-cmd">/reset</span> <span class="ds-section-desc">Xóa ngữ cảnh, bắt đầu lại</span></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Zalo remote -->
-        <div class="ds-section">
-          <div class="ds-section-header">
-            <h3 class="ds-section-title">Điều khiển Zalo từ Telegram</h3>
-            <p class="ds-section-desc">Nhắn tiếng Việt tự nhiên — bot sẽ hỏi xác nhận trước khi gửi.</p>
-          </div>
-          <div class="ds-card">
-            <div class="ds-prompt-list">
-              <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                <span class="ds-prompt-text">Nhắn vào nhóm Zalo [tên nhóm]: Chào mọi người, hôm nay shop có chương trình giảm giá 20% tất cả sản phẩm!</span>
-                <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-              </div>
-              <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                <span class="ds-prompt-text">Nhắn cho [tên bạn bè] trên Zalo: Anh ơi, đơn hàng của anh đã sẵn sàng giao rồi ạ</span>
-                <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-              </div>
-            </div>
-            <p class="ds-section-desc" style="margin-top:var(--sp-2)">Click để copy. Paste vào Telegram rồi sửa tên nhóm/nội dung.</p>
-          </div>
-        </div>
-
-        <!-- Skills showcase -->
-        <div class="ds-section">
-          <div class="ds-section-header">
-            <h3 class="ds-section-title">70+ Kỹ năng chuyên gia</h3>
-            <p class="ds-section-desc">Nhắn tiếng Việt tự nhiên — bot tự match keyword, đọc quy trình chuyên gia, rồi output theo template chuẩn.</p>
-          </div>
-          <div class="ds-card">
-
-            <!-- Advisory -->
-            <div class="ds-group">
-              <div class="ds-group-title"><span data-icon="briefcase" data-icon-size="16"></span> Cố vấn C-Level <span class="ds-group-count">11 skills</span></div>
-              <div class="ds-prompt-list">
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Em phân tích dòng tiền tháng này, đề xuất cắt giảm chi phí nào trước</span>
-                  <span class="ds-prompt-tag">CFO</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Đánh giá nên build hay mua hệ thống CRM, team 5 dev</span>
-                  <span class="ds-prompt-tag">CTO</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Tư vấn chiến lược tuyển dụng Q3, cần 10 người, budget hạn chế</span>
-                  <span class="ds-prompt-tag">CHRO</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Marketing -->
-            <div class="ds-group">
-              <div class="ds-group-title"><span data-icon="trending-up" data-icon-size="16"></span> Marketing & Growth <span class="ds-group-count">35 skills</span></div>
-              <div class="ds-prompt-list">
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Viết bài quảng cáo Facebook cho sản phẩm mới, target nữ 25-35</span>
-                  <span class="ds-prompt-tag">Paid Ads</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Phân tích đối thủ ABC, điểm mạnh yếu, cơ hội cho mình</span>
-                  <span class="ds-prompt-tag">Competitor</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Soạn chuỗi 3 email nurturing cho khách đã download ebook</span>
-                  <span class="ds-prompt-tag">Email Sequence</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Viết copy landing page bán khóa học online, có headline + CTA + testimonial</span>
-                  <span class="ds-prompt-tag">Copywriting</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Audit SEO website, đề xuất 10 cải thiện quan trọng nhất</span>
-                  <span class="ds-prompt-tag">SEO Audit</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Tạo lead magnet: checklist 10 bước cho người mới bắt đầu kinh doanh</span>
-                  <span class="ds-prompt-tag">Lead Magnet</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Thiết kế A/B test cho trang pricing, 2 variant, metric = conversion</span>
-                  <span class="ds-prompt-tag">A/B Test</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Strategy -->
-            <div class="ds-group">
-              <div class="ds-group-title"><span data-icon="target" data-icon-size="16"></span> Chiến lược & Vận hành <span class="ds-group-count">9 skills</span></div>
-              <div class="ds-prompt-list">
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Chuẩn bị tài liệu họp ban điều hành tuần tới, focus KPI Q2</span>
-                  <span class="ds-prompt-tag">Board Meeting</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Đề xuất chiến lược giá cho dịch vụ mới, 3 gói: starter, pro, enterprise</span>
-                  <span class="ds-prompt-tag">Pricing</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Content -->
-            <div class="ds-group">
-              <div class="ds-group-title"><span data-icon="edit-3" data-icon-size="16"></span> Nội dung & Thương hiệu <span class="ds-group-count">9 skills</span></div>
-              <div class="ds-prompt-list">
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Viết bài tuyển dụng Senior Developer, tone trẻ trung chuyên nghiệp</span>
-                  <span class="ds-prompt-tag">Content Creator</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Lên content plan tháng tới cho fanpage, 3 bài/tuần, chủ đề tết</span>
-                  <span class="ds-prompt-tag">Content Strategy</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Sales -->
-            <div class="ds-group">
-              <div class="ds-group-title"><span data-icon="dollar-sign" data-icon-size="16"></span> Bán hàng & Doanh thu <span class="ds-group-count">5 skills</span></div>
-              <div class="ds-prompt-list">
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Soạn cold email B2B cho giám đốc công ty logistics, giới thiệu dịch vụ</span>
-                  <span class="ds-prompt-tag">Cold Email</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Thiết kế chương trình giới thiệu khách hàng, thưởng 2 bên</span>
-                  <span class="ds-prompt-tag">Referral</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Daily operations -->
-            <div class="ds-group">
-              <div class="ds-group-title"><span data-icon="clock" data-icon-size="16"></span> Hàng ngày</div>
-              <div class="ds-prompt-list">
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Tóm tắt hoạt động hôm nay</span>
-                  <span class="ds-prompt-tag">Báo cáo</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Tạo lịch nhắc họp với đối tác ABC lúc 14h thứ 5</span>
-                  <span class="ds-prompt-tag">Lịch hẹn</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-                <div class="ds-prompt prompt-row" onclick="copyPrompt(this)">
-                  <span class="ds-prompt-text">Tạo cron mỗi sáng 8h nhắc nhân viên A báo cáo doanh số</span>
-                  <span class="ds-prompt-tag">Tự động hóa</span>
-                  <span class="ds-prompt-copy" data-icon="copy" data-icon-size="14"></span>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
       </div>
 
       <!-- PAGE: Zalo -->
@@ -2220,17 +2218,23 @@
           <span>Bot Zalo đang tạm dừng. <span id="zalo-pause-until"></span></span>
         </div>
 
-        <!-- Debounce slider -->
+        <!-- Debounce dropdown -->
         <div class="ds-section">
           <div class="ds-section-header">
             <h3 class="ds-section-title">Thời gian gộp tin khách</h3>
           </div>
           <div class="ds-card" style="padding:16px 18px">
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-              <input type="range" id="zl-debounce-slider" min="0" max="5000" step="500" value="3000" oninput="onDebounceInput('zalo', this.value)" style="flex:1;min-width:200px;accent-color:var(--danger)">
-              <div style="min-width:80px;text-align:right"><span id="zl-debounce-label" style="font-weight:600;font-size:16px">3.0s</span></div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <select id="zl-debounce-select" onchange="onDebounceSelect('zalo', this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;min-width:180px;cursor:pointer">
+                <option value="0">Tắt (trả lời ngay)</option>
+                <option value="1000">1 giây</option>
+                <option value="2000">2 giây</option>
+                <option value="3000" selected>3 giây</option>
+                <option value="4000">4 giây</option>
+                <option value="5000">5 giây</option>
+              </select>
             </div>
-            <p class="ds-section-desc" style="margin-top:10px;font-size:12px;line-height:1.5">Bot chờ X giây sau tin cuối của khách rồi mới trả lời, tránh phản hồi 3 lần khi khách gõ 3 tin liên tiếp. 0s = trả lời ngay mỗi tin. 3-5s = CSKH kỹ, chờ khách gõ xong mới reply.</p>
+            <p class="ds-section-desc" style="margin-top:10px;font-size:12px;line-height:1.5" title="Khi khách gửi nhiều tin liên tiếp (VD: 3 tin trong 2 giây), bot sẽ chờ hết thời gian này rồi gộp tất cả lại trả lời 1 lần, tránh phản hồi 3 lần riêng lẻ">Khách gửi nhiều tin liên tiếp — bot chờ gộp lại trả lời 1 lần. 0s = mỗi tin trả lời riêng. 3s = chờ khách gõ xong.</p>
           </div>
         </div>
 
@@ -2269,17 +2273,6 @@
                 <option value="all">Mọi tin</option>
                 <option value="off">Tắt</option>
               </select>
-            </div>
-            <div class="zs-section">
-              <label class="zs-label">Chủ nhân Zalo <span class="tip" data-tooltip="Bot nhận diện tài khoản này là chủ doanh nghiệp">?</span></label>
-              <div style="display:flex;gap:6px;align-items:center;position:relative">
-                <div style="flex:1;position:relative">
-                  <input type="text" id="zalo-owner-search" placeholder="Tìm theo tên..." autocomplete="off" class="zs-select" style="padding:7px 10px" onfocus="showOwnerDropdown()" oninput="filterOwnerDropdown()">
-                  <div id="zalo-owner-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:180px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-top:2px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>
-                </div>
-                <input type="hidden" id="zalo-owner-dashboard-select" value="">
-              </div>
-              <div id="zalo-owner-dashboard-status" style="display:none;font-size:10px;margin-top:4px"></div>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
               <button class="btn btn-secondary btn-small" onclick="refreshZaloCache()" style="display:inline-flex;align-items:center;gap:6px;justify-content:center;font-size:12px"><span data-icon="refresh-cw" data-icon-size="13"></span>Đồng bộ</button>
@@ -2788,7 +2781,7 @@
       <ul style="font-size:12px;color:var(--text-muted);line-height:1.8;margin:0 0 16px 18px;padding:0">
         <li>Workspace (AGENTS, knowledge, memory, logs)</li>
         <li>Config bot (openclaw.json, PIN, extensions)</li>
-        <li>Zalo session (cookies, friend cache, owner)</li>
+        <li>Zalo session (cookies, friend cache)</li>
         <li>Telegram token + chat ID</li>
         <li>9Router (API keys, provider config)</li>
         <li>Google Calendar OAuth token</li>
@@ -3087,57 +3080,6 @@
       } catch (e) { console.error('Dashboard refresh failed:', e); }
     }
 
-    const statusMap = {
-      ok: ['channel-status ok', 'Online'],
-      configured: ['channel-status ok', 'OK'],
-      disabled: ['channel-status wait', 'Đang tắt'],
-      paused: ['channel-status wait', 'Tạm dừng'],
-      not_configured: ['channel-status wait', 'Chưa kết nối'],
-      error: ['channel-status err', 'Lỗi'],
-      stopped: ['channel-status err', 'Chưa chạy'],
-      timeout: ['channel-status err', 'Timeout'],
-      checking: ['channel-status wait', 'Đang kiểm tra...'],
-      unknown: ['channel-status wait', '...'],
-    };
-
-    function setChannelStatus(id, status) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      const [cls, text] = statusMap[status] || statusMap.unknown;
-      el.className = cls;
-      el.textContent = text;
-    }
-
-    function setAllChannels(status) {
-      // Google removed from status check — integration not implemented yet.
-      ['ch-telegram','ch-zalo','ch-ai','ch-gateway'].forEach(id => setChannelStatus(id, status));
-    }
-
-    async function checkChannels() {
-      const btn = document.getElementById('check-btn');
-      btn.disabled = true; btn.classList.add('loading');
-      setAllChannels('checking');
-
-      try {
-        const r = await window.claw.checkAllChannels();
-        // Stagger reveal — each channel flips after a short delay
-        const channels = [
-          ['ch-gateway', r.gateway],
-          ['ch-ai', r.ai],
-          ['ch-telegram', r.telegram],
-          ['ch-zalo', r.zalo],
-        ];
-        for (let i = 0; i < channels.length; i++) {
-          await new Promise(res => setTimeout(res, 200));
-          setChannelStatus(channels[i][0], channels[i][1]);
-        }
-      } catch (e) {
-        console.error('Channel check failed:', e);
-        setAllChannels('error');
-      }
-      btn.disabled = false; btn.classList.remove('loading');
-    }
-
     function updateBotStatus(running, error) {
       document.getElementById('status-dot').className = `status-dot ${running ? 'running' : 'stopped'}`;
       document.getElementById('status-text').textContent = running ? 'Đang chạy' : 'Đã dừng';
@@ -3153,7 +3095,7 @@
       btn.disabled = true; btn.classList.add('loading');
       btn.textContent = wasRunning ? 'Đang dừng...' : 'Đang khởi động...';
       document.getElementById('status-text').textContent = wasRunning ? 'Đang dừng...' : 'Đang khởi động...';
-      if (!wasRunning) { setAllChannels('checking'); addActivity('Đang khởi động trợ lý...'); }
+      if (!wasRunning) { addActivity('Đang khởi động trợ lý...'); }
       else addActivity('Đang dừng trợ lý...');
 
       try {
@@ -3166,10 +3108,6 @@
             await new Promise(r => setTimeout(r, 2000));
             try {
               const r = await window.claw.checkAllChannels();
-              setChannelStatus('ch-telegram', r.telegram);
-              setChannelStatus('ch-zalo', r.zalo);
-              setChannelStatus('ch-ai', r.ai);
-              setChannelStatus('ch-gateway', r.gateway);
               if (r.gateway === 'ok' && r.ai === 'ok') { addActivity('Tất cả kênh đã kết nối'); break; }
             } catch {}
           }
@@ -3252,7 +3190,6 @@
             const success = document.getElementById('zalo-modal-success');
             if (qrImg) qrImg.style.display = 'none';
             if (success) success.style.display = 'block';
-            setChannelStatus('ch-zalo', 'ok');
             addActivity('Zalo đã kết nối thành công');
             // Auto-close modal 3s after successful login (CEO sees confirmation)
             setTimeout(closeZaloModal, 3000);
@@ -3476,6 +3413,7 @@
       }
       if (page === 'telegram') {
         loadInboundDebounce();
+        loadTgConfigSummary();
       }
       if (page === 'schedules') {
         loadSchedules();
@@ -3834,13 +3772,16 @@
         if (typeof mountIcons === 'function') mountIcons();
       } catch (e) {
         console.error('[overview] load error', e);
+        const el = document.getElementById('ov-greeting');
+        if (el) el.innerHTML = '<div style="padding:2rem;color:var(--text-secondary);text-align:center">Không tải được dữ liệu tổng quan</div>';
       }
     }
 
     function _esc(s) {
       return String(s == null ? '' : s)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function startOverviewAutoRefresh() {
@@ -4736,9 +4677,11 @@
       }
     }
     async function deleteCustomCron(id) {
+      const target = customCrons.find(x => x.id === id);
       customCrons = customCrons.filter(x => x.id !== id);
-      // CRIT #7 defense: strip OpenClaw-sourced entries so we never write them
-      // into custom-crons.json (backend filters too — defense-in-depth).
+      if (target && target.source === 'openclaw') {
+        try { await window.claw.deleteOpenclawCron(id); } catch (e) { console.error('delete openclaw cron:', e); }
+      }
       try { await window.claw.saveCustomCrons(customCrons.filter(c => c.source !== 'openclaw')); } catch {}
       closeCronDetail();
       renderSchedules();
@@ -4836,31 +4779,7 @@
     updateThemeToggleUI(document.documentElement.getAttribute('data-theme') || 'dark');
     window.claw.onBotStatus((data) => {
       updateBotStatus(data.running, data.error);
-      setTimeout(checkChannels, 2000);
-      // Hide gateway boot chip when bot is confirmed running
-      if (data && data.running) {
-        const chip = document.getElementById('gateway-boot-chip');
-        if (chip) chip.hidden = true;
-      }
     });
-
-    // Gateway-booting passive indicator — show chip while main.js emits boot events
-    if (window.claw && window.claw.onGatewayBooting) {
-      window.claw.onGatewayBooting((payload) => {
-        const chip = document.getElementById('gateway-boot-chip');
-        if (!chip) return;
-        chip.hidden = false;
-        chip.classList.add('gw-active');
-        if (payload && typeof payload.elapsedMs !== 'undefined') {
-          chip.setAttribute('data-elapsed', String(payload.elapsedMs));
-        }
-      });
-    }
-    // Safety: always hide after 60s regardless of IPC flow
-    setTimeout(() => {
-      const chip = document.getElementById('gateway-boot-chip');
-      if (chip) chip.hidden = true;
-    }, 60000);
 
     // ============================================
     //  CHANNEL READINESS — real probes (Telegram getMe + Zalo listener check)
@@ -4958,33 +4877,143 @@
     if (window.claw.onChannelStatus) window.claw.onChannelStatus(handleChannelStatus);
     // Boot broadcast probes (deferred to T+15s in main.js) + 30s polling
     // + file watchers are sufficient — no need for 1s boot-phase interval.
-    // Inbound debounce sliders — debounced save to avoid spamming IPC on drag
-    let _dbSaveTimer = null;
-    function onDebounceInput(channel, valueMs) {
-      const ms = Math.max(0, Math.min(5000, parseInt(valueMs, 10) || 0));
-      const secs = (ms / 1000).toFixed(1) + 's';
-      const labelId = channel === 'telegram' ? 'tg-debounce-label' : 'zl-debounce-label';
-      const el = document.getElementById(labelId);
-      if (el) el.textContent = secs;
-      if (_dbSaveTimer) clearTimeout(_dbSaveTimer);
-      _dbSaveTimer = setTimeout(async () => {
-        try {
-          const r = await window.claw.setInboundDebounce(channel, ms);
-          if (r?.success) showToast(`Đã lưu thời gian gộp tin ${channel === 'telegram' ? 'Telegram' : 'Zalo'}: ${secs}`, 'info');
-        } catch (e) { console.warn('[debounce save]', e); }
-      }, 400);
+    // Inbound debounce dropdowns
+    async function onDebounceSelect(channel, valueMs) {
+      const ms = parseInt(valueMs, 10) || 0;
+      try {
+        const r = await window.claw.setInboundDebounce(channel, ms);
+        const label = ms === 0 ? 'Tắt' : (ms / 1000) + ' giây';
+        if (r?.success) showToast('Đã lưu thời gian gộp tin ' + (channel === 'telegram' ? 'Telegram' : 'Zalo') + ': ' + label, 'info');
+      } catch (e) { console.warn('[debounce save]', e); }
     }
     async function loadInboundDebounce() {
       try {
         const r = await window.claw.getInboundDebounce();
         if (!r) return;
-        const tg = document.getElementById('tg-debounce-slider');
-        const tgLbl = document.getElementById('tg-debounce-label');
-        if (tg && typeof r.telegram === 'number') { tg.value = r.telegram; tgLbl.textContent = (r.telegram / 1000).toFixed(1) + 's'; }
-        const zl = document.getElementById('zl-debounce-slider');
-        const zlLbl = document.getElementById('zl-debounce-label');
-        if (zl && typeof r.zalo === 'number') { zl.value = r.zalo; zlLbl.textContent = (r.zalo / 1000).toFixed(1) + 's'; }
+        const tg = document.getElementById('tg-debounce-select');
+        if (tg && typeof r.telegram === 'number') { tg.value = String(r.telegram); }
+        const zl = document.getElementById('zl-debounce-select');
+        if (zl && typeof r.zalo === 'number') { zl.value = String(r.zalo); }
       } catch (e) { console.warn('[debounce load]', e); }
+    }
+
+    // --- Copy helpers for Telegram prompt rows ---
+    function copyTgCmd(row) {
+      const textEl = row.querySelector('.tg-cmd-text');
+      const copyBtn = row.querySelector('.tg-cmd-copy');
+      const text = textEl ? (textEl.getAttribute('data-cmd') || textEl.textContent) : '';
+      if (!text) return;
+      try { navigator.clipboard.writeText(text); } catch { /* fallback */ const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+      if (copyBtn) {
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        }, 1500);
+      }
+      showToast('Đã copy', 'success');
+    }
+    function copyPrompt(row) {
+      const textEl = row.querySelector('.ds-prompt-text');
+      const text = textEl ? textEl.textContent : '';
+      if (!text) return;
+      try { navigator.clipboard.writeText(text); } catch { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+      row.classList.add('copied');
+      setTimeout(() => row.classList.remove('copied'), 1500);
+      showToast('Đã copy', 'success');
+    }
+
+    // --- Telegram chip filter → command list ---
+    let _activeTgFilter = null;
+    function filterTgCmds(chip) {
+      const cat = chip.getAttribute('data-filter');
+      const chips = document.querySelectorAll('#page-telegram .tg-chip');
+      const rows = document.querySelectorAll('#page-telegram .tg-cmd-row');
+      if (_activeTgFilter === cat) {
+        _activeTgFilter = null;
+        chips.forEach(c => c.classList.remove('active'));
+        rows.forEach(r => r.classList.remove('filtered-out'));
+        return;
+      }
+      _activeTgFilter = cat;
+      chips.forEach(c => c.classList.toggle('active', c.getAttribute('data-filter') === cat));
+      rows.forEach(r => {
+        const rowCat = r.querySelector('.tg-cmd-cat')?.textContent?.trim();
+        r.classList.toggle('filtered-out', rowCat !== cat);
+      });
+    }
+
+    // --- Telegram config: "Đổi tài khoản" modal ---
+    let _tgCfgCache = {};
+
+    async function loadTgConfigSummary() {
+      const el = document.getElementById('tg-cfg-summary');
+      if (!el) return;
+      try {
+        const cfg = await window.claw.getTelegramConfig();
+        _tgCfgCache = cfg;
+        const parts = [];
+        if (cfg.botToken) {
+          const probe = await window.claw.checkTelegramReady().catch(() => null);
+          parts.push(probe?.username ? ('@' + probe.username) : ('Bot ....' + cfg.botToken.slice(-6)));
+        }
+        if (cfg.allowFrom?.length) parts.push('ID: ' + cfg.allowFrom[0]);
+        el.textContent = parts.length ? parts.join('  ·  ') : 'Chưa cài đặt';
+      } catch (e) {
+        el.textContent = 'Chưa cài đặt';
+      }
+    }
+
+    function openTgChangeModal() {
+      const modal = document.getElementById('tg-change-modal');
+      if (!modal) return;
+      const tokenEl = document.getElementById('tg-modal-token');
+      const uidEl = document.getElementById('tg-modal-uid');
+      const statusEl = document.getElementById('tg-modal-status');
+      if (tokenEl) tokenEl.value = _tgCfgCache.botToken || '';
+      if (uidEl) uidEl.value = _tgCfgCache.allowFrom?.length ? String(_tgCfgCache.allowFrom[0]) : '';
+      if (statusEl) statusEl.textContent = '';
+      modal.classList.add('show');
+      mountIcons();
+    }
+
+    function closeTgChangeModal() {
+      const modal = document.getElementById('tg-change-modal');
+      if (modal) modal.classList.remove('show');
+    }
+
+    async function saveTgFromModal() {
+      const btn = document.getElementById('tg-modal-save');
+      const statusEl = document.getElementById('tg-modal-status');
+      const token = document.getElementById('tg-modal-token')?.value?.trim();
+      const uid = document.getElementById('tg-modal-uid')?.value?.trim();
+      if (!token || !uid) {
+        if (statusEl) statusEl.textContent = 'Vui lòng nhập cả Token và User ID';
+        return;
+      }
+      btn.disabled = true;
+      if (statusEl) statusEl.textContent = 'Đang kiểm tra...';
+      try {
+        const test = await window.claw.testTelegram(token, uid);
+        if (!test?.success) {
+          if (statusEl) statusEl.textContent = 'Token hoặc User ID không hợp lệ. Kiểm tra lại.';
+          btn.disabled = false;
+          return;
+        }
+        const r = await window.claw.saveTelegramConfig(token, uid);
+        if (r?.success) {
+          showToast('Đã lưu tài khoản Telegram', 'success');
+          closeTgChangeModal();
+          loadTgConfigSummary();
+        } else {
+          if (statusEl) statusEl.textContent = 'Lỗi lưu: ' + (r?.error || 'Thử lại');
+          showToast('Lỗi lưu cài đặt', 'error');
+        }
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Lỗi: ' + e.message;
+      }
+      btn.disabled = false;
     }
 
     async function recheckTelegram() {
@@ -5023,17 +5052,6 @@
           showToast('Zalo: ' + (info.error || ''), 'error');
         }
       } catch (e) { showToast('Lỗi kiểm tra: ' + e.message, 'error'); }
-    }
-    async function testTelegramSend() {
-      try {
-        showToast('Đang gửi tin test...', 'info');
-        const r = await window.claw.telegramSelfTest();
-        if (r && r.success) {
-          showToast('Đã gửi tin test — kiểm tra Telegram của anh', 'success');
-        } else {
-          showToast('Gửi thất bại — token sai hoặc không có CEO chat ID', 'error');
-        }
-      } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
     }
     // --- Channel pause/resume (symmetric Telegram + Zalo) ---
     async function toggleTelegramPause() {
@@ -5119,11 +5137,7 @@
           if (el && v) el.textContent = 'v' + v;
         } catch {}
       })();
-      setTimeout(() => loadDashboardZaloOwner(), 2000);
-      checkChannels();
-      setTimeout(checkChannels, 5000);
       setInterval(refreshDashboard, 30000);
-      setInterval(checkChannels, 30000);
     }
     // Real-time: auto-refresh when bot creates/edits custom crons or fixed schedules
     if (window.claw.onCustomCronsUpdated) {
@@ -5229,134 +5243,6 @@
       });
     }
 
-    // === Zalo owner picker on Dashboard (searchable) ===
-    let _ownerFriendsList = [];
-    let _ownerSavedId = '';
-    async function loadDashboardZaloOwner() {
-      const hiddenSel = document.getElementById('zalo-owner-dashboard-select');
-      const searchInput = document.getElementById('zalo-owner-search');
-      const status = document.getElementById('zalo-owner-dashboard-status');
-      if (!hiddenSel || !searchInput) return;
-      try {
-        const friends = await window.claw.listZaloFriends();
-        if (!Array.isArray(friends) || friends.length === 0) {
-          searchInput.placeholder = 'Chưa có bạn bè (đăng nhập Zalo trước)';
-          _ownerFriendsList = [];
-          return;
-        }
-        friends.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || '', 'vi'));
-        _ownerFriendsList = friends;
-        try {
-          const existing = await window.claw.getZaloOwner();
-          _ownerSavedId = (existing && existing.ownerUserId) || '';
-        } catch {}
-        if (_ownerSavedId) {
-          const saved = friends.find(f => String(f.userId) === _ownerSavedId);
-          if (saved) {
-            searchInput.value = saved.displayName + (saved.phoneNumber ? ' · ' + saved.phoneNumber : '');
-            hiddenSel.value = _ownerSavedId;
-          }
-        }
-      } catch (e) {
-        console.warn('loadDashboardZaloOwner error:', e);
-      }
-    }
-    function showOwnerDropdown() {
-      filterOwnerDropdown();
-      document.getElementById('zalo-owner-dropdown').style.display = 'block';
-    }
-    function filterOwnerDropdown() {
-      const dd = document.getElementById('zalo-owner-dropdown');
-      const q = (document.getElementById('zalo-owner-search').value || '').toLowerCase();
-      const filtered = _ownerFriendsList.filter(f => !q || (f.displayName || '').toLowerCase().includes(q) || (f.phoneNumber || '').includes(q));
-      if (filtered.length === 0) {
-        dd.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:12px;text-align:center">Không tìm thấy</div>';
-        return;
-      }
-      dd.innerHTML = filtered.slice(0, 50).map(f => {
-        const id = String(f.userId || '');
-        const name = esc(f.displayName || '(không tên)');
-        const phone = f.phoneNumber ? ' <span style="color:var(--text-muted)">· ' + esc(f.phoneNumber) + '</span>' : '';
-        const isCurrent = id === _ownerSavedId ? ' style="background:var(--accent-muted,#e8f4ff)"' : '';
-        return '<div class="zalo-mgr-row" onclick="selectOwner(\'' + id + '\', \'' + escAttr(f.displayName || '') + '\')"' + isCurrent + '>' +
-          (f.avatar ? '<img src="' + esc(f.avatar) + '" style="width:28px;height:28px;border-radius:50%" onerror="this.style.display=\'none\'">' : '') +
-          '<div class="info"><div class="name">' + name + phone + '</div><div class="sub">ID: ' + id + '</div></div></div>';
-      }).join('');
-      if (filtered.length > 50) dd.innerHTML += '<div style="padding:8px;color:var(--text-muted);font-size:11px;text-align:center">... còn ' + (filtered.length - 50) + ' kết quả. Gõ tên cụ thể hơn.</div>';
-    }
-    async function selectOwner(userId, name) {
-      document.getElementById('zalo-owner-dropdown').style.display = 'none';
-      document.getElementById('zalo-owner-search').value = name;
-      document.getElementById('zalo-owner-dashboard-select').value = userId;
-      const status = document.getElementById('zalo-owner-dashboard-status');
-      status.style.display = 'block';
-      status.textContent = 'Đang lưu...';
-      status.style.color = 'var(--text-muted)';
-      try {
-        const res = await window.claw.saveZaloOwner({ ownerUserId: userId, ownerName: name });
-        if (res && res.success) {
-          _ownerSavedId = userId;
-          status.textContent = 'Đã lưu — bot sẽ nhận diện ' + name + ' là chủ doanh nghiệp.';
-          status.style.color = 'var(--success,#16a34a)';
-          addActivity('Đã đặt chủ nhân Zalo: ' + name);
-        } else {
-          status.textContent = 'Lỗi: ' + (res?.error || 'không xác định');
-          status.style.color = 'var(--danger,#e74c3c)';
-        }
-      } catch (e) {
-        status.textContent = 'Lỗi: ' + e.message;
-        status.style.color = 'var(--danger,#e74c3c)';
-      }
-    }
-    // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-      const dd = document.getElementById('zalo-owner-dropdown');
-      const search = document.getElementById('zalo-owner-search');
-      if (dd && search && !dd.contains(e.target) && e.target !== search) dd.style.display = 'none';
-      // Prompt copy handler — supports both legacy <code> and ds-prompt-text
-      const row = e.target.closest('.prompt-row');
-      if (row) {
-        const textEl = row.querySelector('.ds-prompt-text') || row.querySelector('code');
-        if (textEl) {
-          navigator.clipboard.writeText(textEl.textContent).then(() => {
-            row.classList.add('copied');
-            showToast('Copied!');
-            setTimeout(() => row.classList.remove('copied'), 1500);
-          });
-        }
-      }
-    });
-    async function refreshZaloOwnerList() {
-      const status = document.getElementById('zalo-owner-dashboard-status');
-      if (status) { status.style.display = 'block'; status.textContent = 'Đang refresh danh sách bạn bè...'; status.style.color = 'var(--text-muted)'; }
-      try {
-        const res = await window.claw.refreshZaloCache();
-        if (res?.success) {
-          // Wait a moment for cache file to be written
-          await new Promise(r => setTimeout(r, 1500));
-        }
-        await loadDashboardZaloOwner();
-        if (status) {
-          if (res?.success) {
-            status.textContent = 'Danh sách đã cập nhật.';
-            status.style.color = 'var(--success,#16a34a)';
-          } else if (res?.rateLimited || res?.skipped) {
-            status.textContent = res?.error || 'Zalo đang giới hạn đồng bộ, tạm dùng dữ liệu hiện có.';
-            status.style.color = 'var(--warning,#f59e0b)';
-          } else {
-            status.textContent = 'Lỗi refresh: ' + (res?.error || 'không xác định');
-            status.style.color = 'var(--danger)';
-          }
-          setTimeout(() => { if (status) status.style.display = 'none'; }, 2500);
-        }
-      } catch (e) {
-        if (status) { status.textContent = 'Lỗi refresh: ' + e.message; status.style.color = 'var(--danger)'; }
-      }
-    }
-    // Auto-reload owner list when cache refreshes in background
-    if (window.claw.onZaloCacheRefreshed) {
-      window.claw.onZaloCacheRefreshed(() => { if (currentPage === 'zalo') loadDashboardZaloOwner(); });
-    }
     // === Dashboard PIN lock (Security Layer 4) ===
     let _pinUnlocked = false;
     let _pinLockedUntilMs = 0;
@@ -5879,7 +5765,7 @@
       if (apt.customerName) metaParts.push(`<span>${escHtml(apt.customerName)}</span>`);
       if (apt.phone) metaParts.push(`<span>${escHtml(apt.phone)}</span>`);
       if (apt.location) metaParts.push(`<span>${escHtml(apt.location)}</span>`);
-      if (apt.reminderMinutes) metaParts.push(`<span>Nhắc ${apt.reminderMinutes}p trước</span>`);
+      if (apt.reminderMinutes) metaParts.push(`<span>Nhắc ${escHtml(String(apt.reminderMinutes))}p trước</span>`);
       if (Array.isArray(apt.pushTargets) && apt.pushTargets.length) {
         const pts = apt.pushTargets.map(t => {
           const label = t.channel === 'zalo_group' ? `Nhóm ${escHtml(t.toName || '?')}`

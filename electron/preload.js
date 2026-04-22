@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('claw', {
   saveSchedules: (schedules) => ipcRenderer.invoke('save-schedules', schedules),
   getCustomCrons: () => ipcRenderer.invoke('get-custom-crons'),
   saveCustomCrons: (crons) => ipcRenderer.invoke('save-custom-crons', crons),
+  deleteOpenclawCron: (jobId) => ipcRenderer.invoke('delete-openclaw-cron', jobId),
   // CRIT #10: Always removeAllListeners before re-registering so renderer
   // hot-reloads / PIN re-lock don't stack N listeners that all fire per event.
   onCustomCronsUpdated: (cb) => {
@@ -81,10 +82,6 @@ contextBridge.exposeInMainWorld('claw', {
 
   // App version
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
-
-  // Zalo owner identification
-  getZaloOwner: () => ipcRenderer.invoke('get-zalo-owner'),
-  saveZaloOwner: (payload) => ipcRenderer.invoke('save-zalo-owner', payload),
 
   // Dashboard PIN (Security Layer 4)
   getPinStatus: () => ipcRenderer.invoke('get-pin-status'),
@@ -118,6 +115,10 @@ contextBridge.exposeInMainWorld('claw', {
   searchDocuments: (query) => ipcRenderer.invoke('search-documents', query),
   listDocuments: () => ipcRenderer.invoke('list-documents'),
   deleteDocument: (filename) => ipcRenderer.invoke('delete-document', filename),
+
+  // Telegram config (Dashboard settings)
+  getTelegramConfig: () => ipcRenderer.invoke('get-telegram-config'),
+  saveTelegramConfig: (botToken, userId) => ipcRenderer.invoke('save-telegram-config', { botToken, userId }),
 
   // Channel readiness probes — real proof channels can receive messages
   checkTelegramReady: () => ipcRenderer.invoke('check-telegram-ready'),
@@ -184,11 +185,6 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.removeAllListeners('bot-status');
     ipcRenderer.on('bot-status', (_, data) => callback(data));
   },
-  onGatewayBooting: (cb) => {
-    ipcRenderer.removeAllListeners('gateway-booting');
-    ipcRenderer.on('gateway-booting', (_event, data) => cb(data));
-  },
-
   // Auto-update
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   downloadAndInstallUpdate: () => ipcRenderer.invoke('download-and-install-update'),

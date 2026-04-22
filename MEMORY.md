@@ -1,43 +1,43 @@
-# MEMORY.md — Bang Chi Muc
+# MEMORY.md — Bảng Chỉ Mục
 
-> Bang tham chieu nhe. Chi tiet nam trong cac file lien ket.
-> Nap file nay moi phien (~1k tokens). Chi di sau vao file chi tiet khi can.
+> Bảng tham chiếu nhẹ. Chi tiết nằm trong các file liên kết.
+> Nạp file này mỗi phiên (~1k tokens). Chỉ đi sâu vào file chi tiết khi cần.
 
 ---
 
-## Ngu canh dang hoat dong
-Cac file nay chua ngu canh quan trong. Nap khi bat dau phien.
-- `memory/YYYY-MM-DD.md` — Nhat ky hom nay (append-only)
+## Ngữ cảnh đang hoạt động
+Các file này chứa ngữ cảnh quan trọng. Nạp khi bắt đầu phiên.
+- `memory/YYYY-MM-DD.md` — Nhật ký hôm nay (append-only)
 
-## Nguoi
-| Ten | Vai tro | Chi tiet | Tu khoa kich hoat |
+## Người
+| Tên | Vai trò | Chi tiết | Từ khóa kích hoạt |
 |-----|---------|----------|---------------------|
-| CEO | Chu nhan | Doc `IDENTITY.md` | chu nhan, sep, boss |
+| CEO | Chủ nhân | Đọc `IDENTITY.md` | chủ nhân, sếp, boss |
 
-Bot tu tao ho so khach trong `memory/zalo-users/<senderId>.md` va `memory/zalo-groups/<groupId>.md`.
+Bot tự tạo hồ sơ khách trong `memory/zalo-users/<senderId>.md` và `memory/zalo-groups/<groupId>.md`.
 
-## Quy tac di sau
-1. **Cuoc tro chuyen nhac den khach Zalo?** -> Nap file trong `memory/zalo-users/`
-2. **Nhom Zalo?** -> Nap file trong `memory/zalo-groups/`
-3. **Khach Zalo hoi sp/dich vu/gio/chinh sach?** -> CHI doc `knowledge/cong-ty/index.md` + `knowledge/san-pham/index.md` + `knowledge/nhan-vien/index.md`. KHONG dung COMPANY.md / PRODUCTS.md (2 file do tom luoc tu wizard, khong chinh xac).
-4. **Khong chac ve ngu canh?** -> Dung `memory_search`
-5. **Bat dau phien:** Nap `IDENTITY.md` + `active-persona.md` + `knowledge/cong-ty/index.md` + `knowledge/san-pham/index.md` + `knowledge/nhan-vien/index.md`. COMPANY.md/PRODUCTS.md CHI doc khi CEO tren Telegram can context noi bo.
-6. **Gioi han cung:** Toi da 5 lan di sau khi bat dau phien
+## Quy tắc đi sâu
+1. **Cuộc trò chuyện nhắc đến khách Zalo?** -> Nạp file trong `memory/zalo-users/`
+2. **Nhóm Zalo?** -> Nạp file trong `memory/zalo-groups/`
+3. **Khách Zalo hỏi SP/dịch vụ/giờ/chính sách?** -> CHỈ đọc `knowledge/cong-ty/index.md` + `knowledge/san-pham/index.md` + `knowledge/nhan-vien/index.md`. KHÔNG dùng COMPANY.md / PRODUCTS.md (2 file đó tóm lược từ wizard, không chính xác).
+4. **Không chắc về ngữ cảnh?** -> Dùng `memory_search`
+5. **Bắt đầu phiên:** Persona và tình trạng hôm nay đã inject sẵn vào SOUL.md và USER.md (tự động). KHÔNG cần đọc `active-persona.md` hay `shop-state.json` riêng. Tra knowledge khi cần: `knowledge/cong-ty/index.md` + `knowledge/san-pham/index.md` + `knowledge/nhan-vien/index.md`.
+6. **Giới hạn cứng:** Tối đa 5 lần đi sâu khi bắt đầu phiên
 
-## File tham khao
-| File | Noi dung |
+## File tham khảo
+| File | Nội dung |
 |------|----------|
-| `memory/zalo-users/<id>.md` | Ho so khach hang Zalo (ten, tag, lich su) |
-| `memory/zalo-groups/<id>.md` | Ho so nhom Zalo (thanh vien, chu de) |
-| `knowledge/*/index.md` | Tai lieu doanh nghiep (cong-ty, san-pham, nhan-vien) |
-| `.learnings/LEARNINGS.md` | Bai hoc tu cac phien truoc |
+| `memory/zalo-users/<id>.md` | Hồ sơ khách hàng Zalo (tên, tag, lịch sử) |
+| `memory/zalo-groups/<id>.md` | Hồ sơ nhóm Zalo (thành viên, chủ đề) |
+| `knowledge/*/index.md` | Tài liệu doanh nghiệp (công ty, sản phẩm, nhân viên) |
+| `.learnings/LEARNINGS.md` | Bài học từ các phiên trước |
 
-## Nhat ky hang ngay
-`memory/YYYY-MM-DD.md` (append-only, audit trail). Chi nap khi can chi tiet cu the ve ngay nao do.
+## Nhật ký hàng ngày
+`memory/YYYY-MM-DD.md` (append-only, audit trail). Chỉ nạp khi cần chi tiết cụ thể về ngày nào đó.
 
-## Lich su khach hang
-`memory/zalo-users/<senderId>.md` ngoai frontmatter (ten, tag, phone), con co cac section `## YYYY-MM-DD` chua tom tat tuong tac tung ngay. Bot doc nhung section nay khi khach reply.
+## Lịch sử khách hàng
+`memory/zalo-users/<senderId>.md` ngoài frontmatter (tên, tag, phone), còn có các section `## YYYY-MM-DD` chứa tóm tắt tương tác từng ngày. Bot đọc những section này khi khách reply.
 
 ---
 
-*Cap nhat bang chi muc nay moi khi cap nhat file chi tiet.*
+*Cập nhật bảng chỉ mục này mỗi khi cập nhật file chi tiết.*

@@ -289,19 +289,19 @@ function startCallbackServer() {
 
         if (!code) {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Loi</h2><p>Khong nhan duoc ma xac thuc.</p></body></html>');
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Lỗi</h2><p>Không nhận được mã xác thực.</p></body></html>');
           return;
         }
 
         try {
           const tokens = await exchangeCode(code);
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Ket noi thanh cong!</h2><p>Google Calendar da duoc ket noi voi 9BizClaw.</p><p>Ban co the dong tab nay.</p></body></html>');
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Kết nối thành công!</h2><p>Google Calendar đã được kết nối với 9BizClaw.</p><p>Bạn có thể đóng tab này.</p></body></html>');
           stopCallbackServer();
           resolve(tokens);
         } catch (e) {
           res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Loi</h2><p>' + (e.message || 'Unknown error') + '</p></body></html>');
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Lỗi</h2><p>' + (e.message || 'Unknown error') + '</p></body></html>');
           stopCallbackServer();
           reject(e);
         }

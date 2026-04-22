@@ -352,14 +352,35 @@ async function ensureVendorExtracted({ onProgress } = {}) {
   // "not responding". Instead rename the old dir to a stale suffix (instant
   // atomic NTFS rename) and delete it in background AFTER the main thread
   // is free. Next launch will also clean up any leftover stale dirs.
+  //
+  // OVERLAY-INSTALL FIX: kill leftover 9Router / openzca / gateway processes
+  // from the PREVIOUS app instance BEFORE rename. Otherwise their open file
+  // handles lock DLLs and .node binaries inside vendor/ → renameSync throws
+  // EBUSY → tar overwrite also fails on locked files → splash shows error →
+  // 2 client machines hit this on every overlay install.
   try {
     if (fs.existsSync(targetDir)) {
+      // Phase 0: kill processes that hold locks inside vendor/
+      try {
+        const { execSync } = require('child_process');
+        const vendorAbs = path.resolve(targetDir).replace(/\//g, '\\\\');
+        // taskkill any node.exe whose command line references our vendor dir
+        // /F = force, /T = tree-kill children. Errors ignored (process may not exist).
+        try { execSync(`wmic process where "CommandLine like '%${vendorAbs.replace(/\\/g, '\\\\')}%'" call terminate 2>nul`, { timeout: 8000 }); } catch {}
+        // Also kill by known process names that commonly lock vendor files
+        try { execSync('taskkill /F /IM 9router.exe 2>nul', { timeout: 3000 }); } catch {}
+        try { execSync('taskkill /F /IM openzca.exe 2>nul', { timeout: 3000 }); } catch {}
+        // Give OS a moment to release file handles after kill
+        const deadline = Date.now() + 2000;
+        while (Date.now() < deadline) { /* spin-wait for handle release */ }
+        console.log('[vendor-extract] killed leftover processes before rename');
+      } catch (killErr) {
+        console.warn('[vendor-extract] process cleanup (non-fatal):', killErr.message);
+      }
       const stale = targetDir + '.stale-' + Date.now();
       try {
         fs.renameSync(targetDir, stale);
         console.log('[vendor-extract] old vendor renamed to', stale, '(will be deleted in background)');
-        // Background delete — doesn't block main thread. Errors ignored
-        // because the rename already freed the target path for fresh extract.
         setTimeout(() => {
           fs.rm(stale, { recursive: true, force: true }, (err) => {
             if (err) console.warn('[vendor-extract] background cleanup failed:', err.message);
@@ -367,9 +388,18 @@ async function ensureVendorExtracted({ onProgress } = {}) {
           });
         }, 10000);
       } catch (renameErr) {
-        // Rename can fail if the old dir has locked files. Fall back to
-        // cleaning known-bad subdirs only, leaving the rest for tar overwrite.
-        console.warn('[vendor-extract] rename failed, tar will overwrite in place:', renameErr.message);
+        console.warn('[vendor-extract] rename failed after kill, retrying...', renameErr.message);
+        // Retry once after longer wait — handles can take a moment to release
+        try {
+          const d2 = Date.now() + 3000; while (Date.now() < d2) {}
+          fs.renameSync(targetDir, stale);
+          console.log('[vendor-extract] rename succeeded on retry');
+          setTimeout(() => {
+            fs.rm(stale, { recursive: true, force: true }, () => {});
+          }, 10000);
+        } catch (retryErr) {
+          console.warn('[vendor-extract] rename retry failed, tar will overwrite in place:', retryErr.message);
+        }
       }
     }
   } catch {}
@@ -607,7 +637,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 51;
+const CURRENT_AGENTS_MD_VERSION = 56;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -691,7 +721,7 @@ function seedWorkspace() {
         // utility scripts (send-zalo-safe.js, zalo-manage.js) that may have
         // bug fixes. copyDirRecursive only copies missing files, so we delete
         // the existing tools/ to force re-copy from template.
-        for (const dirName of ['tools', 'docs']) {
+        for (const dirName of ['tools', 'docs', 'skills']) {
           const dirPath = path.join(ws, dirName);
           if (fs.existsSync(dirPath)) {
             try { fs.rmSync(dirPath, { recursive: true, force: true }); console.log('[seedWorkspace] ' + dirName + '/ force-refreshed (piggyback on AGENTS.md upgrade)'); } catch {}
@@ -2438,7 +2468,15 @@ function parseSafeOpenzcaMsgSend(shellCmd) {
   if (!targetIdRaw || text == null) return null;
   const trailing = tokens.slice(i + 4);
   const isGroup = trailing.includes('--group');
-  const unsupported = trailing.filter(t => t !== '--group');
+  const profileIdx = trailing.indexOf('--profile');
+  if (profileIdx !== -1 && !profile) {
+    profile = trailing[profileIdx + 1] || null;
+  }
+  const unsupported = trailing.filter((t, idx) => {
+    if (t === '--group') return false;
+    if (profileIdx !== -1 && (idx === profileIdx || idx === profileIdx + 1)) return false;
+    return true;
+  });
   if (unsupported.length > 0) return null;
   const targetIds = targetIdRaw.split(',').map(s => s.trim()).filter(Boolean);
   if (!targetIds.length || targetIds.length > 50) return null;
@@ -2847,6 +2885,8 @@ function createWindow() {
         try { await startOpenClaw(); } catch (e) { console.error('[boot] startOpenClaw error:', e?.message || e); }
         startCronJobs();
         startFollowUpChecker();
+        startEscalationChecker();
+        startCronApi();
         watchCustomCrons();
         startZaloCacheAutoRefresh();
         startAppointmentDispatcher();
@@ -3508,7 +3548,7 @@ async function ensureDefaultConfig() {
       // dmHistoryLimit = max messages kept per DM thread
       // Without these, a CEO with 50 active Zalo groups × 200 msg/day = compaction every reply after ~3 days.
       if (!oz.historyLimit || oz.historyLimit > 50) { oz.historyLimit = 50; changed = true; }
-      if (!oz.dmHistoryLimit || oz.dmHistoryLimit > 30) { oz.dmHistoryLimit = 30; changed = true; }
+      if (!oz.dmHistoryLimit || oz.dmHistoryLimit > 20) { oz.dmHistoryLimit = 20; changed = true; }
       // DEFENSIVE CLEANUP: remove `streaming` if it crept in from a prior buggy
       // version of this function (2026-04-08 regression). Schema rejects it.
       if ('streaming' in oz) { delete oz.streaming; changed = true; }
@@ -3670,23 +3710,42 @@ async function ensureDefaultConfig() {
       config.agents.defaults.contextInjection = 'continuation-skip';
       changed = true;
     }
+    // BOOTSTRAP-BUDGET FIX: openclaw default bootstrapMaxChars is 20,000 per file.
+    // AGENTS.md is ~24K and growing (v2.3.48 will add more rules). At 20K the tail
+    // of AGENTS.md is silently truncated — defense rules, cron rules, and channel
+    // rules at the bottom get cut. Raise to 40K so the full file is always injected.
+    // bootstrapTotalMaxChars default (150K) is generous and does not need changing.
+    if (config.agents.defaults.bootstrapMaxChars !== 40000) {
+      config.agents.defaults.bootstrapMaxChars = 40000;
+      changed = true;
+    }
     // TOOL-BLOAT FIX: deny media-generation tools (unused in support flow).
     // exec + process ALLOWED — needed for CEO "gửi Zalo từ Telegram" flow
     // (agent runs send-zalo-safe.js). AGENTS.md restricts exec to only
     // send-zalo-safe.js + forbids config/blocklist writes.
     //
-    // Safe: `tools.deny` is deny-list — everything else remains. Config key
-    // verified in openclaw 2026.4.x runtime-schema at "tools.deny".
+    // tools.allow verified in openclaw 2026.4.x runtime-schema at "tools.allow".
     if (!config.tools) config.tools = {};
-    const DENY_TOOLS = [
-      'image_generate', 'music_generate', 'video_generate',  // media gen unused in support
+    // tools.allow = absolute allowlist. Only these tools are available to the agent.
+    // SECURITY: exec, process, cron ALL REMOVED — gateway agent serves both
+    // Telegram + Zalo with same tools. Any tool here = available to Zalo customers.
+    // exec/process = RCE via strangers. cron = strangers create scheduled jobs.
+    // Cron pipeline (runCronAgentPrompt) runs in separate process, unaffected.
+    // CEO manages crons via Dashboard (full CRUD UI).
+    const ALLOW_TOOLS = [
+      'message',      // reply to customers (Zalo) + CEO (Telegram)
+      'web_search',   // look up info for customer questions
+      'web_fetch',    // read URLs shared by customers/CEO
+      'update_plan',  // agent planning for multi-step answers
     ];
-    const existingDeny = Array.isArray(config.tools.deny) ? config.tools.deny : [];
-    const REMOVE_TOOLS = ['exec', 'process'];
-    const cleaned = existingDeny.filter(t => !REMOVE_TOOLS.includes(t));
-    const mergedDeny = Array.from(new Set([...cleaned, ...DENY_TOOLS])).sort();
-    if (JSON.stringify(existingDeny.slice().sort()) !== JSON.stringify(mergedDeny)) {
-      config.tools.deny = mergedDeny;
+    const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
+    if (JSON.stringify(existingAllow.slice().sort()) !== JSON.stringify(ALLOW_TOOLS.slice().sort())) {
+      config.tools.allow = ALLOW_TOOLS;
+      changed = true;
+    }
+    // Remove legacy deny list — allow takes precedence, deny is redundant
+    if (config.tools.deny) {
+      delete config.tools.deny;
       changed = true;
     }
     // LOOP SAFETY: enable tools.loopDetection — openclaw ships it disabled.
@@ -4615,10 +4674,9 @@ function ensureZaloPauseFix() {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
     if (!fs.existsSync(pluginFile)) return;
     let content = _readInboundTs(pluginFile);
-    const CURRENT_MARKER = '9BizClaw PAUSE PATCH v6';
-    // v6: drop bot commands (/pause /resume /bot) from non-owners silently
-    // v5: runtime path resolution + owner-only /pause + honor permanent pause +
-    // enabled=false + parse errors fail-closed.
+    const CURRENT_MARKER = '9BizClaw PAUSE PATCH v7';
+    // v7: NO owner detection — Zalo = customer-only, ALL bot commands dropped from everyone
+    // v6: drop bot commands from non-owners. v5: runtime path + owner-only /pause.
     if (content.includes('9BizClaw PAUSE PATCH')) {
       if (content.includes(CURRENT_MARKER)) return;
       // Strip old patch so we can inject the current version
@@ -4643,18 +4701,15 @@ function ensureZaloPauseFix() {
     const injection = `
 
   // === 9BizClaw PAUSE PATCH ===
-  // /pause and /resume: ONLY accepted from the Zalo account the bot is logged
-  // into (ownerUserId in zalo-owner.json). This is the CEO/staff using the
-  // same Zalo account as the bot. Customers typing /pause are ignored.
-  // 9BizClaw PAUSE PATCH v6: drop bot commands from non-owners + runtime path
-  // files + openclaw.json channels.openzalo.enabled=false + parse errors blocked.
+  // v7: NO owner detection. Zalo = customer-only channel. ALL bot commands
+  // (/pause /resume /bot) dropped from EVERYONE. Pause/resume via Dashboard only.
+  // Keeps: config disable check + pause-file check (Dashboard-driven).
   try {
     const __pzFs = require("node:fs");
     const __pzPath = require("node:path");
     const __pzOs = require("node:os");
     const __pzConfigPaths = ${JSON.stringify(configPaths)};
     const __pzBody = String(rawBody || "").trim().toLowerCase();
-    const __pzSender = String(message.senderId || "").trim();
     const __pzHome = __pzOs.homedir();
     const __pzAppDir = "9bizclaw";
     const __pzWorkspaceDirs: string[] = [];
@@ -4672,55 +4727,22 @@ function ensureZaloPauseFix() {
     }
     __pzWorkspaceDirs.push(__pzPath.join(__pzHome, ".openclaw", "workspace"));
     const __pzPaths: string[] = [];
-    const __pzOwnerPaths: string[] = [];
     const __pzSeen = new Set<string>();
     for (const __pzDir of __pzWorkspaceDirs) {
       const __resolvedDir = __pzPath.resolve(__pzDir);
       if (__pzSeen.has(__resolvedDir)) continue;
       __pzSeen.add(__resolvedDir);
       __pzPaths.push(__pzPath.join(__resolvedDir, "zalo-paused.json"));
-      __pzOwnerPaths.push(__pzPath.join(__resolvedDir, "zalo-owner.json"));
     }
 
-    // Resolve owner senderId from zalo-owner.json
-    let __pzOwner = "";
-    for (const __op of __pzOwnerPaths) {
-      try {
-        if (__pzFs.existsSync(__op)) {
-          const __od = JSON.parse(__pzFs.readFileSync(__op, "utf-8"));
-          __pzOwner = String(__od?.ownerUserId || "").trim();
-          if (__pzOwner) break;
-        }
-      } catch {}
-    }
-
-    const __pzIsOwner = __pzOwner && __pzSender === __pzOwner;
-
-    // Handle /pause and /resume commands
+    // Drop ALL bot commands from EVERYONE on Zalo — no owner detection
     const __pzIsBotCmd = __pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly" || __pzBody === "/resume" || __pzBody === "/bot";
-    if (__pzIsOwner && (__pzBody === "/pause" || __pzBody === "/tôi xử lý" || __pzBody === "/toi xu ly")) {
-      const __pzUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-      for (const __p of __pzPaths) {
-        try { __pzFs.mkdirSync(__pzPath.dirname(__p), { recursive: true }); } catch {}
-        try { __pzFs.writeFileSync(__p, JSON.stringify({ pausedUntil: __pzUntil, pausedBy: __pzSender }, null, 2), "utf-8"); break; } catch {}
-      }
-      runtime.log?.("openzalo: PAUSED for 30 min by owner " + __pzSender);
-      return; // Don't reply to the /pause command itself
-    }
-    if (__pzIsOwner && (__pzBody === "/resume" || __pzBody === "/bot")) {
-      for (const __p of __pzPaths) {
-        try { if (__pzFs.existsSync(__p)) __pzFs.unlinkSync(__p); } catch {}
-      }
-      runtime.log?.("openzalo: RESUMED by owner " + __pzSender);
-      // Don't return — let this message be processed normally
-    }
-    // Drop bot commands from non-owners silently — don't let bot reply to "/pause" as if it's a question
-    if (!__pzIsOwner && __pzIsBotCmd) {
-      runtime.log?.("openzalo: drop bot command from non-owner " + __pzSender + ": " + __pzBody);
+    if (__pzIsBotCmd) {
+      runtime.log?.("openzalo: drop bot command from " + message.senderId + ": " + __pzBody + " (Zalo = customer-only, use Dashboard)");
       return;
     }
 
-    // Respect the Dashboard master toggle even if the pause file is missing.
+    // Respect the Dashboard master toggle
     let __pzDisabledInConfig = false;
     for (const __cp of __pzConfigPaths) {
       try {
@@ -4741,7 +4763,7 @@ function ensureZaloPauseFix() {
       return;
     }
 
-    // Check if currently paused
+    // Check if currently paused (Dashboard-driven pause file)
     for (const __p of __pzPaths) {
       try {
         if (__pzFs.existsSync(__p)) {
@@ -4754,7 +4776,6 @@ function ensureZaloPauseFix() {
             runtime.log?.("openzalo: PAUSED — ignoring message from " + message.senderId);
             return;
           } else if (__pzData.pausedUntil) {
-            // Expired — clean up
             try { __pzFs.unlinkSync(__p); } catch {}
           }
         }
@@ -5100,144 +5121,10 @@ function ensureZaloFriendCheckFix() {
   }
 }
 
-// 9BIZCLAW ZALO-OWNER PATCH: when a Zalo DM arrives from the CEO's personal
-// Zalo account (NOT the bot account that openzca logs in to), prepend a
-// special marker to the message body so the agent can switch to CEO mode.
-// AGENTS.md instructs the bot: when seeing `[ZALO_CHU_NHAN]` prefix, treat
-// the message as if it came from CEO on Telegram (full persona, accept debug
-// commands like /reset /status, skip output filter trust gate).
-//
-// Reads owner from workspace/zalo-owner.json (written by wizard step 4
-// or Dashboard Zalo tab). Bypasses if file missing or sender doesn't match.
-// Idempotent via marker. Anchor: end of friend-check patch.
-function ensureZaloOwnerFix() {
-  try {
-    const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
-    if (!fs.existsSync(pluginFile)) return;
-    let content = _readInboundTs(pluginFile);
+// REMOVED: ensureZaloOwnerFix — owner/chủ nhân detection fully removed.
+// All Zalo messages are now treated as customer messages uniformly.
+// REMOVED: ensureZaloOwnerFix — owner detection fully removed.
 
-    // ZALO-OWNER-PATCH-V4: mutates rawBody DIRECTLY (not message.text).
-    // V2/V3 mutated `message.text` but openzalo captures `const rawBody = message.text.trim()`
-    // at line 392 and forwards rawBody to agent — so text mutation did nothing.
-    // V4 does two things:
-    //   1. Change `const rawBody` → `let rawBody` so we can reassign
-    //   2. Inject owner check IMMEDIATELY after rawBody declaration, mutating rawBody
-    //      directly via string concat before blocklist/friend-check/dispatch runs.
-    const PATCH_VERSION_PIN = 'ZALO-OWNER-PATCH-V4';
-    const startMarker = '// === 9BIZCLAW ZALO-OWNER PATCH ===';
-    const endMarker = '// === END 9BIZCLAW ZALO-OWNER PATCH ===';
-
-    // Strip any old patch version (V2, V3, V4) first
-    if (content.includes(startMarker)) {
-      const blockStart = content.indexOf(startMarker);
-      const blockEnd = content.indexOf(endMarker, blockStart);
-      if (blockStart < 0 || blockEnd < 0) {
-        console.warn('[zalo-owner-fix] markers present but malformed — leaving as-is');
-        return;
-      }
-      const block = content.slice(blockStart, blockEnd);
-      if (block.includes(PATCH_VERSION_PIN)) {
-        // Already V4, but verify the `let rawBody` declaration is also in place
-        if (!content.includes('let rawBody = message.text.trim();')) {
-          console.warn('[zalo-owner-fix] V4 marker present but `let rawBody` missing — restoring');
-          // Fall through to re-patch
-        } else {
-          return; // fully patched
-        }
-      }
-      // Strip old block (any version)
-      let stripStart = blockStart;
-      while (stripStart > 0 && (content[stripStart - 1] === ' ' || content[stripStart - 1] === '\n')) {
-        stripStart--;
-        if (content.slice(stripStart, stripStart + 2) === '\n\n') break;
-      }
-      const stripEndPos = blockEnd + endMarker.length;
-      content = content.slice(0, stripStart) + content.slice(stripEndPos);
-      console.log('[zalo-owner-fix] stripped old patch block — re-injecting V4');
-    }
-
-    // STEP 1: Change `const rawBody` → `let rawBody` so we can reassign.
-    // Idempotent: replace both forms.
-    if (content.includes('const rawBody = message.text.trim();')) {
-      content = content.replace('const rawBody = message.text.trim();', 'let rawBody = message.text.trim();');
-      console.log('[zalo-owner-fix] changed const rawBody → let rawBody');
-    } else if (!content.includes('let rawBody = message.text.trim();')) {
-      console.warn('[zalo-owner-fix] CRITICAL: rawBody declaration not found — plugin source changed');
-      return;
-    }
-
-    // STEP 2: Inject owner check RIGHT AFTER rawBody declaration + hasMedia check.
-    // Anchor: the line AFTER `if (!rawBody && !hasMedia) { return; }`
-    const anchor = '  if (!rawBody && !hasMedia) {\n    return;\n  }';
-    if (!content.includes(anchor)) {
-      console.warn('[zalo-owner-fix] rawBody anchor missing — plugin source changed');
-      return;
-    }
-
-    const injection = `
-
-  // === 9BIZCLAW ZALO-OWNER PATCH ===
-  // ZALO-OWNER-PATCH-V4 — mutates rawBody directly (not message.text).
-  // Works in BOTH DMs and groups. Runs BEFORE blocklist + friend-check + dispatch.
-  // See electron/main.js ensureZaloOwnerFix.
-  try {
-    const __zoFs = require("node:fs");
-    const __zoPath = require("node:path");
-    const __zoOs = require("node:os");
-    const __zoSender = String(message.senderId || "").trim();
-    if (__zoSender) {
-      const __zoOwnerPaths: string[] = [];
-      if (process.env['9BIZ_WORKSPACE']) {
-        __zoOwnerPaths.push(__zoPath.join(process.env['9BIZ_WORKSPACE'], "zalo-owner.json"));
-      }
-      const __zoAppDir = "9bizclaw";
-      if (process.platform === "darwin") {
-        __zoOwnerPaths.push(__zoPath.join(__zoOs.homedir(), "Library", "Application Support", __zoAppDir, "zalo-owner.json"));
-      } else if (process.platform === "win32") {
-        const __zoAppData = process.env.APPDATA || __zoPath.join(__zoOs.homedir(), "AppData", "Roaming");
-        __zoOwnerPaths.push(__zoPath.join(__zoAppData, __zoAppDir, "zalo-owner.json"));
-      } else {
-        const __zoConfig = process.env.XDG_CONFIG_HOME || __zoPath.join(__zoOs.homedir(), ".config");
-        __zoOwnerPaths.push(__zoPath.join(__zoConfig, __zoAppDir, "zalo-owner.json"));
-      }
-      __zoOwnerPaths.push(__zoPath.join(__zoOs.homedir(), ".openclaw", "workspace", "zalo-owner.json"));
-      for (const __zoOp of __zoOwnerPaths) {
-        try {
-          if (!__zoFs.existsSync(__zoOp)) continue;
-          const __zoData = JSON.parse(__zoFs.readFileSync(__zoOp, "utf-8"));
-          const __zoOwner = String(__zoData?.ownerUserId || "").trim();
-          if (!__zoOwner) break;
-          if (__zoSender === __zoOwner) {
-            const __zoName = String(__zoData?.ownerName || "").trim();
-            const __zoTag = __zoName
-              ? \`[ZALO_CHU_NHAN tên="\${__zoName.replace(/"/g, '')}"]\`
-              : "[ZALO_CHU_NHAN]";
-            // Mutate rawBody directly — this is what gets forwarded to agent.
-            rawBody = __zoTag + "\\n" + rawBody;
-            runtime.log?.(\`openzalo: ZALO_CHU_NHAN marker prepended to rawBody for sender \${__zoSender}\`);
-          }
-          break;
-        } catch (__zoReadErr) {
-          runtime.log?.(\`openzalo: zalo-owner read error: \${String(__zoReadErr)}\`);
-        }
-      }
-    }
-  } catch (__zoErr) {
-    runtime.log?.(\`openzalo: zalo-owner check error: \${String(__zoErr)}\`);
-  }
-  // === END 9BIZCLAW ZALO-OWNER PATCH ===`;
-
-    const patched = content.replace(anchor, anchor + injection);
-    if (patched === content) {
-      console.warn('[zalo-owner-fix] anchor replace failed — no write');
-      return;
-    }
-    _writeInboundTs(pluginFile, patched);
-    console.log('[zalo-owner-fix] Injected V4 owner-marker patch into inbound.ts (mutates rawBody directly)');
-  } catch (e) {
-    console.error('[zalo-owner-fix] error:', e?.message);
-  }
-}
 
 // 9BIZCLAW FRIEND-EVENT PATCH: openzca daemon's `listen` command only subscribes
 // to message/connected/error/closed events from zca-js — it does NOT listen for
@@ -5460,7 +5347,7 @@ function ensureZaloOutputFilterFix() {
     let content = fs.readFileSync(pluginFile, 'utf-8');
     const originalLength = content.length;
 
-    const CURRENT_VERSION = '9BizClaw OUTPUT-FILTER PATCH v6';
+    const CURRENT_VERSION = '9BizClaw OUTPUT-FILTER PATCH v7';
 
     // Fast path: file is already on the current version, nothing to do.
     if (content.includes(CURRENT_VERSION)) return;
@@ -5487,9 +5374,10 @@ function ensureZaloOutputFilterFix() {
 
     const injection = `
 
-  // === 9BizClaw OUTPUT-FILTER PATCH v6 ===
+  // === 9BizClaw OUTPUT-FILTER PATCH v7 ===
   // Scan outbound Zalo text for sensitive patterns + AI failure modes.
-  // See main.js ensureZaloOutputFilterFix for v6 changelog vs v5.
+  // v7: add escalation detection — auto-forward to CEO when bot reply contains escalation signals.
+  // See main.js ensureZaloOutputFilterFix for changelog.
   try {
     const __ofFs = require("node:fs");
     const __ofPath = require("node:path");
@@ -5760,6 +5648,54 @@ function ensureZaloOutputFilterFix() {
           return { messageId: "filter-blocked", kind: "text" as const };
         }
       })();
+    }
+    // --- Escalation detection (v7) ---
+    // If bot reply contains escalation signals, write to escalation queue
+    // so main.js can forward context to CEO via sendCeoAlert().
+    const __escPatterns: RegExp[] = [
+      /(?<![a-zA-Z0-9_])(chuyển (cho )?(sếp|quản lý|bộ phận|nhân viên|người phụ trách))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(ghi nhận (khiếu nại|phản ánh|yêu cầu|vấn đề))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(đã báo (lại )?(sếp|quản lý|CEO|ban giám đốc))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(sếp sẽ liên hệ|sếp sẽ gọi|sếp sẽ phản hồi|sếp sẽ trả lời)(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(em sẽ chuyển|em đã chuyển|em xin chuyển)(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(ngoài khả năng|không thuộc phạm vi|vượt (ngoài )?thẩm quyền)(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(cần (sếp|quản lý|người) (hỗ trợ|xử lý|can thiệp))(?![a-zA-Z0-9_])/i,
+    ];
+    let __escMatch: string | null = null;
+    for (const __escRe of __escPatterns) {
+      const __escM = body.match(__escRe);
+      if (__escM) { __escMatch = __escM[0]; break; }
+    }
+    if (__escMatch) {
+      try {
+        const __escHome = __ofOs.homedir();
+        const __escAppDir = "9bizclaw";
+        let __escWsDir: string;
+        if (process.env['9BIZ_WORKSPACE']) {
+          __escWsDir = process.env['9BIZ_WORKSPACE'];
+        } else if (process.platform === "darwin") {
+          __escWsDir = __ofPath.join(__escHome, "Library", "Application Support", __escAppDir);
+        } else if (process.platform === "win32") {
+          const __escAppData = process.env.APPDATA || __ofPath.join(__escHome, "AppData", "Roaming");
+          __escWsDir = __ofPath.join(__escAppData, __escAppDir);
+        } else {
+          const __escConfig = process.env.XDG_CONFIG_HOME || __ofPath.join(__escHome, ".config");
+          __escWsDir = __ofPath.join(__escConfig, __escAppDir);
+        }
+        const __escLogDir = __ofPath.join(__escWsDir, "logs");
+        __ofFs.mkdirSync(__escLogDir, { recursive: true });
+        __ofFs.appendFileSync(
+          __ofPath.join(__escLogDir, "escalation-queue.jsonl"),
+          JSON.stringify({
+            t: new Date().toISOString(),
+            to: target.threadId,
+            isGroup: !!target.isGroup,
+            trigger: __escMatch,
+            botReply: body.slice(0, 500),
+          }) + "\\n",
+          "utf-8",
+        );
+      } catch {}
     }
   } catch (__ofE) {
     try { logOutbound("error", "output filter error", { err: String(__ofE) }); } catch {}
@@ -6177,6 +6113,55 @@ function ensureOpenclawPrewarmFix() {
   }
 }
 
+// --- OPENZALO FORK: replace entire ensure* patch chain with pre-patched source files ---
+// All 12+ monkey-patches are baked into electron/patches/openzalo-fork/*.ts.
+// This function copies them into the live extension directory once per version.
+// Benefits: no more daisy-chain anchor fragility, no hardcoded paths, no dual call-site
+// ordering bugs, no string-match failures when upstream openzalo updates whitespace.
+const OPENZALO_FORK_VERSION = 'fork-v7-2026-04-22';
+function applyOpenzaloFork() {
+  const extSrcDir = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src');
+  if (!fs.existsSync(extSrcDir)) return false;
+  const markerPath = path.join(extSrcDir, '.fork-version');
+  try {
+    const existing = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf-8').trim() : '';
+    if (existing === OPENZALO_FORK_VERSION) {
+      console.log('[openzalo-fork] already at ' + OPENZALO_FORK_VERSION + ' — skip');
+      return true;
+    }
+  } catch {}
+  const forkDir = path.join(__dirname, 'patches', 'openzalo-fork');
+  if (!fs.existsSync(forkDir)) {
+    console.warn('[openzalo-fork] fork dir not found:', forkDir);
+    return false;
+  }
+  const files = ['inbound.ts', 'send.ts', 'channel.ts', 'openzca.ts'];
+  let copied = 0;
+  for (const f of files) {
+    const src = path.join(forkDir, f);
+    const dst = path.join(extSrcDir, f);
+    if (!fs.existsSync(src)) continue;
+    try {
+      const tmpDst = dst + '.tmp.' + process.pid;
+      fs.writeFileSync(tmpDst, fs.readFileSync(src));
+      try { fs.renameSync(tmpDst, dst); } catch {
+        const d = Date.now() + 20; while (Date.now() < d) {} // AV release
+        fs.renameSync(tmpDst, dst);
+      }
+      copied++;
+    } catch (e) {
+      console.error('[openzalo-fork] failed to copy ' + f + ':', e?.message);
+    }
+  }
+  if (copied === files.length) {
+    try { fs.writeFileSync(markerPath, OPENZALO_FORK_VERSION, 'utf-8'); } catch {}
+    console.log('[openzalo-fork] applied ' + OPENZALO_FORK_VERSION + ' (' + copied + '/' + files.length + ' files)');
+  } else if (copied > 0) {
+    console.warn('[openzalo-fork] partial copy ' + copied + '/' + files.length + ' — NOT writing version marker (will retry next boot)');
+  }
+  return copied === files.length;
+}
+
 function ensureOpenzaloShellFix() {
   try {
     const pluginFile = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'openzca.ts');
@@ -6450,7 +6435,7 @@ let _gatewayRestartInFlight = false;
 // completion. Heartbeat requires >= 60s since last start before attempting its
 // own restart — otherwise a slow boot looks dead.
 let _gatewayLastStartedAt = 0;
-async function startOpenClaw() {
+async function startOpenClaw(opts = {}) {
   if (botRunning) return;
   // Prevent re-entrant start while a previous start is still spawning. Without
   // this guard, heartbeat + UI button + boot sequence can race and spawn 2-3
@@ -6474,7 +6459,7 @@ async function startOpenClaw() {
   }
   _startOpenClawInFlight = true;
   try {
-    const r = await _startOpenClawImpl();
+    const r = await _startOpenClawImpl(opts);
     _gatewayLastStartedAt = Date.now();
     // Auto-seed group history summaries in the background. Fire-and-forget
     // after a 5s delay so gateway + openzca listener are fully ready before
@@ -6615,7 +6600,17 @@ function backupWorkspace() {
   } catch {}
 }
 
-async function _startOpenClawImpl() {
+async function _startOpenClawImpl(opts = {}) {
+  // When called from auto-restart contexts (heartbeat, weekly cron, watchdog),
+  // opts.silent === true suppresses "Telegram đã sẵn sàng" / "Zalo đã sẵn sàng"
+  // boot pings so CEO doesn't get woken at 3:30 AM or spammed on auto-recovery.
+  // Flag persists until next non-silent start (normal app boot / wizard-complete).
+  if (opts.silent) {
+    global._suppressBootPing = true;
+    console.log('[startOpenClaw] silent mode — boot pings suppressed');
+  } else {
+    global._suppressBootPing = false;
+  }
   try { backupWorkspace(); } catch (e) { console.error('[backup] failed:', e.message); }
   auditLog('startOpenClaw_begin', {});
 
@@ -6643,8 +6638,6 @@ async function _startOpenClawImpl() {
   // Heal missing node_modules link (plugin copied out of vendor → ESM deps
   // unreachable → "Cannot find module 'zod'"). Must run BEFORE gateway spawn.
   ensureOpenzaloNodeModulesLink();
-  // Re-apply OpenZalo shell fix in case plugin was reinstalled
-  ensureOpenzaloShellFix();
   // Patch openclaw vendor to fail-fast on OpenRouter pricing fetch (3:34 stuck
   // → <100ms on customer machines with slow DNS/TCP to openrouter.ai).
   ensureOpenclawPricingFix();
@@ -6652,54 +6645,20 @@ async function _startOpenClawImpl() {
   // evidence from v2.3.47 test). prewarm fetches model catalog from
   // openrouter.ai / provider registry — irrelevant for our 9Router deploy.
   ensureOpenclawPrewarmFix();
-  // --- BATCH PATCH: read inbound.ts ONCE, apply all patches, write ONCE ---
-  // Previously each ensure* function read + wrote inbound.ts independently
-  // (8 sequential readFileSync + writeFileSync on same file). On slow disks
-  // with antivirus scanning, this added 500ms-1.5s to boot. Now: 1 read + 1 write.
-  const _inboundTsPath = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'inbound.ts');
-  if (fs.existsSync(_inboundTsPath)) {
-    global.__patchInboundCache = fs.readFileSync(_inboundTsPath, 'utf-8');
-    global.__patchInboundDirty = false;
-  }
-  ensureZaloBlocklistFix();
-  ensureZaloPauseFix();
-  ensureZaloModeFix(); // code-level gate: read/daily mode → drop message before AI
-  ensureZaloFriendCheckFix();
-  ensureZaloOwnerFix();
-  ensureZaloSystemMsgFix();
-  ensureZaloSenderDedupFix();
-  ensureZaloGroupSettingsFix();
-  ensureZaloRagFix();   // depends on group-settings anchor
-  // Force-one-message PART 2+3: patches inbound.ts (include in batch)
-  // PART 1 (channel.ts) uses direct fs I/O internally — safe.
-  ensureOpenzaloForceOneMessageFix();
-  // Flush: write inbound.ts once if any patch modified it. ATOMIC path —
-  // same reasoning as _writeInboundTs: write tmp + rename so never half-written.
-  if (global.__patchInboundCache && global.__patchInboundDirty) {
-    const _batchTmp = `${_inboundTsPath}.tmp.${process.pid}.${Date.now()}`;
-    try {
-      fs.writeFileSync(_batchTmp, global.__patchInboundCache, 'utf-8');
-      try {
-        fs.renameSync(_batchTmp, _inboundTsPath);
-      } catch (renameErr) {
-        const deadline = Date.now() + 20;
-        while (Date.now() < deadline) { /* busy-wait 20ms for AV release */ }
-        fs.renameSync(_batchTmp, _inboundTsPath);
-      }
-      console.log('[patch-batch] inbound.ts written atomically (1 pass instead of 10)');
-    } catch (e) {
-      try { fs.unlinkSync(_batchTmp); } catch {}
-      console.error('[patch-batch] atomic flush failed:', e?.message || e);
-    }
-  }
-  delete global.__patchInboundCache;
-  delete global.__patchInboundDirty;
-  // Non-inbound patches (separate files, direct I/O):
-  ensureOpenzcaFriendEventFix(); // patches openzca cli.js
-  ensureZaloOutputFilterFix();   // patches send.ts
+  // --- OPENZALO FORK: copy pre-patched source files (replaces 12+ ensure* calls) ---
+  // All patches (blocklist, pause, mode, friend-check, system-msg, sender-dedup,
+  // group-settings, RAG, deliver-coalesce, output-filter, shell-fix) are baked
+  // into electron/patches/openzalo-fork/*.ts. One atomic copy per version.
+  applyOpenzaloFork();
+  // Non-openzalo patches (separate files, still needed):
+  ensureOpenzcaFriendEventFix(); // patches openzca cli.js (not part of openzalo fork)
   ensureVisionFix();             // patches openclaw dist session-utils (layer 1: gateway accepts images)
   ensureVisionCatalogFix();      // patches openclaw dist model-catalog (layer 2: image-understanding capability is skipped → direct model pass-through)
   ensureVisionSerializationFix();// patches model-context-tokens + stream-* (layer 3+4: image parts survive outbound request serialization)
+
+  // Sync persona + shop-state into bootstrap files (SOUL.md, USER.md) so bot
+  // receives them automatically without needing to read separate files.
+  syncAllBootstrapData();
 
   // Rebuild memory DB — use absolute node path so it works even if Electron's
   // PATH doesn't include the user's Node install (nvm/volta/scoop/etc.).
@@ -6891,7 +6850,7 @@ async function _startOpenClawImpl() {
   // direct `node <cli.js>` path, this PATH enrichment is still useful for any other
   // npm-installed bin the gateway or its plugins may need to spawn.
   const enrichedEnv = { ...process.env };
-  // Expose workspace path so plugin patches (e.g. ensureZaloOwnerFix) can find
+  // Expose workspace path so plugin patches can find
   // workspace files regardless of dev vs packaged. main.js getWorkspace()
   // already resolved the correct location at this point.
   // SECURITY: explicitly delete any pre-existing 9BIZ_WORKSPACE from the
@@ -7214,13 +7173,14 @@ async function _startOpenClawImpl() {
         notifyState.telegram.lastError = '';
         console.log('[ready-notify] Telegram marker seen — waiting 10s for channel init before confirming');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
-        if (readyNotifyThrottled('telegram')) {
-          // Even on throttle path, wait 10s for channel to finish init
+        if (readyNotifyThrottled('telegram') || global._suppressBootPing) {
+          // Even on throttle/silent path, wait 10s for channel to finish init
+          if (global._suppressBootPing) console.log('[ready-notify] Telegram boot ping suppressed (silent auto-restart)');
           setTimeout(async () => {
             const alive = await isGatewayAlive(5000);
             if (alive) {
-              markChannelConfirmed('telegram', 'throttle');
-              console.log('[ready-notify] Telegram confirmed after post-marker delay (throttle)');
+              markChannelConfirmed('telegram', global._suppressBootPing ? 'silent' : 'throttle');
+              console.log('[ready-notify] Telegram confirmed after post-marker delay (' + (global._suppressBootPing ? 'silent' : 'throttle') + ')');
             } else {
               notifyState.telegram.lastError = 'Gateway không phản hồi sau khi marker xuất hiện.';
               console.log('[ready-notify] Telegram throttle-confirm deferred — gateway not alive');
@@ -7265,12 +7225,13 @@ async function _startOpenClawImpl() {
         notifyState.zalo.lastError = '';
         console.log('[ready-notify] Zalo marker seen — waiting 10s for pipeline init before confirming');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
-        if (readyNotifyThrottled('zalo')) {
+        if (readyNotifyThrottled('zalo') || global._suppressBootPing) {
+          if (global._suppressBootPing) console.log('[ready-notify] Zalo boot ping suppressed (silent auto-restart)');
           setTimeout(async () => {
             const alive = await isGatewayAlive(5000);
             if (alive) {
-              markChannelConfirmed('zalo', 'throttle');
-              console.log('[ready-notify] Zalo confirmed after post-marker delay (throttle)');
+              markChannelConfirmed('zalo', global._suppressBootPing ? 'silent' : 'throttle');
+              console.log('[ready-notify] Zalo confirmed after post-marker delay (' + (global._suppressBootPing ? 'silent' : 'throttle') + ')');
             } else {
               notifyState.zalo.lastError = 'Gateway không phản hồi sau khi marker xuất hiện.';
               console.log('[ready-notify] Zalo throttle-confirm deferred — gateway not alive');
@@ -8859,25 +8820,9 @@ async function _ensureZaloPluginImpl() {
               }
             }
           } catch (e) { console.warn('[ensureZaloPlugin] node_modules link setup failed:', e?.message); }
-          // CRITICAL: the bundled plugin ships the upstream openzca.ts (no
-          // MODOROClaw patches). We MUST apply our two runtime patches
-          // immediately after copy so the very first gateway boot reads the
-          // patched files. Without these, Windows multi-line args get
-          // truncated by cmd.exe AND Mac builds can't resolve bundled openzca
-          // via BIZCLAW_OPENZCA_CLI_JS env var.
-          try { ensureOpenzaloShellFix(); } catch (e) { console.warn('[ensureZaloPlugin] shell fix failed:', e?.message); }
-          try { ensureZaloBlocklistFix(); } catch (e) { console.warn('[ensureZaloPlugin] blocklist fix failed:', e?.message); }
-          try { ensureZaloPauseFix(); } catch (e) { console.warn('[ensureZaloPlugin] pause fix failed:', e?.message); }
-          try { ensureZaloFriendCheckFix(); } catch (e) { console.warn('[ensureZaloPlugin] friend check fix failed:', e?.message); }
-          try { ensureZaloOwnerFix(); } catch (e) { console.warn('[ensureZaloPlugin] zalo owner fix failed:', e?.message); }
-          try { ensureZaloOutputFilterFix(); } catch (e) { console.warn('[ensureZaloPlugin] output filter fix failed:', e?.message); }
-          // Order matters: SYSTEM-MSG must come before SENDER-DEDUP which must come
-          // before GROUP-SETTINGS (anchor dependency — same ordering as _startOpenClawImpl).
-          // Idempotent via marker check, safe on double-call with _startOpenClawImpl.
-          try { ensureZaloSystemMsgFix(); } catch (e) { console.warn('[ensureZaloPlugin] SystemMsg patch error:', e?.message); }
-          try { ensureZaloSenderDedupFix(); } catch (e) { console.warn('[ensureZaloPlugin] SenderDedup patch error:', e?.message); }
-          try { ensureZaloGroupSettingsFix(); } catch (e) { console.warn('[ensureZaloPlugin] GroupSettings patch error:', e?.message); }
-          try { ensureZaloRagFix(); } catch (e) { console.warn('[ensureZaloPlugin] RAG patch error:', e?.message); }
+          // Apply openzalo fork: copy pre-patched source files over upstream.
+          // Replaces the old 12+ individual ensure* patch calls.
+          try { applyOpenzaloFork(); } catch (e) { console.warn('[ensureZaloPlugin] fork apply failed:', e?.message); }
           _zaloReady = true;
           return;
         } catch (e) {
@@ -8908,25 +8853,8 @@ async function _ensureZaloPluginImpl() {
       // ensureDefaultConfig() now heals `channels.openzalo.enabled = true` and
       // `channels.openzalo.dmPolicy = 'open'` in-process, so no CLI hop needed.
 
-      // Patch openzalo plugin for Windows only (shell:true + shellSafeArgs)
-      if (process.platform !== 'win32') { /* skip patch on Mac/Linux */ }
-      else {
-      const openzaloSrc = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'src', 'openzca.ts');
-      if (fs.existsSync(openzaloSrc)) {
-        try {
-          let src = fs.readFileSync(openzaloSrc, 'utf-8');
-          let changed = false;
-          if (src.includes('shell: false')) { src = src.replace(/shell: false/g, 'shell: true'); changed = true; }
-          if (!src.includes('shellSafeArgs')) {
-            const helper = `\n// On Windows with shell:true, args containing spaces must be quoted\nfunction shellSafeArgs(args: string[]): string[] {\n  if (process.platform !== "win32") return args;\n  return args.map(a => (a.includes(" ") || a.includes("&") || a.includes("|")) ? \`"\${a}"\` : a);\n}\n`;
-            src = src.replace(/import { spawn } from "node:child_process";/, 'import { spawn } from "node:child_process";\n' + helper);
-            src = src.replace(/const args = \["--profile", options\.profile, \.\.\.options\.args\]/g, 'const args = shellSafeArgs(["--profile", options.profile, ...options.args])');
-            changed = true;
-          }
-          if (changed) fs.writeFileSync(openzaloSrc, src, 'utf-8');
-        } catch {}
-      }
-      } // end Windows-only patch
+      // Apply openzalo fork after network install (same as bundled path)
+      try { applyOpenzaloFork(); } catch (e) { console.warn('[ensureZaloPlugin] fork apply after network install failed:', e?.message); }
     }
     _zaloReady = true;
   } catch {}
@@ -9071,6 +8999,7 @@ ipcMain.handle('set-shop-state', async (_event, state) => {
       ...(state || {}),
     };
     writeJsonAtomic(p, payload);
+    syncShopStateToBootstrap();
     try { auditLog('shop_state_updated', { fields: Object.keys(state || {}).length }); } catch {}
     return { ok: true };
   } catch (e) {
@@ -9115,6 +9044,7 @@ ipcMain.handle('save-persona-mix', async (_event, mix) => {
     const mdPath = path.join(ws, 'active-persona.md');
     writeJsonAtomic(jsonPath, normalized);
     fs.writeFileSync(mdPath, compilePersonaMix(normalized), 'utf-8');
+    syncPersonaToBootstrap();
     try { auditLog('persona_mix_updated', { voice: normalized.voice, traits: normalized.traits.length, formality: normalized.formality }); } catch {}
     console.log('[save-persona-mix] updated via Dashboard');
     return { ok: true };
@@ -9711,51 +9641,10 @@ ipcMain.handle('seed-group-history-all', async () => {
   }
 });
 
-// === Zalo owner identification ===
-// CEO has 2 Zalo accounts: (1) the bot account that openzca logs in to,
-// (2) their personal Zalo that talks to the bot. We need to recognize (2)
-// so the bot treats those messages as CEO commands instead of customer
-// service replies. Saved as { ownerUserId, ownerName, savedAt } in
-// workspace/zalo-owner.json. Read by ensureZaloOwnerFix patch in
-// inbound.ts at message dispatch time.
+// REMOVED: Zalo owner identification — owner/chủ nhân feature fully removed.
+// All Zalo messages are treated as customer messages uniformly.
 
-function getZaloOwnerPath() {
-  const ws = getWorkspace();
-  if (!ws) return null;
-  return path.join(ws, 'zalo-owner.json');
-}
 
-function readZaloOwner() {
-  try {
-    const p = getZaloOwnerPath();
-    if (!p || !fs.existsSync(p)) return null;
-    const raw = fs.readFileSync(p, 'utf-8');
-    const data = JSON.parse(raw);
-    if (!data || typeof data.ownerUserId !== 'string' || !data.ownerUserId) return null;
-    return data;
-  } catch { return null; }
-}
-
-ipcMain.handle('get-zalo-owner', async () => {
-  return readZaloOwner() || { ownerUserId: '', ownerName: '' };
-});
-
-ipcMain.handle('save-zalo-owner', async (_event, payload) => {
-  try {
-    const ws = getWorkspace();
-    if (!ws) return { success: false, error: 'workspace không tồn tại' };
-    const userId = String((payload && payload.ownerUserId) || '').trim().replace(/[^0-9-]/g, '').slice(0, 32);
-    const name = String((payload && payload.ownerName) || '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 100);
-    if (!userId) return { success: false, error: 'userId rỗng hoặc không hợp lệ' };
-    const data = { ownerUserId: userId, ownerName: name, savedAt: new Date().toISOString() };
-    writeJsonAtomic(getZaloOwnerPath(), data);
-    try { auditLog('zalo_owner_set', { ownerUserId: userId, ownerName: name }); } catch {}
-    return { success: true };
-  } catch (e) {
-    console.error('[zalo-owner] save error:', e?.message);
-    return { success: false, error: e.message };
-  }
-});
 
 // === Security Layer 1 (scoped) — File permission hardening ===
 // Real Layer 1 (DPAPI/Keychain encryption) is high-risk because decryption
@@ -10337,6 +10226,84 @@ Bot nên dùng các cụm này tự nhiên trong reply (không ép).
 `;
 }
 
+// BOOTSTRAP SYNC: inject persona + shop-state into bootstrap files so the bot
+// gets them automatically without needing to voluntarily read separate files.
+// active-persona.md is NOT one of the 8 bootstrap files openclaw auto-loads.
+// shop-state.json is also not auto-loaded. By injecting their content into
+// SOUL.md (persona) and USER.md (shop-state), the bot receives them on every
+// message with zero extra file reads.
+const _PERSONA_MARKER_START = '<!-- PERSONA-MIX-INJECT-START -->';
+const _PERSONA_MARKER_END = '<!-- PERSONA-MIX-INJECT-END -->';
+const _SHOPSTATE_MARKER_START = '<!-- SHOP-STATE-INJECT-START -->';
+const _SHOPSTATE_MARKER_END = '<!-- SHOP-STATE-INJECT-END -->';
+
+function syncPersonaToBootstrap() {
+  try {
+    const ws = getWorkspace();
+    if (!ws) return;
+    const personaJsonPath = path.join(ws, 'active-persona.json');
+    if (!fs.existsSync(personaJsonPath)) return;
+    const mix = JSON.parse(fs.readFileSync(personaJsonPath, 'utf-8'));
+    const compiled = compilePersonaMix(mix);
+    const soulPath = path.join(ws, 'SOUL.md');
+    if (!fs.existsSync(soulPath)) return;
+    let soul = fs.readFileSync(soulPath, 'utf-8');
+    const startIdx = soul.indexOf(_PERSONA_MARKER_START);
+    const endIdx = soul.indexOf(_PERSONA_MARKER_END);
+    const injection = `${_PERSONA_MARKER_START}\n${compiled}\n${_PERSONA_MARKER_END}`;
+    if (startIdx >= 0 && endIdx >= 0) {
+      soul = soul.slice(0, startIdx) + injection + soul.slice(endIdx + _PERSONA_MARKER_END.length);
+    } else {
+      soul = soul.trimEnd() + '\n\n---\n\n' + injection + '\n';
+    }
+    fs.writeFileSync(soulPath, soul, 'utf-8');
+    console.log('[bootstrap-sync] persona injected into SOUL.md');
+  } catch (e) {
+    console.warn('[bootstrap-sync] persona sync failed:', e?.message);
+  }
+}
+
+function syncShopStateToBootstrap() {
+  try {
+    const ws = getWorkspace();
+    if (!ws) return;
+    const statePath = path.join(ws, 'shop-state.json');
+    if (!fs.existsSync(statePath)) return;
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    const parts = [];
+    if (state.outOfStock) parts.push('- Hết hàng: ' + state.outOfStock);
+    if (state.staffAbsent) parts.push('- Nhân viên vắng: ' + state.staffAbsent);
+    if (state.shippingDelay) parts.push('- Giao hàng chậm: ' + state.shippingDelay);
+    if (state.activePromotions) parts.push('- Khuyến mãi: ' + state.activePromotions);
+    if (state.earlyClosing) parts.push('- Đóng cửa sớm: ' + state.earlyClosing);
+    if (state.specialNotes) parts.push('- Ghi chú: ' + state.specialNotes);
+    if (parts.length === 0) return; // nothing to inject
+    const body = `## Tình trạng hôm nay (CEO cập nhật ${state.updatedAt ? new Date(state.updatedAt).toLocaleString('vi-VN') : 'gần đây'})\n\n` +
+      'Bot PHẢI tham khảo thông tin này khi trả lời khách. Đây là tình trạng THỰC TẾ hôm nay.\n\n' +
+      parts.join('\n') + '\n';
+    const userPath = path.join(ws, 'USER.md');
+    if (!fs.existsSync(userPath)) return;
+    let user = fs.readFileSync(userPath, 'utf-8');
+    const startIdx = user.indexOf(_SHOPSTATE_MARKER_START);
+    const endIdx = user.indexOf(_SHOPSTATE_MARKER_END);
+    const injection = `${_SHOPSTATE_MARKER_START}\n${body}\n${_SHOPSTATE_MARKER_END}`;
+    if (startIdx >= 0 && endIdx >= 0) {
+      user = user.slice(0, startIdx) + injection + user.slice(endIdx + _SHOPSTATE_MARKER_END.length);
+    } else {
+      user = user.trimEnd() + '\n\n---\n\n' + injection + '\n';
+    }
+    fs.writeFileSync(userPath, user, 'utf-8');
+    console.log('[bootstrap-sync] shop-state injected into USER.md (' + parts.length + ' fields)');
+  } catch (e) {
+    console.warn('[bootstrap-sync] shop-state sync failed:', e?.message);
+  }
+}
+
+function syncAllBootstrapData() {
+  syncPersonaToBootstrap();
+  syncShopStateToBootstrap();
+}
+
 ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns, ceoTitle, botName, personaMix, selectedPersona }) => {
   try {
     // Validate inputs
@@ -10409,9 +10376,9 @@ ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns
     if (fs.existsSync(identityPath)) {
       let content = fs.readFileSync(identityPath, 'utf-8');
       const pronounMap = {
-        'em-anh-chi': 'em — gọi chủ nhân là ' + ceoTitle,
-        'toi-quy-khach': 'tôi — gọi chủ nhân là ' + ceoTitle,
-        'minh-ban': 'mình — gọi chủ nhân là ' + ceoTitle,
+        'em-anh-chi': 'em — gọi ' + ceoTitle,
+        'toi-quy-khach': 'tôi — gọi ' + ceoTitle,
+        'minh-ban': 'mình — gọi ' + ceoTitle,
       };
       const toneMap = {
         'professional': 'Chuyên nghiệp, lịch sự, rõ ràng. Phù hợp giao tiếp doanh nghiệp.',
@@ -10476,6 +10443,7 @@ ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns
         if (fs.existsSync(legacyPath)) fs.unlinkSync(legacyPath);
       } catch {}
       console.log('[save-personalization] persona mix saved: voice=' + mix.voice + ' traits=' + (mix.traits || []).length + ' formality=' + mix.formality);
+      syncPersonaToBootstrap();
     } catch (e) { console.warn('[save-personalization] persona mix write failed:', e?.message); }
 
     // Delete BOOTSTRAP.md — it's single-use, wizard completion means bot is
@@ -11069,6 +11037,22 @@ ipcMain.handle('save-custom-crons', async (_event, crons) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('delete-openclaw-cron', async (_event, jobId) => {
+  try {
+    if (!jobId || typeof jobId !== 'string') return { success: false, error: 'jobId required' };
+    const realId = jobId.startsWith('oc_') ? jobId.slice(3) : jobId;
+    const ocJobsPath = path.join(HOME, '.openclaw', 'cron', 'jobs.json');
+    if (!fs.existsSync(ocJobsPath)) return { success: false, error: 'jobs.json not found' };
+    const raw = JSON.parse(fs.readFileSync(ocJobsPath, 'utf-8'));
+    const before = Array.isArray(raw?.jobs) ? raw.jobs.length : 0;
+    raw.jobs = (raw.jobs || []).filter(j => j && j.id !== realId);
+    if (raw.jobs.length === before) return { success: false, error: 'job not found: ' + realId };
+    writeJsonAtomic(ocJobsPath, raw);
+    console.log('[delete-openclaw-cron] deleted job:', realId);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('save-schedules', async (_event, schedules) => {
   try {
     writeJsonAtomic(getSchedulesPath(), schedules);
@@ -11210,7 +11194,7 @@ function buildMorningBriefingPrompt(timeStr) {
     ? `\n\n--- LỊCH SỬ TIN NHẮN 24H QUA (đã trích từ session storage, KHÔNG cần em đi tìm thêm) ---\n${history}\n--- HẾT LỊCH SỬ ---\n\n`
     : `\n\n_(Chưa có tin nhắn nào trong 24h qua — nếu CEO mới setup hoặc chưa ai nhắn thì điều này bình thường.)_\n\n`;
   return (
-    `Bây giờ là ${timeStr || '07:30'} sáng. Hãy gửi BÁO CÁO SÁNG cho CEO qua Telegram.` +
+    `Bây giờ là ${timeStr || '07:30'} sáng. Hãy gửi BÁO CÁO SÁNG cho CEO.` +
     historyBlock +
     `Dựa trên lịch sử tin nhắn ở trên + AGENTS.md + memory/ + knowledge công ty, tổng hợp:\n` +
     `1. Tóm tắt việc hôm qua (kết quả, deal đã chốt, vấn đề tồn đọng)\n` +
@@ -11232,7 +11216,7 @@ function buildEveningSummaryPrompt(timeStr) {
     ? `\n\n--- LỊCH SỬ TIN NHẮN 24H QUA (đã trích từ session storage, KHÔNG cần em đi tìm thêm) ---\n${history}\n--- HẾT LỊCH SỬ ---\n\n`
     : `\n\n_(Chưa có tin nhắn nào trong 24h qua.)_\n\n`;
   return (
-    `Bây giờ là ${timeStr || '21:00'}, hết ngày làm việc. Hãy gửi TÓM TẮT CUỐI NGÀY cho CEO qua Telegram.` +
+    `Bây giờ là ${timeStr || '21:00'}, hết ngày làm việc. Hãy gửi TÓM TẮT CUỐI NGÀY cho CEO.` +
     historyBlock +
     `Dựa trên lịch sử tin nhắn ở trên + memory/ + knowledge, tổng hợp:\n` +
     `1. Kết quả hôm nay so với mục tiêu (việc đã xong, deal đã chốt, doanh thu nếu có)\n` +
@@ -11257,7 +11241,7 @@ async function buildWeeklyReportPrompt() {
     ? `\n\n--- TÓM TẮT 7 NGÀY QUA (từ daily summaries, cover 100% tin nhắn) ---\n${dailySummaries}\n--- HẾT TÓM TẮT ---\n\n`
     : `\n\n_(Không có tóm tắt ngày nào trong 7 ngày qua.)_\n\n`;
   return (
-    `Hôm nay là thứ 2. Hãy gửi BÁO CÁO TUẦN cho CEO qua Telegram.` +
+    `Hôm nay là thứ 2. Hãy gửi BÁO CÁO TUẦN cho CEO.` +
     recentBlock + summaryBlock +
     `Dựa trên tóm tắt hàng ngày ở trên + tin nhắn 24h gần nhất + memory/ + knowledge + audit log, tổng hợp:\n` +
     `1. Tổng kết tuần qua: việc đã xong, deal đã chốt, khách mới qua Zalo/Telegram\n` +
@@ -11281,7 +11265,7 @@ function buildMonthlyReportPrompt() {
     ? `\n\n--- TÓM TẮT 4 TUẦN QUA (từ weekly summaries, cover 100% tin nhắn) ---\n${weeklySummaries}\n--- HẾT TÓM TẮT ---\n\n`
     : `\n\n_(Không có tóm tắt trong 30 ngày qua.)_\n\n`;
   return (
-    `Ngày 1 tháng mới. Hãy gửi BÁO CÁO THÁNG cho CEO qua Telegram.` +
+    `Ngày 1 tháng mới. Hãy gửi BÁO CÁO THÁNG cho CEO.` +
     recentBlock + summaryBlock +
     `Dựa trên tóm tắt hàng tuần + memory/ + knowledge, tổng hợp:\n` +
     `1. Tổng kết tháng: kết quả nổi bật, milestone đạt được\n` +
@@ -11416,19 +11400,19 @@ function buildZaloFollowUpPrompt(candidates) {
 
   if (candidates.length === 0) {
     return (
-      `Gửi tin nhắn Telegram cho CEO với NỘI DUNG CHÍNH XÁC NHƯ SAU (không thêm chữ, không hỏi lại, không bịa):\n\n` +
+      `Gửi cho CEO NỘI DUNG CHÍNH XÁC NHƯ SAU (không thêm chữ, không hỏi lại, không bịa):\n\n` +
       `**FOLLOW-UP KHÁCH ZALO**\n` +
       `Không có khách nào cần follow-up hôm nay.\n\n` +
-      `Dùng tool sessions_send để gửi.`
+      `Gửi qua tool sessions_send.`
     );
   }
 
   const lines = candidates.map(c => c.line).join('\n');
   return (
-    `Gửi tin nhắn Telegram cho CEO với format sau. Đây là danh sách khách cần follow-up ĐÃ PRE-FILTER (KHÔNG đọc thêm file, KHÔNG đoán thêm khách):\n\n` +
+    `Gửi cho CEO với format sau. Đây là danh sách khách cần follow-up ĐÃ PRE-FILTER (KHÔNG đọc thêm file, KHÔNG đoán thêm khách):\n\n` +
     `**FOLLOW-UP KHÁCH ZALO** (${candidates.length})\n` +
     `${lines}\n\n` +
-    `Gửi NGUYÊN VĂN text trên qua Telegram dùng tool sessions_send. KHÔNG emoji, KHÔNG thêm lời mở đầu/kết, KHÔNG hỏi lại CEO.`
+    `Gửi NGUYÊN VĂN text trên dùng tool sessions_send. KHÔNG emoji, KHÔNG thêm lời mở đầu/kết, KHÔNG hỏi lại CEO.`
   );
 }
 
@@ -11438,7 +11422,7 @@ function buildMeditationPrompt() {
     `1. Đọc .learnings/LEARNINGS.md — liệt kê những learning nào xuất hiện > 2 lần hoặc có impact cao\n` +
     `2. Đọc memory/ (journal entries, weekly-digest.md nếu có) — tìm patterns: khách hay hỏi gì, CEO cần gì thường xuyên, điểm nào bot hay sai\n` +
     `3. Nếu tìm thấy pattern đáng ghi nhận: append vào .learnings/LEARNINGS.md với format L-XXX (tiếp số hiện có)\n` +
-    `4. Gửi CEO báo cáo ngắn qua Telegram:\n` +
+    `4. Gửi CEO báo cáo ngắn:\n` +
     `**TỐI ƯU BAN ĐÊM**\n` +
     `- Đã review N learning entries\n` +
     `- Pattern mới phát hiện: [bullet nếu có, hoặc "Không có gì mới"]\n` +
@@ -11453,7 +11437,7 @@ function buildMemoryCleanupPrompt() {
     `1. Tìm các journal entries cũ > 7 ngày, tổng hợp những insight quan trọng\n` +
     `2. Ghi tổng hợp tuần vào memory/weekly-digest.md (append, không xóa cũ)\n` +
     `3. Xác định thông tin trùng lặp hoặc outdated trong memory files\n\n` +
-    `Gửi CEO báo cáo ngắn qua Telegram:\n` +
+    `Gửi CEO báo cáo ngắn:\n` +
     `**DỌN DẸP MEMORY**\n` +
     `- Đã tổng hợp N journal entries\n` +
     `- Insight chính: [1-3 bullet]\n\n` +
@@ -11730,6 +11714,14 @@ const _outputFilterPatterns = [
   { name: 'pii-cccd-cmnd', re: /(?:cccd|căn\s*cước|cmnd|chứng\s*minh\s*(?:nhân\s*dân|thư))[\s:=]*\d{9}(?:\d{3})?\b/i },
   { name: 'pii-bank-account', re: /(?:stk|số\s*tài\s*khoản|account\s*(?:number|no\.?)|acct\s*#?)[\s:=]*\d{6,20}/i },
   { name: 'pii-credit-card', re: /\b\d{4}[\s-]\d{4}[\s-]\d{4}[\s-]\d{1,4}\b/ },
+  // Layer A1.4: upstream API / LLM error leakage — ChatGPT/OpenAI errors passed through
+  // 9Router into bot reply text. Customer must NEVER see "[Error] Our servers are..."
+  { name: 'api-error-bracket', re: /\[Error\]/i },
+  { name: 'api-overloaded', re: /servers? (?:are |is )?(?:currently )?overloaded/i },
+  { name: 'api-rate-limit', re: /rate.?limit(?:ed|ing)?\b/i },
+  { name: 'api-try-again', re: /(?:please |pls )?try again later/i },
+  { name: 'api-internal-error', re: /(?:internal server error|502 bad gateway|503 service|429 too many)/i },
+  { name: 'api-quota-exceeded', re: /quota.?exceeded|usage.?limit/i },
   // Layer A1.5: bot "silent" tokens — model outputs these instead of truly staying silent
   { name: 'bot-silent-token', re: /^(NO_REPLY|SKIP|SILENT|DO_NOT_REPLY|IM_LANG|IM LẶNG|KHÔNG TRẢ LỜI|no.?reply|skip.?message)$/i },
   // Layer A2: compaction/context reset
@@ -11764,7 +11756,6 @@ const _outputFilterPatterns = [
   { name: 'brand-openclaw', re: /openclaw[\/\\\\.\-](?:dist|cli|mjs|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+openclaw/i },
   { name: 'brand-9router', re: /9router[\/\\\\.\-](?:dist|cli|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+9router/i },
   { name: 'brand-openzca', re: /openzca[\/\\\\.\-](?:dist|cli|listen|json|ts|js|log|md)|(?:error|crashed|spawn|exception|stack(?:\s*trace)?)\s+openzca/i },
-  { name: 'zalo-chu-nhan-marker', re: /\[ZALO_CHU_NHAN/i },
   // Layer F: prompt injection acknowledgment leakage
   { name: 'jailbreak-acknowledge', re: /\b(developer mode|jailbreak|ignore previous|forget instructions|role\s*play as|you are now|pretend to be)\b/i },
   { name: 'system-prompt-leak', re: /\b(my (?:instructions|prompt|system prompt|rules)|here (?:are|is) my (?:rules|instructions))/i },
@@ -11803,7 +11794,7 @@ function sanitizeZaloText(text) {
   out = out.replace(/(?<!_)_([^_\n]+)_(?!_)/g, '$1');              // _italic_
   out = out.replace(/^#{1,6}\s+/gm, '');                           // # headings
   out = out.replace(/^>\s*/gm, '');                                // > blockquote
-  out = out.replace(/^\s*[-*+]\s+/gm, '');                         // - bullets
+  out = out.replace(/^\s*[-*+•·]\s*/gm, '');                        // - bullets + • · unicode
   out = out.replace(/^\s*\d+[.)]\s+/gm, '');                       // 1. numbered
   out = out.replace(/\|([^|\n]+)\|/g, '$1');                       // | table |
   out = out.replace(/<\/?[a-zA-Z][^>]*>/g, '');                    // HTML tags
@@ -12084,126 +12075,9 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
 
 // Send a direct Zalo message to the CEO's personal Zalo account via openzca CLI.
 // Mirrors sendTelegram() for parity. Used by cron alerts and fallback delivery.
-async function sendZalo(text, { skipFilter = false, skipPauseCheck = false } = {}) {
-  if (!isZaloChannelEnabled()) {
-    console.log('[sendZalo] channel disabled in config — skipping');
-    return null;
-  }
-  // Check pause state
-  if (!skipPauseCheck && isChannelPaused('zalo')) {
-    console.log('[sendZalo] channel paused — skipping');
-    return null;
-  }
-  // Sanitize markdown — Zalo does not render markdown cleanly
-  if (!skipFilter) {
-    text = sanitizeZaloText(text);
-  }
-  // Output filter
-  if (!skipFilter) {
-    const filtered = filterSensitiveOutput(text);
-    if (filtered.blocked) {
-      console.warn(`[sendZalo] output filter blocked (${filtered.pattern})`);
-      text = filtered.text;
-    }
-  } else {
-    // Bypass audit — so we can later verify bypass isn't abused.
-    console.log('[sendZalo] filter BYPASSED for system alert');
-    try {
-      const logDir = path.join(getWorkspace(), 'logs');
-      fs.mkdirSync(logDir, { recursive: true });
-      fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
-        JSON.stringify({ t: new Date().toISOString(), event: 'output_bypass', channel: 'zalo', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
-    } catch {}
-  }
-  const owner = readZaloOwner();
-  if (!owner || !owner.ownerUserId) {
-    console.error('[sendZalo] no Zalo owner configured — cannot send');
-    return null;
-  }
-  const zcaBin = findGlobalPackageFile('openzca', 'dist/cli.js');
-  if (!zcaBin) {
-    console.error('[sendZalo] openzca CLI not found');
-    return null;
-  }
-  const nodeBin = findNodeBin() || 'node';
-  const zcaProfile = getZcaProfile();
-
-  // Split text into ≤780-char chunks at paragraph/sentence boundaries.
-  // Split is independent of skipFilter — even system alerts (cron errors) can exceed
-  // Zalo's hard limit and must be split to avoid openzca truncation on the wire.
-  const ZALO_CHUNK = 780;
-  const chunks = [];
-  if (text.length > ZALO_CHUNK) {
-    let remaining = text;
-    while (remaining.length > ZALO_CHUNK) {
-      let cut = ZALO_CHUNK;
-      // Prefer paragraph break
-      const paraBreak = remaining.lastIndexOf('\n\n', ZALO_CHUNK);
-      if (paraBreak > 200) { cut = paraBreak + 2; }
-      else {
-        // Prefer sentence end
-        const sentBreak = remaining.slice(0, ZALO_CHUNK).search(/[.!?][^.!?]*$/);
-        if (sentBreak > 200) { cut = sentBreak + 1; }
-        else {
-          // Prefer word boundary
-          const spaceBreak = remaining.lastIndexOf(' ', ZALO_CHUNK);
-          if (spaceBreak > 200) { cut = spaceBreak + 1; }
-        }
-      }
-      chunks.push(remaining.slice(0, cut).trimEnd());
-      remaining = remaining.slice(cut).trimStart();
-    }
-    if (remaining.length > 0) chunks.push(remaining);
-  } else {
-    chunks.push(text);
-  }
-
-  const sendOneChunk = (chunk) => new Promise((resolve) => {
-    try {
-      if (!isZaloChannelEnabled()) {
-        console.log('[sendZalo] disabled before chunk send — aborting');
-        resolve(null);
-        return;
-      }
-      if (isChannelPaused('zalo')) {
-        console.log('[sendZalo] paused before chunk send — aborting');
-        resolve(null);
-        return;
-      }
-      const child = require('child_process').spawn(
-        nodeBin,
-        [zcaBin, '--profile', zcaProfile, 'msg', 'send', owner.ownerUserId, chunk],
-        { shell: false, timeout: 20000, env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] }
-      );
-      let stdout = '', stderr = '';
-      child.stdout.on('data', (d) => { stdout += d; });
-      child.stderr.on('data', (d) => { stderr += d; });
-      child.on('close', (code) => {
-        if (code === 0) { resolve(true); }
-        else { console.error(`[sendZalo] exit ${code}: ${stderr.slice(0, 200)}`); resolve(null); }
-      });
-      child.on('error', (e) => { console.error('[sendZalo] spawn error:', e.message); resolve(null); });
-    } catch (e) {
-      console.error('[sendZalo] error:', e.message);
-      resolve(null);
-    }
-  });
-
-  if (chunks.length === 1) {
-    const result = await sendOneChunk(chunks[0]);
-    if (result) console.log('[sendZalo] sent OK');
-    return result;
-  }
-
-  console.log(`[sendZalo] splitting into ${chunks.length} chunks (total ${text.length} chars)`);
-  let lastResult = null;
-  for (let i = 0; i < chunks.length; i++) {
-    lastResult = await sendOneChunk(chunks[i]);
-    if (!lastResult) { console.error(`[sendZalo] chunk ${i+1}/${chunks.length} failed`); break; }
-    if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 800)); // 800ms gap between chunks
-  }
-  if (lastResult) console.log(`[sendZalo] sent OK (${chunks.length} chunks)`);
-  return lastResult;
+async function sendZalo(text, opts = {}) {
+  // Zalo outbound disabled — owner system removed. Alerts go via Telegram only.
+  return null;
 }
 
 // ============================================
@@ -13177,6 +13051,34 @@ async function probeZaloReady() {
   }
 }
 
+ipcMain.handle('get-telegram-config', async () => {
+  try {
+    const configPath = getOpenClawConfigPath();
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const tg = config.channels?.telegram || {};
+    return {
+      botToken: tg.botToken || '',
+      allowFrom: tg.allowFrom || [],
+    };
+  } catch { return { botToken: '', allowFrom: [] }; }
+});
+
+ipcMain.handle('save-telegram-config', async (_e, { botToken, userId }) => {
+  try {
+    const configPath = getOpenClawConfigPath();
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!config.channels) config.channels = {};
+    if (!config.channels.telegram) config.channels.telegram = {};
+    if (botToken !== undefined) config.channels.telegram.botToken = botToken;
+    if (userId !== undefined) {
+      const uid = parseInt(userId, 10);
+      if (!isNaN(uid) && uid > 0) config.channels.telegram.allowFrom = [uid];
+    }
+    writeOpenClawConfigIfChanged(configPath, config);
+    return { success: true };
+  } catch (e) { return { success: false, error: String(e) }; }
+});
+
 ipcMain.handle('check-telegram-ready', async () => probeTelegramReady());
 ipcMain.handle('check-zalo-ready', async () => probeZaloReady());
 
@@ -13391,6 +13293,18 @@ async function broadcastChannelStatusOnce() {
       mainWindow.webContents.send('channel-status', {
         telegram: { ready: false, error: 'Bot \u0111ang d\u1EEBng' },
         zalo: { ready: false, error: 'Bot \u0111ang d\u1EEBng' },
+        checkedAt: new Date().toISOString(),
+      });
+      return;
+    }
+        // Gate 2: gateway spawned (botRunning=true) but not yet listening on :18789.
+    // Telegram getMe returns green even when gateway can't process messages.
+    // CEO sees green dot but bot won't reply for 30-60s. Quick 2s probe.
+    const __gwAlive = await isGatewayAlive(2000);
+    if (!__gwAlive) {
+      mainWindow.webContents.send('channel-status', {
+        telegram: { ready: false, error: 'Đang khởi động...' },
+        zalo: { ready: false, error: 'Đang khởi động...' },
         checkedAt: new Date().toISOString(),
       });
       return;
@@ -13634,7 +13548,7 @@ async function fastWatchdogTick() {
         _gatewayRestartInFlight = true;
         try {
           await stopOpenClaw();
-          await startOpenClaw();
+          await startOpenClaw({ silent: true });
         } catch (e) {
           console.error('[fast-watchdog] gateway restart error:', e.message);
         } finally {
@@ -13658,6 +13572,8 @@ async function fastWatchdogTick() {
           if (!zlPid) {
             _fwZaloMissCount++;
             if (_fwZaloMissCount === 3) {
+              // Track timestamp so heartbeat watchdog skips duplicate alert (dedup fix).
+              global._zaloListenerAlertSentAt = Date.now();
               console.warn('[fast-watchdog] Zalo listener not running (3 checks) — NOT restarting gateway. Zalo may need QR re-login.');
               // Alert CEO once, don't spam
               sendCeoAlert('Zalo listener kh\u00F4ng ch\u1EA1y. N\u1EBFu Zalo kh\u00F4ng nh\u1EADn tin, v\u00E0o tab Zalo b\u1EA5m "\u0110\u1ED5i t\u00E0i kho\u1EA3n" \u0111\u1EC3 qu\u00E9t QR l\u1EA1i.').catch(() => {});
@@ -14359,7 +14275,7 @@ async function processFollowUpQueue() {
       // Fire!
       console.log('[follow-up] Firing:', item.id, 'for', item.recipientName || item.recipientId);
       try {
-        const prompt = item.prompt || `Nhắc CEO qua Telegram: Khách ${item.recipientName || item.recipientId} (${item.channel || 'Zalo'}) hỏi ${item.question || 'một câu hỏi'} cách đây 15 phút và chưa được phản hồi. Gửi tin nhắn nhắc CEO kiểm tra. KHÔNG gửi tin cho khách. KHÔNG nói "đã kiểm tra".`;
+        const prompt = item.prompt || `Nhắc CEO: Khách ${item.recipientName || item.recipientId} (${item.channel || 'Zalo'}) hỏi ${item.question || 'một câu hỏi'} cách đây 15 phút và chưa được phản hồi. Gửi tin nhắn nhắc CEO kiểm tra. KHÔNG gửi tin cho khách. KHÔNG nói "đã kiểm tra".`;
         await runCronAgentPrompt(prompt, { label: 'follow-up-' + (item.recipientName || item.recipientId) });
         item.firedAt = new Date().toISOString();
         try { auditLog('follow_up_fired', { id: item.id, recipient: item.recipientId }); } catch {}
@@ -14417,6 +14333,248 @@ function startFollowUpChecker() {
   if (_followUpInterval) clearInterval(_followUpInterval);
   _followUpInterval = setInterval(processFollowUpQueue, 60 * 1000); // check every 60s
   _followUpInterval.unref?.();
+}
+
+// ============================================
+//  ESCALATION QUEUE — auto-forward to CEO
+// ============================================
+// send.ts output filter detects escalation keywords in bot replies and writes
+// to logs/escalation-queue.jsonl. This poller reads the file every 30s, sends
+// each entry to CEO via sendCeoAlert(), then truncates.
+
+let _escalationInterval = null;
+
+async function processEscalationQueue() {
+  try {
+    const ws = getWorkspace();
+    const queueFile = path.join(ws, 'logs', 'escalation-queue.jsonl');
+    if (!fs.existsSync(queueFile)) return;
+    const raw = fs.readFileSync(queueFile, 'utf-8').trim();
+    if (!raw) return;
+    const lines = raw.split('\n').filter(Boolean);
+    if (lines.length === 0) return;
+
+    // Truncate immediately to avoid re-processing on next tick
+    fs.writeFileSync(queueFile, '', 'utf-8');
+
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        // Try to look up customer name from memory file
+        let customerName = entry.to || 'unknown';
+        try {
+          const memDir = path.join(ws, 'memory', entry.isGroup ? 'zalo-groups' : 'zalo-users');
+          const memFile = path.join(memDir, entry.to + '.md');
+          if (fs.existsSync(memFile)) {
+            const memContent = fs.readFileSync(memFile, 'utf-8').slice(0, 500);
+            const nameMatch = memContent.match(/^#\s+(.+)/m);
+            if (nameMatch) customerName = nameMatch[1].trim();
+          }
+        } catch {}
+
+        const alertMsg = `[Escalation] Bot vừa trả lời ${entry.isGroup ? 'nhóm' : 'khách'} ${customerName} (ID: ${entry.to}) với nội dung có dấu hiệu cần sếp xử lý.\n\nTrigger: "${entry.trigger}"\nBot reply: ${(entry.botReply || '').slice(0, 300)}\nThời gian: ${entry.t}`;
+        await sendCeoAlert(alertMsg);
+        try { auditLog('escalation_forwarded', { to: entry.to, trigger: entry.trigger }); } catch {}
+        console.log('[escalation] Forwarded to CEO:', entry.trigger, 'for', customerName);
+      } catch (e) {
+        console.error('[escalation] Parse/send error for line:', e?.message);
+      }
+    }
+  } catch (e) {
+    console.error('[escalation] processQueue error:', e?.message);
+  }
+}
+
+function startEscalationChecker() {
+  if (_escalationInterval) clearInterval(_escalationInterval);
+  _escalationInterval = setInterval(processEscalationQueue, 30 * 1000); // check every 30s
+  _escalationInterval.unref?.();
+}
+
+// ─── Local Cron API (port 20200) ─────────────────────────────────────
+// CEO Telegram → bot uses web_fetch → POST/GET to this API → main.js writes custom-crons.json.
+// Zalo customers cannot trigger this: inbound.ts command-block rewrites rawBody before agent sees it,
+// and cron/exec/process tools are removed from tools.allow. Defense-in-depth.
+let _cronApiServer = null;
+let _cronApiPort = 20200;
+let _cronApiWriteLock = false;
+let _cronApiToken = '';
+function startCronApi() {
+  if (_cronApiServer) return;
+  const http = require('http');
+  const crypto = require('crypto');
+  const nodeCron = require('node-cron');
+
+  _cronApiToken = crypto.randomBytes(24).toString('hex');
+  try {
+    const tokenPath = path.join(getWorkspace(), 'cron-api-token.txt');
+    fs.writeFileSync(tokenPath, _cronApiToken, 'utf-8');
+  } catch (e) { console.error('[cron-api] failed to write token file:', e.message); }
+
+  function loadGroupsMap() {
+    try {
+      const p = path.join(getZcaCacheDir(), 'groups.json');
+      if (!fs.existsSync(p)) return { byId: {}, byName: {} };
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      const byId = {}, byName = {};
+      for (const g of (Array.isArray(data) ? data : [])) {
+        const id = String(g.groupId || g.id || '');
+        const name = g.name || g.groupName || '';
+        if (id) { byId[id] = name; if (name) byName[name.toLowerCase()] = id; }
+      }
+      return { byId, byName };
+    } catch { return { byId: {}, byName: {} }; }
+  }
+
+  function jsonResp(res, code, obj) {
+    const body = JSON.stringify(obj);
+    res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+    res.end(body);
+  }
+
+  function parseBody(req) {
+    return new Promise((resolve) => {
+      if (req.method === 'GET') {
+        const u = new URL(req.url, 'http://127.0.0.1');
+        const obj = {};
+        for (const [k, v] of u.searchParams) obj[k] = v;
+        // content may contain & which breaks URL parsing — extract from raw query as last param
+        const raw = req.url;
+        const contentIdx = raw.indexOf('content=');
+        if (contentIdx !== -1 && (!obj.content || obj.content.length < 5)) {
+          const rawContent = raw.slice(contentIdx + 8);
+          try { obj.content = decodeURIComponent(rawContent.replace(/\+/g, ' ')); }
+          catch { obj.content = rawContent.replace(/\+/g, ' '); }
+        }
+        resolve(obj);
+        return;
+      }
+      let chunks = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+        catch { resolve({}); }
+      });
+      req.setTimeout(5000, () => resolve({}));
+    });
+  }
+
+  async function withWriteLock(fn) {
+    while (_cronApiWriteLock) await new Promise(r => setTimeout(r, 50));
+    _cronApiWriteLock = true;
+    try { return await fn(); } finally { _cronApiWriteLock = false; }
+  }
+
+  const server = http.createServer(async (req, res) => {
+    const urlPath = (new URL(req.url, 'http://127.0.0.1')).pathname;
+    const params = await parseBody(req);
+
+    const isMutation = urlPath !== '/api/cron/list';
+    if (isMutation && params.token !== _cronApiToken) {
+      return jsonResp(res, 403, { error: 'invalid or missing token. Read cron-api-token.txt from workspace first.' });
+    }
+
+    if (urlPath === '/api/cron/create') {
+      const { label, cronExpr, oneTimeAt, groupId, groupIds, content } = params;
+      if (!content) return jsonResp(res, 400, { error: 'content required' });
+      const targets = groupIds ? String(groupIds).split(',').map(s => s.trim()).filter(Boolean) : (groupId ? [String(groupId).trim()] : []);
+      if (targets.length === 0) return jsonResp(res, 400, { error: 'groupId or groupIds required' });
+      const { byId, byName } = loadGroupsMap();
+      const resolvedIds = targets.map(t => byName[t.toLowerCase()] || t);
+      const invalidIds = resolvedIds.filter(id => !(id in byId));
+      if (invalidIds.length > 0) return jsonResp(res, 400, { error: 'unknown groupId(s): ' + invalidIds.join(', ') + '. Available: ' + Object.entries(byId).map(([id, name]) => `${name} (${id})`).join(', ') });
+      if (cronExpr) {
+        const normalized = String(cronExpr).trim().replace(/\s+/g, ' ');
+        if (!nodeCron.validate(normalized)) return jsonResp(res, 400, { error: 'invalid cronExpr: ' + cronExpr });
+      }
+      if (oneTimeAt) {
+        const d = new Date(oneTimeAt);
+        if (isNaN(d.getTime())) return jsonResp(res, 400, { error: 'invalid oneTimeAt (expected YYYY-MM-DDTHH:MM:SS): ' + oneTimeAt });
+        if (d.getTime() < Date.now() - 60000) return jsonResp(res, 400, { error: 'oneTimeAt is in the past: ' + oneTimeAt });
+      }
+      if (!cronExpr && !oneTimeAt) return jsonResp(res, 400, { error: 'cronExpr or oneTimeAt required' });
+      const targetStr = resolvedIds.join(',');
+      const id = 'cron_' + Date.now();
+      const entry = {
+        id,
+        label: label || ('Cron ' + new Date().toISOString().slice(0, 16)),
+        prompt: 'exec: openzca msg send ' + targetStr + ' "' + String(content).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').replace(/\r/g, '') + '" --group --profile default',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      };
+      if (cronExpr) entry.cronExpr = String(cronExpr).trim().replace(/\s+/g, ' ');
+      else entry.oneTimeAt = oneTimeAt;
+      try {
+        return await withWriteLock(async () => {
+          const crons = loadCustomCrons();
+          crons.push(entry);
+          writeJsonAtomic(getCustomCronsPath(), crons);
+          try { restartCronJobs(); } catch {}
+          console.log('[cron-api] created:', id, label || '');
+          return jsonResp(res, 200, { success: true, id, entry });
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/cron/list') {
+      try {
+        const crons = loadCustomCrons();
+        const { byId } = loadGroupsMap();
+        return jsonResp(res, 200, { crons, groups: Object.entries(byId).map(([id, name]) => ({ id, name })), token: _cronApiToken });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/cron/delete') {
+      const { id } = params;
+      if (!id) return jsonResp(res, 400, { error: 'id required' });
+      try {
+        return await withWriteLock(async () => {
+          const crons = loadCustomCrons();
+          const filtered = crons.filter(c => c.id !== id);
+          if (filtered.length === crons.length) return jsonResp(res, 404, { error: 'cron not found: ' + id });
+          writeJsonAtomic(getCustomCronsPath(), filtered);
+          try { restartCronJobs(); } catch {}
+          console.log('[cron-api] deleted:', id);
+          return jsonResp(res, 200, { success: true });
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/cron/toggle') {
+      const { id, enabled } = params;
+      if (!id) return jsonResp(res, 400, { error: 'id required' });
+      try {
+        return await withWriteLock(async () => {
+          const crons = loadCustomCrons();
+          const target = crons.find(c => c.id === id);
+          if (!target) return jsonResp(res, 404, { error: 'cron not found: ' + id });
+          target.enabled = enabled === 'true' || enabled === true;
+          writeJsonAtomic(getCustomCronsPath(), crons);
+          try { restartCronJobs(); } catch {}
+          return jsonResp(res, 200, { success: true, enabled: target.enabled });
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else {
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle'] });
+    }
+  });
+
+  function tryListen(port, retries) {
+    server.listen(port, '127.0.0.1', () => {
+      _cronApiServer = server;
+      _cronApiPort = port;
+      console.log('[cron-api] listening on http://127.0.0.1:' + port);
+    });
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE' && retries > 0) {
+        console.warn('[cron-api] port ' + port + ' in use, trying ' + (port + 1));
+        server.removeAllListeners('error');
+        tryListen(port + 1, retries - 1);
+      } else {
+        console.error('[cron-api] server error:', err.message);
+        try { sendCeoAlert('[Cron API] Khong khoi dong duoc HTTP server: ' + err.message); } catch {}
+      }
+    });
+  }
+  tryListen(20200, 3);
 }
 
 // IPC: bot or dashboard can queue a follow-up.
@@ -14600,7 +14758,13 @@ function _startCronJobsInner() {
                     if (global._zaloListenerRestartHistory.length >= 3) {
                       console.log('[zalo-watchdog] 3 restarts in 2h — giving up, alerting CEO');
                       global._zaloListenerGaveUp = true;
-                      try { await sendCeoAlert('Listener Zalo đang không ổn định, vui lòng kiểm tra kết nối mạng'); } catch {}
+                      // Dedup: skip alert if fast watchdog already alerted within 15 min
+                      const _fwAlertAge = Date.now() - (global._zaloListenerAlertSentAt || 0);
+                      if (global._zaloListenerAlertSentAt && _fwAlertAge < 15 * 60 * 1000) {
+                        console.log(`[zalo-watchdog] skipping CEO alert — fast watchdog already alerted ${Math.round(_fwAlertAge/1000)}s ago`);
+                      } else {
+                        try { await sendCeoAlert('Listener Zalo đang không ổn định, vui lòng kiểm tra kết nối mạng'); } catch {}
+                      }
                       return;
                     }
                     // All gates passed — do the restart.
@@ -14613,7 +14777,7 @@ function _startCronJobsInner() {
                     try {
                       try { await stopOpenClaw(); } catch {}
                       await new Promise(r => setTimeout(r, 5000));
-                      try { await startOpenClaw(); } catch (e) { console.error('[zalo-watchdog] zalo restart failed:', e.message); }
+                      try { await startOpenClaw({ silent: true }); } catch (e) { console.error('[zalo-watchdog] zalo restart failed:', e.message); }
                     } finally {
                       _gatewayRestartInFlight = false;
                     }
@@ -14647,7 +14811,7 @@ function _startCronJobsInner() {
             try {
               try { await stopOpenClaw(); } catch {}
               await new Promise(r => setTimeout(r, 5000));
-              try { await startOpenClaw(); } catch (e) {
+              try { await startOpenClaw({ silent: true }); } catch (e) {
                 console.error('[heartbeat] restart failed:', e.message);
               }
             } finally {
@@ -14772,7 +14936,7 @@ function _startCronJobsInner() {
       try { auditLog('cron_fired', { id: 'weekly-gateway-restart', label: 'Weekly memory hygiene' }); } catch {}
       try {
         await stopOpenClaw();
-        await startOpenClaw();
+        await startOpenClaw({ silent: true });
         console.log('[cron] Weekly gateway restart completed');
       } catch (e) {
         console.error('[cron] Weekly gateway restart failed:', e?.message);
@@ -14834,10 +14998,53 @@ function _startCronJobsInner() {
       surfaceCronConfigError(c, 'missing cronExpr field');
       continue;
     }
-    // Hard gate: reject ISO dates/timestamps that LLM might write instead of cron expressions
+    // Inline heal: if LLM wrote ISO date as cronExpr, convert to oneTimeAt
+    // on-the-fly instead of erroring. The heal in loadCustomCrons should have
+    // caught this, but bot can re-write the file after heal (race condition).
     if (/^\d{4}-\d{2}-\d{2}/.test(c.cronExpr) || /T\d{2}:\d{2}/.test(c.cronExpr)) {
-      console.error(`[cron] custom cron ${c.id} has ISO date instead of cron expression: "${c.cronExpr}"`);
-      surfaceCronConfigError(c, `invalid cron expression: "${c.cronExpr}" — dùng cron format (vd: "37 7 * * *"), KHÔNG dùng ISO date`);
+      console.log(`[cron] inline-healing ISO cronExpr "${c.cronExpr}" → oneTimeAt for ${c.id}`);
+      c.oneTimeAt = c.cronExpr.replace(/\.000Z$/, '').replace(/Z$/, '');
+      delete c.cronExpr;
+      // Write healed version back to file so it doesn't re-trigger
+      try {
+        const customCronsPath = getCustomCronsPath();
+        const all = loadCustomCrons();
+        const idx = all.findIndex(x => x && x.id === c.id);
+        if (idx >= 0) { all[idx] = c; writeJsonAtomic(customCronsPath, all); }
+      } catch {}
+      // Fall through to oneTimeAt scheduling below — need to re-enter the loop
+      // by checking oneTimeAt condition. Simplest: just goto the oneTimeAt handler.
+    }
+    if (c.oneTimeAt && !c.cronExpr) {
+      try {
+        const fireAt = new Date(c.oneTimeAt);
+        const delayMs = fireAt.getTime() - Date.now();
+        if (isNaN(fireAt.getTime())) {
+          surfaceCronConfigError(c, `oneTimeAt invalid date: "${c.oneTimeAt}"`);
+          continue;
+        }
+        if (delayMs < -60000) {
+          console.log(`[cron] oneTime ${c.id} already past (${c.oneTimeAt}) — removing`);
+          _removeCustomCronById(c.id);
+          continue;
+        }
+        const effectiveDelay = Math.max(delayMs, 1000);
+        const timer = setTimeout(async () => {
+          console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
+          try {
+            await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time-healed' }); } catch {}
+          } catch (e) {
+            console.error(`[cron] OneTime ${c.id} failed:`, e?.message);
+            try { await sendCeoAlert(`*Cron một lần "${c.label || c.id}" lỗi*\n\n\`${String(e?.message || e).slice(0, 300)}\``); } catch {}
+          }
+          _removeCustomCronById(c.id);
+        }, effectiveDelay);
+        cronJobs.push({ id: c.id, job: { stop: () => clearTimeout(timer) } });
+        console.log(`[cron] OneTime (inline-healed) scheduled ${c.id}: ${c.oneTimeAt} (in ${Math.round(effectiveDelay / 1000)}s)`);
+      } catch (e) {
+        surfaceCronConfigError(c, `oneTimeAt setup failed: ${e.message}`);
+      }
       continue;
     }
     // D6: validate cronExpr syntax BEFORE scheduling, surface invalid expressions
@@ -16295,18 +16502,14 @@ function _tier2SaveCounter(day, calls) {
     writeJsonAtomic(_tier2CounterPath(), { day, calls, updatedAt: new Date().toISOString() });
     global.__tier2WriteFailCount = 0;
   } catch (e1) {
-    try {
-      const wait = Date.now() + 60;
-      while (Date.now() < wait) { /* 60ms sync wait for AV release */ }
-      writeJsonAtomic(_tier2CounterPath(), { day, calls, updatedAt: new Date().toISOString() });
-      global.__tier2WriteFailCount = 0;
-    } catch (e2) {
-      global.__tier2WriteFailCount = (global.__tier2WriteFailCount || 0) + 1;
-      console.warn(`[tier2] counter persist failed (${global.__tier2WriteFailCount}x): ${e2.message}`);
-      if (global.__tier2WriteFailCount === 3 && !global.__tier2AlertSent) {
-        global.__tier2AlertSent = true;
-        try { sendCeoAlert(`[Cảnh báo Tier 2] Không ghi được tier2-counter.json 3 lần liên tiếp (AV lock?). Counter có thể drift, over-budget. Error: ${e2.message}`); } catch {}
-      }
+    // AV lock or transient filesystem error — log and count. The lock will be
+    // released by the time the next request triggers a write, so no need to
+    // busy-wait and block the event loop.
+    global.__tier2WriteFailCount = (global.__tier2WriteFailCount || 0) + 1;
+    console.warn(`[tier2] counter persist failed (${global.__tier2WriteFailCount}x): ${e1.message}`);
+    if (global.__tier2WriteFailCount === 3 && !global.__tier2AlertSent) {
+      global.__tier2AlertSent = true;
+      try { sendCeoAlert(`[Cảnh báo Tier 2] Không ghi được tier2-counter.json 3 lần liên tiếp (AV lock?). Counter có thể drift, over-budget. Error: ${e1.message}`); } catch {}
     }
   }
 }
@@ -17325,7 +17528,7 @@ function _readCeoNameFromIdentity() {
     if (!match) return { name: '', title: '' };
     let raw = match[1].trim();
     // Handle "em — gọi chủ nhân là anh Huy" form
-    raw = raw.replace(/^(em|tôi|mình)[\s—-]*gọi chủ nhân là\s+/i, '');
+    raw = raw.replace(/^(em|tôi|mình)[s—-]*gọis+/i, '');
     raw = raw.split(/[,(]/)[0].trim();
     // `raw` is now the full honorific+name like "anh Quốc" or "thầy Quốc" or "chị Lan"
     const title = raw.slice(0, 40); // full "anh Quốc" — used in greeting directly
@@ -17727,6 +17930,7 @@ ipcMain.handle('wizard-complete', async () => {
     try { await startOpenClaw(); } catch (e) { console.error('[wizard-complete startOpenClaw] error:', e?.message || e); }
     if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-startCronJobs)'); return; }
     try { startCronJobs(); } catch (e) { console.error('[wizard-complete startCronJobs] error:', e?.message || e); }
+    try { startCronApi(); } catch (e) { console.error('[wizard-complete startCronApi] error:', e?.message || e); }
     try { watchCustomCrons(); } catch {}
     try { startZaloCacheAutoRefresh(); } catch {}
     try { startAppointmentDispatcher(); } catch {}
@@ -17798,8 +18002,8 @@ ipcMain.handle('install-openclaw', async (event) => {
     return {
       success: false,
       error: isMac
-        ? 'Khong tim thay Node.js tren may.\n\nCai Node 22 LTS tu https://nodejs.org\n(hoac: brew install node@22)\n\nSau do mo lai 9BizClaw.'
-        : 'Khong tim thay Node.js tren may.\n\nCai Node 22 LTS tu https://nodejs.org\n\nSau do mo lai 9BizClaw.',
+        ? 'Không tìm thấy Node.js trên máy.\n\nCài Node 22 LTS từ https://nodejs.org\n(hoặc: brew install node@22)\n\nSau đó mở lại 9BizClaw.'
+        : 'Không tìm thấy Node.js trên máy.\n\nCài Node 22 LTS từ https://nodejs.org\n\nSau đó mở lại 9BizClaw.',
     };
   }
   if (nodeVersionMajor < 22) {
@@ -17807,8 +18011,8 @@ ipcMain.handle('install-openclaw', async (event) => {
       success: false,
       error: `Node.js qua cu (v${nodeVersionMajor}). 9BizClaw can Node 22+ de chay openzca (Zalo plugin).\n\n` +
              (isMac
-               ? 'Cap nhat:\n  brew upgrade node\nhoac tai installer tu https://nodejs.org'
-               : 'Cap nhat tu https://nodejs.org'),
+               ? 'Cập nhật:\n  brew upgrade node\nhoặc tải installer từ https://nodejs.org'
+               : 'Cập nhật từ https://nodejs.org'),
     };
   }
 
@@ -17957,7 +18161,7 @@ ipcMain.handle('install-openclaw', async (event) => {
     proc.on('error', (err) => {
       clearTimeout(timeout);
       send('');
-      send('Khong chay duoc: ' + err.message);
+      send('Không chạy được: ' + err.message);
       safeResolve({ success: false, error: err.message });
     });
   });
@@ -18420,7 +18624,7 @@ async function installDmgUpdate(dmgPath) {
   try { await execAsync('hdiutil detach "/Volumes/9BizClaw"* -force 2>/dev/null || true', { timeout: 10000 }); } catch {}
 
   // 2. Mount DMG (async — doesn't block main thread)
-  sendInstallStatus('Dang mo DMG...');
+  sendInstallStatus('Đang mở DMG...');
   let mountPoint = null;
   try {
     const out = await execAsync(`hdiutil attach "${dmgPath}" -nobrowse -noautoopen -readonly`, { timeout: 90000 });
@@ -18436,7 +18640,7 @@ async function installDmgUpdate(dmgPath) {
     if (!mountPoint) throw new Error('Could not determine mount point');
     console.log('[update] DMG mounted at:', mountPoint);
   } catch (e) {
-    throw new Error('Khong mount duoc DMG: ' + e.message);
+    throw new Error('Không mount được DMG: ' + e.message);
   }
 
   // 3. Find .app inside mounted volume (I2: validate name)
@@ -18446,10 +18650,10 @@ async function installDmgUpdate(dmgPath) {
     const items = fs.readdirSync(mountPoint);
     appName = items.find(i => i === EXPECTED_APP);
     if (!appName) appName = items.find(i => i.endsWith('.app') && !i.startsWith('.'));
-    if (!appName) throw new Error('Khong tim thay .app trong DMG');
+    if (!appName) throw new Error('Không tìm thấy .app trong DMG');
   } catch (e) {
     try { await execAsync(`hdiutil detach "${mountPoint}" -force`, { timeout: 15000 }); } catch {}
-    throw new Error('Khong doc duoc DMG: ' + e.message);
+    throw new Error('Không đọc được DMG: ' + e.message);
   }
 
   const srcApp = path.join(mountPoint, appName);
@@ -18473,7 +18677,7 @@ async function installDmgUpdate(dmgPath) {
   fs.chmodSync(scriptPath, 0o755);
 
   // 5. Run install with admin privileges (C2: async, doesn't block main thread)
-  sendInstallStatus('Dang cai dat... (can mat khau admin)');
+  sendInstallStatus('Đang cài đặt... (cần mật khẩu admin)');
   try {
     await execAsync(`osascript -e 'do shell script "${sq(scriptPath)}" with administrator privileges'`);
     console.log('[update] App installed to', destApp);
@@ -18483,15 +18687,15 @@ async function installDmgUpdate(dmgPath) {
     if (e.message && (e.message.includes('User canceled') || e.message.includes('(-128)'))) {
       // Restore backup if user cancelled after mv but before cp
       try { await execAsync(`[ -d '${sq(backupApp)}' ] && mv '${sq(backupApp)}' '${sq(destApp)}' || true`, { timeout: 10000 }); } catch {}
-      throw new Error('Da huy nhap mat khau admin');
+      throw new Error('Đã hủy nhập mật khẩu admin');
     }
     // Restore backup on any failure
     try { await execAsync(`[ -d '${sq(backupApp)}' ] && mv '${sq(backupApp)}' '${sq(destApp)}' || true`, { timeout: 10000 }); } catch {}
-    throw new Error('Loi cai dat: ' + e.message);
+    throw new Error('Lỗi cài đặt: ' + e.message);
   }
 
   // 6. Cleanup
-  sendInstallStatus('Dang don dep...');
+  sendInstallStatus('Đang dọn dẹp...');
   try { await execAsync(`hdiutil detach "${mountPoint}" -force`, { timeout: 15000 }); } catch (e) {
     console.warn('[update] DMG unmount failed (non-fatal):', e.message);
   }
@@ -18499,7 +18703,7 @@ async function installDmgUpdate(dmgPath) {
   try { fs.unlinkSync(scriptPath); } catch {}
 
   // 7. Relaunch (I1: app.exit instead of app.quit to avoid before-quit deadlock)
-  sendInstallStatus('Khoi dong lai...');
+  sendInstallStatus('Khởi động lại...');
   setTimeout(() => {
     app.relaunch();
     app.exit(0);
