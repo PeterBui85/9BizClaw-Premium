@@ -26,7 +26,7 @@ Hệ thống 9BizClaw tự động chạy các kiểm tra này. Bot KHÔNG cần
 ## Khi nào cảnh báo CEO
 
 - Gateway chết và không tự restart được
-- Cookie Zalo sắp hết hạn (>14 ngày tuổi)
+- Listener Zalo không chạy (process check)
 - Telegram bot token không hợp lệ
 - Cron thất bại liên tiếp
 

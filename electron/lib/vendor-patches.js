@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const OPENZALO_FORK_VERSION = 'fork-v10-2026-04-23';
+const OPENZALO_FORK_VERSION = 'fork-v14-escalation-fix';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -411,7 +411,28 @@ function ensureOpenzcaFriendEventFix(vendorDir, workspaceDir) {
 // Openzalo fork: copy pre-patched TS files to extension directory
 // ---------------------------------------------------------------------------
 
-function applyOpenzaloFork(homeDir, forkDir) {
+function _copyForkFiles(forkDir, targetSrcDir, files, label) {
+  let copied = 0;
+  for (const f of files) {
+    const src = path.join(forkDir, f);
+    const dst = path.join(targetSrcDir, f);
+    if (!fs.existsSync(src)) continue;
+    try {
+      const tmpDst = dst + '.tmp.' + process.pid;
+      fs.writeFileSync(tmpDst, fs.readFileSync(src));
+      try { fs.renameSync(tmpDst, dst); } catch {
+        const d = Date.now() + 20; while (Date.now() < d) {}
+        fs.renameSync(tmpDst, dst);
+      }
+      copied++;
+    } catch (e) {
+      console.error('[openzalo-fork] failed to copy ' + f + ' to ' + label + ':', e?.message);
+    }
+  }
+  return copied;
+}
+
+function applyOpenzaloFork(homeDir, forkDir, vendorDir) {
   const extSrcDir = path.join(homeDir, '.openclaw', 'extensions', 'openzalo', 'src');
   if (!fs.existsSync(extSrcDir)) return false;
   const markerPath = path.join(extSrcDir, '.fork-version');
@@ -428,21 +449,15 @@ function applyOpenzaloFork(homeDir, forkDir) {
     return false;
   }
   const files = ['inbound.ts', 'send.ts', 'channel.ts', 'openzca.ts'];
-  let copied = 0;
-  for (const f of files) {
-    const src = path.join(forkDir, f);
-    const dst = path.join(extSrcDir, f);
-    if (!fs.existsSync(src)) continue;
-    try {
-      const tmpDst = dst + '.tmp.' + process.pid;
-      fs.writeFileSync(tmpDst, fs.readFileSync(src));
-      try { fs.renameSync(tmpDst, dst); } catch {
-        const d = Date.now() + 20; while (Date.now() < d) {}
-        fs.renameSync(tmpDst, dst);
-      }
-      copied++;
-    } catch (e) {
-      console.error('[openzalo-fork] failed to copy ' + f + ':', e?.message);
+  const copied = _copyForkFiles(forkDir, extSrcDir, files, 'extensions');
+  // Also patch the vendor npm package — gateway may resolve the plugin from
+  // vendor/node_modules/@tuyenhx/openzalo/ instead of ~/.openclaw/extensions/.
+  // Without this, the command-block and output filter never execute.
+  if (vendorDir) {
+    const vendorSrcDir = path.join(vendorDir, 'node_modules', '@tuyenhx', 'openzalo', 'src');
+    if (fs.existsSync(vendorSrcDir)) {
+      const vc = _copyForkFiles(forkDir, vendorSrcDir, files, 'vendor');
+      console.log('[openzalo-fork] vendor copy: ' + vc + '/' + files.length + ' files');
     }
   }
   if (copied === files.length) {
@@ -472,7 +487,7 @@ function applyAllVendorPatches({ vendorDir, homeDir, forkDir, workspaceDir, skip
 
   // Openzalo fork (runtime only — extension dir doesn't exist at build time)
   if (!skipFork) {
-    results.fork = _tryPatch('fork', () => applyOpenzaloFork(homeDir, forkDir));
+    results.fork = _tryPatch('fork', () => applyOpenzaloFork(homeDir, forkDir, vendorDir));
   }
 
   return results;

@@ -367,6 +367,25 @@ function logOutbound(
 export async function sendTextOpenzalo(options: SendTextOptions): Promise<OpenzaloSendReceipt> {
   const { account, to, text } = options;
   const target = parseOpenzaloTarget(to);
+  // === 9BizClaw GROUP-DETECT PATCH ===
+  // message tool may send target without "group:" prefix, causing
+  // parseOpenzaloTarget to return isGroup=false for actual groups.
+  // Look up openzca groups.json to correct this.
+  if (!target.isGroup && target.threadId) {
+    try {
+      const __gdFs = require("node:fs");
+      const __gdPath = require("node:path");
+      const __gdHome = require("node:os").homedir();
+      const __gdGroupsFile = __gdPath.join(__gdHome, ".openzca", "profiles", "default", "cache", "groups.json");
+      if (__gdFs.existsSync(__gdGroupsFile)) {
+        const __gdGroups = JSON.parse(__gdFs.readFileSync(__gdGroupsFile, "utf-8"));
+        if (Array.isArray(__gdGroups) && __gdGroups.some((g: any) => String(g?.groupId) === target.threadId)) {
+          (target as any).isGroup = true;
+        }
+      }
+    } catch (__gdErr) { try { logOutbound("warn", "GROUP-DETECT lookup failed", { err: String(__gdErr) }); } catch {} }
+  }
+  // === END 9BizClaw GROUP-DETECT PATCH ===
   const body = text.trim();
   if (!body) {
     return { messageId: "empty", kind: "text" };
@@ -502,8 +521,9 @@ export async function sendTextOpenzalo(options: SendTextOptions): Promise<Openza
         } catch {}
         return { messageId: "transport-gated", kind: "text" as const };
       }
-    } catch {
-      return { messageId: "transport-gated", kind: "text" as const };
+    } catch (__ofGateErr) {
+      try { logOutbound("error", "transport gate error — allowing send", { err: String(__ofGateErr) }); } catch {}
+      // Gate itself errored — fail-OPEN so messages still deliver
     }
     // Patterns that MUST NEVER appear in a customer-facing Zalo reply.
     // Case-insensitive, matching any occurrence. Order matters: more
@@ -526,6 +546,7 @@ export async function sendTextOpenzalo(options: SendTextOptions): Promise<Openza
       { name: "win-user-path", re: /[A-Z]:[\\\/]Users[\\\/]/i },
       { name: "api-key-sk", re: /\bsk-[a-zA-Z0-9_\-]{16,}/i },
       { name: "bearer-token", re: /\bBearer\s+[a-zA-Z0-9_\-.]{20,}/i },
+      { name: "hex-token-48", re: /\b[a-f0-9]{48}\b/i },
       { name: "botToken-field", re: /\bbotToken\b/i },
       { name: "apiKey-field", re: /\bapiKey\b/i },
       // --- Layer A1.5: bot "silent" tokens leaked as reply ---
@@ -702,24 +723,26 @@ export async function sendTextOpenzalo(options: SendTextOptions): Promise<Openza
     }
     if (__escMatch) {
       try {
-        const __escHome = __ofOs.homedir();
+        const __escFs = require("node:fs");
+        const __escPath = require("node:path");
+        const __escHome = require("node:os").homedir();
         const __escAppDir = "9bizclaw";
         let __escWsDir: string;
         if (process.env['9BIZ_WORKSPACE']) {
           __escWsDir = process.env['9BIZ_WORKSPACE'];
         } else if (process.platform === "darwin") {
-          __escWsDir = __ofPath.join(__escHome, "Library", "Application Support", __escAppDir);
+          __escWsDir = __escPath.join(__escHome, "Library", "Application Support", __escAppDir);
         } else if (process.platform === "win32") {
-          const __escAppData = process.env.APPDATA || __ofPath.join(__escHome, "AppData", "Roaming");
-          __escWsDir = __ofPath.join(__escAppData, __escAppDir);
+          const __escAppData = process.env.APPDATA || __escPath.join(__escHome, "AppData", "Roaming");
+          __escWsDir = __escPath.join(__escAppData, __escAppDir);
         } else {
-          const __escConfig = process.env.XDG_CONFIG_HOME || __ofPath.join(__escHome, ".config");
-          __escWsDir = __ofPath.join(__escConfig, __escAppDir);
+          const __escConfig = process.env.XDG_CONFIG_HOME || __escPath.join(__escHome, ".config");
+          __escWsDir = __escPath.join(__escConfig, __escAppDir);
         }
-        const __escLogDir = __ofPath.join(__escWsDir, "logs");
-        __ofFs.mkdirSync(__escLogDir, { recursive: true });
-        __ofFs.appendFileSync(
-          __ofPath.join(__escLogDir, "escalation-queue.jsonl"),
+        const __escLogDir = __escPath.join(__escWsDir, "logs");
+        __escFs.mkdirSync(__escLogDir, { recursive: true });
+        __escFs.appendFileSync(
+          __escPath.join(__escLogDir, "escalation-queue.jsonl"),
           JSON.stringify({
             t: new Date().toISOString(),
             to: target.threadId,
@@ -786,6 +809,22 @@ export async function sendMediaOpenzalo(
 ): Promise<OpenzaloSendReceipt & { receipts: OpenzaloSendReceipt[] }> {
   const { account, to, text, mediaUrl, mediaPath, mediaLocalRoots } = options;
   const target = parseOpenzaloTarget(to);
+  // === 9BizClaw GROUP-DETECT PATCH (media) ===
+  if (!target.isGroup && target.threadId) {
+    try {
+      const __gdFs = require("node:fs");
+      const __gdPath = require("node:path");
+      const __gdHome = require("node:os").homedir();
+      const __gdGroupsFile = __gdPath.join(__gdHome, ".openzca", "profiles", "default", "cache", "groups.json");
+      if (__gdFs.existsSync(__gdGroupsFile)) {
+        const __gdGroups = JSON.parse(__gdFs.readFileSync(__gdGroupsFile, "utf-8"));
+        if (Array.isArray(__gdGroups) && __gdGroups.some((g: any) => String(g?.groupId) === target.threadId)) {
+          (target as any).isGroup = true;
+        }
+      }
+    } catch {}
+  }
+  // === END 9BizClaw GROUP-DETECT PATCH (media) ===
   const rawSource = (mediaPath ?? mediaUrl ?? "").trim();
   if (!rawSource) {
     if (text?.trim()) {
@@ -930,6 +969,22 @@ export async function sendMediaOpenzalo(
 export async function sendTypingOpenzalo(options: SendTypingOptions): Promise<void> {
   const { account, to } = options;
   const target = parseOpenzaloTarget(to);
+  // === 9BizClaw GROUP-DETECT PATCH (typing) ===
+  if (!target.isGroup && target.threadId) {
+    try {
+      const __gdFs = require("node:fs");
+      const __gdPath = require("node:path");
+      const __gdHome = require("node:os").homedir();
+      const __gdGroupsFile = __gdPath.join(__gdHome, ".openzca", "profiles", "default", "cache", "groups.json");
+      if (__gdFs.existsSync(__gdGroupsFile)) {
+        const __gdGroups = JSON.parse(__gdFs.readFileSync(__gdGroupsFile, "utf-8"));
+        if (Array.isArray(__gdGroups) && __gdGroups.some((g: any) => String(g?.groupId) === target.threadId)) {
+          (target as any).isGroup = true;
+        }
+      }
+    } catch {}
+  }
+  // === END 9BizClaw GROUP-DETECT PATCH (typing) ===
   const args = ["msg", "typing", target.threadId];
   if (target.isGroup) {
     args.push("--group");

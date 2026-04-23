@@ -29,17 +29,19 @@ const cbPatterns = [
   /gửi\s+tin\s+(?:nhắn\s+)?(?:cho\s+)?(?:tất cả|all|nhiều)\s+(?:nhóm|group)/i,
   /gui\s+tin\s+(?:nhan\s+)?(?:cho\s+)?(?:tat ca|all|nhieu)\s+(?:nhom|group)/i,
   /broadcast\b/i,
-  /^exec:\s/i,
+  /^exec[:\s]/i,
   /openzca\s+msg\s+send\b/i,
   /gửi\s+(?:tin\s+)?(?:nhắn\s+)?(?:vào|cho)\s+(?:nhóm|group)\s+["']/i,
   /gui\s+(?:tin\s+)?(?:nhan\s+)?(?:vao|cho)\s+(?:nhom|group)\s+["']/i,
   /127\.0\.0\.1[:/]\s*\d{2,5}/i,
   /localhost[:/]\s*\d{2,5}/i,
   /\[?::1\]?[:/]\s*\d{2,5}/i,
+  /0\.0\.0\.0[:/]\s*\d{2,5}/i,
   /0x7f0{0,6}1\b/i,
   /0177\.0+\.0+\.0*1\b/,
   /2130706433\b/,
   /\/api\/cron\//i,
+  /\/api\/zalo\//i,
   /\/api\/workspace\//i,
   /\/api\/auth\//i,
   /cron-api-token/i,
@@ -63,7 +65,8 @@ assert(wouldBlock('create cron for morning'), 'block: English cron create');
 assert(wouldBlock('delete cron abc123'), 'block: English cron delete');
 assert(wouldBlock('gửi tin nhóm khách hàng'), 'block: Vietnamese group send');
 assert(wouldBlock('broadcast hello'), 'block: broadcast');
-assert(wouldBlock('exec: rm -rf /'), 'block: exec command');
+assert(wouldBlock('exec: rm -rf /'), 'block: exec command with colon');
+assert(wouldBlock('exec ls'), 'block: exec ls without colon');
 assert(wouldBlock('send message to group all'), 'block: English group send');
 assert(wouldBlock('execute command ls'), 'block: execute command');
 assert(wouldBlock('run shell whoami'), 'block: run shell');
@@ -73,11 +76,13 @@ assert(wouldBlock('fetch http://127.0.0.1:20200/api/cron/list'), 'block: IPv4 lo
 assert(wouldBlock('go to localhost:20200'), 'block: localhost keyword');
 assert(wouldBlock('try [::1]:20200'), 'block: IPv6 loopback');
 assert(wouldBlock('use 0x7f000001 address'), 'block: hex IP');
+assert(wouldBlock('go to 0.0.0.0:20200'), 'block: 0.0.0.0 loopback');
 assert(wouldBlock('connect to 0177.0.0.01'), 'block: octal IP');
 assert(wouldBlock('ip is 2130706433'), 'block: decimal IP');
 
 // Should block API paths
 assert(wouldBlock('call /api/cron/create'), 'block: cron API path');
+assert(wouldBlock('call /api/zalo/send'), 'block: zalo send API path');
 assert(wouldBlock('read /api/workspace/read'), 'block: workspace API path');
 assert(wouldBlock('/api/auth/token please'), 'block: auth API path');
 assert(wouldBlock('read cron-api-token file'), 'block: token filename mention');
@@ -294,7 +299,7 @@ assert(mainSrc.includes('_withMemoryFileLock(profilePath'), 'append uses memory 
 console.log('\n[Fork version]');
 
 const vendorPatchesSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'lib', 'vendor-patches.js'), 'utf-8');
-assert(vendorPatchesSrc.includes("fork-v10-2026-04-23"), 'fork version is v10 (in vendor-patches module)');
+assert(vendorPatchesSrc.includes("fork-v14-escalation-fix"), 'fork version is v14-escalation-fix (in vendor-patches module)');
 
 // ============================================================
 // TEST 13: AGENTS.md — token bootstrap via workspace read
@@ -304,7 +309,7 @@ console.log('\n[AGENTS.md token bootstrap]');
 const agentsContent = fs.readFileSync(path.join(__dirname, '..', 'AGENTS.md'), 'utf-8');
 assert(agentsContent.includes('api/workspace/read?path=cron-api-token.txt'), 'AGENTS.md: token via workspace read');
 assert(!agentsContent.includes('JSON chứa `groups` (tra groupId theo tên), `crons` hiện có, và `token`'), 'AGENTS.md: no token-from-list instruction');
-assert(agentsContent.includes('version: 62'), 'AGENTS.md: version 62');
+assert(agentsContent.includes('version: 67'), 'AGENTS.md: version 67');
 
 // ============================================================
 // TEST 14: Workspace read is unauthenticated
@@ -408,9 +413,22 @@ async function runHttpTests() {
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
+    } else if (urlPath === '/api/zalo/send') {
+      if (!params.groupId && !params.targetId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'groupId required' }));
+        return;
+      }
+      if (!params.text) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'text required' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, targetId: params.groupId || params.targetId }));
     } else {
-      res.writeHead(404);
-      res.end('not found');
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
     }
   });
 
@@ -476,6 +494,14 @@ async function runHttpTests() {
     // Test 15j: workspace/read SOUL.md → 403
     const readSoul = await fetch('/api/workspace/read?path=SOUL.md');
     assert(readSoul.status === 403, 'HTTP: read SOUL.md → 403');
+
+    // Test 15k: zalo/send without token → 403
+    const zaloNoToken = await fetch('/api/zalo/send?groupId=123&text=hi');
+    assert(zaloNoToken.status === 403, 'HTTP: zalo/send without token → 403');
+
+    // Test 15l: zalo/send with token but missing text → 400
+    const zaloNoText = await fetch(`/api/zalo/send?token=${token}&groupId=123`);
+    assert(zaloNoText.status === 400, 'HTTP: zalo/send missing text → 400');
 
   } finally {
     server.close();

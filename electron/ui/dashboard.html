@@ -435,14 +435,13 @@
       display:flex; flex-direction:column; height:calc(100vh - 32px);
     }
     .embed-wrap {
-      flex:1; min-height:0;
+      flex:1; min-height:0; position:relative;
       border:1px solid var(--border); border-radius:12px;
       overflow:hidden; background:#fff;
     }
     html[data-theme="dark"] .embed-wrap { background:var(--bg); }
-    .embed-frame { width:100%; height:100%; border:0; display:flex; flex:1; }
-    webview.embed-frame { display:inline-flex; }
-    .embed-loading { display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-muted); font-size:13px; }
+    .embed-frame { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
+    .embed-loading { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:13px; z-index:1; }
     .zalo-mgr-row .info { flex:1; min-width:0; overflow:hidden; }
     .zalo-mgr-row .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .zalo-mgr-row .sub { font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -3833,39 +3832,76 @@
       '9router': 'persist:embed-9router',
       'openclaw': 'persist:embed-openclaw',
     };
+    const _embedRetry = {};
     function ensureEmbedLoaded(name) {
       if (embedLoaded[name]) return;
+      embedLoaded[name] = true;
+      const wrap = document.getElementById('embed-wrap-' + name);
+      if (!wrap) { embedLoaded[name] = false; return; }
+      const label = name === '9router' ? '9Router' : 'OpenClaw';
+
+      let loader = wrap.querySelector('.embed-loading');
+      if (!loader) {
+        loader = document.createElement('div');
+        loader.className = 'embed-loading';
+        wrap.appendChild(loader);
+      }
+      loader.innerHTML = '<div style="text-align:center"><div class="spinner" style="width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 10px"></div>Đang tải ' + label + '...</div>';
+
       let wv = document.getElementById('iframe-' + name);
-      // Lazy-create webview element on first tab visit (saves ~50-100MB RAM per webview)
       if (!wv) {
-        const wrap = document.getElementById('embed-wrap-' + name);
-        if (!wrap) return;
         wv = document.createElement('webview');
         wv.id = 'iframe-' + name;
         wv.className = 'embed-frame';
         wv.setAttribute('partition', EMBED_PARTITIONS[name]);
         wv.setAttribute('allowpopups', '');
-        wv.src = 'about:blank';
+        wv.style.visibility = 'hidden';
         wrap.appendChild(wv);
       }
-      // Intercept new-window events (OAuth popups, external links) → open in
-      // default browser instead of Electron. Without this, 9Router's ChatGPT
-      // OAuth flow opens inside Electron's restricted webview → freezes on Mac.
-      wv.addEventListener('new-window', (e) => {
-        e.preventDefault();
-        if (e.url && window.claw && window.claw.openExternal) {
-          window.claw.openExternal(e.url);
+
+      _embedRetry[name] = 0;
+      const DELAYS = [2000, 3000, 4000, 5000, 6000, 8000, 10000, 15000];
+
+      wv.addEventListener('did-finish-load', function() {
+        _embedRetry[name] = 0;
+        wv.style.visibility = 'visible';
+        if (loader.parentNode) loader.remove();
+      });
+      wv.addEventListener('did-fail-load', function(e) {
+        if (e.isMainFrame === false) return;
+        var attempt = _embedRetry[name] || 0;
+        console.warn('[embed] ' + name + ' load failed (attempt ' + (attempt+1) + '): ' + (e.errorCode||'') + ' ' + (e.errorDescription||''));
+        if (attempt < DELAYS.length) {
+          _embedRetry[name] = attempt + 1;
+          loader.innerHTML = '<div style="text-align:center"><div class="spinner" style="width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 10px"></div>Đang kết nối ' + label + '... (lần ' + (_embedRetry[name]+1) + ')</div>';
+          setTimeout(function() { try { wv.src = EMBED_URLS[name]; } catch(ex) { wv.setAttribute('src', EMBED_URLS[name]); } }, DELAYS[attempt]);
+        } else {
+          loader.innerHTML = '<div style="text-align:center;max-width:320px"><div style="font-size:15px;font-weight:600;margin-bottom:8px">Không tải được ' + label + '</div><div style="margin-bottom:12px;color:var(--text-muted);font-size:13px">Server chưa sẵn sàng hoặc đã dừng</div><button class="btn btn-primary btn-small" onclick="retryEmbed(\'' + name + '\')">Thử lại</button></div>';
         }
       });
-      // <webview> uses .src setter (or loadURL once attached). About:blank → real URL.
-      try { wv.src = EMBED_URLS[name]; } catch { wv.setAttribute('src', EMBED_URLS[name]); }
-      embedLoaded[name] = true;
-      addActivity('Đã mở ' + (name === '9router' ? '9Router' : 'OpenClaw') + ' trong app');
+      wv.addEventListener('new-window', function(e) {
+        e.preventDefault();
+        if (e.url && window.claw && window.claw.openExternal) window.claw.openExternal(e.url);
+      });
+
+      try { wv.src = EMBED_URLS[name]; } catch(ex) { wv.setAttribute('src', EMBED_URLS[name]); }
+      addActivity('Đã mở ' + label + ' trong app');
+    }
+    function retryEmbed(name) {
+      var wrap = document.getElementById('embed-wrap-' + name);
+      if (wrap) {
+        var old = document.getElementById('iframe-' + name);
+        if (old) old.remove();
+        var ldr = wrap.querySelector('.embed-loading');
+        if (ldr) ldr.remove();
+      }
+      embedLoaded[name] = false;
+      ensureEmbedLoaded(name);
     }
     function reloadEmbed(name) {
+      _embedRetry[name] = 0;
       const wv = document.getElementById('iframe-' + name);
       if (!wv) return;
-      // <webview> exposes reload() once dom-ready; fall back to src reassignment.
       try {
         if (typeof wv.reload === 'function') wv.reload();
         else { wv.src = 'about:blank'; setTimeout(() => { wv.src = EMBED_URLS[name]; }, 100); }
@@ -4240,7 +4276,7 @@
         groupAllowFrom: Array.isArray(zaloMgrConfig.groupAllowFrom) ? [...zaloMgrConfig.groupAllowFrom] : [],
         userBlocklist: Array.isArray(zaloMgrConfig.userBlocklist) ? [...zaloMgrConfig.userBlocklist] : [],
         groupSettings: zaloMgrConfig.groupSettings || {},
-        strangerPolicy: spEl ? spEl.value : (zaloMgrConfig.strangerPolicy || 'reply'),
+        strangerPolicy: spEl ? spEl.value : (zaloMgrConfig.strangerPolicy || 'ignore'),
       };
     }
 
@@ -4249,9 +4285,9 @@
       document.getElementById('zalo-mgr-group-count').textContent = zaloGroups.length;
       document.getElementById('zalo-mgr-enabled').checked = zaloMgrConfig.enabled !== false;
       const spEl = document.getElementById('zalo-stranger-policy');
-      if (spEl) spEl.value = zaloMgrConfig.strangerPolicy || 'reply';
+      if (spEl) spEl.value = zaloMgrConfig.strangerPolicy || 'ignore';
       const defModeEl = document.getElementById('zalo-default-group-mode');
-      if (defModeEl) defModeEl.value = (zaloMgrConfig.groupSettings && zaloMgrConfig.groupSettings.__default && zaloMgrConfig.groupSettings.__default.mode) || 'mention';
+      if (defModeEl) defModeEl.value = (zaloMgrConfig.groupSettings && zaloMgrConfig.groupSettings.__default && zaloMgrConfig.groupSettings.__default.mode) || 'off';
       updateBlockedCount();
       renderZaloGroups();
       renderZaloFriends();

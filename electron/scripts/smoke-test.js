@@ -199,7 +199,7 @@ if (!openclawCli) {
     models: { providers: { ninerouter: { baseUrl: 'http://127.0.0.1:20128/v1', apiKey: 'sk-fake', api: 'openai-completions', models: [{ id: 'main', name: 'fake' }] } } },
     agents: { defaults: { model: 'ninerouter/main', workspace: tmpDir, blockStreamingDefault: 'off', contextInjection: 'continuation-skip' } },
     tools: {
-      allow: ['message', 'web_search', 'web_fetch', 'cron', 'exec', 'process', 'update_plan'],
+      allow: ['message', 'web_search', 'web_fetch', 'update_plan'],
       loopDetection: { enabled: true },
       message: { crossContext: { allowAcrossProviders: true } },
       web: { search: { provider: 'duckduckgo' } },
@@ -379,7 +379,7 @@ const forkChecks = [
   },
   {
     file: 'send.ts',
-    markers: ['OUTPUT-FILTER PATCH'],
+    markers: ['OUTPUT-FILTER PATCH', 'GROUP-DETECT PATCH'],
   },
   {
     file: 'channel.ts',

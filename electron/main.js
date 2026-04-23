@@ -637,7 +637,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 62;
+const CURRENT_AGENTS_MD_VERSION = 68;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -2518,6 +2518,12 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   const parsed = parseSafeOpenzcaMsgSend(shellCmd);
   if (!parsed) return null;
   const { targetIds, text, isGroup, profile } = parsed;
+  if (!isZaloListenerAlive()) {
+    console.error(`[cron-exec] "${label || 'cron'}" — Zalo listener not running, refusing send`);
+    journalCronRun({ phase: 'fail', label: label || 'cron', mode: 'safe-openzca', err: 'zalo-listener-down' });
+    sendCeoAlert(`Cron "${label || 'cron'}" khong gui duoc — Zalo listener khong chay. Vao Dashboard kiem tra tab Zalo.`).catch(() => {});
+    return false;
+  }
   if (targetIds.length === 1) {
     console.log(`[cron-exec] "${label || 'cron'}" rerouted to safe Zalo sender`);
     const ok = await sendZaloTo({ id: targetIds[0], isGroup }, text, { profile });
@@ -3595,7 +3601,7 @@ async function ensureDefaultConfig() {
         'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom', 'groups',
         'historyLimit', 'dmHistoryLimit', 'textChunkLimit', 'chunkMode',
         'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
-        'threadBindings', 'actions', 'accounts', 'defaultAccount', 'streaming',
+        'threadBindings', 'actions', 'accounts', 'defaultAccount',
       ]);
       for (const k of Object.keys(oz)) {
         if (!OPENZALO_VALID_FIELDS.has(k)) {
@@ -3759,14 +3765,12 @@ async function ensureDefaultConfig() {
     if (!config.tools) config.tools = {};
     // tools.allow = absolute allowlist. Only these tools are available to the agent.
     // SECURITY: exec, process, cron ALL REMOVED — gateway agent serves both
-    // Telegram + Zalo with same tools. Any tool here = available to Zalo customers.
+    // Telegram (trusted CEO) AND Zalo (untrusted strangers) with ONE config.
     // exec/process = RCE via strangers. cron = strangers create scheduled jobs.
-    // Cron pipeline (runCronAgentPrompt) runs in separate process, unaffected.
-    // CEO manages crons via Dashboard (full CRUD UI).
     const ALLOW_TOOLS = [
       'message',      // reply to customers (Zalo) + CEO (Telegram)
       'web_search',   // look up info for customer questions
-      'web_fetch',    // read URLs shared by customers/CEO
+      'web_fetch',    // read URLs shared by customers/CEO + API calls
       'update_plan',  // agent planning for multi-step answers
     ];
     const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
@@ -3779,6 +3783,7 @@ async function ensureDefaultConfig() {
       delete config.tools.deny;
       changed = true;
     }
+    // openzalo.tools already stripped by OPENZALO_VALID_FIELDS whitelist above.
     // LOOP SAFETY: enable tools.loopDetection — openclaw ships it disabled.
     // Without this, a truly stuck model can grind through unlimited tool calls.
     // Thresholds chosen wide enough to NEVER fire on normal 3-5 turn Zalo reply
@@ -3836,7 +3841,7 @@ async function ensureDefaultConfig() {
     }
 
     // Remove any unknown keys that OpenClaw rejects
-    const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'tools', 'messages'];
+    const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'tools', 'messages', 'discovery'];
     for (const key of Object.keys(config)) {
       if (!validKeys.includes(key)) { delete config[key]; changed = true; }
     }
@@ -3966,7 +3971,7 @@ function ensureOpenzcaFriendEventFix() { vendorPatches.ensureOpenzcaFriendEventF
 function ensureOpenclawPricingFix() { vendorPatches.ensureOpenclawPricingFix(getBundledVendorDir()); }
 function ensureOpenclawPrewarmFix() { vendorPatches.ensureOpenclawPrewarmFix(getBundledVendorDir()); }
 const OPENZALO_FORK_VERSION = vendorPatches.OPENZALO_FORK_VERSION;
-function applyOpenzaloFork() { return vendorPatches.applyOpenzaloFork(HOME, path.join(__dirname, 'patches', 'openzalo-fork')); }
+function applyOpenzaloFork() { return vendorPatches.applyOpenzaloFork(HOME, path.join(__dirname, 'patches', 'openzalo-fork'), getBundledVendorDir()); }
 
 // ========================================================================
 // Security Layer 5 — Log rotation + memory retention
@@ -4370,25 +4375,21 @@ async function _startOpenClawImpl(opts = {}) {
 
   // Heal missing node_modules link (plugin copied out of vendor → ESM deps
   // unreachable → "Cannot find module 'zod'"). Must run BEFORE gateway spawn.
-  ensureOpenzaloNodeModulesLink();
-  // Patch openclaw vendor to fail-fast on OpenRouter pricing fetch (3:34 stuck
-  // → <100ms on customer machines with slow DNS/TCP to openrouter.ai).
-  ensureOpenclawPricingFix();
-  // Disable prewarmConfiguredPrimaryModel (blocks 4:20 on LINH-BABY per log
-  // evidence from v2.3.47 test). prewarm fetches model catalog from
-  // openrouter.ai / provider registry — irrelevant for our 9Router deploy.
-  ensureOpenclawPrewarmFix();
-  // --- OPENZALO FORK: copy pre-patched source files (replaces 12+ ensure* calls) ---
-  // All patches (blocklist, pause, mode, friend-check, system-msg, sender-dedup,
-  // group-settings, RAG, deliver-coalesce, output-filter, shell-fix) are baked
-  // into electron/patches/openzalo-fork/*.ts. One atomic copy per version.
-  applyOpenzaloFork();
-  // Non-openzalo patches (separate files, still needed):
-  ensureOpenzcaFriendEventFix(); // patches openzca cli.js (not part of openzalo fork)
-  ensureVisionFix();             // patches openclaw dist session-utils (layer 1: gateway accepts images)
-  ensureVisionCatalogFix();      // patches openclaw dist model-catalog (layer 2: image-understanding capability is skipped → direct model pass-through)
-  ensureVisionSerializationFix();// patches model-context-tokens + stream-* (layer 3+4: image parts survive outbound request serialization)
-  ensureWebFetchLocalhostFix();  // patches ssrf module (allow 127.0.0.1 for cron API web_fetch)
+  const _patchFns = [
+    ensureOpenzaloNodeModulesLink,
+    ensureOpenclawPricingFix,
+    ensureOpenclawPrewarmFix,
+    applyOpenzaloFork,
+    cleanBlocklist,
+    ensureOpenzcaFriendEventFix,
+    ensureVisionFix,
+    ensureVisionCatalogFix,
+    ensureVisionSerializationFix,
+    ensureWebFetchLocalhostFix,
+  ];
+  for (const fn of _patchFns) {
+    try { fn(); } catch (e) { console.error(`[boot] ${fn.name} threw:`, e?.message); }
+  }
 
   // Sync persona + shop-state into bootstrap files (SOUL.md, USER.md) so bot
   // receives them automatically without needing to read separate files.
@@ -6166,39 +6167,45 @@ memberCount: ${memberCount}
       console.log('[seedZaloCustomers] cache is empty, nothing to seed');
     }
 
-    // === Default-deny blocklist seeding (one-time, post-onboarding) ===
-    // User requirement: after wizard completes, bot must NOT reply to any
-    // friend/group by default. User must explicitly un-block from Dashboard
-    // to start replying. Prevents accidental spam to customers while user is
-    // still configuring bot.
-    //
-    // Trigger: first time we have cache content (friends OR groups > 0) AND
-    // the seed flag does NOT exist yet. Idempotent — after first seed, flag
-    // prevents re-seeding (user-unblocked senders stay unblocked on restart).
+    // === Default-deny via settings (one-time, post-onboarding) ===
+    // After wizard: bot does NOT reply to anyone by default. CEO explicitly
+    // enables from Dashboard. No blocklist pollution — use settings only.
     try {
       const seedFlagPath = path.join(workspace, 'zalo-initial-blocklist-seeded.json');
       const cacheHasContent = allFriendIds.length > 0 || allGroupIds.length > 0;
       if (cacheHasContent && !fs.existsSync(seedFlagPath)) {
-        const blocklistPath = path.join(workspace, 'zalo-blocklist.json');
-        let existing = [];
-        if (fs.existsSync(blocklistPath)) {
-          try { existing = JSON.parse(fs.readFileSync(blocklistPath, 'utf-8')) || []; } catch {}
-          if (!Array.isArray(existing)) existing = [];
+        // 1. Stranger policy → ignore (don't reply to unknown DMs)
+        const spPath = path.join(workspace, 'zalo-stranger-policy.json');
+        if (!fs.existsSync(spPath)) {
+          fs.writeFileSync(spPath, JSON.stringify({ mode: 'ignore' }, null, 2), 'utf-8');
         }
-        const merged = Array.from(new Set([...existing, ...allFriendIds, ...allGroupIds]));
-        fs.writeFileSync(blocklistPath, JSON.stringify(merged, null, 2), 'utf-8');
+        // 2. All discovered groups → off, default new group mode → off
+        const gsPath = path.join(workspace, 'zalo-group-settings.json');
+        let gs = {};
+        if (fs.existsSync(gsPath)) {
+          try { gs = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {}; } catch {}
+        }
+        gs.__default = { mode: 'off' };
+        for (const gid of allGroupIds) {
+          if (!gs[gid]) gs[gid] = { mode: 'off' };
+        }
+        fs.writeFileSync(gsPath, JSON.stringify(gs, null, 2), 'utf-8');
+        // 3. Empty blocklist (no group IDs, no friend IDs — settings handle deny)
+        const blocklistPath = path.join(workspace, 'zalo-blocklist.json');
+        if (!fs.existsSync(blocklistPath)) {
+          fs.writeFileSync(blocklistPath, '[]', 'utf-8');
+        }
         fs.writeFileSync(seedFlagPath, JSON.stringify({
           seededAt: new Date().toISOString(),
           friendCount: allFriendIds.length,
           groupCount: allGroupIds.length,
-          totalBlocked: merged.length,
-          note: 'Default-deny policy: post-onboarding, bot blocks all discovered friends+groups until user explicitly un-blocks from Dashboard.',
+          note: 'Settings-based deny: stranger=ignore, all groups=off, default group=off. No blocklist seeding.',
         }, null, 2), 'utf-8');
-        console.log(`[seed-blocklist] default-deny: blocked ${allFriendIds.length} friends + ${allGroupIds.length} groups (${merged.length} total after merge with existing)`);
-        try { auditLog('zalo_initial_blocklist_seeded', { friends: allFriendIds.length, groups: allGroupIds.length, total: merged.length }); } catch {}
+        console.log(`[seed-defaults] stranger=ignore, ${allGroupIds.length} groups=off, default-group=off`);
+        try { auditLog('zalo_defaults_seeded', { friends: allFriendIds.length, groups: allGroupIds.length }); } catch {}
       }
     } catch (e) {
-      console.warn('[seed-blocklist] error:', e.message);
+      console.warn('[seed-defaults] error:', e.message);
     }
   } catch (e) {
     console.error('[seedZaloCustomers] error:', e.message);
@@ -6432,38 +6439,13 @@ async function seedAllGroupHistories({ source = 'auto' } = {}) {
   }
 }
 
-// Cookie expiry monitor — checks once per day, alerts CEO when Zalo
-// credentials.json mtime is >10 days (warning) or >13 days (critical).
-// Zalo web session cookies typically last ~14 days. Proactive alert lets CEO
-// re-auth before listener dies mid-business-hours.
-let _lastCookieCheckAt = 0;
-const COOKIE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const COOKIE_EXPIRE_WARN_DAYS = 10;
-const COOKIE_EXPIRE_CRITICAL_DAYS = 13;
-function checkZaloCookieAge() {
-  const now = Date.now();
-  if (now - _lastCookieCheckAt < COOKIE_CHECK_INTERVAL_MS) return;
-  _lastCookieCheckAt = now;
-  try {
-    const homedir = require('os').homedir();
-    const credPath = path.join(homedir, '.openzca', 'profiles', 'default', 'credentials.json');
-    if (!fs.existsSync(credPath)) return;
-    const stat = fs.statSync(credPath);
-    const ageMs = now - stat.mtimeMs;
-    const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
-    if (ageDays >= COOKIE_EXPIRE_CRITICAL_DAYS) {
-      try {
-        sendCeoAlert(`Cookie Zalo đã ${ageDays} ngày tuổi — RẤT CÓ THỂ sắp expire. Bot Zalo có thể ngừng nhận tin bất cứ lúc nào. Anh cần login lại Zalo qua openzca ngay ạ.`);
-      } catch {}
-    } else if (ageDays >= COOKIE_EXPIRE_WARN_DAYS) {
-      try {
-        sendCeoAlert(`Cookie Zalo đã ${ageDays} ngày tuổi. Còn khoảng ${Math.max(0, COOKIE_EXPIRE_CRITICAL_DAYS - ageDays)} ngày nữa có thể expire. Anh sắp xếp login lại Zalo trong tuần này nhé ạ.`);
-      } catch {}
-    }
-  } catch (e) {
-    console.error('[checkZaloCookieAge] error:', e.message);
-  }
-}
+// Cookie expiry monitor — REMOVED.
+// Zalo sessions persist indefinitely as long as the listener keeps the
+// WebSocket alive (confirmed via VinCSS research + openzca behavior).
+// The old 14-day warning was an unverified assumption that caused false
+// alarms and unnecessary QR re-scans for CEO.
+// Kept as no-op so existing call sites don't break.
+function checkZaloCookieAge() {}
 
 async function _ensureZaloPluginImpl() {
   if (_zaloReady) return;
@@ -7635,6 +7617,19 @@ ipcMain.handle('change-pin', async (_event, { oldPin, newPin }) => {
 
 function getZaloBlocklistPath() { return path.join(getWorkspace(), 'zalo-blocklist.json'); }
 
+function cleanBlocklist() {
+  try {
+    const blPath = getZaloBlocklistPath();
+    if (!fs.existsSync(blPath)) return;
+    const bl = JSON.parse(fs.readFileSync(blPath, 'utf-8'));
+    if (!Array.isArray(bl) || bl.length === 0) return;
+    fs.writeFileSync(blPath, '[]', 'utf-8');
+    console.log(`[blocklist] cleared ${bl.length} entries (legacy seed — settings control deny now)`);
+  } catch (e) {
+    console.warn('[blocklist] cleanup error:', e?.message);
+  }
+}
+
 ipcMain.handle('get-zalo-manager-config', async () => {
   try {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
@@ -7653,10 +7648,10 @@ ipcMain.handle('get-zalo-manager-config', async () => {
       const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
       if (fs.existsSync(gsPath)) groupSettings = JSON.parse(fs.readFileSync(gsPath, 'utf-8'));
     } catch {}
-    let strangerPolicy = 'reply';
+    let strangerPolicy = 'ignore';
     try {
       const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
-      if (fs.existsSync(spPath)) strangerPolicy = JSON.parse(fs.readFileSync(spPath, 'utf-8')).mode || 'reply';
+      if (fs.existsSync(spPath)) strangerPolicy = JSON.parse(fs.readFileSync(spPath, 'utf-8')).mode || 'ignore';
     } catch {}
     return {
       enabled: zalo.enabled !== false,
@@ -9984,6 +9979,20 @@ function normalizeAppointment(a) {
   };
 }
 
+let _zaloListenerAlive = null;
+let _zaloListenerAliveAt = 0;
+const ZALO_LISTENER_CACHE_TTL = 30000;
+function isZaloListenerAlive() {
+  const now = Date.now();
+  if (_zaloListenerAlive !== null && (now - _zaloListenerAliveAt) < ZALO_LISTENER_CACHE_TTL) {
+    return _zaloListenerAlive;
+  }
+  const pid = findOpenzcaListenerPid();
+  _zaloListenerAlive = !!pid;
+  _zaloListenerAliveAt = now;
+  return _zaloListenerAlive;
+}
+
 // Send a Zalo message to an arbitrary target (user or group), unlike sendZalo()
 // which only ever talks to the configured CEO owner. Used by appointment push
 // targets so bot/cron can push meeting links into any group or friend.
@@ -10006,6 +10015,10 @@ async function sendZaloTo(target, text, opts = {}) {
   }
   if (!skipPauseCheck && isChannelPaused('zalo')) {
     console.log('[sendZaloTo] channel paused — skipping');
+    return null;
+  }
+  if (!opts.skipListenerCheck && !isZaloListenerAlive()) {
+    console.error('[sendZaloTo] Zalo listener not running — refusing send (would silently fail)');
     return null;
   }
   if (!skipFilter) {
@@ -10532,10 +10545,7 @@ function findOpenzcaListenerPid() {
         for (const line of wmicOut.split('\n')) {
           const trimmed = line.trim();
           if (!trimmed || trimmed.toLowerCase().startsWith('node')) continue;
-          const cols = trimmed.split(',');
-          if (cols.length < 2) continue;
-          const pidStr = cols[cols.length - 1].trim();
-          const pid = parseInt(pidStr, 10);
+          const pid = parseInt(trimmed, 10);
           if (Number.isFinite(pid) && pid >= 100) return pid;
         }
       }
@@ -10690,29 +10700,9 @@ async function probeZaloReady() {
         };
       }
 
-      // Parse cookie for expiry as a hint, but only if listener is NOT running.
-      // If cookies are expired AND listener is down, user must re-login.
-      // If cookies are expired BUT listener is up, we already returned ready above.
-      try {
-        const creds = JSON.parse(fs.readFileSync(credsFile, 'utf-8'));
-        const cookies = Array.isArray(creds.cookie) ? creds.cookie : [];
-        const sessionCookie = cookies.find(c => c && /zlogin_session|zpw_sek/.test(c.key || ''));
-        if (sessionCookie) {
-          const lastAccessedMs = Date.parse(sessionCookie.lastAccessed || sessionCookie.creation || 0);
-          const maxAgeMs = (sessionCookie.maxAge || 0) * 1000;
-          if (lastAccessedMs && maxAgeMs && (Date.now() - lastAccessedMs) > maxAgeMs) {
-            const hoursAgo = Math.floor((Date.now() - lastAccessedMs) / 3600000);
-            return {
-              ready: false,
-              reason: 'session-expired',
-              error: `Phiên Zalo đã hết hạn (${hoursAgo} giờ trước) và listener không chạy. Vào tab Zalo bấm "Đổi tài khoản" để quét QR mới.`,
-              cacheAgeMin,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn('[probeZaloReady] credentials parse error:', e.message);
-      }
+      // Cookie maxAge check removed — Zalo sessions persist indefinitely
+      // while the listener keeps the WebSocket alive. The maxAge field in
+      // credentials.json is misleading (openzca refreshes internally).
       return {
         ready: false,
         error: 'Listener chưa chạy. Đợi gateway khởi động openzalo channel (~10-15 giây sau khi mở app).',
@@ -11794,6 +11784,13 @@ function loadCustomCrons() {
         });
       }
       if (openclawEntries.length > 0) {
+        healCustomCronEntries(openclawEntries);
+        for (const oc of openclawEntries) {
+          if (oc.prompt && !oc.prompt.trim().startsWith('exec:') &&
+              /(?:zalo|nhom|group|gui\s+tin|openzca)/i.test(oc.prompt)) {
+            console.warn(`[custom-crons] OpenClaw cron "${oc.label}" looks like a Zalo send but is NOT in exec: format — agent will attempt natural language execution (unreliable). Prompt should be: exec: openzca --profile default msg send <groupId> "<text>" --group`);
+          }
+        }
         console.log(`[custom-crons] merged ${openclawEntries.length} OpenClaw cron(s) into scheduler`);
       }
     }
@@ -12090,15 +12087,13 @@ async function processEscalationQueue() {
     const tmpFile = queueFile + '.processing.' + process.pid;
     try { fs.renameSync(queueFile, tmpFile); } catch { return; }
     const raw = fs.readFileSync(tmpFile, 'utf-8').trim();
-    try { fs.unlinkSync(tmpFile); } catch {}
-    if (!raw) return;
+    if (!raw) { try { fs.unlinkSync(tmpFile); } catch {} return; }
     const lines = raw.split('\n').filter(Boolean);
-    if (lines.length === 0) return;
+    if (lines.length === 0) { try { fs.unlinkSync(tmpFile); } catch {} return; }
 
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
-        // Try to look up customer name from memory file
         let customerName = entry.to || 'unknown';
         try {
           const memDir = path.join(ws, 'memory', entry.isGroup ? 'zalo-groups' : 'zalo-users');
@@ -12118,6 +12113,7 @@ async function processEscalationQueue() {
         console.error('[escalation] Parse/send error for line:', e?.message);
       }
     }
+    try { fs.unlinkSync(tmpFile); } catch {}
   } catch (e) {
     console.error('[escalation] processQueue error:', e?.message);
   }
@@ -12285,7 +12281,9 @@ function startCronApi() {
         const normalized = String(cronExpr).trim().replace(/\s+/g, ' ');
         if (!nodeCron.validate(normalized)) return jsonResp(res, 400, { error: 'invalid cronExpr: ' + cronExpr });
         const parts = normalized.split(' ');
-        if (parts.length >= 1 && parts[0] === '*') {
+        const minField = parts[0] || '';
+        const stepMatch = minField.match(/^\*\/(\d+)$/);
+        if (minField === '*' || (stepMatch && parseInt(stepMatch[1], 10) < 5)) {
           return jsonResp(res, 400, { error: 'frequency too high — minimum 5 minutes (use */5 or wider). Every-minute crons will spam groups.' });
         }
       }
@@ -12337,7 +12335,7 @@ function startCronApi() {
           const crons = loadCustomCrons();
           const filtered = crons.filter(c => c.id !== id);
           if (filtered.length === crons.length) return jsonResp(res, 404, { error: 'cron not found: ' + id });
-          writeJsonAtomic(getCustomCronsPath(), filtered);
+          writeJsonAtomic(getCustomCronsPath(), filtered.filter(c => c.source !== 'openclaw'));
           try { restartCronJobs(); } catch {}
           console.log('[cron-api] deleted:', id);
           try { sendCeoAlert('[Cron] Da xoa: ' + id); } catch {}
@@ -12354,7 +12352,7 @@ function startCronApi() {
           const target = crons.find(c => c.id === id);
           if (!target) return jsonResp(res, 404, { error: 'cron not found: ' + id });
           target.enabled = enabled === 'true' || enabled === true;
-          writeJsonAtomic(getCustomCronsPath(), crons);
+          writeJsonAtomic(getCustomCronsPath(), crons.filter(c => c.source !== 'openclaw'));
           try { restartCronJobs(); } catch {}
           try { sendCeoAlert('[Cron] ' + (target.enabled ? 'Bat' : 'Tat') + ': ' + (target.label || id)); } catch {}
           return jsonResp(res, 200, { success: true, enabled: target.enabled });
@@ -12436,8 +12434,31 @@ function startCronApi() {
         return jsonResp(res, 200, { dir, files });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
+    } else if (urlPath === '/api/zalo/send') {
+      const { groupId, targetId: rawTargetId, text, isGroup: isGroupParam } = params;
+      const tId = groupId || rawTargetId;
+      if (!tId) return jsonResp(res, 400, { error: 'groupId (or targetId) required' });
+      if (!text) return jsonResp(res, 400, { error: 'text required' });
+      if (String(text).length > 5000) return jsonResp(res, 400, { error: 'text too long (max 5000 chars)' });
+      const isGroup = isGroupParam !== 'false' && isGroupParam !== false;
+      const { byId } = loadGroupsMap();
+      if (isGroup && !byId[String(tId)]) {
+        return jsonResp(res, 400, { error: 'unknown groupId: ' + tId + '. Check /api/cron/list for available groups.' });
+      }
+      try {
+        const ok = await sendZaloTo({ id: String(tId), isGroup }, String(text));
+        if (ok) {
+          console.log(`[cron-api] /api/zalo/send OK → ${isGroup ? 'group' : 'user'} ${tId}`);
+          return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup });
+        } else {
+          return jsonResp(res, 500, { success: false, error: 'sendZaloTo returned null — check listener status, target validity, or channel pause state' });
+        }
+      } catch (e) {
+        return jsonResp(res, 500, { success: false, error: String(e?.message || e).slice(0, 300) });
+      }
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list'] });
     }
   });
 
@@ -12489,6 +12510,7 @@ function startCronJobs() {
 }
 function _startCronJobsInner() {
   stopCronJobs();
+  if (!global._cronInFlight) global._cronInFlight = new Map();
   // Kick off the openclaw-agent CLI self-test (non-blocking). Sets _agentFlagProfile
   // / _agentCliHealthy so that when a cron fires it already knows which flags to use.
   // Re-runs are no-ops because _selfTestPromise is cached for the process lifetime.
@@ -15626,22 +15648,10 @@ ipcMain.handle('get-overview-data', async () => {
       }
     } catch {}
 
-    // 4b. Zalo cookie age — warn if > 14 days since last refresh
+    // 4b. Zalo login status — only warn if not logged in at all
     try {
       const credFile = path.join(HOME, '.openzca', 'profiles', 'default', 'credentials.json');
-      if (fs.existsSync(credFile)) {
-        const ageMs = Date.now() - fs.statSync(credFile).mtimeMs;
-        const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
-        if (ageDays > 14) {
-          actions.push({
-            severity: ageDays > 25 ? 'high' : 'medium',
-            text: `Cookie Zalo đã ${ageDays} ngày — sắp hết hạn`,
-            cta: 'Quét QR mới',
-            ctaPage: 'zalo',
-            kind: 'cookie-stale',
-          });
-        }
-      } else {
+      if (!fs.existsSync(credFile)) {
         // No credentials → user hasn't logged in Zalo yet
         actions.push({
           severity: 'low',

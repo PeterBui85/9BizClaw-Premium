@@ -173,7 +173,7 @@ Wizard hướng dẫn lấy <strong>Ollama API key</strong> (miễn phí, đăng
   <li>Hiện mã QR — mở Zalo trên điện thoại → Menu → Quản lý Zalo trên máy tính → Quét QR</li>
   <li>Xác nhận trên điện thoại → đóng dialog → app tự nhận cookie</li>
 </ol>
-<div class="warn"><strong>Lưu ý:</strong> cookie Zalo hết hạn sau khoảng 14 ngày. Dashboard sẽ hiện cảnh báo màu vàng "Cookie Zalo sắp hết hạn" → anh/chị vào tab Zalo → bấm "Kết nối lại" để quét QR mới.</div>
+<div class="warn"><strong>Lưu ý:</strong> Phiên Zalo sẽ duy trì tự động miễn bot đang chạy. Chỉ cần quét QR lại khi Dashboard hiện dot đỏ "Listener không chạy" hoặc khi anh/chị chủ động đổi tài khoản Zalo.</div>
 </div>
 
 <h2><span class="num">4.</span>Tab Tổng quan (Dashboard)</h2>
@@ -185,7 +185,7 @@ Dashboard có 4 section trả lời 4 câu hỏi chủ shop cần biết mỗi s
   <li><strong>Chào buổi sáng</strong> — tên anh/chị, ngày giờ, tổng số sự kiện bot đã xử lý hôm nay</li>
   <li><strong>Hoạt động gần đây</strong> — 8 sự kiện gần nhất (khởi động bot, tin bị chặn, cron đã chạy, máy Mac thức dậy...)</li>
   <li><strong>Sắp tới</strong> — 6 cron kế tiếp sẽ chạy (follow-up 9h30, báo cáo tối, cron tự tạo)</li>
-  <li><strong>Cần anh để ý</strong> — cảnh báo có mức độ: bot dừng (đỏ), cookie Zalo cũ (vàng), tin bị filter chặn (vàng), khách mới Zalo (xanh)</li>
+  <li><strong>Cần anh để ý</strong> — cảnh báo có mức độ: bot dừng (đỏ), tin bị filter chặn (vàng), khách mới Zalo (xanh)</li>
 </ol>
 </div>
 
@@ -193,7 +193,7 @@ Dashboard có 4 section trả lời 4 câu hỏi chủ shop cần biết mỗi s
 <div class="a">
 <ul>
   <li><strong>Xanh</strong> — kênh đang hoạt động, nhận được tin</li>
-  <li><strong>Đỏ</strong> — kênh không sẵn sàng (token sai, listener Zalo chết, cookie hết hạn)</li>
+  <li><strong>Đỏ</strong> — kênh không sẵn sàng (token sai, listener Zalo chết)</li>
   <li><strong>Xám</strong> — đang kiểm tra (thường chỉ thấy trong 1-2 giây đầu sau khi mở app)</li>
 </ul>
 <div class="tip">Dashboard tự kiểm tra trạng thái mỗi 45 giây. Muốn kiểm tra ngay → bấm "Kiểm tra" trong tab Telegram/Zalo.</div>
@@ -404,12 +404,12 @@ Nếu bot định trả lời có nhắc lại CCCD/số thẻ mà khách gửi 
 
 <h3>Zalo báo "Chưa sẵn sàng"</h3>
 <div class="a">
-<strong>Nguyên nhân</strong>: listener Zalo không chạy hoặc cookie hết hạn.<br>
+<strong>Nguyên nhân</strong>: listener Zalo không chạy.<br>
 <strong>Khắc phục</strong>:
 <ol>
   <li>Tab Zalo → bấm "Kiểm tra" → xem thông báo cụ thể</li>
-  <li>"Cookie cũ hơn 14 ngày" → bấm "Kết nối lại" → quét QR mới</li>
   <li>"Listener process không chạy" → tắt app, mở lại</li>
+  <li>Nếu vẫn lỗi → bấm "Đổi tài khoản" để quét QR đăng nhập lại</li>
 </ol>
 </div>
 

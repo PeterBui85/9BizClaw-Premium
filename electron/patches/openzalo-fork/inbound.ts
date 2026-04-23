@@ -576,17 +576,19 @@ export async function handleOpenzaloInbound(params: {
       /gửi\s+tin\s+(?:nhắn\s+)?(?:cho\s+)?(?:tất cả|all|nhiều)\s+(?:nhóm|group)/i,
       /gui\s+tin\s+(?:nhan\s+)?(?:cho\s+)?(?:tat ca|all|nhieu)\s+(?:nhom|group)/i,
       /broadcast\b/i,
-      /^exec:\s/i,
+      /^exec[:\s]/i,
       /openzca\s+msg\s+send\b/i,
       /gửi\s+(?:tin\s+)?(?:nhắn\s+)?(?:vào|cho)\s+(?:nhóm|group)\s+["']/i,
       /gui\s+(?:tin\s+)?(?:nhan\s+)?(?:vao|cho)\s+(?:nhom|group)\s+["']/i,
       /127\.0\.0\.1[:/]\s*\d{2,5}/i,
       /localhost[:/]\s*\d{2,5}/i,
       /\[?::1\]?[:/]\s*\d{2,5}/i,
+      /0\.0\.0\.0[:/]\s*\d{2,5}/i,
       /0x7f0{0,6}1\b/i,
       /0177\.0+\.0+\.0*1\b/,
       /2130706433\b/,
       /\/api\/cron\//i,
+      /\/api\/zalo\//i,
       /\/api\/workspace\//i,
       /\/api\/auth\//i,
       /cron-api-token/i,
@@ -703,16 +705,18 @@ export async function handleOpenzaloInbound(params: {
         __gsCandidates.push(__gsPath.join(__gsConfig, __gsAppDir, "zalo-group-settings.json"));
       }
       const __gsThreadId = message.threadId;
+      let __gsFound = false;
       for (const __gp of __gsCandidates) {
         try {
           if (!__gsFs.existsSync(__gp)) continue;
           const __gsRaw = JSON.parse(__gsFs.readFileSync(__gp, "utf-8"));
           const __gsEntry = __gsRaw[__gsThreadId] || __gsRaw.__default;
-          if (__gsEntry && __gsEntry.mode === "off") {
+          __gsFound = true;
+          if (!__gsEntry || __gsEntry.mode === "off") {
             runtime.log?.(`openzalo: group ${__gsThreadId} disabled via dashboard settings`);
             return;
           }
-          if (__gsEntry && __gsEntry.mode === "mention") {
+          if (__gsEntry.mode === "mention") {
             // Only match explicit bot mention — NOT arbitrary @someone (customer
             // tagging their colleague would have triggered reply otherwise).
             // Zalo openzca sets message.isMentioned when bot is the target.
@@ -750,6 +754,10 @@ export async function handleOpenzaloInbound(params: {
           }
           break;
         } catch {}
+      }
+      if (!__gsFound) {
+        runtime.log?.(`openzalo: group ${__gsThreadId} — no settings file, default=off`);
+        return;
       }
     } catch {}
   }
@@ -923,7 +931,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
         // Only enforce friend check when cache has been populated by openzca.
         if (__fcCacheExists && __fcFriendsCount > 0 && !__fcIsFriend) {
           // --- V5: Read stranger policy from workspace ---
-          let __fcPolicy = "reply"; // default: reply normally
+          let __fcPolicy = "ignore"; // default: don't reply to strangers
           try {
             const __fcAppDir = "9bizclaw";
             const __fcPolicyCandidates: string[] = [];
