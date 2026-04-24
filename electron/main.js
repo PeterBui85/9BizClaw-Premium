@@ -180,6 +180,24 @@ function getWorkspace() {
 }
 function invalidateWorkspaceCache() { _workspaceCached = null; _appPackaged = null; }
 
+function purgeAgentSessions(caller) {
+  try {
+    const sessDir = path.join(HOME, '.openclaw', 'agents', 'main', 'sessions');
+    if (!fs.existsSync(sessDir)) return 0;
+    const staleFiles = fs.readdirSync(sessDir).filter(f => f.endsWith('.jsonl'));
+    for (const sf of staleFiles) {
+      try { fs.unlinkSync(path.join(sessDir, sf)); } catch {}
+    }
+    const idxFile = path.join(sessDir, 'sessions.json');
+    if (fs.existsSync(idxFile)) { try { fs.unlinkSync(idxFile); } catch {} }
+    if (staleFiles.length > 0) console.log(`[${caller}] purged ${staleFiles.length} stale session(s)`);
+    return staleFiles.length;
+  } catch (pe) {
+    console.warn(`[${caller}] session purge failed:`, pe?.message || pe);
+    return 0;
+  }
+}
+
 // Default schedules (also used as template when seeding fresh install)
 const DEFAULT_SCHEDULES_JSON = [
   // `icon` legacy field kept empty — Dashboard uses lucide icons via SCHEDULE_ICON_MAP, not emoji.
@@ -637,7 +655,7 @@ function augmentPathWithBundledNode() {
 //       contradiction fix
 //   4 — v2.2.8 (current) — bumped after audit, no new rules but the
 //       version-stamp mechanism itself was added
-const CURRENT_AGENTS_MD_VERSION = 71;
+const CURRENT_AGENTS_MD_VERSION = 73;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 function seedWorkspace() {
@@ -745,27 +763,7 @@ function seedWorkspace() {
             try { fs.unlinkSync(fp); console.log('[seedWorkspace] removed fake memory file: ' + f); } catch {}
           }
         }
-        // CRITICAL: purge stale agent sessions when AGENTS.md upgrades.
-        // continuation-skip mode caches bootstrap in session — old sessions
-        // never see the new rules. Force fresh bootstrap on next message.
-        const sessDir = path.join(HOME, '.openclaw', 'agents', 'main', 'sessions');
-        try {
-          if (fs.existsSync(sessDir)) {
-            const staleFiles = fs.readdirSync(sessDir).filter(f => f.endsWith('.jsonl'));
-            for (const sf of staleFiles) {
-              try { fs.unlinkSync(path.join(sessDir, sf)); } catch {}
-            }
-            const idxFile = path.join(sessDir, 'sessions.json');
-            if (fs.existsSync(idxFile)) {
-              try { fs.unlinkSync(idxFile); } catch {}
-            }
-            if (staleFiles.length > 0) {
-              console.log('[seedWorkspace] purged ' + staleFiles.length + ' stale session(s) — fresh bootstrap on next message');
-            }
-          }
-        } catch (pe) {
-          console.warn('[seedWorkspace] session purge failed:', pe?.message || pe);
-        }
+        purgeAgentSessions('seedWorkspace');
       }
     } catch (e) {
       console.warn('[seedWorkspace] AGENTS.md version check failed:', e && e.message ? e.message : String(e));
@@ -4358,21 +4356,7 @@ async function _startOpenClawImpl(opts = {}) {
     global._suppressBootPing = false;
   }
   try { backupWorkspace(); } catch (e) { console.error('[backup] failed:', e.message); }
-  // Purge stale agent sessions so AGENTS.md bootstrap re-fires on next message.
-  // With contextInjection:"always" this is belt-and-suspenders; with any other
-  // mode it prevents rules from going stale across gateway restarts.
-  try {
-    const sessDir = path.join(HOME, '.openclaw', 'agents', 'main', 'sessions');
-    if (fs.existsSync(sessDir)) {
-      const staleFiles = fs.readdirSync(sessDir).filter(f => f.endsWith('.jsonl'));
-      for (const sf of staleFiles) {
-        try { fs.unlinkSync(path.join(sessDir, sf)); } catch {}
-      }
-      const idxFile = path.join(sessDir, 'sessions.json');
-      if (fs.existsSync(idxFile)) { try { fs.unlinkSync(idxFile); } catch {} }
-      if (staleFiles.length > 0) console.log('[startOpenClaw] purged ' + staleFiles.length + ' stale session(s)');
-    }
-  } catch (pe) { console.warn('[startOpenClaw] session purge failed:', pe?.message || pe); }
+  purgeAgentSessions('startOpenClaw');
   auditLog('startOpenClaw_begin', {});
 
   const bin = await findOpenClawBin();
@@ -12766,12 +12750,105 @@ function startCronApi() {
           fs.appendFileSync(indexPath, entry, 'utf-8');
           console.log('[knowledge-api] added to', category + '/index.md:', title);
           try { auditLog('knowledge_added', { category, title: String(title).slice(0, 100) }); } catch {}
+          purgeAgentSessions('knowledge-api-add');
           return jsonResp(res, 200, { success: true, category, title, indexPath: `knowledge/${category}/index.md` });
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
+    // ============================================
+    //  CEO FILE API — full file system access (token-gated)
+    // ============================================
+    } else if (urlPath === '/api/file/read') {
+      const filePath = String(params.path || '');
+      if (!filePath) return jsonResp(res, 400, { error: 'path required (absolute path)' });
+      const abs = path.resolve(filePath);
+      try {
+        const stat = fs.statSync(abs);
+        if (stat.size > 10 * 1024 * 1024) return jsonResp(res, 400, { error: 'file too large (max 10MB). Size: ' + Math.round(stat.size / 1024 / 1024) + 'MB' });
+        const ext = path.extname(abs).toLowerCase();
+        if (ext === '.xlsx' || ext === '.xls') {
+          try {
+            const XLSX = require('xlsx');
+            const wb = XLSX.readFile(abs);
+            const sheets = {};
+            for (const name of wb.SheetNames) {
+              sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
+            }
+            return jsonResp(res, 200, { success: true, path: abs, type: 'excel', sheets, sheetNames: wb.SheetNames });
+          } catch (xe) { return jsonResp(res, 500, { error: 'Excel parse failed: ' + xe.message + '. Install xlsx: npm i xlsx in electron/' }); }
+        }
+        const buf = fs.readFileSync(abs);
+        const isBinary = buf.slice(0, 8000).some(b => b === 0);
+        if (isBinary) return jsonResp(res, 200, { success: true, path: abs, type: 'binary', size: stat.size, encoding: 'base64', content: buf.toString('base64').slice(0, 50000) });
+        return jsonResp(res, 200, { success: true, path: abs, type: 'text', content: buf.toString('utf-8'), size: stat.size });
+      } catch (e) {
+        if (e.code === 'ENOENT') return jsonResp(res, 404, { error: 'file not found: ' + abs });
+        return jsonResp(res, 500, { error: e.message });
+      }
+
+    } else if (urlPath === '/api/file/write') {
+      const filePath = String(params.path || '');
+      const content = params.content;
+      if (!filePath) return jsonResp(res, 400, { error: 'path required (absolute path)' });
+      if (content === undefined || content === null) return jsonResp(res, 400, { error: 'content required' });
+      const abs = path.resolve(filePath);
+      try {
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, String(content), 'utf-8');
+        console.log('[file-api] write:', abs, '(' + String(content).length + ' chars)');
+        return jsonResp(res, 200, { success: true, path: abs, size: Buffer.byteLength(String(content), 'utf-8') });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/file/list') {
+      const dirPath = String(params.path || '');
+      if (!dirPath) return jsonResp(res, 400, { error: 'path required (absolute path to directory)' });
+      const abs = path.resolve(dirPath);
+      try {
+        const entries = fs.readdirSync(abs, { withFileTypes: true });
+        const items = entries.slice(0, 200).map(e => ({
+          name: e.name,
+          type: e.isDirectory() ? 'dir' : 'file',
+          size: e.isFile() ? (() => { try { return fs.statSync(path.join(abs, e.name)).size; } catch { return 0; } })() : undefined,
+        }));
+        return jsonResp(res, 200, { success: true, path: abs, count: entries.length, items });
+      } catch (e) {
+        if (e.code === 'ENOENT') return jsonResp(res, 404, { error: 'directory not found: ' + abs });
+        return jsonResp(res, 500, { error: e.message });
+      }
+
+    } else if (urlPath === '/api/exec') {
+      const cmd = String(params.command || '');
+      if (!cmd) return jsonResp(res, 400, { error: 'command required' });
+      if (cmd.length > 2000) return jsonResp(res, 400, { error: 'command too long (max 2000 chars)' });
+      const timeoutMs = Math.min(parseInt(params.timeout) || 30000, 120000);
+      const cwd = params.cwd ? String(params.cwd) : undefined;
+      const { exec: execAsync } = require('child_process');
+      return new Promise((resolve) => {
+        execAsync(cmd, {
+          timeout: timeoutMs,
+          encoding: 'utf-8',
+          cwd,
+          maxBuffer: 2 * 1024 * 1024,
+          windowsHide: true,
+          env: { ...process.env },
+          shell: true,
+        }, (err, stdout, stderr) => {
+          if (err) {
+            resolve(jsonResp(res, 200, {
+              success: false,
+              exitCode: err.code || 1,
+              stdout: String(stdout || '').slice(0, 30000),
+              stderr: String(stderr || '').slice(0, 30000),
+              error: err.message,
+            }));
+          } else {
+            resolve(jsonResp(res, 200, { success: true, output: String(stdout).slice(0, 50000) }));
+          }
+        });
+      });
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/exec'] });
     }
   });
 
@@ -14477,6 +14554,7 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     }
 
     rewriteKnowledgeIndex(category);
+    purgeAgentSessions('knowledge-upload');
     return { success: true, filename: finalName, summary, wordCount, dbWarning };
   } catch (e) {
     console.error('[knowledge] upload error:', e.message);
@@ -14507,6 +14585,7 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
     let indexWarning;
     if (category) {
       try { rewriteKnowledgeIndex(category); } catch (e) { indexWarning = e.message; }
+      purgeAgentSessions('knowledge-visibility');
     }
     return { success: true, indexWarning };
   } catch (e) {
@@ -14584,13 +14663,24 @@ ipcMain.handle('delete-knowledge-file', async (_event, { category, filename }) =
     if (!KNOWLEDGE_CATEGORIES.includes(category)) return { success: false };
     const db = getDocumentsDb();
     if (db) {
-      db.prepare('DELETE FROM documents WHERE category = ? AND filename = ?').run(category, filename);
-      db.prepare('DELETE FROM documents_fts WHERE filename = ?').run(filename);
-      db.close();
+      try {
+        const row = db.prepare('SELECT id FROM documents WHERE category = ? AND filename = ?').get(category, filename);
+        const deleteAll = db.transaction(() => {
+          if (row) {
+            db.prepare('DELETE FROM documents_chunks WHERE document_id = ?').run(row.id);
+          }
+          db.prepare('DELETE FROM documents WHERE category = ? AND filename = ?').run(category, filename);
+          db.prepare('DELETE FROM documents_fts WHERE filename = ?').run(filename);
+        });
+        deleteAll();
+      } finally {
+        try { db.close(); } catch {}
+      }
     }
     const fp = path.join(getKnowledgeDir(category), 'files', filename);
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
     rewriteKnowledgeIndex(category);
+    purgeAgentSessions('knowledge-delete');
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -15620,6 +15710,7 @@ ipcMain.handle('delete-knowledge-folder', async (_event, { id }) => {
       const db = getDocumentsDb();
       if (db) { db.prepare('DELETE FROM documents WHERE category = ?').run(id); db.close(); }
     } catch {}
+    purgeAgentSessions('knowledge-folder-delete');
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };

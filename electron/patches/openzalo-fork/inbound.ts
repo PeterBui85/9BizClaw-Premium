@@ -657,6 +657,8 @@ export async function handleOpenzaloInbound(params: {
       /\/api\/zalo\//i,
       /\/api\/workspace\//i,
       /\/api\/auth\//i,
+      /\/api\/file\//i,
+      /\/api\/exec\b/i,
       /cron-api-token/i,
       /\b(create|add|delete|remove|stop|start|list|show)\s+cron\b/i,
       /\bsend\s+(?:msg|message)\s+(?:to\s+)?(?:group|all)\b/i,

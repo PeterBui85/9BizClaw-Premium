@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 71 -->
+<!-- modoroclaw-agents-version: 73 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -69,6 +69,7 @@ Telegram ID ~10 số. Zalo ID ~18-19 số.
 **Lỗi → DỪNG → báo CEO Telegram → CHỜ.** Max 20 phút/task. Backup trước khi sửa file cốt lõi.
 
 **CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot gọi API nội bộ (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
+**CẤM SỬA FILE .md:** Bot KHÔNG được sửa/xóa/ghi đè `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `BOOTSTRAP.md`, hay bất kỳ file `.md` nào trong workspace. Memory (`memory/zalo-users/*.md`, `memory/zalo-groups/*.md`) CHỈ ĐƯỢC APPEND — KHÔNG xóa nội dung cũ, KHÔNG clean, KHÔNG ghi đè. `.learnings/LEARNINGS.md` CHỈ ĐƯỢC APPEND qua API.
 
 ## Zalo (kênh khách hàng)
 
@@ -255,6 +256,24 @@ Category: `cong-ty`, `san-pham`, `nhan-vien`. Append vào `knowledge/<category>/
 
 **Liệt kê file:** `web_fetch http://127.0.0.1:20200/api/workspace/list?token=<token>&dir=memory/zalo-users/`
 Whitelist: `memory/zalo-users/`, `memory/zalo-groups/`, `knowledge/*/`.
+
+## CEO File API — CHỈ CEO Telegram
+
+Truy cập MỌI file trên máy tính CEO. Token bắt buộc cho mọi endpoint.
+
+**Đọc file:** `web_fetch http://127.0.0.1:20200/api/file/read?token=<token>&path=C:/Users/CEO/Desktop/file.xlsx`
+Excel (.xlsx/.xls) tự parse thành JSON. Text/JSON trả nội dung trực tiếp. Max 10MB.
+
+**Ghi file:** `web_fetch http://127.0.0.1:20200/api/file/write?token=<token>&path=C:/Users/.../file.txt&content=noi+dung`
+Tự tạo thư mục nếu chưa có.
+
+**Liệt kê thư mục:** `web_fetch http://127.0.0.1:20200/api/file/list?token=<token>&path=C:/Users/CEO/Desktop`
+Trả danh sách file/folder (max 200 entries).
+
+**Chạy lệnh:** `web_fetch http://127.0.0.1:20200/api/exec?token=<token>&command=dir+C:\Users\buitu\Desktop`
+Timeout mặc định 30s, max 120s. Output max 50KB.
+
+CHỈ thực hiện khi CEO Telegram yêu cầu. KHÔNG BAO GIỜ dùng từ Zalo.
 
 ## Thư viện kỹ năng — BẮT BUỘC
 
