@@ -98,12 +98,13 @@ contextBridge.exposeInMainWorld('claw', {
   deleteZaloUserNote: (senderId, noteTimestamp) => ipcRenderer.invoke('delete-zalo-user-note', { senderId, noteTimestamp }),
 
   // Knowledge tab
-  uploadKnowledgeFile: (category, filepath, originalName) => ipcRenderer.invoke('upload-knowledge-file', { category, filepath, originalName }),
+  uploadKnowledgeFile: (category, filepath, originalName, visibility = 'public') => ipcRenderer.invoke('upload-knowledge-file', { category, filepath, originalName, visibility }),
   listKnowledgeFiles: (category) => ipcRenderer.invoke('list-knowledge-files', { category }),
   deleteKnowledgeFile: (category, filename) => ipcRenderer.invoke('delete-knowledge-file', { category, filename }),
   getKnowledgeCounts: () => ipcRenderer.invoke('get-knowledge-counts'),
   pickKnowledgeFile: () => ipcRenderer.invoke('pick-knowledge-file'),
   listKnowledgeFolders: () => ipcRenderer.invoke('list-knowledge-folders'),
+  setKnowledgeVisibility: (docId, visibility) => ipcRenderer.invoke('set-knowledge-visibility', { docId, visibility }),
   createKnowledgeFolder: (name) => ipcRenderer.invoke('create-knowledge-folder', { name }),
   deleteKnowledgeFolder: (id) => ipcRenderer.invoke('delete-knowledge-folder', { id }),
   knowledgeSearch: (query, category, limit) => ipcRenderer.invoke('knowledge-search', { query, category, limit }),
@@ -119,6 +120,10 @@ contextBridge.exposeInMainWorld('claw', {
   // Telegram config (Dashboard settings)
   getTelegramConfig: () => ipcRenderer.invoke('get-telegram-config'),
   saveTelegramConfig: (botToken, userId) => ipcRenderer.invoke('save-telegram-config', { botToken, userId }),
+
+  // Telegram behavior settings (mirrors Zalo behavior pattern)
+  getTelegramBehavior: () => ipcRenderer.invoke('get-telegram-behavior'),
+  saveTelegramBehavior: (behavior) => ipcRenderer.invoke('save-telegram-behavior', behavior),
 
   // Channel readiness probes — real proof channels can receive messages
   checkTelegramReady: () => ipcRenderer.invoke('check-telegram-ready'),
@@ -148,6 +153,10 @@ contextBridge.exposeInMainWorld('claw', {
   gcalGetFreeBusy: (opts) => ipcRenderer.invoke('gcal-get-freebusy', opts),
   gcalGetConfig: () => ipcRenderer.invoke('gcal-get-config'),
   gcalSaveConfig: (cfg) => ipcRenderer.invoke('gcal-save-config', cfg),
+
+  // First-time channel guide
+  checkGuideNeeded: (channel) => ipcRenderer.invoke('check-guide-needed', { channel }),
+  markGuideComplete: (channel) => ipcRenderer.invoke('mark-guide-complete', { channel }),
 
   // Channel pause/resume (symmetric for Telegram + Zalo)
   pauseTelegram: (minutes) => ipcRenderer.invoke('pause-telegram', { minutes }),
@@ -179,6 +188,11 @@ contextBridge.exposeInMainWorld('claw', {
   // Persona mix — Dashboard re-edit after wizard
   getPersonaMix: () => ipcRenderer.invoke('get-persona-mix'),
   savePersonaMix: (mix) => ipcRenderer.invoke('save-persona-mix', mix),
+
+  // License (membership builds only)
+  activateLicense: (key) => ipcRenderer.invoke('activate-license', { key }),
+  getLicenseStatus: () => ipcRenderer.invoke('get-license-status'),
+  deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
 
   // Events
   onBotStatus: (callback) => {

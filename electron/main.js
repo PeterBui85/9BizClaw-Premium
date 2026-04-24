@@ -948,8 +948,8 @@ function seedWorkspace() {
   } catch {}
 
   // Knowledge tab folders + index files
-  const knowCategories = ['cong-ty', 'san-pham', 'nhan-vien'];
-  const knowLabels = { 'cong-ty': 'Công ty', 'san-pham': 'Sản phẩm', 'nhan-vien': 'Nhân viên' };
+  const knowCategories = ['cong-ty', 'san-pham', 'nhan-vien', '9bizclaw'];
+  const knowLabels = { 'cong-ty': 'Công ty', 'san-pham': 'Sản phẩm', 'nhan-vien': 'Nhân viên', '9bizclaw': '9BizClaw' };
   for (const cat of knowCategories) {
     const filesDir = path.join(ws, 'knowledge', cat, 'files');
     try { fs.mkdirSync(filesDir, { recursive: true }); } catch {}
@@ -964,6 +964,10 @@ function seedWorkspace() {
       } catch {}
     }
   }
+  // Seed 9BizClaw product doc from source tree (self-knowledge for the bot)
+  const bizclawSrc = path.join(__dirname, '..', 'knowledge', '9bizclaw');
+  const bizclawDst = path.join(ws, 'knowledge', '9bizclaw');
+  if (fs.existsSync(bizclawSrc)) copyDirRecursive(bizclawSrc, bizclawDst);
 
   return ws;
 }
@@ -2521,7 +2525,7 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   if (!isZaloListenerAlive()) {
     console.error(`[cron-exec] "${label || 'cron'}" — Zalo listener not running, refusing send`);
     journalCronRun({ phase: 'fail', label: label || 'cron', mode: 'safe-openzca', err: 'zalo-listener-down' });
-    sendCeoAlert(`Cron "${label || 'cron'}" khong gui duoc — Zalo listener khong chay. Vao Dashboard kiem tra tab Zalo.`).catch(() => {});
+    sendCeoAlert(`Cron "${label || 'cron'}" không gửi được — Zalo listener không chạy. Vào Dashboard kiểm tra tab Zalo.`).catch(() => {});
     return false;
   }
   if (targetIds.length === 1) {
@@ -2891,6 +2895,20 @@ function createWindow() {
   const onboardingComplete = hasCompletedOnboarding();
   console.log('[createWindow] configured:', configured);
   console.log('[createWindow] onboardingComplete:', onboardingComplete);
+
+  // License gate (membership builds only) — blocks ALL pages until valid key
+  const isMembershipBuild = require('./package.json').membership === true;
+  if (isMembershipBuild) {
+    const license = require('./lib/license');
+    license.init(getWorkspace);
+    const ls = license.checkLicenseStatus();
+    if (ls.status === 'no_license' || ls.status === 'invalid' || ls.status === 'locked') {
+      console.log('[createWindow] membership build, license status:', ls.status, '-> license.html');
+      mainWindow.loadFile(path.join(__dirname, 'ui', 'license.html'));
+      return;
+    }
+    console.log('[createWindow] membership build, license valid');
+  }
 
   if (!openclawBin) {
     console.error('[createWindow] → no-openclaw.html (findOpenClawBinSync returned null)');
@@ -3727,24 +3745,13 @@ async function ensureDefaultConfig() {
       config.agents.defaults.blockStreamingDefault = 'off';
       changed = true;
     }
-    // TOKEN-BLOAT FIX: openclaw default `contextInjection: "always"` re-injects
-    // 8 bootstrap files (AGENTS.md + SOUL.md + TOOLS.md + IDENTITY.md + USER.md
-    // + HEARTBEAT.md + BOOTSTRAP.md + MEMORY.md = ~32KB = ~8k tokens) into the
-    // system prompt on EVERY run, for EVERY customer message. Plus ~10-20k tool
-    // descriptions per run. Tool-loop 3-8 turns → 60-70k tokens total, even for
-    // "xin chào". User observation (v2.3.46 + v2.3.47 both affected).
-    //
-    // Setting to "continuation-skip": bootstrap fires on FIRST message of each
-    // customer session, then openclaw writes a marker to the session file
-    // (FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE). Subsequent messages from same
-    // peer see the marker → `hasCompletedBootstrapTurn` returns true → openclaw
-    // returns `bootstrapFiles: []` → system prompt drops by ~8k tokens per run.
-    // Compaction invalidates the marker → bootstrap re-fires after compaction,
-    // so safety rules are not permanently stale.
-    // Schema verified in openclaw 2026.4.x: z.union([z.literal("always"),
-    // z.literal("continuation-skip")]).optional() — both valid values.
-    if (config.agents.defaults.contextInjection !== 'continuation-skip') {
-      config.agents.defaults.contextInjection = 'continuation-skip';
+    // BOOTSTRAP INJECTION MODE: "always" re-injects AGENTS.md + bootstrap files
+    // on EVERY turn (~8k tokens overhead). "continuation-skip" only injects on
+    // the first message then skips — saves tokens but model loses AGENTS.md rules
+    // on subsequent turns, causing emoji usage, AI self-disclosure, and missing
+    // CEO confirmation steps. For customer-facing bot, correctness > token cost.
+    if (config.agents.defaults.contextInjection !== 'always') {
+      config.agents.defaults.contextInjection = 'always';
       changed = true;
     }
     // BOOTSTRAP-BUDGET FIX: openclaw default bootstrapMaxChars is 20,000 per file.
@@ -4123,6 +4130,7 @@ function auditLog(event, meta) {
 }
 
 let _startOpenClawInFlight = false;
+let _wizardCompleteInFlight = false;
 // Set true in before-quit handler — wizard-complete IIFE checks this between
 // awaits so the bg sequence aborts if user force-quits mid-boot instead of
 // racing file writes against shutdown cleanup.
@@ -4350,6 +4358,21 @@ async function _startOpenClawImpl(opts = {}) {
     global._suppressBootPing = false;
   }
   try { backupWorkspace(); } catch (e) { console.error('[backup] failed:', e.message); }
+  // Purge stale agent sessions so AGENTS.md bootstrap re-fires on next message.
+  // With contextInjection:"always" this is belt-and-suspenders; with any other
+  // mode it prevents rules from going stale across gateway restarts.
+  try {
+    const sessDir = path.join(HOME, '.openclaw', 'agents', 'main', 'sessions');
+    if (fs.existsSync(sessDir)) {
+      const staleFiles = fs.readdirSync(sessDir).filter(f => f.endsWith('.jsonl'));
+      for (const sf of staleFiles) {
+        try { fs.unlinkSync(path.join(sessDir, sf)); } catch {}
+      }
+      const idxFile = path.join(sessDir, 'sessions.json');
+      if (fs.existsSync(idxFile)) { try { fs.unlinkSync(idxFile); } catch {} }
+      if (staleFiles.length > 0) console.log('[startOpenClaw] purged ' + staleFiles.length + ' stale session(s)');
+    }
+  } catch (pe) { console.warn('[startOpenClaw] session purge failed:', pe?.message || pe); }
   auditLog('startOpenClaw_begin', {});
 
   const bin = await findOpenClawBin();
@@ -4543,7 +4566,7 @@ async function _startOpenClawImpl(opts = {}) {
     setTimeout(() => {
       sendTelegram(
         '*Cảnh báo: 9Router combo rỗng*\n\n' +
-        'Combo AI `main` không có model nào. Bot sẽ KHÔNG phản hồi và cron sẽ FAIL cho tới khi anh vào tab *9Router* trong Dashboard, chọn model cho combo `main` và bấm Save.'
+        'Combo AI `main` không có model nào. Bot sẽ KHÔNG phản hồi và cron sẽ FAIL cho tới khi vào tab *9Router* trong Dashboard, chọn model cho combo `main` và bấm Save.'
       ).catch(() => {});
     }, 2000);
   }
@@ -5258,7 +5281,7 @@ async function validateOllamaKeyDirect(apiKey) {
             resolve({
               valid: false,
               statusCode: 200,
-              error: 'Phản hồi từ Ollama không phải JSON — có thể anh đang ở mạng captive portal (Wi-Fi khách sạn / quán cafe). Thử lại với mạng khác.',
+              error: 'Phản hồi từ Ollama không phải JSON — có thể đang ở mạng captive portal (Wi-Fi khách sạn / quán cafe). Thử lại với mạng khác.',
             });
           }
         } else if (res.statusCode === 401 || res.statusCode === 403) {
@@ -5662,7 +5685,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           await nineRouterApi('DELETE', `/api/providers/${providerId}`);
           return {
             success: false,
-            error: 'Ollama key hợp lệ nhưng không có model nào. Tài khoản Ollama của anh có thể chưa subscribe gói nào.',
+            error: 'Ollama key hợp lệ nhưng không có model nào. Tài khoản Ollama có thể chưa subscribe gói nào.',
             validationFailed: true,
           };
         }
@@ -7252,8 +7275,10 @@ ipcMain.handle('append-zalo-user-note', async (_event, { senderId, note }) => {
 ipcMain.handle('delete-zalo-user-note', async (_event, { senderId, noteTimestamp }) => {
   try {
     if (!senderId || !noteTimestamp) return { success: false, error: 'missing params' };
+    const id = sanitizeZaloUserId(senderId);
+    if (!id) return { success: false, error: 'invalid senderId' };
     const ws = getWorkspace();
-    const filePath = path.join(ws, 'memory', 'zalo-users', senderId + '.md');
+    const filePath = path.join(ws, 'memory', 'zalo-users', id + '.md');
     if (!fs.existsSync(filePath)) return { success: false, error: 'file not found' };
     let content = fs.readFileSync(filePath, 'utf-8');
     // CEO notes are lines like: - **2026-04-09 13:45** — note text
@@ -7766,11 +7791,26 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         if (fs.existsSync(gsPath)) existing = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {};
         if (typeof existing !== 'object' || Array.isArray(existing)) existing = {};
       } catch {}
+      // Read old file for audit diff before mutating
+      let oldExisting = {};
+      try { oldExisting = JSON.parse(JSON.stringify(existing)); } catch {}
       for (const [gid, gs] of Object.entries(groupSettings)) {
         if (!gs || !gs.mode) continue;
         if (!['off', 'mention', 'all'].includes(gs.mode)) continue;
-        existing[gid] = gs;
+        const sanitized = { mode: gs.mode };
+        if (gs.internal === true) sanitized.internal = true;
+        existing[gid] = sanitized;
       }
+      // Audit log internal flag changes
+      try {
+        for (const gid of Object.keys(existing)) {
+          const wasInternal = oldExisting[gid]?.internal === true;
+          const isInternal = existing[gid]?.internal === true;
+          if (wasInternal !== isInternal) {
+            auditLog('group-internal-change', { groupId: gid, internal: isInternal, ts: Date.now() });
+          }
+        }
+      } catch {}
       if (Object.keys(existing).length > 0) {
         writeJsonAtomic(gsPath, existing);
       }
@@ -7822,10 +7862,8 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
           try {
             console.log('[restart-guard] save-zalo-manager: hard-restart begin');
             try { await stopOpenClaw(); } catch (e1) { console.warn('[save-zalo-manager] stop failed:', e1?.message); }
-            await new Promise(r => setTimeout(r, 5000));
+            await new Promise(r => setTimeout(r, 2000));
             try { await startOpenClaw(); } catch (e2) { console.warn('[save-zalo-manager] start failed:', e2?.message); }
-            // [zalo-watchdog rearm] Post-restart: wipe any pre-restart miss
-            // streak so next heartbeat miss doesn't immediately re-trip cap.
             global._zaloListenerMissStreak = 0;
             console.log('[restart-guard] save-zalo-manager: hard-restart end');
           } finally {
@@ -8534,8 +8572,10 @@ ipcMain.handle('set-batch-config', async (_event, ops) => {
         if (fs.existsSync(configPath)) {
           try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
         }
+        const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
         for (const op of ops) {
           const parts = op.path.split('.');
+          if (parts.some(p => UNSAFE_KEYS.includes(p))) continue;
           let obj = config;
           for (let i = 0; i < parts.length - 1; i++) {
             if (!obj[parts[i]] || typeof obj[parts[i]] !== 'object') obj[parts[i]] = {};
@@ -8564,8 +8604,10 @@ ipcMain.handle('save-wizard-config', async (_event, configs) => {
         if (fs.existsSync(configPath)) {
           try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
         }
+        const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
         for (const { key, value } of configs) {
           const parts = key.split('.');
+          if (parts.some(p => UNSAFE_KEYS.includes(p))) continue;
           let obj = config;
           for (let i = 0; i < parts.length - 1; i++) {
             if (!obj[parts[i]] || typeof obj[parts[i]] !== 'object') obj[parts[i]] = {};
@@ -8910,30 +8952,32 @@ function loadWeeklySummaries() {
   return parts.join('\n\n');
 }
 
-// Build prompts used by BOTH the real scheduled cron AND the Dashboard "Test"
-// button. Keeping them in one place guarantees test fires are byte-identical to
-// what customers receive from scheduled runs — no test markers, no template
-// drift. If you change cron behavior, change it here and both paths follow.
+function loadPromptTemplate(name) {
+  const candidates = [
+    path.join(__dirname, 'prompts', name),
+    path.join(process.resourcesPath || __dirname, 'prompts', name),
+  ];
+  for (const p of candidates) {
+    try { return fs.readFileSync(p, 'utf-8'); } catch {}
+  }
+  return null;
+}
+
 function buildMorningBriefingPrompt(timeStr) {
   try { writeDailyMemoryJournal({ date: new Date(Date.now() - 86400000) }); } catch {}
   const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
   const history = extractConversationHistory({ sinceMs, maxMessages: 50, maxPerSender: 10 });
   const historyBlock = history
-    ? `\n\n--- LỊCH SỬ TIN NHẮN 24H QUA (đã trích từ session storage, KHÔNG cần em đi tìm thêm) ---\n${history}\n--- HẾT LỊCH SỬ ---\n\n`
-    : `\n\n_(Chưa có tin nhắn nào trong 24h qua — nếu CEO mới setup hoặc chưa ai nhắn thì điều này bình thường.)_\n\n`;
-  return (
-    `Bây giờ là ${timeStr || '07:30'} sáng. Hãy gửi BÁO CÁO SÁNG cho CEO.` +
-    historyBlock +
-    `Dựa trên lịch sử tin nhắn ở trên + AGENTS.md + memory/ + knowledge công ty, tổng hợp:\n` +
-    `1. Tóm tắt việc hôm qua (kết quả, deal đã chốt, vấn đề tồn đọng)\n` +
-    `2. Lịch họp / việc cần làm hôm nay (ưu tiên cao trước)\n` +
-    `3. Tin nhắn Zalo + Telegram cần xử lý (chỉ liệt kê tin có nội dung công việc, không liệt kê "hi" trống)\n` +
-    `4. Cảnh báo / nhắc nhở quan trọng\n\n` +
-    `Trả lời bằng tiếng Việt, ngắn gọn, dùng tiêu đề **BÁO CÁO SÁNG** in đậm + bullet points. ` +
-    `KHÔNG dùng emoji (premium UI rule — bot phải sang trọng, chuyên nghiệp). ` +
-    `KHÔNG hỏi lại CEO. KHÔNG yêu cầu CEO gõ lệnh. ` +
-    `KHÔNG nói "em không có dữ liệu" — nếu lịch sử trên rỗng thì nói thẳng "Hôm qua không có tin nhắn nào đáng chú ý" và chuyển sang phần lịch hôm nay.`
-  );
+    ? `\n\n--- Lịch sử tin nhắn 24h qua ---\n${history}\n--- Hết ---\n\n`
+    : `\n\n_(Chưa có tin nhắn nào trong 24h qua.)_\n\n`;
+  const template = loadPromptTemplate('morning-briefing.md');
+  if (template) {
+    return template
+      .replace('{{time}}', timeStr || '07:30')
+      .replace('{{historyBlock}}', historyBlock);
+  }
+  return `Bây giờ là ${timeStr || '07:30'} sáng. Gửi báo cáo sáng cho CEO.` + historyBlock +
+    `Tóm tắt hôm qua, việc hôm nay, tin cần xử lý, cảnh báo. Tiếng Việt có dấu, không emoji.`;
 }
 
 function buildEveningSummaryPrompt(timeStr) {
@@ -8943,18 +8987,82 @@ function buildEveningSummaryPrompt(timeStr) {
   const historyBlock = history
     ? `\n\n--- LỊCH SỬ TIN NHẮN 24H QUA (đã trích từ session storage, KHÔNG cần em đi tìm thêm) ---\n${history}\n--- HẾT LỊCH SỬ ---\n\n`
     : `\n\n_(Chưa có tin nhắn nào trong 24h qua.)_\n\n`;
-  return (
-    `Bây giờ là ${timeStr || '21:00'}, hết ngày làm việc. Hãy gửi TÓM TẮT CUỐI NGÀY cho CEO.` +
-    historyBlock +
-    `Dựa trên lịch sử tin nhắn ở trên + memory/ + knowledge, tổng hợp:\n` +
-    `1. Kết quả hôm nay so với mục tiêu (việc đã xong, deal đã chốt, doanh thu nếu có)\n` +
-    `2. Vấn đề tồn đọng cần xử lý\n` +
-    `3. Kế hoạch / ưu tiên cho ngày mai\n` +
-    `4. Cảnh báo / nhắc nhở quan trọng\n\n` +
-    `Trả lời bằng tiếng Việt, ngắn gọn, dùng tiêu đề **TÓM TẮT CUỐI NGÀY** in đậm + bullet points. ` +
-    `KHÔNG dùng emoji (premium UI rule). ` +
-    `KHÔNG hỏi lại CEO. KHÔNG nói "em không có dữ liệu" — nếu rỗng thì nói "Hôm nay không có hoạt động đáng chú ý" và liệt kê plan ngày mai.`
-  );
+
+  // Scan memory/zalo-users/*.md for patterns: unanswered questions, promises, hot topics
+  let memoryInsights = '';
+  try {
+    const ws = getWorkspace();
+    if (ws) {
+      const memDir = path.join(ws, 'memory', 'zalo-users');
+      if (fs.existsSync(memDir)) {
+        const files = fs.readdirSync(memDir).filter(f => f.endsWith('.md'));
+        const today = new Date();
+        const todayStr = today.toISOString().slice(0, 10);
+        const yesterdayStr = new Date(today - 86400000).toISOString().slice(0, 10);
+        const recentFiles = [];
+        for (const f of files) {
+          try {
+            const stat = fs.statSync(path.join(memDir, f));
+            const ageH = (Date.now() - stat.mtimeMs) / 3600000;
+            if (ageH < 48) recentFiles.push(f);
+          } catch {}
+        }
+        if (recentFiles.length > 0) {
+          const snippets = [];
+          for (const f of recentFiles.slice(0, 20)) {
+            try {
+              const content = fs.readFileSync(path.join(memDir, f), 'utf-8');
+              const lines = content.split('\n');
+              const recentLines = lines.filter(l => l.includes(todayStr) || l.includes(yesterdayStr));
+              if (recentLines.length > 0) {
+                snippets.push(`[${f.replace('.md', '')}] ${recentLines.slice(-5).join(' | ')}`);
+              }
+            } catch {}
+          }
+          if (snippets.length > 0) {
+            memoryInsights = `\n\n--- HOAT DONG KHACH HANG 48H (tu memory/zalo-users/) ---\n${snippets.join('\n')}\n--- HET ---\n\n`;
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // Scan knowledge gaps: questions bot couldn't answer (from audit log)
+  let knowledgeGaps = '';
+  try {
+    const ws = getWorkspace();
+    if (ws) {
+      const auditPath = path.join(ws, 'logs', 'audit.jsonl');
+      if (fs.existsSync(auditPath)) {
+        const raw = fs.readFileSync(auditPath, 'utf-8');
+        const lines = raw.trim().split('\n').slice(-200);
+        const gaps = [];
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry.event === 'knowledge_gap' || entry.event === 'no_answer') {
+              gaps.push(entry.question || entry.detail || '');
+            }
+          } catch {}
+        }
+        if (gaps.length > 0) {
+          knowledgeGaps = `\n\n--- CAU HOI BOT KHONG TRA LOI DUOC ---\n${[...new Set(gaps)].slice(0, 5).join('\n')}\n--- HET ---\n\n`;
+        }
+      }
+    }
+  } catch {}
+
+  const template = loadPromptTemplate('evening-briefing.md');
+  if (template) {
+    return template
+      .replace('{{time}}', timeStr || '21:00')
+      .replace('{{historyBlock}}', historyBlock)
+      .replace('{{memoryInsights}}', memoryInsights)
+      .replace('{{knowledgeGaps}}', knowledgeGaps);
+  }
+  return `Bây giờ là ${timeStr || '21:00'}, cuối ngày. Tóm tắt hoạt động hôm nay cho CEO.` +
+    historyBlock + memoryInsights + knowledgeGaps +
+    `Tiếng Việt có dấu, không emoji, ngắn gọn.`;
 }
 
 async function buildWeeklyReportPrompt() {
@@ -8968,18 +9076,15 @@ async function buildWeeklyReportPrompt() {
   const summaryBlock = dailySummaries
     ? `\n\n--- TÓM TẮT 7 NGÀY QUA (từ daily summaries, cover 100% tin nhắn) ---\n${dailySummaries}\n--- HẾT TÓM TẮT ---\n\n`
     : `\n\n_(Không có tóm tắt ngày nào trong 7 ngày qua.)_\n\n`;
-  return (
-    `Hôm nay là thứ 2. Hãy gửi BÁO CÁO TUẦN cho CEO.` +
+  const template = loadPromptTemplate('weekly-report.md');
+  if (template) {
+    return template
+      .replace('{{recentBlock}}', recentBlock)
+      .replace('{{summaryBlock}}', summaryBlock);
+  }
+  return `Hôm nay là thứ 2. Gửi báo cáo tuần cho CEO.` +
     recentBlock + summaryBlock +
-    `Dựa trên tóm tắt hàng ngày ở trên + tin nhắn 24h gần nhất + memory/ + knowledge + audit log, tổng hợp:\n` +
-    `1. Tổng kết tuần qua: việc đã xong, deal đã chốt, khách mới qua Zalo/Telegram\n` +
-    `2. Vấn đề tồn đọng / chưa giải quyết\n` +
-    `3. Số liệu: tổng tin nhắn xử lý, cron đã chạy, khách Zalo mới kết bạn\n` +
-    `4. Ưu tiên tuần tới\n` +
-    `5. Đề xuất cải thiện (nếu có)\n\n` +
-    `Trả lời bằng tiếng Việt, dùng tiêu đề **BÁO CÁO TUẦN** in đậm + bullet points. ` +
-    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. Nếu data ít thì tóm ngắn, KHÔNG kêu CEO setup thêm gì.`
-  );
+    `Tổng kết tuần, vấn đề tồn đọng, số liệu, ưu tiên tuần tới. Tiếng Việt có dấu, không emoji.`;
 }
 
 function buildMonthlyReportPrompt() {
@@ -8992,8 +9097,13 @@ function buildMonthlyReportPrompt() {
   const summaryBlock = weeklySummaries
     ? `\n\n--- TÓM TẮT 4 TUẦN QUA (từ weekly summaries, cover 100% tin nhắn) ---\n${weeklySummaries}\n--- HẾT TÓM TẮT ---\n\n`
     : `\n\n_(Không có tóm tắt trong 30 ngày qua.)_\n\n`;
-  return (
-    `Ngày 1 tháng mới. Hãy gửi BÁO CÁO THÁNG cho CEO.` +
+  const template = loadPromptTemplate('monthly-report.md');
+  if (template) {
+    return template
+      .replace('{{recentBlock}}', recentBlock)
+      .replace('{{summaryBlock}}', summaryBlock);
+  }
+  return `Ngày 1 tháng mới. Hãy gửi BÁO CÁO THÁNG cho CEO.` +
     recentBlock + summaryBlock +
     `Dựa trên tóm tắt hàng tuần + memory/ + knowledge, tổng hợp:\n` +
     `1. Tổng kết tháng: kết quả nổi bật, milestone đạt được\n` +
@@ -9002,8 +9112,7 @@ function buildMonthlyReportPrompt() {
     `4. So sánh với tháng trước (nếu có data memory)\n` +
     `5. Kế hoạch + ưu tiên tháng tới\n\n` +
     `Trả lời bằng tiếng Việt, dùng tiêu đề **BÁO CÁO THÁNG** in đậm + bullet points. ` +
-    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. Nếu data ít thì tóm ngắn.`
-  );
+    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. Nếu data ít thì tóm ngắn.`;
 }
 
 // SCALE FIX + SEMANTIC FIX: scan memory/zalo-users/*.md in Node BEFORE agent.
@@ -9129,18 +9238,31 @@ function buildZaloFollowUpPrompt(candidates) {
   if (candidates.length === 0) {
     return (
       `Gửi cho CEO NỘI DUNG CHÍNH XÁC NHƯ SAU (không thêm chữ, không hỏi lại, không bịa):\n\n` +
-      `**FOLLOW-UP KHÁCH ZALO**\n` +
       `Không có khách nào cần follow-up hôm nay.\n\n` +
       `Gửi qua tool sessions_send.`
     );
   }
 
-  const lines = candidates.map(c => c.line).join('\n');
+  // Build detailed per-candidate blocks with actionable context
+  const blocks = candidates.map((c, i) => {
+    const urgency = c.staleDays >= 4 ? 'CAO' : c.staleDays >= 2 ? 'TRUNG BINH' : 'BINH THUONG';
+    const preview = c.line.replace(/^-\s*/, '');
+    return [
+      `${i + 1}. ${c.name}`,
+      `   Mức độ: ${urgency} -- ${c.staleDays} ngày chưa phản hồi (từ ${c.lastDate})`,
+      `   Nội dung gần nhất: ${preview}`,
+      `   Gợi ý nhắn: Viết 1 câu nhắn tin tự nhiên cho khách này dựa trên nội dung trên. Giọng như đang hỏi thăm, không bán hàng. Ví dụ: "Anh/chị [tên] ơi, hôm trước mình trao đổi về [chủ đề], anh/chị đã cân nhắc thế nào ạ?"`,
+    ].join('\n');
+  });
+
   return (
-    `Gửi cho CEO với format sau. Đây là danh sách khách cần follow-up ĐÃ PRE-FILTER (KHÔNG đọc thêm file, KHÔNG đoán thêm khách):\n\n` +
-    `**FOLLOW-UP KHÁCH ZALO** (${candidates.length})\n` +
-    `${lines}\n\n` +
-    `Gửi NGUYÊN VĂN text trên dùng tool sessions_send. KHÔNG emoji, KHÔNG thêm lời mở đầu/kết, KHÔNG hỏi lại CEO.`
+    `Em đã quét memory khách hàng Zalo và tìm được ${candidates.length} khách cần follow-up.\n\n` +
+    `Gửi cho CEO báo cáo với format bên dưới. Với mỗi khách, VIẾT MỘT CÂU NHẮN GỢI Ý CỤ THỂ dựa trên nội dung cuối cùng của họ (không dùng template chung chung). Ưu tiên khách có độ khẩn cấp CAO lên trước.\n\n` +
+    `FOLLOW-UP KHACH ZALO (${candidates.length} khách)\n\n` +
+    blocks.join('\n\n') +
+    `\n\n` +
+    `Với mỗi khách, thêm dòng "Gợi ý nhắn:" với 1 câu nhắn tin tự nhiên, cụ thể theo ngữ cảnh của khách đó. Không dùng template. Không bắt đầu bằng "Chào anh/chị" thuần túy.\n\n` +
+    `Gửi đúng tool sessions_send. KHÔNG emoji, KHÔNG hỏi lại CEO, KHÔNG bịa thêm khách ngoài danh sách trên.`
   );
 }
 
@@ -9186,11 +9308,11 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
       if (!s) return { success: false, error: 'Schedule not found' };
       if (id === 'morning') {
         const prompt = buildMorningBriefingPrompt(s.time);
-        const ok = await runCronAgentPrompt(prompt, { label: 'morning-briefing' });
+        const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — morning-briefing' });
         return { success: ok, sent: ok };
       } else if (id === 'evening') {
         const prompt = buildEveningSummaryPrompt(s.time);
-        const ok = await runCronAgentPrompt(prompt, { label: 'evening-summary' });
+        const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — evening-summary' });
         return { success: ok, sent: ok };
       } else if (id === 'heartbeat') {
         const sent = await sendTelegram(`*Heartbeat*\n\nHệ thống đang hoạt động bình thường.`);
@@ -9201,11 +9323,11 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
         return { success: ok, sent: ok };
       } else if (id === 'weekly') {
         const prompt = await buildWeeklyReportPrompt();
-        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — weekly-report' });
+        const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — weekly-report' });
         return { success: ok, sent: ok };
       } else if (id === 'monthly') {
         const prompt = buildMonthlyReportPrompt();
-        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — monthly-report' });
+        const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — monthly-report' });
         return { success: ok, sent: ok };
       } else if (id === 'zalo-followup') {
         const ws = getWorkspace();
@@ -9223,8 +9345,9 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
       const customs = loadCustomCrons();
       const c = customs.find(x => x.id === id);
       if (!c) return { success: false, error: 'Custom cron not found' };
-      // Match real cron behavior: run prompt through agent and deliver output
-      const ok = await runCronAgentPrompt(c.prompt, { label: `TEST — ${c.label || c.id}` });
+      const ok = c.prompt && !c.prompt.startsWith('exec:')
+        ? await runCronViaSessionOrFallback(c.prompt, { label: `TEST — ${c.label || c.id}` })
+        : await runCronAgentPrompt(c.prompt, { label: `TEST — ${c.label || c.id}` });
       return { success: ok, sent: ok };
     }
     return { success: false, error: 'Unknown type' };
@@ -9404,6 +9527,56 @@ async function getTelegramConfigWithRecovery() {
   return sync;
 }
 
+function getGatewayAuthToken() {
+  if (process.env.OPENCLAW_GATEWAY_TOKEN) return process.env.OPENCLAW_GATEWAY_TOKEN;
+  try {
+    const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    return config?.gateway?.auth?.token || null;
+  } catch { return null; }
+}
+
+async function getCeoSessionKey() {
+  try {
+    const { chatId } = await getTelegramConfigWithRecovery();
+    if (!chatId) return null;
+    return `agent:main:telegram:direct:${chatId}`;
+  } catch { return null; }
+}
+
+async function sendToGatewaySession(sessionKey, message) {
+  try {
+    const params = JSON.stringify({ key: sessionKey, message });
+    const res = await spawnOpenClawSafe(
+      ['gateway', 'call', 'sessions.send', '--params', params, '--json'],
+      { timeoutMs: 180000, allowCmdShellFallback: false }
+    );
+    if (res.code !== 0) {
+      console.warn('[sessions.send] failed (exit ' + res.code + '):', (res.stderr || '').slice(0, 300));
+      return false;
+    }
+    console.log('[sessions.send] delivered to', sessionKey.slice(0, 40) + '...');
+    return true;
+  } catch (e) {
+    console.warn('[sessions.send] error:', e?.message || e);
+    return false;
+  }
+}
+
+async function runCronViaSessionOrFallback(prompt, opts = {}) {
+  // gateway call subprocess reads auth from its own openclaw.json — no need to pass token
+  const sessionKey = await getCeoSessionKey();
+  if (sessionKey) {
+    const ok = await sendToGatewaySession(sessionKey, prompt);
+    if (ok) {
+      journalCronRun({ phase: 'ok', label: opts.label || 'cron', mode: 'session-send' });
+      return true;
+    }
+    console.log('[cron] sessions.send failed, falling back to runCronAgentPrompt');
+  }
+  return runCronAgentPrompt(prompt, opts);
+}
+
 // ============================================
 //  SHARED OUTPUT FILTER — same patterns for Telegram + Zalo
 // ============================================
@@ -9532,6 +9705,7 @@ function sanitizeZaloText(text) {
   out = out.replace(/\|([^|\n]+)\|/g, '$1');                       // | table |
   out = out.replace(/<\/?[a-zA-Z][^>]*>/g, '');                    // HTML tags
   out = out.replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, '');    // zero-width + RLO/LRO
+  out = out.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, ''); // strip ALL emoji
   out = out.replace(/\n{3,}/g, '\n\n');                             // collapse newlines
   return out.trim();
 }
@@ -10782,19 +10956,21 @@ ipcMain.handle('get-telegram-config', async () => {
 });
 
 ipcMain.handle('save-telegram-config', async (_e, { botToken, userId }) => {
-  try {
-    const configPath = getOpenClawConfigPath();
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    if (!config.channels) config.channels = {};
-    if (!config.channels.telegram) config.channels.telegram = {};
-    if (botToken !== undefined) config.channels.telegram.botToken = botToken;
-    if (userId !== undefined) {
-      const uid = parseInt(userId, 10);
-      if (!isNaN(uid) && uid > 0) config.channels.telegram.allowFrom = [uid];
-    }
-    writeOpenClawConfigIfChanged(configPath, config);
-    return { success: true };
-  } catch (e) { return { success: false, error: String(e) }; }
+  return withOpenClawConfigLock(async () => {
+    try {
+      const configPath = getOpenClawConfigPath();
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (!config.channels) config.channels = {};
+      if (!config.channels.telegram) config.channels.telegram = {};
+      if (botToken !== undefined) config.channels.telegram.botToken = botToken;
+      if (userId !== undefined) {
+        const uid = parseInt(userId, 10);
+        if (!isNaN(uid) && uid > 0) config.channels.telegram.allowFrom = [uid];
+      }
+      writeOpenClawConfigIfChanged(configPath, config);
+      return { success: true };
+    } catch (e) { return { success: false, error: String(e) }; }
+  });
 });
 
 ipcMain.handle('check-telegram-ready', async () => probeTelegramReady());
@@ -10805,11 +10981,104 @@ ipcMain.handle('check-zalo-ready', async () => probeZaloReady());
 ipcMain.handle('telegram-self-test', async () => {
   // Self-test bypasses pause + filter — CEO explicitly clicked "Gửi tin test"
   const ok = await sendTelegram(
-    'Test kết nối\n\nĐây là tin nhắn test từ Dashboard. Nếu anh thấy tin này, ' +
+    'Test kết nối\n\nĐây là tin nhắn test từ Dashboard. Nếu thấy tin này,' +
     'channel Telegram đã sẵn sàng nhận lệnh.',
     { skipFilter: true, skipPauseCheck: true }
   );
   return { success: ok === true };
+});
+
+// --- Telegram behavior settings (mirrors Zalo behavior pattern) ---
+ipcMain.handle('get-telegram-behavior', async () => {
+  try {
+    const ws = getWorkspace();
+    if (!ws) return { strangerPolicy: 'ignore', defaultGroupMode: 'mention', historyLimit: 50 };
+
+    // Stranger policy — file-based like Zalo
+    let strangerPolicy = 'ignore';
+    try {
+      const spPath = path.join(ws, 'telegram-stranger-policy.json');
+      if (fs.existsSync(spPath)) {
+        const sp = JSON.parse(fs.readFileSync(spPath, 'utf-8'));
+        if (['reply', 'greet-only', 'ignore'].includes(sp.policy)) strangerPolicy = sp.policy;
+      }
+    } catch {}
+
+    // Default group mode — file-based
+    let defaultGroupMode = 'mention';
+    try {
+      const gmPath = path.join(ws, 'telegram-group-defaults.json');
+      if (fs.existsSync(gmPath)) {
+        const gm = JSON.parse(fs.readFileSync(gmPath, 'utf-8'));
+        if (['mention', 'all', 'off'].includes(gm.mode)) defaultGroupMode = gm.mode;
+      }
+    } catch {}
+
+    // History limit — from openclaw.json
+    let historyLimit = 50;
+    try {
+      const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+      if (fs.existsSync(configPath)) {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        historyLimit = cfg?.channels?.telegram?.historyLimit || 50;
+      }
+    } catch {}
+
+    return { strangerPolicy, defaultGroupMode, historyLimit };
+  } catch (e) {
+    console.error('[get-telegram-behavior] error:', e.message);
+    return { strangerPolicy: 'ignore', defaultGroupMode: 'mention', historyLimit: 50 };
+  }
+});
+
+ipcMain.handle('save-telegram-behavior', async (_event, behavior) => {
+  try {
+    const ws = getWorkspace();
+    if (!ws) return { success: false, error: 'No workspace' };
+    const { strangerPolicy, defaultGroupMode, historyLimit } = behavior || {};
+
+    // Save stranger policy
+    if (strangerPolicy && ['reply', 'greet-only', 'ignore'].includes(strangerPolicy)) {
+      writeJsonAtomic(path.join(ws, 'telegram-stranger-policy.json'), {
+        policy: strangerPolicy,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // Save default group mode
+    if (defaultGroupMode && ['mention', 'all', 'off'].includes(defaultGroupMode)) {
+      writeJsonAtomic(path.join(ws, 'telegram-group-defaults.json'), {
+        mode: defaultGroupMode,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // Save history limit to openclaw.json
+    if (historyLimit) {
+      const limit = Math.min(Math.max(parseInt(historyLimit, 10) || 50, 5), 50);
+      try {
+        await withOpenClawConfigLock(async () => {
+          const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+          if (fs.existsSync(configPath)) {
+            const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            if (!cfg.channels) cfg.channels = {};
+            if (!cfg.channels.telegram) cfg.channels.telegram = {};
+            cfg.channels.telegram.historyLimit = limit;
+            writeOpenClawConfigIfChanged(configPath, cfg);
+          }
+        });
+      } catch (e) {
+        console.warn('[save-telegram-behavior] historyLimit write error:', e.message);
+      }
+    }
+
+    try { auditLog('telegram-behavior-changed', { strangerPolicy, defaultGroupMode, historyLimit }); } catch {}
+    console.log('[save-telegram-behavior] saved:', { strangerPolicy, defaultGroupMode, historyLimit });
+    return { success: true };
+  } catch (e) {
+    console.error('[save-telegram-behavior] error:', e.message);
+    return { success: false, error: e.message };
+  }
 });
 
 // --- Channel pause/resume (symmetric for both Telegram + Zalo) ---
@@ -10919,54 +11188,49 @@ ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
   try {
     if (!['telegram', 'zalo'].includes(channel)) return { success: false, error: 'channel must be telegram or zalo' };
     const clampedMs = Math.max(0, Math.min(10000, Number(ms) || 0));
-    const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
-    if (!fs.existsSync(cfgPath)) return { success: false, error: 'config not found' };
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    if (!cfg.channels) cfg.channels = {};
-    const chanKey = channel === 'zalo' ? 'openzalo' : 'telegram';
-    if (!cfg.channels[chanKey]) cfg.channels[chanKey] = {};
-    if (!cfg.channels[chanKey].messages) cfg.channels[chanKey].messages = {};
-    if (!cfg.channels[chanKey].messages.inbound) cfg.channels[chanKey].messages.inbound = {};
-    cfg.channels[chanKey].messages.inbound.debounceMs = clampedMs;
-    // Also sync global to minimum of both — openclaw may fall back to global
-    // if per-channel override is stripped by schema validation.
-    const otherKey = chanKey === 'telegram' ? 'openzalo' : 'telegram';
-    const otherMs = cfg.channels?.[otherKey]?.messages?.inbound?.debounceMs;
-    if (!cfg.messages) cfg.messages = {};
-    if (!cfg.messages.inbound) cfg.messages.inbound = {};
-    cfg.messages.inbound.debounceMs = typeof otherMs === 'number'
-      ? Math.min(clampedMs, otherMs) : clampedMs;
-    writeOpenClawConfigIfChanged(cfgPath, cfg);
+    return await withOpenClawConfigLock(async () => {
+      const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
+      if (!fs.existsSync(cfgPath)) return { success: false, error: 'config not found' };
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      if (!cfg.channels) cfg.channels = {};
+      const chanKey = channel === 'zalo' ? 'openzalo' : 'telegram';
+      if (!cfg.channels[chanKey]) cfg.channels[chanKey] = {};
+      if (!cfg.channels[chanKey].messages) cfg.channels[chanKey].messages = {};
+      if (!cfg.channels[chanKey].messages.inbound) cfg.channels[chanKey].messages.inbound = {};
+      cfg.channels[chanKey].messages.inbound.debounceMs = clampedMs;
+      const otherKey = chanKey === 'telegram' ? 'openzalo' : 'telegram';
+      const otherMs = cfg.channels?.[otherKey]?.messages?.inbound?.debounceMs;
+      if (!cfg.messages) cfg.messages = {};
+      if (!cfg.messages.inbound) cfg.messages.inbound = {};
+      cfg.messages.inbound.debounceMs = typeof otherMs === 'number'
+        ? Math.min(clampedMs, otherMs) : clampedMs;
+      writeOpenClawConfigIfChanged(cfgPath, cfg);
 
-    // Schema probe: run `openclaw --help` — if it exits non-zero with schema
-    // error mentioning the per-channel path, revert per-channel key and keep
-    // only the global key (defense-in-depth if openclaw schema drops support).
-    try {
-      const cliJs = (typeof findOpenClawCliJs === 'function') ? findOpenClawCliJs() : null;
-      const nodeBin = (typeof findNodeBin === 'function') ? findNodeBin() : null;
-      if (cliJs && nodeBin) {
-        const probe = require('child_process').spawnSync(nodeBin, [cliJs, '--help'], {
-          timeout: 4000, encoding: 'utf-8', shell: false
-        });
-        const stderr = String(probe.stderr || '') + String(probe.stdout || '');
-        if (probe.status !== 0 && /Config invalid|Unrecognized key/i.test(stderr)) {
-          // Route through existing heal path which handles dynamic key removal.
-          try { healOpenClawConfigInline(stderr); } catch {}
-          // As a last resort, strip the per-channel override explicitly.
-          const cfg2 = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-          if (cfg2?.channels?.[chanKey]?.messages?.inbound) {
-            delete cfg2.channels[chanKey].messages.inbound.debounceMs;
-            if (!cfg2.messages) cfg2.messages = {};
-            if (!cfg2.messages.inbound) cfg2.messages.inbound = {};
-            cfg2.messages.inbound.debounceMs = clampedMs;
-            writeOpenClawConfigIfChanged(cfgPath, cfg2);
+      try {
+        const cliJs = (typeof findOpenClawCliJs === 'function') ? findOpenClawCliJs() : null;
+        const nodeBin = (typeof findNodeBin === 'function') ? findNodeBin() : null;
+        if (cliJs && nodeBin) {
+          const probe = require('child_process').spawnSync(nodeBin, [cliJs, '--help'], {
+            timeout: 4000, encoding: 'utf-8', shell: false
+          });
+          const stderr = String(probe.stderr || '') + String(probe.stdout || '');
+          if (probe.status !== 0 && /Config invalid|Unrecognized key/i.test(stderr)) {
+            try { healOpenClawConfigInline(stderr); } catch {}
+            const cfg2 = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+            if (cfg2?.channels?.[chanKey]?.messages?.inbound) {
+              delete cfg2.channels[chanKey].messages.inbound.debounceMs;
+              if (!cfg2.messages) cfg2.messages = {};
+              if (!cfg2.messages.inbound) cfg2.messages.inbound = {};
+              cfg2.messages.inbound.debounceMs = clampedMs;
+              writeOpenClawConfigIfChanged(cfgPath, cfg2);
+            }
+            return { success: true, ms: clampedMs, scope: 'global-fallback' };
           }
-          return { success: true, ms: clampedMs, scope: 'global-fallback' };
         }
-      }
-    } catch { /* non-fatal probe failure */ }
+      } catch { /* non-fatal probe failure */ }
 
-    return { success: true, ms: clampedMs };
+      return { success: true, ms: clampedMs };
+    });
   } catch (e) {
     return { success: false, error: e?.message };
   } finally { _ipcInFlightCount--; }
@@ -11081,7 +11345,7 @@ async function broadcastChannelStatusOnce() {
           const hhmm = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
           const reason = (cur && cur.error) ? String(cur.error) : 'không rõ';
           const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
-          const msg = `Kênh ${labels[ch]} mất kết nối đã ${downMin} phút (từ ${hhmm}). Tự khôi phục không thành công. Anh mở Dashboard kiểm tra giúp em ạ. Lý do: ${reason}.`;
+          const msg = `Kênh ${labels[ch]} mất kết nối đã ${downMin} phút (từ ${hhmm}). Tự khôi phục không thành công. Mở Dashboard kiểm tra giúp em ạ. Lý do: ${reason}.`;
           try { sendCeoAlert(msg); } catch (e) { console.error('[channel-status] sendCeoAlert error:', e.message); }
           _lastChannelAlertAt[ch] = now;
           delete global._channelDownSince[ch];
@@ -11592,15 +11856,13 @@ async function handleBaocaoCommand() {
   try {
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
     const prompt = buildMorningBriefingPrompt(timeStr);
-    // Fire-and-forget: same function the morning cron uses. runCronAgentPrompt
-    // delivers the output to Telegram on its own via the agent --deliver flag.
-    runCronAgentPrompt(prompt, { label: 'manual-baocao' }).catch(e => {
-      console.error('[/baocao] runCronAgentPrompt failed:', e?.message || e);
-      sendTelegram('Xin lỗi, em chạy báo cáo bị lỗi. Anh thử lại sau vài phút giúp em.').catch(() => {});
+    runCronViaSessionOrFallback(prompt, { label: 'manual-baocao' }).catch(e => {
+      console.error('[/baocao] runCronViaSessionOrFallback failed:', e?.message || e);
+      sendTelegram('Xin lỗi, em chạy báo cáo bị lỗi. Thử lại sau vài phút giúp em.').catch(() => {});
     });
   } catch (e) {
     console.error('[/baocao] build prompt failed:', e?.message || e);
-    await sendTelegram('Xin lỗi, em chạy báo cáo bị lỗi. Anh thử lại sau vài phút giúp em.');
+    await sendTelegram('Xin lỗi, em chạy báo cáo bị lỗi. Thử lại sau vài phút giúp em.');
   }
 }
 
@@ -12215,8 +12477,9 @@ function startCronApi() {
       const isAgentMode = mode === 'agent';
 
       if (isAgentMode) {
-        // Agent mode: run a full AI agent prompt, deliver result to CEO Telegram.
-        // No groupId needed. Prompt is the raw instruction for the agent.
+        // Agent mode: run a full AI agent prompt. Agent can use web_search,
+        // web_fetch tools. Delivers result to CEO Telegram by default.
+        // If groupId is provided, agent also sends result to Zalo group via API.
         const agentPrompt = rawPrompt || content;
         if (!agentPrompt) return jsonResp(res, 400, { error: 'prompt (or content) required for mode=agent' });
         if (String(agentPrompt).length > 2000) return jsonResp(res, 400, { error: 'prompt too long (max 2000 chars)' });
@@ -12240,15 +12503,34 @@ function startCronApi() {
           if (d.getTime() < Date.now() - 60000) return jsonResp(res, 400, { error: 'oneTimeAt is in the past: ' + oneTimeAt });
         }
         if (!cronExpr && !oneTimeAt) return jsonResp(res, 400, { error: 'cronExpr or oneTimeAt required' });
+
+        // If groupId provided, validate it and append delivery instructions
+        let finalPrompt = String(agentPrompt);
+        let resolvedGroupId = null;
+        let resolvedGroupName = null;
+        if (groupId) {
+          const { byId, byName } = loadGroupsMap();
+          resolvedGroupId = byName[String(groupId).toLowerCase()] || String(groupId).trim();
+          resolvedGroupName = byId[resolvedGroupId];
+          if (!resolvedGroupName) {
+            return jsonResp(res, 400, { error: 'unknown groupId: ' + groupId + '. Check /api/cron/list for available groups.' });
+          }
+          finalPrompt += '\n\n---\nSAU KHI HOAN THANH: gui ket qua vao nhom Zalo bang cach goi 2 API:\n'
+            + '1. Doc token: web_fetch url=http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt\n'
+            + '2. Gui tin: web_fetch url=http://127.0.0.1:20200/api/zalo/send?token=TOKEN_VỪA_ĐỌC&groupId=' + resolvedGroupId + '&text=KET_QUA\n'
+            + 'Viet tieng Viet, ngan gon, KHONG dung emoji, KHONG tu xung la AI/bot/tro ly.';
+        }
+
         const id = 'cron_' + Date.now();
         const entry = {
           id,
           label: label || ('Agent cron ' + new Date().toISOString().slice(0, 16)),
-          prompt: String(agentPrompt),
+          prompt: finalPrompt,
           mode: 'agent',
           enabled: true,
           createdAt: new Date().toISOString(),
         };
+        if (resolvedGroupId) entry.groupId = resolvedGroupId;
         if (cronExpr) entry.cronExpr = String(cronExpr).trim().replace(/\s+/g, ' ');
         else entry.oneTimeAt = oneTimeAt;
         try {
@@ -12257,9 +12539,10 @@ function startCronApi() {
             crons.push(entry);
             writeJsonAtomic(getCustomCronsPath(), crons);
             try { restartCronJobs(); } catch {}
-            console.log('[cron-api] created agent cron:', id, label || '');
+            const groupLabel = resolvedGroupName ? ' — group: ' + resolvedGroupName : '';
+            console.log('[cron-api] created agent cron:', id, label || '', groupLabel);
             try {
-              sendCeoAlert('[Cron] Da tao (agent): ' + (label || 'no label') + ' — ' + (cronExpr || oneTimeAt));
+              sendCeoAlert('[Cron] Đã tạo (agent): ' + (label || 'no label') + ' — ' + (cronExpr || oneTimeAt) + groupLabel);
             } catch {}
             return jsonResp(res, 200, { success: true, id, entry });
           });
@@ -12313,7 +12596,7 @@ function startCronApi() {
           console.log('[cron-api] created:', id, label || '');
           try {
             const groupNames = resolvedIds.map(gid => byId[gid] || gid).join(', ');
-            sendCeoAlert('[Cron] Da tao: ' + (label || 'no label') + ' — ' + (cronExpr || oneTimeAt) + ' — group: ' + groupNames);
+            sendCeoAlert('[Cron] Đã tạo: ' + (label || 'no label') + ' — ' + (cronExpr || oneTimeAt) + ' — group: ' + groupNames);
           } catch {}
           return jsonResp(res, 200, { success: true, id, entry });
         });
@@ -12338,7 +12621,7 @@ function startCronApi() {
           writeJsonAtomic(getCustomCronsPath(), filtered.filter(c => c.source !== 'openclaw'));
           try { restartCronJobs(); } catch {}
           console.log('[cron-api] deleted:', id);
-          try { sendCeoAlert('[Cron] Da xoa: ' + id); } catch {}
+          try { sendCeoAlert('[Cron] Đã xóa: ' + id); } catch {}
           return jsonResp(res, 200, { success: true });
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
@@ -12354,7 +12637,7 @@ function startCronApi() {
           target.enabled = enabled === 'true' || enabled === true;
           writeJsonAtomic(getCustomCronsPath(), crons.filter(c => c.source !== 'openclaw'));
           try { restartCronJobs(); } catch {}
-          try { sendCeoAlert('[Cron] ' + (target.enabled ? 'Bat' : 'Tat') + ': ' + (target.label || id)); } catch {}
+          try { sendCeoAlert('[Cron] ' + (target.enabled ? 'Bật' : 'Tắt') + ': ' + (target.label || id)); } catch {}
           return jsonResp(res, 200, { success: true, enabled: target.enabled });
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
@@ -12435,9 +12718,14 @@ function startCronApi() {
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/zalo/send') {
-      const { groupId, targetId: rawTargetId, text, isGroup: isGroupParam } = params;
-      const tId = groupId || rawTargetId;
-      if (!tId) return jsonResp(res, 400, { error: 'groupId (or targetId) required' });
+      const { groupId, targetId: rawTargetId, groupName, text, isGroup: isGroupParam } = params;
+      let tId = groupId || rawTargetId;
+      if (!tId && groupName) {
+        const { byName } = loadGroupsMap();
+        tId = byName[String(groupName).toLowerCase()];
+        if (!tId) return jsonResp(res, 400, { error: 'unknown groupName: ' + groupName + '. Check /api/cron/list for available groups.' });
+      }
+      if (!tId) return jsonResp(res, 400, { error: 'groupId (or targetId or groupName) required' });
       if (!text) return jsonResp(res, 400, { error: 'text required' });
       if (String(text).length > 5000) return jsonResp(res, 400, { error: 'text too long (max 5000 chars)' });
       const isGroup = isGroupParam !== 'false' && isGroupParam !== false;
@@ -12457,8 +12745,30 @@ function startCronApi() {
         return jsonResp(res, 500, { success: false, error: String(e?.message || e).slice(0, 300) });
       }
 
+    } else if (urlPath === '/api/knowledge/add') {
+      const ws = getWorkspace();
+      if (!ws) return jsonResp(res, 500, { error: 'workspace not found' });
+      const { category, title, content: faqContent } = params;
+      const validCats = ['cong-ty', 'san-pham', 'nhan-vien'];
+      if (!category || !validCats.includes(category)) return jsonResp(res, 400, { error: 'category required: ' + validCats.join(', ') });
+      if (!title || !faqContent) return jsonResp(res, 400, { error: 'title and content required' });
+      if (String(title).length > 200) return jsonResp(res, 400, { error: 'title too long (max 200)' });
+      if (String(faqContent).length > 2000) return jsonResp(res, 400, { error: 'content too long (max 2000)' });
+      try {
+        return await withWriteLock(async () => {
+          const indexPath = path.join(ws, 'knowledge', category, 'index.md');
+          fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+          const existing = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf-8') : '';
+          const entry = `\n\n## ${String(title).trim()}\n\n${String(faqContent).trim()}\n`;
+          fs.appendFileSync(indexPath, entry, 'utf-8');
+          console.log('[knowledge-api] added to', category + '/index.md:', title);
+          try { auditLog('knowledge_added', { category, title: String(title).slice(0, 100) }); } catch {}
+          return jsonResp(res, 200, { success: true, category, title, indexPath: `knowledge/${category}/index.md` });
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list'] });
     }
   });
 
@@ -12475,7 +12785,7 @@ function startCronApi() {
         tryListen(port + 1, retries - 1);
       } else {
         console.error('[cron-api] server error:', err.message);
-        try { sendCeoAlert('[Cron API] Khong khoi dong duoc HTTP server: ' + err.message); } catch {}
+        try { sendCeoAlert('[Cron API] Không khởi động được HTTP server: ' + err.message); } catch {}
       }
     });
   }
@@ -12548,7 +12858,7 @@ function _startCronJobsInner() {
           global._cronInFlight?.set('morning', true);
           try {
             const prompt = buildMorningBriefingPrompt(s.time);
-            await runCronAgentPrompt(prompt, { label: 'morning-briefing' });
+            await runCronViaSessionOrFallback(prompt, { label: 'morning-briefing' });
             try { auditLog('cron_fired', { id: 'morning', label: s.label || 'Báo cáo sáng' }); } catch {}
           } catch (e) {
             console.error('[cron] Morning handler threw:', e?.message || e);
@@ -12571,7 +12881,7 @@ function _startCronJobsInner() {
           global._cronInFlight?.set('evening', true);
           try {
             const prompt = buildEveningSummaryPrompt(s.time);
-            await runCronAgentPrompt(prompt, { label: 'evening-summary' });
+            await runCronViaSessionOrFallback(prompt, { label: 'evening-summary' });
             try { auditLog('cron_fired', { id: 'evening', label: s.label || 'Tóm tắt cuối ngày' }); } catch {}
           } catch (e) {
             console.error('[cron] Evening handler threw:', e?.message || e);
@@ -12754,7 +13064,7 @@ function _startCronJobsInner() {
           global._cronInFlight?.set('weekly', true);
           try {
             const prompt = await buildWeeklyReportPrompt();
-            await runCronAgentPrompt(prompt, { label: 'weekly-report' });
+            await runCronViaSessionOrFallback(prompt, { label: 'weekly-report' });
             try { auditLog('cron_fired', { id: 'weekly', label: s.label || 'Báo cáo tuần' }); } catch {}
           } catch (e) {
             console.error('[cron] Weekly handler threw:', e?.message || e);
@@ -12773,7 +13083,7 @@ function _startCronJobsInner() {
           global._cronInFlight?.set('monthly', true);
           try {
             const prompt = buildMonthlyReportPrompt();
-            await runCronAgentPrompt(prompt, { label: 'monthly-report' });
+            await runCronViaSessionOrFallback(prompt, { label: 'monthly-report' });
             try { auditLog('cron_fired', { id: 'monthly', label: s.label || 'Báo cáo tháng' }); } catch {}
           } catch (e) {
             console.error('[cron] Monthly handler threw:', e?.message || e);
@@ -12884,7 +13194,11 @@ function _startCronJobsInner() {
         const timer = setTimeout(async () => {
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
-            await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            if (c.prompt && !c.prompt.startsWith('exec:')) {
+              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id });
+            } else {
+              await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            }
             try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time' }); } catch {}
           } catch (e) {
             console.error(`[cron] OneTime ${c.id} failed:`, e?.message);
@@ -12938,7 +13252,11 @@ function _startCronJobsInner() {
         const timer = setTimeout(async () => {
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
-            await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            if (c.prompt && !c.prompt.startsWith('exec:')) {
+              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id });
+            } else {
+              await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            }
             try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time-healed' }); } catch {}
           } catch (e) {
             console.error(`[cron] OneTime ${c.id} failed:`, e?.message);
@@ -12971,9 +13289,9 @@ function _startCronJobsInner() {
         global._cronInFlight.set(niceId, true);
         try {
           console.log(`[cron] Custom "${c.label || c.id}" triggered at`, new Date().toISOString());
-          // D1: defense-in-depth — runCronAgentPrompt has internal try/catch, but
-          // wrap here too so an unexpected throw doesn't crash node-cron's task.
-          const ok = await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+          const ok = (c.prompt && !c.prompt.startsWith('exec:'))
+            ? await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id })
+            : await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
           console.log(`[cron] Custom ${c.id} agent run result:`, ok);
           try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'custom' }); } catch {}
         } catch (e) {
@@ -13563,6 +13881,7 @@ function getDocumentsDb() {
           word_count INTEGER,
           category TEXT DEFAULT 'general',
           summary TEXT,
+          visibility TEXT NOT NULL DEFAULT 'public',
           created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -13571,6 +13890,9 @@ function getDocumentsDb() {
       `);
       try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
       try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
+      try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
+      try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`); } catch {}
+      try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_cat_vis ON documents(category, visibility)`); } catch {}
       try { ensureKnowledgeChunksSchema(db); } catch (e) {
         console.warn('[documents] chunk schema init failed:', e.message);
       }
@@ -13611,6 +13933,7 @@ function getDocumentsDb() {
               filename TEXT NOT NULL, filepath TEXT NOT NULL, content TEXT,
               filetype TEXT, filesize INTEGER, word_count INTEGER,
               category TEXT DEFAULT 'general', summary TEXT,
+              visibility TEXT NOT NULL DEFAULT 'public',
               created_at TEXT DEFAULT (datetime('now'))
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -13619,6 +13942,9 @@ function getDocumentsDb() {
           `);
           try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
           try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
+          try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
+          try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`); } catch {}
+          try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_cat_vis ON documents(category, visibility)`); } catch {}
           try { ensureKnowledgeChunksSchema(db); } catch {}
           console.log('[documents] DB now working after auto-fix');
           return db;
@@ -13686,6 +14012,18 @@ function getKnowledgeDir(category) {
   return path.join(getWorkspace(), 'knowledge', category);
 }
 
+function insertDocumentRow(db, {
+  filename, filepath, content, filetype, filesize, wordCount,
+  category = 'general', summary = null, visibility = 'public'
+}) {
+  if (!['public', 'internal', 'private'].includes(visibility)) {
+    throw new Error(`insertDocumentRow: invalid visibility "${visibility}"`);
+  }
+  return db.prepare(
+    'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(filename, filepath, content, filetype, filesize, wordCount, category, summary, visibility);
+}
+
 function ensureKnowledgeFolders() {
   const ws = getWorkspace();
   for (const cat of getKnowledgeCategories()) {
@@ -13730,13 +14068,22 @@ async function backfillKnowledgeFromDisk() {
       // Best-effort text extraction (skip on error — we still register the row).
       let content = '';
       try { content = await extractTextFromFile(fp, entry.name); } catch {}
+      // Skip images with no extracted content — vision API may not be ready at boot.
+      // Leaving them un-inserted lets next boot retry once 9Router is up.
+      const isImage = /\.(jpe?g|png|gif|webp|bmp)$/i.test(entry.name);
+      if (isImage && !content) {
+        console.log('[backfill] skipping image (vision not ready?):', entry.name);
+        continue;
+      }
       const wordCount = content ? content.split(/\s+/).length : 0;
       // Skip slow LLM summary on backfill — leave summary null. CEO can re-upload
       // to trigger AI summary, or bot can summarize on demand later.
       try {
-        db.prepare(
-          'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null);
+        insertDocumentRow(db, {
+          filename: entry.name, filepath: fp, content,
+          filetype, filesize: stat.size, wordCount,
+          category: cat, summary: null, visibility: 'public'
+        });
         try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
         inserted++;
       } catch (e) { console.error('[knowledge] backfill insert err:', entry.name, e.message); }
@@ -13822,11 +14169,115 @@ async function call9Router(prompt, { maxTokens = 200, temperature = 0.3, timeout
   } catch { return null; }
 }
 
+// Vision-capable 9Router call: sends image as base64 alongside a text prompt.
+// Returns response text or null on failure.
+async function call9RouterVision(imagePath, prompt, { maxTokens = 1500, temperature = 0.2, timeoutMs = 30000 } = {}) {
+  try {
+    const stat = fs.statSync(imagePath);
+    if (stat.size > 20 * 1024 * 1024) return null; // skip images > 20MB
+
+    const config = JSON.parse(fs.readFileSync(path.join(HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
+    const provider = config?.models?.providers?.ninerouter;
+    if (!provider?.baseUrl || !provider?.apiKey) return null;
+    let modelName = 'auto';
+    try {
+      const def = config?.agents?.defaults?.model;
+      if (typeof def === 'string' && def.length > 0) {
+        modelName = def.replace(/^ninerouter\//, '');
+      } else if (Array.isArray(provider?.models) && provider.models[0]?.id) {
+        modelName = provider.models[0].id;
+      }
+    } catch {}
+
+    const ext = path.extname(imagePath).toLowerCase();
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' };
+    const mime = mimeMap[ext] || 'image/jpeg';
+    const base64 = fs.readFileSync(imagePath).toString('base64');
+
+    const http = require('http');
+    const body = JSON.stringify({
+      model: modelName,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}`, detail: 'high' } },
+        ],
+      }],
+      max_tokens: maxTokens,
+      temperature,
+    });
+    const url = new URL(provider.baseUrl + '/chat/completions');
+    return await new Promise((resolve) => {
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname,
+        method: 'POST',
+        timeout: timeoutMs,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`,
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            console.error('[call9RouterVision] HTTP ' + res.statusCode + ': ' + data.substring(0, 200));
+            resolve(null);
+            return;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            const text = parsed?.choices?.[0]?.message?.content?.trim();
+            resolve(text || null);
+          } catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.write(body);
+      req.end();
+    });
+  } catch { return null; }
+}
+
+// AI vision description for image uploads in Knowledge system.
+// Returns detailed Vietnamese description for RAG indexing, or fallback string.
+async function describeImageForKnowledge(imagePath, filename) {
+  const fallback = `[Ảnh: ${filename}] Không thể mô tả tự động. CEO có thể thêm mô tả thủ công vào Knowledge.`;
+  const prompt = `Mô tả chi tiết ảnh "${filename}" để lưu vào hệ thống Knowledge doanh nghiệp.
+
+Yêu cầu mô tả SIÊU KỸ — mọi chi tiết đều quan trọng cho tìm kiếm sau này:
+
+1. **Sản phẩm** (nếu có): tên, thương hiệu, model, dòng sản phẩm, thế hệ, phiên bản
+2. **Đặc điểm vật lý**: màu sắc (chính xác: "đen nhám", "xanh dương đậm", không chỉ "xanh"), kích thước ước tính, chất liệu bề mặt, hình dạng
+3. **Text trong ảnh**: đọc TOÀN BỘ chữ hiển thị — nhãn, giá, thông số, barcode text, watermark, logo text
+4. **Thông số kỹ thuật** (nếu thấy): dung lượng, RAM, camera, pin, CPU, kích thước màn hình
+5. **Phụ kiện / đi kèm**: hộp, sạc, tai nghe, ốp lưng, giấy bảo hành
+6. **Tình trạng**: mới nguyên seal / đã khui hộp / đã qua sử dụng / trầy xước
+7. **Bối cảnh**: chụp trên kệ shop, trên bàn, studio, ảnh quảng cáo, ảnh khách gửi
+8. **Giá cả**: nếu thấy tag giá, bảng giá, watermark giá
+9. **So sánh**: nếu có nhiều sản phẩm trong ảnh, so sánh kích thước/màu giữa chúng
+10. **Loại ảnh**: ảnh sản phẩm, ảnh biên lai, ảnh CCCD, ảnh bảng giá, ảnh showroom, ảnh chat screenshot
+
+Trả lời bằng tiếng Việt, dạng paragraph mô tả tự nhiên (KHÔNG dùng bullet points). Viết như đang mô tả cho người không nhìn thấy ảnh. Càng chi tiết càng tốt — 300-500 từ.`;
+
+  const result = await call9RouterVision(imagePath, prompt);
+  if (!result) {
+    console.log(`[knowledge-vision] AI vision failed for ${filename}, using fallback`);
+    return fallback;
+  }
+  console.log(`[knowledge-vision] AI described ${filename}: ${result.length} chars`);
+  return `[Ảnh: ${filename}]\n\n${result}`;
+}
+
 // AI summarize via 9Router (fallback to filename + first 200 chars)
 async function summarizeKnowledgeContent(content, filename) {
   const fallback = () => {
-    const stripped = (content || '').replace(/\s+/g, ' ').trim();
-    return stripped.substring(0, 200) || `(không đọc được nội dung ${filename})`;
+    return `(tom tat chua san sang cho ${filename} — 9Router offline, file da luu)`;
   };
   if (!content || content.length < 30) return fallback();
   const truncated = content.length > 4000 ? content.substring(0, 4000) + '...' : content;
@@ -13863,13 +14314,18 @@ function rewriteKnowledgeIndex(category) {
   const ws = getWorkspace();
   const indexFile = path.join(ws, 'knowledge', category, 'index.md');
   let rows = [];
+  let nonPublicSet = null;
   const db = getDocumentsDb();
   if (db) {
     try {
       rows = db.prepare(
-        'SELECT filename, summary, content, filesize, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        "SELECT filename, summary, filesize, created_at FROM documents WHERE category = ? AND visibility = 'public' ORDER BY created_at DESC"
       ).all(category);
     } catch (e) { console.error('[knowledge] rewrite index db query:', e.message); }
+    try {
+      const npRows = db.prepare("SELECT filename FROM documents WHERE category = ? AND visibility != 'public'").all(category);
+      nonPublicSet = new Set(npRows.map(r => r.filename));
+    } catch {}
     try { db.close(); } catch {}
   }
   // Merge in disk-only files so the bot's bootstrap reading of index.md sees
@@ -13877,9 +14333,9 @@ function rewriteKnowledgeIndex(category) {
   // useful even when better-sqlite3 is broken.
   const dbNames = new Set(rows.map(r => r.filename));
   for (const f of listKnowledgeFilesFromDisk(category)) {
-    if (!dbNames.has(f.filename)) {
-      rows.push({ filename: f.filename, summary: null, content: null, filesize: f.filesize, created_at: f.created_at });
-    }
+    if (dbNames.has(f.filename)) continue;
+    if (nonPublicSet !== null && nonPublicSet.has(f.filename)) continue;
+    rows.push({ filename: f.filename, summary: null, filesize: f.filesize, created_at: f.created_at });
   }
   try {
     // Manifest-only. Bot bootstrap reads this file to know what docs exist,
@@ -13887,25 +14343,32 @@ function rewriteKnowledgeIndex(category) {
     // through the knowledge-search HTTP endpoint consumed by inbound.ts.
     // No raw content here — keeps bootstrap context small + avoids stale
     // copies when originals update.
-    let md = `# Knowledge — ${KNOWLEDGE_LABELS[category]}\n\n`;
+    const lines = [];
+    lines.push(`# Knowledge — ${KNOWLEDGE_LABELS[category]}\n`);
     if (rows.length === 0) {
-      md += '*Chưa có tài liệu nào. CEO upload file qua Dashboard → Knowledge.*\n';
-      fs.writeFileSync(indexFile, md, 'utf-8');
-      console.log(`[knowledge-index] ${category}: 0 files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
-      return;
+      lines.push('*Chưa có tài liệu nào. CEO upload file qua Dashboard → Knowledge.*\n');
+    } else {
+      lines.push(`Tổng: ${rows.length} tài liệu. Bot dùng search vector khi khách hỏi (không nạp toàn bộ nội dung).\n`);
+      for (const r of rows) {
+        lines.push(`- **${r.filename}** (${((r.filesize || 0) / 1024).toFixed(1)} KB, uploaded ${r.created_at})`);
+        if (r.summary) lines.push(`  *${r.summary.slice(0, 200)}*`);
+        lines.push('');
+      }
     }
-    md += `Tổng: ${rows.length} tài liệu. Bot dùng search vector khi khách hỏi (không nạp toàn bộ nội dung).\n\n`;
-    for (const r of rows) {
-      md += `- **${r.filename}** (${((r.filesize || 0) / 1024).toFixed(1)} KB, uploaded ${r.created_at})\n`;
-      if (r.summary) md += `  *${r.summary.slice(0, 200)}*\n`;
-      md += `\n`;
-    }
-    fs.writeFileSync(indexFile, md, 'utf-8');
-    console.log(`[knowledge-index] ${category}: ${rows.length} files, ${Buffer.byteLength(md, 'utf-8')} chars in index.md`);
+    const tmpFile = indexFile + '.tmp';
+    const fd = fs.openSync(tmpFile, 'w');
+    fs.writeSync(fd, lines.join('\n'));
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fs.renameSync(tmpFile, indexFile);
+    console.log(`[knowledge-index] ${category}: ${rows.length} files, ${Buffer.byteLength(lines.join('\n'), 'utf-8')} chars in index.md`);
   } catch (e) { console.error('[knowledge] rewrite index write:', e.message); }
 }
 
-ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, originalName }) => {
+ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, originalName, visibility = 'public' }) => {
+  if (!['public', 'internal', 'private'].includes(visibility)) {
+    return { success: false, error: 'Invalid visibility value' };
+  }
   try {
     if (!KNOWLEDGE_CATEGORIES.includes(category)) {
       return { success: false, error: 'Loại không hợp lệ' };
@@ -13929,7 +14392,9 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     // extracted by pdf-parse often return strings like "¶▶Ω≈∑ I p h O N e"
     // — embedding that pollutes the vector corpus. Require ≥30% printable
     // ASCII chars (digits/letters/punct/space) OR Vietnamese letter chars.
-    if (content && content.length > 50) {
+    // Skip for images — vision descriptions are always clean text.
+    const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(path.extname(finalName).toLowerCase());
+    if (content && content.length > 50 && !isImage) {
       // R4-F1: tighten OCR-garbage regex. Previous range \u00C0-\u1EF9 covers
       // ~8000 chars incl. Greek/Cyrillic/Arabic/Armenian/Hebrew — an Arabic
       // product catalog would pass the 30% gate. Narrow to Latin + Latin
@@ -13954,9 +14419,11 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
       let insertedDocId = null;
       try {
         const insertBoth = db.transaction(() => {
-          const info = db.prepare(
-            'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(finalName, dst, content, filetype, stat.size, wordCount, category, summary);
+          const info = insertDocumentRow(db, {
+            filename: finalName, filepath: dst, content,
+            filetype, filesize: stat.size, wordCount,
+            category, summary, visibility
+          });
           insertedDocId = Number(info.lastInsertRowid);
           db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(finalName, content);
         });
@@ -14014,6 +14481,37 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
   }
 });
 
+ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility }) => {
+  try {
+    if (!Number.isInteger(docId) || docId <= 0) {
+      return { success: false, error: 'Invalid docId' };
+    }
+    if (!['public', 'internal', 'private'].includes(visibility)) {
+      return { success: false, error: 'Invalid visibility value' };
+    }
+    const db = getDocumentsDb();
+    if (!db) return { success: false, error: 'DB unavailable' };
+    let info, category;
+    try {
+      const row = db.prepare('SELECT category FROM documents WHERE id=?').get(docId);
+      category = row?.category;
+      info = db.prepare('UPDATE documents SET visibility=? WHERE id=?').run(visibility, docId);
+    } finally {
+      try { db.close(); } catch {}
+    }
+    if (info.changes === 0) return { success: false, error: 'Document not found' };
+    try { auditLog('visibility-change', { docId, visibility, ts: Date.now() }); } catch {}
+    let indexWarning;
+    if (category) {
+      try { rewriteKnowledgeIndex(category); } catch (e) { indexWarning = e.message; }
+    }
+    return { success: true, indexWarning };
+  } catch (e) {
+    console.error('[set-knowledge-visibility] error:', e.message);
+    return { success: false, error: e.message };
+  }
+});
+
 // Filesystem-truth listing: read knowledge/<cat>/files/ directly. Used as a
 // fallback when better-sqlite3 is broken (e.g. ABI mismatch right after a fresh
 // `npm install`) AND merged with DB rows so files uploaded during a DB outage
@@ -14035,6 +14533,7 @@ function listKnowledgeFilesFromDisk(category) {
           filesize: st ? st.size : 0,
           word_count: 0,
           summary: null,
+          visibility: 'public',
           created_at: st ? new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 19) : '',
           _source: 'disk',
         };
@@ -14059,7 +14558,7 @@ ipcMain.handle('list-knowledge-files', async (_event, { category }) => {
     let dbRows = [];
     try {
       dbRows = db.prepare(
-        'SELECT filename, filetype, filesize, word_count, summary, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        'SELECT id, filename, filetype, filesize, word_count, summary, visibility, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
       ).all(category);
     } catch (e) {
       console.error('[knowledge] db query error:', e.message);
@@ -14123,6 +14622,35 @@ ipcMain.handle('get-knowledge-counts', async () => {
     for (const cat of getKnowledgeCategories()) counts[cat] = 0;
     return counts;
   }
+});
+
+// === FIRST-TIME CHANNEL GUIDE IPC ===
+
+ipcMain.handle('check-guide-needed', async (_e, { channel }) => {
+  const ws = getWorkspace();
+  if (!ws) return { needed: false };
+  const guideFile = path.join(ws, 'guide-completed.json');
+  try {
+    if (fs.existsSync(guideFile)) {
+      const data = JSON.parse(fs.readFileSync(guideFile, 'utf-8'));
+      if (data && data[channel]) return { needed: false };
+    }
+  } catch {}
+  return { needed: true };
+});
+
+ipcMain.handle('mark-guide-complete', async (_e, { channel }) => {
+  const ws = getWorkspace();
+  if (!ws) return { ok: false };
+  const guideFile = path.join(ws, 'guide-completed.json');
+  try {
+    let existing = {};
+    try { existing = JSON.parse(fs.readFileSync(guideFile, 'utf-8')); } catch {}
+    existing[channel] = true;
+    existing.completedAt = existing.completedAt || new Date().toISOString();
+    fs.writeFileSync(guideFile, JSON.stringify(existing, null, 2));
+  } catch {}
+  return { ok: true };
 });
 
 // List all knowledge folders with labels
@@ -14227,7 +14755,11 @@ function expandSynonyms(normalizedQuery) {
 // fd pressure on the hot Zalo inbound path). Standalone callers still pass
 // no db and we open/close our own.
 function searchKnowledgeFTS5(opts, sharedDb) {
-  const { query, category, limit } = opts || {};
+  const { query, category, limit, audience = 'customer' } = opts || {};
+  const allowedTiers = audience === 'ceo'      ? ['public', 'internal', 'private']
+                     : audience === 'internal' ? ['public', 'internal']
+                                               : ['public'];
+  const visPlaceholders = allowedTiers.map(() => '?').join(',');
   const lim = Math.max(1, Math.min(50, Number(limit) || 5));
   if (!query || !String(query).trim()) return [];
 
@@ -14246,20 +14778,23 @@ function searchKnowledgeFTS5(opts, sharedDb) {
 
   const baseSelect = `
     SELECT dc.id AS chunk_id, dc.document_id, dc.category, dc.chunk_index,
-           dc.char_start, dc.char_end, d.filename, d.title,
+           dc.char_start, dc.char_end, d.filename,
            bm25(documents_chunks_fts) AS score,
            highlight(documents_chunks_fts, 0, '<b>', '</b>') AS snippet
     FROM documents_chunks_fts
     JOIN documents_chunks dc ON dc.id = documents_chunks_fts.rowid
     JOIN documents d ON d.id = dc.document_id
     WHERE documents_chunks_fts MATCH ?
+      AND d.visibility IN (${visPlaceholders})
   `;
   const catClause = category ? ' AND dc.category = ?' : '';
   const orderLimit = ' ORDER BY bm25(documents_chunks_fts) LIMIT ?';
 
   function tryMatch(expr) {
     const sql = baseSelect + catClause + orderLimit;
-    const args = category ? [expr, category, lim] : [expr, lim];
+    const args = category
+      ? [expr, ...allowedTiers, category, lim]
+      : [expr, ...allowedTiers, lim];
     return db.prepare(sql).all(...args);
   }
 
@@ -14296,15 +14831,18 @@ function searchKnowledgeFTS5(opts, sharedDb) {
       const like = '%' + String(normalized).replace(/[%_]/g, '') + '%';
       const sql3 = `
         SELECT NULL AS chunk_id, d.id AS document_id, d.category, 0 AS chunk_index,
-               0 AS char_start, 0 AS char_end, d.filename, d.title,
+               0 AS char_start, 0 AS char_end, d.filename,
                999.0 AS score,
                substr(d.content, 1, 300) AS snippet
         FROM documents d
-        WHERE (d.content LIKE ? OR d.filename LIKE ?)
+        WHERE d.visibility IN (${visPlaceholders})
+          AND (d.content LIKE ? OR d.filename LIKE ?)
         ${category ? 'AND d.category = ?' : ''}
         LIMIT ?
       `;
-      const args3 = category ? [like, like, category, lim] : [like, like, lim];
+      const args3 = category
+        ? [...allowedTiers, like, like, category, lim]
+        : [...allowedTiers, like, like, lim];
       results = db.prepare(sql3).all(...args3);
       usedExpr = 'LIKE:' + like;
     } catch (e) {
@@ -14520,7 +15058,11 @@ async function rewriteQueryViaAI(query, model) {
 // Each call opens its own db handle (via getDocumentsDb) and MUST close it
 // on every exit path. Skipping close leaks handles under busy shops (Zalo
 // inbound HTTP hits this 50-100×/day) → eventual EMFILE on macOS.
-async function searchKnowledge({ query, category, limit } = {}) {
+async function searchKnowledge({ query, category, limit, audience = 'customer' } = {}) {
+  const allowedTiers = audience === 'ceo'      ? ['public', 'internal', 'private']
+                     : audience === 'internal' ? ['public', 'internal']
+                                               : ['public'];
+  const visPlaceholders = allowedTiers.map(() => '?').join(',');
   limit = Math.min(Math.max(parseInt(limit, 10) || 3, 1), 10);
   // Round-1 I2 + Round-2 E1: reject non-string / empty / whitespace queries.
   // String(obj) → "[object Object]" was bypassing round-1's guard.
@@ -14543,7 +15085,7 @@ async function searchKnowledge({ query, category, limit } = {}) {
   // vector query would only see the chunks embedded so far (filter IS NOT NULL)
   // and could confidently pick a wrong top-1 from 0.6% of corpus.
   if (_backfillInProgress) {
-    try { return searchKnowledgeFTS5({ query, category, limit }, db); }
+    try { return searchKnowledgeFTS5({ query, category, limit, audience }, db); }
     finally { try { db.close(); } catch {} }
   }
 
@@ -14568,15 +15110,17 @@ async function searchKnowledge({ query, category, limit } = {}) {
         ? db.prepare(
             `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
              FROM documents_chunks c JOIN documents d ON d.id = c.document_id
-             WHERE c.category = ? AND c.embedding IS NOT NULL
+             WHERE d.visibility IN (${visPlaceholders})
+               AND c.category = ? AND c.embedding IS NOT NULL
              ORDER BY c.id DESC LIMIT 2000`
-          ).all(category)
+          ).all(...allowedTiers, category)
         : db.prepare(
             `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
              FROM documents_chunks c JOIN documents d ON d.id = c.document_id
-             WHERE c.embedding IS NOT NULL
+             WHERE d.visibility IN (${visPlaceholders})
+               AND c.embedding IS NOT NULL
              ORDER BY c.id DESC LIMIT 2000`
-          ).all();
+          ).all(...allowedTiers);
 
       // Price filter: drop rows whose chunk text doesn't fit range. Be
       // conservative — if extractChunkPrice can't parse (non-product chunk
@@ -14624,7 +15168,7 @@ async function searchKnowledge({ query, category, limit } = {}) {
         }
         console.log('[knowledge-search] no embeddings — falling back to FTS5');
         _ragTier = 'fts5-no-embed';
-        return searchKnowledgeFTS5({ query, category, limit }, db);
+        return searchKnowledgeFTS5({ query, category, limit, audience }, db);
       }
       _ragTier = 'hybrid-rrf';
 
@@ -14658,7 +15202,7 @@ async function searchKnowledge({ query, category, limit } = {}) {
       // rowids in documents_chunks (chunk_id column when returned).
       let ftsIds = [];
       try {
-        const ftsResults = searchKnowledgeFTS5({ query, category, limit: 10 }, db);
+        const ftsResults = searchKnowledgeFTS5({ query, category, limit: 10, audience }, db);
         const eligible = new Set(semRanked.map(s => s.id));
         // Only keep FTS5 hits that have embeddings (in rows set). Prevents
         // RRF from picking chunks we can't score + present with full data.
@@ -14694,7 +15238,7 @@ async function searchKnowledge({ query, category, limit } = {}) {
     } catch (e) {
       console.warn('[knowledge-search] vector search error, falling back to FTS5:', e.message);
       _ragTier = 'fts5-error';
-      return searchKnowledgeFTS5({ query, category, limit }, db);
+      return searchKnowledgeFTS5({ query, category, limit, audience }, db);
     }
     _top1 = scored[0]?.score || 0;
     _top2 = scored[1]?.score || 0;
@@ -14842,7 +15386,7 @@ async function searchKnowledge({ query, category, limit } = {}) {
 ipcMain.handle('knowledge-search', async (_event, payload) => {
   const { query, category, limit } = payload || {};
   try {
-    const results = await searchKnowledge({ query, category, limit });
+    const results = await searchKnowledge({ query, category, limit, audience: 'ceo' });
     return { success: true, results };
   } catch (e) {
     return { success: false, error: e.message || String(e) };
@@ -15001,12 +15545,14 @@ function startKnowledgeSearchServer() {
       const query = url.searchParams.get('q') || '';
       const category = url.searchParams.get('cat') || null;
       const limit = parseInt(url.searchParams.get('k') || '3', 10);
+      const rawAudience = url.searchParams.get('audience');
+      const audience = (rawAudience === 'internal') ? 'internal' : 'customer';
       if (!query || query.length < 2) {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ results: [] }));
         return;
       }
-      const results = await searchKnowledge({ query, category, limit: Math.min(Math.max(limit, 1), 8) });
+      const results = await searchKnowledge({ query, category, limit: Math.min(Math.max(limit, 1), 8), audience });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ results }));
     } catch (e) {
@@ -15060,6 +15606,7 @@ ipcMain.handle('create-knowledge-folder', async (_event, { name }) => {
 // Delete custom knowledge folder (only non-default)
 ipcMain.handle('delete-knowledge-folder', async (_event, { id }) => {
   try {
+    if (!/^[a-z0-9-]+$/.test(id)) return { success: false, error: 'Invalid folder name' };
     if (DEFAULT_KNOWLEDGE_CATEGORIES.includes(id)) return { success: false, error: 'Không thể xóa thư mục mặc định' };
     const dir = path.join(getWorkspace(), 'knowledge', id);
     if (fs.existsSync(dir)) {
@@ -15134,9 +15681,10 @@ async function extractTextFromFile(filepath, filename) {
     } catch (e) { return `[Excel extract failed: ${e.message}]`; }
   }
 
-  // Images: store path, AI vision will read later
+  // Images: use AI vision to generate detailed description for RAG search
   if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) {
-    return `[Ảnh: ${filename} — Bot sẽ dùng AI vision để đọc khi cần]`;
+    const description = await describeImageForKnowledge(filepath, filename);
+    return description;
   }
 
   return `[Không hỗ trợ extract text cho file ${ext}]`;
@@ -15144,6 +15692,7 @@ async function extractTextFromFile(filepath, filename) {
 
 ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
   try {
+    if (!filename || /[\/\\]/.test(filename) || filename.includes('..')) return { success: false, error: 'Invalid filename' };
     ensureDocumentsDir();
     const dst = path.join(getDocumentsDir(), filename);
     fs.copyFileSync(filepath, dst);
@@ -15156,8 +15705,10 @@ ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
     const db = getDocumentsDb();
     if (db) {
       const insertBoth = db.transaction(() => {
-        db.prepare('INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(filename, dst, content, filetype, filesize, wordCount);
+        insertDocumentRow(db, {
+          filename, filepath: dst, content,
+          filetype, filesize, wordCount
+        });
         db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)')
           .run(filename, content);
       });
@@ -15275,6 +15826,7 @@ ipcMain.handle('list-documents', async () => {
 
 ipcMain.handle('delete-document', async (_event, filename) => {
   try {
+    if (!filename || /[\/\\]/.test(filename) || filename.includes('..')) return { success: false, error: 'Invalid filename' };
     const db = getDocumentsDb();
     if (db) {
       db.prepare('DELETE FROM documents WHERE filename = ?').run(filename);
@@ -15781,7 +16333,9 @@ ipcMain.handle('get-overview-data', async () => {
 });
 
 ipcMain.handle('wizard-complete', async () => {
-  if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
+  if (_wizardCompleteInFlight) { console.log('[wizard] already in flight, skipping'); return { success: true }; }
+  _wizardCompleteInFlight = true;
+  if (!mainWindow || mainWindow.isDestroyed()) { _wizardCompleteInFlight = false; return { success: false }; }
   // GUARANTEE navigation: even if anything below throws/hangs, force-navigate
   // to dashboard.html on a short timer so CEO never sees forever-spinner.
   const navGuard = setTimeout(() => {
@@ -15810,40 +16364,6 @@ ipcMain.handle('wizard-complete', async () => {
     } catch {}
     if (i < 5) await new Promise(r => setTimeout(r, 500));
   }
-  try {
-    const zaloPausePath = path.join(getWorkspace(), 'zalo-paused.json');
-    if (zaloLoggedIn) {
-      // Clear stale default-disabled pause file (U3 — may exist from v2.58)
-      try {
-        if (fs.existsSync(zaloPausePath)) {
-          const raw = JSON.parse(fs.readFileSync(zaloPausePath, 'utf-8'));
-          if (raw && raw.reason === 'default-disabled') {
-            fs.unlinkSync(zaloPausePath);
-            console.log('[wizard-complete] deleted stale default-disabled zalo-paused.json (QR login succeeded)');
-          }
-        }
-      } catch {}
-      // Flip oz.enabled = true in openclaw.json (F-3)
-      try {
-        const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
-        if (fs.existsSync(configPath)) {
-          const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          if (!cfg.channels) cfg.channels = {};
-          if (!cfg.channels.openzalo) cfg.channels.openzalo = {};
-          cfg.channels.openzalo.enabled = true;
-          writeOpenClawConfigIfChanged(configPath, cfg);
-          console.log('[wizard-complete] flipped channels.openzalo.enabled=true (QR login succeeded)');
-        }
-      } catch (e) { console.warn('[wizard-complete] flip openzalo.enabled failed:', e?.message); }
-    } else if (!fs.existsSync(zaloPausePath)) {
-      writeJsonAtomic(zaloPausePath, {
-        permanent: true,
-        reason: 'default-disabled',
-        pausedAt: new Date().toISOString(),
-      });
-      console.log('[wizard-complete] zalo-paused.json created (no fresh credentials)');
-    }
-  } catch {}
   try { cleanupOrphanZaloListener(); } catch {}
   try { markOnboardingComplete('wizard-complete'); } catch {}
   // Pre-fill RAG rewrite-model based on primary AI provider.
@@ -15869,6 +16389,7 @@ ipcMain.handle('wizard-complete', async () => {
   // after boot, 500ms-30s during boot window) drives sidebar dots as gateway
   // comes up — user sees progress instead of a frozen window.
   (async () => {
+    try {
     if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-ensureZaloPlugin)'); return; }
     try { await ensureZaloPlugin(); } catch (e) { console.error('[wizard-complete ensureZaloPlugin] error:', e?.message || e); }
     if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-seedZaloCustomers)'); return; }
@@ -15884,6 +16405,36 @@ ipcMain.handle('wizard-complete', async () => {
     try { startFollowUpChecker(); } catch {}
     try { startEscalationChecker(); } catch {}
     setTimeout(() => { try { checkZaloCookieAge(); } catch {} }, 30000);
+
+    // Welcome flow: first-time introduction after wizard
+    if (_appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-welcome)'); return; }
+    try {
+      const ws = getWorkspace();
+      const welcomeSent = ws && fs.existsSync(path.join(ws, '.welcome-sent'));
+      if (!welcomeSent) {
+        const { chatId } = getTelegramConfig();
+        if (chatId) {
+          const welcomeMsg = [
+            'Chào anh/chị, em đã sẵn sàng làm việc.',
+            '',
+            'Vài thứ có thể thử ngay:',
+            '- Nhắn tin cho em trên Telegram này -- em sẽ trả lời như cố vấn kinh doanh',
+            '- Nhờ khách hàng nhắn Zalo cho shop -- em sẽ tự động tư vấn dựa trên Knowledge',
+            '- Gõ "báo cáo" -- em gửi tóm tắt hoạt động ngay lập tức',
+            '- Gõ "tạo cron gửi nhóm VIP mỗi sáng 9h: Chào buổi sáng" -- em tạo lịch gửi tự động',
+            '',
+            'Mỗi sáng và tối em sẽ gửi báo cáo tự động. Reply tự nhiên để ra lệnh.',
+            '',
+            'Nếu cần thêm Knowledge (bảng giá, FAQ, chính sách), mở Dashboard tab Knowledge và upload file.',
+          ].join('\n');
+          // Write marker BEFORE send (write-then-send = safe order per AGENTS.md)
+          if (ws) fs.writeFileSync(path.join(ws, '.welcome-sent'), new Date().toISOString(), 'utf-8');
+          await sendTelegram(welcomeMsg, { skipFilter: true, skipPauseCheck: true });
+          console.log('[welcome] sent first-time introduction via Telegram');
+        }
+      }
+    } catch (e) { console.error('[welcome] failed:', e?.message); }
+    } finally { _wizardCompleteInFlight = false; }
   })();
   return { success: true };
 });
@@ -15959,7 +16510,7 @@ ipcMain.handle('install-openclaw', async (event) => {
   if (nodeVersionMajor < 22) {
     return {
       success: false,
-      error: `Node.js qua cu (v${nodeVersionMajor}). 9BizClaw can Node 22+ de chay openzca (Zalo plugin).\n\n` +
+      error: `Node.js quá cũ (v${nodeVersionMajor}). 9BizClaw cần Node 22+ để chạy openzca (Zalo plugin).\n\n` +
              (isMac
                ? 'Cập nhật:\n  brew upgrade node\nhoặc tải installer từ https://nodejs.org'
                : 'Cập nhật từ https://nodejs.org'),
@@ -16340,14 +16891,14 @@ ipcMain.handle('open-log-folder', async () => {
 ipcMain.handle('open-external', async (_event, url) => {
   try {
     const parsed = new URL(url);
-    const allowedOrigins = ['https://ollama.com', 'https://t.me', 'http://localhost:20128', 'http://127.0.0.1:20128', 'http://127.0.0.1:18789', 'http://localhost:18789', 'http://127.0.0.1:18791', 'http://localhost:18791'];
+    const allowedOrigins = ['https://ollama.com', 'https://t.me', 'https://youtube.com', 'http://localhost:20128', 'http://127.0.0.1:20128', 'http://127.0.0.1:18789', 'http://localhost:18789', 'http://127.0.0.1:18791', 'http://localhost:18791'];
     // Telegram deep-link: tg://resolve?domain=<bot> opens native app directly.
     // Allow ONLY the resolve action (no msg_url, no join) to keep the surface
     // tight. Non-resolve tg:// URLs are rejected.
     const isTelegramResolve = parsed.protocol === 'tg:' && parsed.href.startsWith('tg://resolve?domain=') && /^[A-Za-z0-9_]{1,32}$/.test(parsed.searchParams.get('domain') || '');
     if (allowedOrigins.includes(parsed.origin) || isTelegramResolve) {
       const { shell } = require('electron');
-      shell.openExternal(url);
+      shell.openExternal(parsed.href);
     }
   } catch {} // Invalid URL — ignore
 });
@@ -16369,9 +16920,44 @@ ipcMain.handle('get-app-version', async () => {
   try { return app.getVersion(); } catch { return ''; }
 });
 
+// ---- License IPC handlers (membership builds only) ----
+
+ipcMain.handle('activate-license', async (_event, { key }) => {
+  const license = require('./lib/license');
+  license.init(getWorkspace);
+  try {
+    const result = await license.activateLicense(key);
+    if (!result.success) return result;
+    // Check if app was already set up (re-activation after expiry)
+    const configured = isOpenClawConfigured() && hasCompletedOnboarding();
+    return { ...result, configured };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('get-license-status', async () => {
+  const license = require('./lib/license');
+  license.init(getWorkspace);
+  return license.checkLicenseStatus();
+});
+
+ipcMain.handle('deactivate-license', async () => {
+  const license = require('./lib/license');
+  license.init(getWorkspace);
+  await license.clearLicense();
+  return { success: true };
+});
+
 ipcMain.handle('toggle-bot', async () => {
-  if (botRunning) stopOpenClaw(); else startOpenClaw();
-  await new Promise((r) => setTimeout(r, 500));
+  if (botRunning) {
+    await stopOpenClaw();
+  } else {
+    if (_startOpenClawInFlight || _gatewayRestartInFlight) {
+      return { running: false, pending: true };
+    }
+    await startOpenClaw();
+  }
   return { running: botRunning };
 });
 
@@ -17035,6 +17621,25 @@ app.whenReady().then(async () => {
   installEmbedHeaderStripper(); // BEFORE createWindow so first iframe load is unblocked
   createWindow();
   createTray();
+
+  // License revalidation (membership builds only) — background check 15s after boot
+  if (require('./package.json').membership === true) {
+    setTimeout(async () => {
+      try {
+        const license = require('./lib/license');
+        license.init(getWorkspace);
+        const ls = license.checkLicenseStatus();
+        if (ls.status === 'grace_warning') {
+          const daysLeft = ls.daysLeft || (45 - (ls.daysSinceValidation || 0));
+          sendCeoAlert('[Bản quyền] Bản quyền MODOROClaw cần được gia hạn. Còn ' + daysLeft + ' ngày trước khi bị khóa. Kết nối internet để tự động gia hạn.');
+        }
+        if (ls.status === 'valid' || ls.status === 'grace_warning') {
+          const result = await license.revalidateLicense();
+          console.log('[license] revalidation:', result ? 'ok' : 'skipped/failed');
+        }
+      } catch (e) { console.error('[license] revalidation error:', e?.message); }
+    }, 15000);
+  }
 
   // CRITICAL for Mac: prevent App Nap from suspending the process. macOS aggressively
   // suspends background apps after ~30s of no UI interaction, which freezes

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>9BizClaw License Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #09090b; --surface: #18181b; --border: #27272a; --border-hover: #3f3f46;
+    --text: #fafafa; --text-secondary: #a1a1aa; --text-muted: #71717a;
+    --accent: #3b82f6; --accent-hover: #2563eb;
+    --danger: #ef4444; --danger-hover: #dc2626;
+    --success: #22c55e; --warning: #f59e0b;
+    --radius: 8px; --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+    min-height: 100vh;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 20px; }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 12px; }
+
+  /* Login */
+  #login-view { max-width: 400px; margin: 120px auto; }
+  #login-view h1 { margin-bottom: 24px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+  input, select {
+    width: 100%; padding: 9px 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text); font-size: 14px; outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--text-muted); }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--border-hover); background: var(--border); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Layout */
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  .header-right { display: flex; gap: 8px; align-items: center; }
+  .section { margin-bottom: 40px; }
+
+  /* Generate form */
+  .gen-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .gen-row .form-group { margin-bottom: 0; flex: 1; min-width: 120px; }
+  .gen-row .form-group:last-child { min-width: 200px; flex: 2; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 14px; background: var(--surface); color: var(--text-muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .key-code { font-family: var(--mono); font-size: 13px; letter-spacing: 0.02em; cursor: pointer; }
+  .key-code:hover { color: var(--accent); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge-active { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-unused { background: rgba(161,161,170,0.15); color: var(--text-muted); }
+  .badge-revoked { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .machines { font-size: 12px; color: var(--text-secondary); }
+  .machines div { padding: 2px 0; }
+  .machines .hostname { color: var(--text); font-weight: 500; }
+  .note { font-size: 12px; color: var(--text-muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+  .date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; padding: 10px 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    font-size: 13px; z-index: 100; opacity: 0; transform: translateY(8px);
+    transition: all 0.2s;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+
+  /* Stats */
+  .stats { display: flex; gap: 24px; margin-bottom: 24px; }
+  .stat { font-size: 13px; color: var(--text-muted); }
+  .stat strong { color: var(--text); font-size: 18px; font-weight: 600; margin-right: 4px; }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .gen-row { flex-direction: column; }
+    .gen-row .form-group { min-width: 0; }
+    .stats { flex-wrap: wrap; gap: 16px; }
+  }
+
+  /* Hidden */
+  .hidden { display: none !important; }
+
+  /* Generated keys output */
+  .generated-keys {
+    margin-top: 16px; padding: 14px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); font-family: var(--mono); font-size: 13px; line-height: 2;
+    word-break: break-all;
+  }
+  .generated-keys .copy-all { margin-top: 10px; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-view">
+  <div class="container">
+    <h1>9BizClaw License Admin</h1>
+    <div class="form-group">
+      <label>Worker URL</label>
+      <input id="inp-url" type="url" placeholder="https://license.your-domain.workers.dev" spellcheck="false">
+    </div>
+    <div class="form-group">
+      <label>Admin Secret</label>
+      <input id="inp-secret" type="password" placeholder="Bearer token">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()" style="width:100%;justify-content:center;margin-top:8px">Connect</button>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dash-view" class="hidden">
+  <div class="container">
+    <div class="header">
+      <h1>9BizClaw License Admin</h1>
+      <div class="header-right">
+        <button class="btn btn-sm" onclick="loadKeys()">Refresh</button>
+        <button class="btn btn-sm" onclick="doLogout()">Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Generate -->
+    <div class="section">
+      <h2>Generate Keys</h2>
+      <div class="gen-row">
+        <div class="form-group">
+          <label>Count</label>
+          <input id="gen-count" type="number" value="1" min="1" max="100">
+        </div>
+        <div class="form-group">
+          <label>Max Machines</label>
+          <input id="gen-machines" type="number" value="2" min="1" max="10">
+        </div>
+        <div class="form-group">
+          <label>Note</label>
+          <input id="gen-note" type="text" placeholder="Optional note">
+        </div>
+        <div class="form-group" style="flex:0">
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" id="gen-btn" onclick="generateKeys()">Generate</button>
+        </div>
+      </div>
+      <div id="gen-output" class="hidden"></div>
+    </div>
+
+    <!-- List -->
+    <div class="section">
+      <h2>All Keys</h2>
+      <div class="stats" id="stats"></div>
+      <div id="keys-container"><div class="loading">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let API_URL = '';
+let API_SECRET = '';
+
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = 'toast', 2500);
+}
+
+async function api(path, body = {}) {
+  const res = await fetch(API_URL + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API_SECRET },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'API error');
+  return data;
+}
+
+function doLogin() {
+  const url = document.getElementById('inp-url').value.trim().replace(/\/+$/, '');
+  const secret = document.getElementById('inp-secret').value.trim();
+  if (!url || !secret) return toast('Fill both fields', true);
+  API_URL = url;
+  API_SECRET = secret;
+  sessionStorage.setItem('lk_url', url);
+  sessionStorage.setItem('lk_secret', secret);
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('dash-view').classList.remove('hidden');
+  loadKeys();
+}
+
+function doLogout() {
+  sessionStorage.removeItem('lk_url');
+  sessionStorage.removeItem('lk_secret');
+  API_URL = ''; API_SECRET = '';
+  document.getElementById('dash-view').classList.add('hidden');
+  document.getElementById('login-view').classList.remove('hidden');
+}
+
+// Auto-restore session
+(function() {
+  const u = sessionStorage.getItem('lk_url');
+  const s = sessionStorage.getItem('lk_secret');
+  if (u && s) { API_URL = u; API_SECRET = s; document.getElementById('login-view').classList.add('hidden'); document.getElementById('dash-view').classList.remove('hidden'); loadKeys(); }
+})();
+
+async function generateKeys() {
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true;
+  try {
+    const count = parseInt(document.getElementById('gen-count').value) || 1;
+    const maxMachines = parseInt(document.getElementById('gen-machines').value) || 2;
+    const note = document.getElementById('gen-note').value.trim();
+    const data = await api('/api/admin/generate', { count, maxMachines, note });
+    const out = document.getElementById('gen-output');
+    out.classList.remove('hidden');
+    out.innerHTML = '<div class="generated-keys">' +
+      data.keys.map(k => '<span class="key-code" onclick="copyKey(this)">' + esc(k) + '</span>').join('<br>') +
+      '<div class="copy-all"><button class="btn btn-sm" onclick="copyAll()">Copy all</button></div></div>';
+    toast(data.keys.length + ' key(s) generated');
+    loadKeys();
+  } catch (e) { toast(e.message, true); }
+  btn.disabled = false;
+}
+
+function copyKey(el) {
+  navigator.clipboard.writeText(el.textContent);
+  toast('Copied');
+}
+
+function copyAll() {
+  const keys = document.querySelectorAll('#gen-output .key-code');
+  const text = Array.from(keys).map(k => k.textContent).join('\n');
+  navigator.clipboard.writeText(text);
+  toast('All keys copied');
+}
+
+async function loadKeys() {
+  const container = document.getElementById('keys-container');
+  container.innerHTML = '<div class="loading">Loading...</div>';
+  try {
+    const data = await api('/api/admin/list');
+    renderKeys(data.keys);
+  } catch (e) {
+    container.innerHTML = '<div class="loading" style="color:var(--danger)">Failed: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderKeys(keys) {
+  keys.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const total = keys.length;
+  const active = keys.filter(k => !k.revokedAt && k.machines?.length > 0).length;
+  const revoked = keys.filter(k => k.revokedAt).length;
+  const unused = total - active - revoked;
+
+  document.getElementById('stats').innerHTML =
+    '<div class="stat"><strong>' + total + '</strong>Total</div>' +
+    '<div class="stat"><strong>' + active + '</strong>Active</div>' +
+    '<div class="stat"><strong>' + unused + '</strong>Unused</div>' +
+    '<div class="stat"><strong>' + revoked + '</strong>Revoked</div>';
+
+  if (keys.length === 0) {
+    document.getElementById('keys-container').innerHTML = '<div class="loading">No keys yet. Generate some above.</div>';
+    return;
+  }
+
+  let html = '<div class="table-wrap"><table><thead><tr>' +
+    '<th>Key</th><th>Status</th><th>Machines</th><th>Note</th><th>Created</th><th></th>' +
+    '</tr></thead><tbody>';
+
+  for (const k of keys) {
+    const status = k.revokedAt ? 'revoked' : (k.machines?.length > 0 ? 'active' : 'unused');
+    const statusLabel = k.revokedAt ? 'Revoked' : (k.machines?.length > 0 ? k.machines.length + '/' + (k.maxMachines || 1) : 'Unused');
+    const badgeClass = k.revokedAt ? 'badge-revoked' : (k.machines?.length > 0 ? 'badge-active' : 'badge-unused');
+
+    let machinesHtml = '';
+    if (k.machines?.length > 0) {
+      machinesHtml = '<div class="machines">' + k.machines.map(m =>
+        '<div><span class="hostname">' + esc(m.hostname || 'unknown') + '</span> ' +
+        '<span style="color:var(--text-muted)">' + esc(m.appVersion || '') + '</span>' +
+        '<br><span style="font-size:11px">seen ' + relTime(m.lastSeen) + '</span></div>'
+      ).join('') + '</div>';
+    }
+
+    html += '<tr>' +
+      '<td><span class="key-code" onclick="copyKey(this)">' + esc(k.key) + '</span></td>' +
+      '<td><span class="badge ' + badgeClass + '">' + statusLabel + '</span></td>' +
+      '<td>' + machinesHtml + '</td>' +
+      '<td><span class="note">' + esc(k.note || '') + '</span></td>' +
+      '<td><span class="date">' + fmtDate(k.createdAt) + '</span></td>' +
+      '<td>' + (k.revokedAt ? '' : '<button class="btn btn-danger btn-sm" onclick="revokeKey(\'' + esc(k.key) + '\')">Revoke</button>') + '</td>' +
+      '</tr>';
+  }
+
+  html += '</tbody></table></div>';
+  document.getElementById('keys-container').innerHTML = html;
+}
+
+async function revokeKey(key) {
+  if (!confirm('Revoke ' + key + '? This cannot be undone.')) return;
+  try {
+    await api('/api/admin/revoke', { key });
+    toast('Key revoked');
+    loadKeys();
+  } catch (e) { toast(e.message, true); }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function relTime(iso) {
+  if (!iso) return 'never';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  return days + 'd ago';
+}
+</script>
+</body>
+</html>

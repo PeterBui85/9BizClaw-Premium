@@ -423,6 +423,72 @@ export async function handleOpenzaloInbound(params: {
   if (!rawBody && !hasMedia) {
     return;
   }
+  // === 9BizClaw OWNER-TAKEOVER PATCH v1 ===
+  // Owner types /tamdung in any Zalo conversation → bot goes silent for that thread.
+  // Owner types /tieptuc → bot resumes. Auto-expires after 1 hour.
+  {
+    const __tkFs = require("node:fs");
+    const __tkPath = require("node:path");
+    const __tkOs = require("node:os");
+    const __tkHome = __tkOs.homedir();
+    const __tkAppDir = "9bizclaw";
+    let __tkWs = "";
+    if (process.env['9BIZ_WORKSPACE']) {
+      __tkWs = process.env['9BIZ_WORKSPACE'];
+    } else if (process.platform === "darwin") {
+      __tkWs = __tkPath.join(__tkHome, "Library", "Application Support", __tkAppDir);
+    } else if (process.platform === "win32") {
+      const __tkAd = process.env.APPDATA || __tkPath.join(__tkHome, "AppData", "Roaming");
+      __tkWs = __tkPath.join(__tkAd, __tkAppDir);
+    } else {
+      const __tkCfg = process.env.XDG_CONFIG_HOME || __tkPath.join(__tkHome, ".config");
+      __tkWs = __tkPath.join(__tkCfg, __tkAppDir);
+    }
+    const __tkFile = __tkPath.join(__tkWs, "zalo-thread-paused.json");
+    const __tkTTL = 3600000;
+    const __tkCmd = (rawBody || "").trim();
+    const __tkCmdLow = __tkCmd.toLowerCase();
+    const __tkIsOwner = botUserId && String(message.senderId) === String(botUserId);
+    const __tkThread = message.isGroup ? message.threadId : (directPeerId || String(message.senderId || ""));
+    let __tkMap: Record<string, { pausedAt: string }> = {};
+    try {
+      if (__tkFs.existsSync(__tkFile)) {
+        __tkMap = JSON.parse(__tkFs.readFileSync(__tkFile, "utf-8"));
+      }
+    } catch {}
+    const __tkNow = Date.now();
+    let __tkDirty = false;
+    for (const [k, v] of Object.entries(__tkMap)) {
+      if (__tkNow - new Date((v as any).pausedAt).getTime() > __tkTTL) {
+        delete __tkMap[k];
+        __tkDirty = true;
+        runtime.log?.(`openzalo: OWNER-TAKEOVER auto-resumed thread ${k} (expired)`);
+      }
+    }
+    if (__tkIsOwner && (__tkCmdLow === "/tamdung" || __tkCmdLow === "/tạm dừng" || __tkCmdLow === "tamdung")) {
+      __tkMap[__tkThread] = { pausedAt: new Date().toISOString() };
+      try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {}
+      runtime.log?.(`openzalo: OWNER-TAKEOVER paused thread ${__tkThread}`);
+      return;
+    }
+    if (__tkIsOwner && (__tkCmdLow === "/tieptuc" || __tkCmdLow === "/tiếp tục" || __tkCmdLow === "tieptuc")) {
+      delete __tkMap[__tkThread];
+      try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {}
+      runtime.log?.(`openzalo: OWNER-TAKEOVER resumed thread ${__tkThread}`);
+      return;
+    }
+    if (__tkIsOwner && __tkMap[__tkThread]) {
+      if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
+      return;
+    }
+    if (__tkMap[__tkThread]) {
+      if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
+      runtime.log?.(`openzalo: OWNER-TAKEOVER skip thread ${__tkThread} (paused)`);
+      return;
+    }
+    if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
+  }
+  // === END 9BizClaw OWNER-TAKEOVER PATCH v1 ===
   // === 9BizClaw SKILL-NEUTRALIZE PATCH v1 ===
   if (typeof rawBody === 'string' && rawBody.includes('[[SKILL_')) {
     rawBody = rawBody.replace(/\[\[SKILL_/g, '[SKILL-blocked-');
@@ -1742,6 +1808,11 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
   const __mcBuffer: { text: string; firstPayload: any; timer: any } = { text: "", firstPayload: null, timer: null };
   const __mcFlushDelay = 400;
   const __mcDoDeliver = async (payload: any) => {
+    // 9BizClaw EMOJI-STRIP: code-level enforcement — AGENTS.md says "KHONG BAO GIO DUNG EMOJI"
+    // but model may ignore. Strip ALL emoji from outbound text before delivery.
+    if (payload?.text) {
+      payload.text = payload.text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '').replace(/\s{2,}/g, ' ').trim();
+    }
     // 9BizClaw DELIVER-RETRY: retry once on transient openzca failures (ECONNREFUSED,
     // spawn crash, timeout). Prevents silent message drop when openzca hiccups.
     try {

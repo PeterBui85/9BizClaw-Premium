@@ -1,6 +1,7 @@
 {
   "name": "9bizclaw",
-  "version": "2.3.47.3",
+  "version": "2.3.48",
+  "membership": false,
   "description": "9BizClaw — Trợ Lý AI Cho CEO (OpenClaw Desktop)",
   "author": "MODORO Tech Corp",
   "repository": {
@@ -11,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/fix-better-sqlite3.js",
-    "smoke": "node scripts/smoke-test.js && node scripts/smoke-context-injection.js && node scripts/smoke-zalo-followup.js",
+    "smoke": "node scripts/smoke-test.js && node scripts/smoke-context-injection.js && node scripts/smoke-zalo-followup.js && node scripts/smoke-visibility.js",
     "prebuild:models": "node scripts/prebuild-models.js",
     "prebuild:vendor": "node scripts/prebuild-models.js && node scripts/prebuild-vendor.js",
     "build:win": "npm run prebuild:vendor && npm run smoke && electron-builder --win && node scripts/fix-artifact-name.js",
@@ -112,6 +113,10 @@
       {
         "from": "../prompts",
         "to": "workspace-templates/prompts"
+      },
+      {
+        "from": "prompts",
+        "to": "prompts"
       },
       {
         "from": "../memory",

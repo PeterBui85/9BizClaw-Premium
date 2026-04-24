@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>9BizClaw — Giới thiệu sản phẩm</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --accent: #E53935;
+    --accent-dark: #C62828;
+    --secondary: #1A237E;
+    --text: #1D1D1F;
+    --text-secondary: #6E6E73;
+    --bg: #FFFFFF;
+    --surface: #F8F8FA;
+    --border: #E2E2E8;
+    --gold: #B8860B;
+    --gold-bg: rgba(184,134,11,0.06);
+    --gold-border: rgba(184,134,11,0.35);
+    --free-green: #16a34a;
+    --free-bg: rgba(22,163,74,0.05);
+    --free-border: rgba(22,163,74,0.25);
+  }
+
+  @page { size: A4; margin: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    padding: 48px 56px;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+  }
+  .page:last-child { page-break-after: auto; }
+  .page-content { flex: 1; }
+
+  @media screen {
+    .page { box-shadow: 0 4px 24px rgba(0,0,0,0.08); margin-bottom: 24px; border-radius: 4px; }
+    body { background: #E8E8ED; padding: 24px; }
+  }
+
+  /* Cover */
+  .cover {
+    display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+    background: linear-gradient(160deg, #0A0A0F 0%, #14141B 40%, #1A237E 100%);
+    color: #F5F5F7;
+  }
+  .cover h1 { font-size: 48px; font-weight: 800; letter-spacing: -1px; margin-bottom: 12px; }
+  .cover-tagline { font-size: 20px; color: rgba(245,245,247,0.7); margin-bottom: 48px; }
+  .cover-version {
+    display: inline-block; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px; padding: 6px 16px; font-size: 12px; color: rgba(245,245,247,0.6); margin-bottom: 40px;
+  }
+  .cover-highlights { display: flex; gap: 40px; margin-bottom: 48px; }
+  .cover-stat-number { font-size: 36px; font-weight: 800; color: var(--accent); }
+  .cover-stat-label { font-size: 11px; color: rgba(245,245,247,0.5); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .cover-meta { font-size: 13px; color: rgba(245,245,247,0.4); margin-top: auto; padding-bottom: 40px; }
+
+  /* Section header */
+  .section-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 24px; padding-bottom: 12px; border-bottom: 2px solid var(--accent);
+  }
+  .section-number {
+    width: 32px; height: 32px; background: var(--accent); color: #fff; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex-shrink: 0;
+  }
+  .section-title { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+
+  /* Roadmap */
+  .roadmap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+  .roadmap-phase {
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px; background: var(--bg);
+  }
+  .roadmap-phase.free { border-color: var(--free-border); background: var(--free-bg); }
+  .roadmap-phase.premium { border-color: var(--gold-border); background: var(--gold-bg); }
+  .phase-badge {
+    display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+    padding: 2px 8px; border-radius: 4px; margin-bottom: 8px;
+  }
+  .phase-badge.free { background: rgba(22,163,74,0.1); color: var(--free-green); }
+  .phase-badge.premium { background: rgba(184,134,11,0.12); color: var(--gold); border: 1px solid var(--gold-border); }
+  .roadmap-phase h4 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .roadmap-phase p { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* Agent block */
+  .agent-block { margin-bottom: 0; }
+  .agent-header {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 20px;
+    padding: 18px 20px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  }
+  .agent-header.free { background: var(--free-bg); border-color: var(--free-border); }
+  .agent-header.premium { background: var(--gold-bg); border-color: var(--gold-border); }
+  .agent-icon {
+    width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 800; color: #fff; flex-shrink: 0;
+  }
+  .agent-icon.green { background: linear-gradient(135deg, #16a34a, #15803d); }
+  .agent-icon.gold { background: linear-gradient(135deg, #D4A017, #B8860B); }
+  .agent-header-text { flex: 1; }
+  .agent-header-text h3 { font-size: 18px; font-weight: 700; }
+  .agent-header-text p { font-size: 13px; color: var(--text-secondary); margin-top: 3px; font-style: italic; }
+  .agent-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 5px 12px; border-radius: 6px; flex-shrink: 0;
+  }
+  .agent-badge.free { background: rgba(22,163,74,0.1); color: var(--free-green); }
+  .agent-badge.premium { background: rgba(184,134,11,0.12); color: var(--gold); border: 1px solid var(--gold-border); }
+
+  /* Feature table */
+  .feature-table { width: 100%; border-collapse: collapse; }
+  .feature-table th, .feature-table td {
+    padding: 11px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border);
+  }
+  .feature-table thead th {
+    background: var(--secondary); color: #fff; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .feature-table thead th:first-child { border-radius: 8px 0 0 0; }
+  .feature-table thead th:last-child { border-radius: 0 8px 0 0; }
+  .feature-table tbody tr:nth-child(even) { background: var(--surface); }
+  .feature-table td:first-child { font-weight: 600; }
+
+  /* Comparison table */
+  .comparison-table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+  .comparison-table th, .comparison-table td {
+    padding: 12px 16px; text-align: left; font-size: 13.5px; border-bottom: 1px solid var(--border);
+  }
+  .comparison-table thead th { background: var(--secondary); color: #fff; font-weight: 600; }
+  .comparison-table thead th:first-child { border-radius: 8px 0 0 0; }
+  .comparison-table thead th:last-child { border-radius: 0 8px 0 0; }
+  .comparison-table tbody tr:nth-child(even) { background: var(--surface); }
+  .check { color: #16a34a; font-weight: 700; }
+  .cross { color: #D1D1D6; }
+
+  /* CTA */
+  .cta-box {
+    background: linear-gradient(135deg, #0A0A0F, #1A237E); color: #F5F5F7;
+    border-radius: 16px; padding: 32px; text-align: center; margin-top: 32px;
+  }
+  .cta-box h3 { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+  .cta-box p { font-size: 14px; color: rgba(245,245,247,0.6); margin-bottom: 18px; }
+  .cta-contact {
+    display: inline-block; background: var(--accent); color: #fff; padding: 12px 32px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none;
+  }
+
+  .premium-cta {
+    display: block; text-align: center; margin-top: 20px; padding: 12px;
+    background: var(--gold-bg); border: 1px dashed var(--gold-border); border-radius: 8px;
+    font-size: 13px; font-weight: 600; color: var(--gold);
+  }
+
+  .badge-planned {
+    display: inline-block; font-size: 9px; font-weight: 600; color: #7c3aed;
+    background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.2);
+    border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+    letter-spacing: 0.3px;
+  }
+  .badge-live {
+    display: inline-block; font-size: 9px; font-weight: 600; color: var(--free-green);
+    background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.2);
+    border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+    letter-spacing: 0.3px;
+  }
+
+  .page-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; color: var(--text-secondary);
+    border-top: 1px solid var(--border); padding-top: 12px;
+    margin-top: auto;
+  }
+
+  .intro-text { font-size: 14.5px; color: var(--text-secondary); line-height: 1.8; margin-bottom: 28px; }
+  .intro-text strong { color: var(--text); }
+
+  .value-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 32px; }
+  .value-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px;
+  }
+  .value-card h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .value-card p { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<!-- TRANG 1: BIA -->
+<div class="page cover">
+  <img src="../electron/ui/modoro-mascot.jpg" alt="9BizClaw" style="width:120px; height:120px; border-radius:24px; margin-bottom:28px; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+  <h1>9BizClaw</h1>
+  <p class="cover-tagline">Hệ thống AI Agent cho doanh nghiệp Việt Nam</p>
+  <div class="cover-version">Phiên bản 2.3.48 &middot; Tháng 4/2026</div>
+  <div class="cover-highlights">
+    <div style="text-align:center">
+      <div class="cover-stat-number">4</div>
+      <div class="cover-stat-label">Agent chuyên biệt</div>
+    </div>
+    <div style="text-align:center">
+      <div class="cover-stat-number">24/7</div>
+      <div class="cover-stat-label">Hoạt động</div>
+    </div>
+    <div style="text-align:center">
+      <div class="cover-stat-number">5'</div>
+      <div class="cover-stat-label">Cài là chạy</div>
+    </div>
+  </div>
+  <p class="cover-meta">MODORO Technology Corporation &middot; modoro.vn &middot; Tài liệu dành cho đại lý</p>
+</div>
+
+<!-- TRANG 2: TỔNG QUAN + LỘ TRÌNH -->
+<div class="page">
+  <div class="page-content">
+  <div class="section-header">
+    <div class="section-number">1</div>
+    <div class="section-title">Tổng quan sản phẩm</div>
+  </div>
+
+  <p class="intro-text">
+    <strong>9BizClaw</strong> là hệ thống AI Agent dành cho chủ doanh nghiệp Việt Nam.
+    Không phải chatbot kịch bản — mà là AI hiểu ngữ cảnh, nhớ khách hàng, và vận hành liên tục 24/7.
+    Chạy trên máy tính Windows hoặc Mac, không cần server riêng.
+    Phiên bản miễn phí đã bao gồm trợ lý Sếp và CSKH Zalo tự động.
+  </p>
+
+  <div class="section-header" style="margin-top:36px;">
+    <div class="section-number">2</div>
+    <div class="section-title">Lộ trình 4 giai đoạn</div>
+  </div>
+
+  <div class="roadmap">
+    <div class="roadmap-phase free">
+      <div class="phase-badge free">Miễn phí</div>
+      <h4>Giai đoạn 1</h4>
+      <p>Trợ lý Sếp + CSKH Zalo — báo cáo sáng/tối, hẹn giờ, trả lời khách tự động</p>
+    </div>
+    <div class="roadmap-phase premium">
+      <div class="phase-badge premium">Premium</div>
+      <h4>Giai đoạn 2</h4>
+      <p>Marketing — soạn bài MXH, email marketing, chiến lược nội dung, đăng bài Fanpage</p>
+    </div>
+    <div class="roadmap-phase premium">
+      <div class="phase-badge premium">Premium</div>
+      <h4>Giai đoạn 3</h4>
+      <p>Sales — tư vấn 24/7, phân loại khách, nhắc lại khách, chiến lược giá</p>
+    </div>
+    <div class="roadmap-phase premium">
+      <div class="phase-badge premium">Premium</div>
+      <h4>Giai đoạn 4</h4>
+      <p>CSKH — hồ sơ khách hàng, phân tích tài chính, tích hợp YBAI, API mở</p>
+    </div>
+  </div>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 2 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+<!-- TRANG 3: AGENT 1 -->
+<div class="page">
+  <div class="page-content">
+  <div class="agent-block">
+    <div class="agent-header free">
+      <div class="agent-icon green">A1</div>
+      <div class="agent-header-text">
+        <h3>Agent 1 — Trợ lý Sếp + CSKH Zalo</h3>
+        <p>Báo cáo, hẹn giờ, trả lời khách Zalo 24/7 — mọi thứ chạy tự động ngay khi cài.</p>
+      </div>
+      <div class="agent-badge free">Miễn phí</div>
+    </div>
+    <table class="feature-table">
+      <thead><tr><th style="width:30%">Chức năng</th><th>Mô tả chi tiết</th></tr></thead>
+      <tbody>
+        <tr><td>Báo cáo sáng 7:30</td><td>Tóm tắt hôm qua, lịch hôm nay, việc cần quyết định — gửi Telegram mỗi sáng</td></tr>
+        <tr><td>Tóm tắt cuối ngày 21:00</td><td>Kết quả đạt được, vấn đề tồn đọng — gửi Telegram mỗi tối</td></tr>
+        <tr><td>CSKH Zalo tự động</td><td>Trả lời khách hàng Zalo 24/7, xưng hô đúng, chuyển tiếp Sếp khi cần</td></tr>
+        <tr><td>Nhắn tin Zalo nhóm</td><td>Hỗ trợ khách trong nhóm Zalo khi được @mention hoặc khách hỏi trực tiếp</td></tr>
+        <tr><td>Nhớ khách hàng</td><td>Lưu tên, SĐT, lịch sử mua hàng, sở thích từng khách Zalo — nhận diện khách cũ</td></tr>
+        <tr><td>Chuyển tiếp cho Sếp</td><td>Khiếu nại, yêu cầu ngoài phạm vi — tự động báo Sếp qua Telegram + Zalo</td></tr>
+        <tr><td>Kho kiến thức</td><td>Upload tài liệu công ty, sản phẩm, nhân sự — bot tự tham khảo khi trả lời khách</td></tr>
+        <tr><td>Hẹn giờ gửi tin</td><td>Tạo lịch gửi tin nhắn tự động vào nhóm Zalo — hẹn giờ hoặc lặp lại hàng ngày/tuần</td></tr>
+        <tr><td>Chặn người dùng</td><td>Danh sách chặn Zalo — bot không trả lời người trong danh sách</td></tr>
+        <tr><td>Tạm dừng kênh</td><td>Tạm dừng hoặc tiếp tục bot trên Telegram và Zalo bất kỳ lúc nào</td></tr>
+        <tr><td>Google Calendar</td><td>Kết nối lịch Google — xem lịch hẹn, tạo sự kiện qua bot</td></tr>
+        <tr><td>Dashboard quản lý</td><td>Giao diện tổng quan trên máy tính — trạng thái kênh, cron, cấu hình, kiến thức</td></tr>
+      </tbody>
+    </table>
+  </div>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 3 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+<!-- TRANG 4: AGENT 2 -->
+<div class="page">
+  <div class="page-content">
+  <div class="agent-block">
+    <div class="agent-header premium">
+      <div class="agent-icon gold">A2</div>
+      <div class="agent-header-text">
+        <h3>Agent 2 — Marketing Agent</h3>
+        <p>AI hỗ trợ soạn nội dung, lên chiến lược, và đăng bài tự động.</p>
+      </div>
+      <div class="agent-badge premium">Premium Member</div>
+    </div>
+    <table class="feature-table">
+      <thead><tr><th style="width:30%">Chức năng</th><th>Mô tả chi tiết</th></tr></thead>
+      <tbody>
+        <tr><td>Soạn bài MXH <span class="badge-live">Hoạt động</span></td><td>Yêu cầu bot viết bài Facebook, Zalo, Instagram — đúng giọng thương hiệu, sẵn sàng đăng</td></tr>
+        <tr><td>Soạn email marketing <span class="badge-live">Hoạt động</span></td><td>Chuỗi email chào mừng, giới thiệu sản phẩm, re-engage khách cũ — theo mẫu chuyên nghiệp</td></tr>
+        <tr><td>Soạn nội dung bán hàng <span class="badge-live">Hoạt động</span></td><td>Viết mô tả sản phẩm, tiêu đề quảng cáo, nội dung landing page</td></tr>
+        <tr><td>Chiến lược nội dung <span class="badge-live">Hoạt động</span></td><td>Lên kế hoạch nội dung theo tuần/tháng — chọn chủ đề, phân bổ kênh</td></tr>
+        <tr><td>Tư vấn quảng cáo <span class="badge-live">Hoạt động</span></td><td>Gợi ý brief quảng cáo Facebook/Google, đề xuất thử nghiệm A/B, phân tích ngân sách</td></tr>
+        <tr><td>Đăng bài Facebook Fanpage <span class="badge-planned">Sắp ra mắt</span></td><td>Tự động đăng bài lên Fanpage — lên lịch, theo dõi tương tác</td></tr>
+      </tbody>
+    </table>
+    <div class="premium-cta">Tham gia Premium để mở khoá Marketing Agent</div>
+  </div>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 4 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+<!-- TRANG 5: AGENT 3 -->
+<div class="page">
+  <div class="page-content">
+  <div class="agent-block">
+    <div class="agent-header premium">
+      <div class="agent-icon gold">A3</div>
+      <div class="agent-header-text">
+        <h3>Agent 3 — Sales Agent</h3>
+        <p>Tư vấn sản phẩm 24/7 qua Zalo, nhắc lại khách, hỗ trợ chốt đơn.</p>
+      </div>
+      <div class="agent-badge premium">Premium Member</div>
+    </div>
+    <table class="feature-table">
+      <thead><tr><th style="width:30%">Chức năng</th><th>Mô tả chi tiết</th></tr></thead>
+      <tbody>
+        <tr><td>Tư vấn sản phẩm 24/7 <span class="badge-live">Hoạt động</span></td><td>Trả lời câu hỏi sản phẩm qua Zalo + Telegram — dựa trên kho kiến thức doanh nghiệp</td></tr>
+        <tr><td>Ghi nhớ khách hàng <span class="badge-live">Hoạt động</span></td><td>Nhớ tên, lịch sử mua, sở thích — cá nhân hoá tư vấn cho từng khách</td></tr>
+        <tr><td>Nhắc lại khách <span class="badge-live">Hoạt động</span></td><td>Hẹn giờ nhắn lại khách đang quan tâm — qua hệ thống cron tự động</td></tr>
+        <tr><td>Phân loại khách <span class="badge-live">Hoạt động</span></td><td>Gắn nhãn VIP, nóng, ấm, lạnh — bot tự ghi nhận từ cuộc hội thoại</td></tr>
+        <tr><td>Chiến lược giá <span class="badge-live">Hoạt động</span></td><td>Phân tích và đề xuất chiến lược giá — so sánh thị trường, tính toán biên lợi nhuận</td></tr>
+        <tr><td>Báo giá tự động <span class="badge-planned">Sắp ra mắt</span></td><td>Tạo và gửi báo giá theo mẫu chuẩn — điền thông tin khách hàng tự động</td></tr>
+      </tbody>
+    </table>
+    <div class="premium-cta">Tham gia Premium để mở khoá Sales Agent</div>
+  </div>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 5 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+<!-- TRANG 6: AGENT 4 -->
+<div class="page">
+  <div class="page-content">
+  <div class="agent-block">
+    <div class="agent-header premium">
+      <div class="agent-icon gold">A4</div>
+      <div class="agent-header-text">
+        <h3>Agent 4 — CSKH Agent</h3>
+        <p>Nâng cấp chăm sóc khách hàng — CRM, phân tích tài chính, quản lý đối tác.</p>
+      </div>
+      <div class="agent-badge premium">Premium Member</div>
+    </div>
+    <table class="feature-table">
+      <thead><tr><th style="width:30%">Chức năng</th><th>Mô tả chi tiết</th></tr></thead>
+      <tbody>
+        <tr><td>Hồ sơ khách hàng <span class="badge-live">Hoạt động</span></td><td>Lịch sử tương tác, phân nhóm, gắn nhãn — tra cứu bất kỳ lúc nào qua bot</td></tr>
+        <tr><td>Phân tích tài chính <span class="badge-live">Hoạt động</span></td><td>Tính toán doanh thu, chi phí, biên lợi nhuận — báo cáo theo yêu cầu</td></tr>
+        <tr><td>Quản lý dòng tiền <span class="badge-live">Hoạt động</span></td><td>Theo dõi thu chi, dự báo runway, cảnh báo khi cần chú ý</td></tr>
+        <tr><td>Tích hợp YBAI <span class="badge-planned">Sắp ra mắt</span></td><td>Kết nối nền tảng affiliate YBAI — quản lý đối tác, tính hoa hồng</td></tr>
+        <tr><td>API mở <span class="badge-planned">Sắp ra mắt</span></td><td>Tích hợp ERP, kế toán, POS theo yêu cầu doanh nghiệp</td></tr>
+      </tbody>
+    </table>
+    <div class="premium-cta">Tham gia Premium để mở khoá CSKH Agent</div>
+  </div>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 6 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+<!-- TRANG 7: SO SÁNH -->
+<div class="page">
+  <div class="page-content">
+    <div class="section-header">
+      <div class="section-number">3</div>
+      <div class="section-title">So sánh gói dịch vụ</div>
+    </div>
+
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th style="width:50%">Tính năng</th>
+          <th style="width:25%; text-align:center">Free</th>
+          <th style="width:25%; text-align:center">Premium</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Báo cáo sáng / tối tự động</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>CSKH Zalo tự động</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Nhắn tin Zalo cá nhân + nhóm</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Nhớ khách hàng + chuyển tiếp Sếp</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Kho kiến thức doanh nghiệp</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Hẹn giờ + cron tự động</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Dashboard quản lý + Google Calendar</td><td style="text-align:center"><span class="check">Có</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Soạn bài MXH + email marketing</td><td style="text-align:center"><span class="cross">--</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Tư vấn quảng cáo + chiến lược nội dung</td><td style="text-align:center"><span class="cross">--</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Phân loại khách + chiến lược giá</td><td style="text-align:center"><span class="cross">--</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Phân tích tài chính + quản lý dòng tiền</td><td style="text-align:center"><span class="cross">--</span></td><td style="text-align:center"><span class="check">Có</span></td></tr>
+        <tr><td>Đăng bài Facebook Fanpage</td><td style="text-align:center"><span class="cross">--</span></td><td style="text-align:center"><span style="color:#7c3aed;font-weight:600">Sắp ra mắt</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 7 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+<!-- TRANG 8: VÌ SAO CHỌN + CTA -->
+<div class="page">
+  <div class="page-content">
+    <div class="section-header">
+      <div class="section-number">4</div>
+      <div class="section-title">Vì sao chọn 9BizClaw?</div>
+    </div>
+
+    <div class="value-grid">
+      <div class="value-card">
+        <h4>Không cần kỹ thuật</h4>
+        <p>Cài đặt trong 5 phút. Không cần lập trình viên, không cần server. Chủ doanh nghiệp tự vận hành.</p>
+      </div>
+      <div class="value-card">
+        <h4>AI thật, không phải chatbot</h4>
+        <p>Hiểu ngữ cảnh, nhớ khách hàng, học từ từng cuộc hội thoại. Không phải kịch bản nhấn nút.</p>
+      </div>
+      <div class="value-card">
+        <h4>Hoạt động 24/7</h4>
+        <p>CSKH, sales, marketing không nghỉ. Khách nhắn 2h sáng vẫn được trả lời chính xác.</p>
+      </div>
+      <div class="value-card">
+        <h4>Bảo mật doanh nghiệp</h4>
+        <p>Dữ liệu chạy trên máy của bạn. Không qua server trung gian. Không rò rỉ thông tin khách.</p>
+      </div>
+      <div class="value-card">
+        <h4>Tiếng Việt bản địa</h4>
+        <p>Xưng hô đúng vùng miền, hiểu slang, giọng nói tự nhiên — không phải dịch máy.</p>
+      </div>
+      <div class="value-card">
+        <h4>Cập nhật liên tục</h4>
+        <p>Tính năng mới ra mắt hàng tuần. Đội ngũ MODORO hỗ trợ kỹ thuật trực tiếp cho đại lý.</p>
+      </div>
+    </div>
+
+    <div class="cta-box">
+      <h3>Hỗ trợ đại lý</h3>
+      <p>Liên hệ MODORO để được hỗ trợ triển khai, đào tạo, và giải đáp thắc mắc.</p>
+      <a href="https://modoro.vn" class="cta-contact" style="margin-right:8px;">modoro.vn</a>
+      <a href="mailto:tech@modoro.com.vn" class="cta-contact" style="background:rgba(255,255,255,0.12);">tech@modoro.com.vn</a>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span><img src="../electron/build/icon.png" alt="" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;">9BizClaw &middot; MODORO Technology Corporation</span>
+    <span>Trang 8 &middot; Phiên bản 2.3.48</span>
+  </div>
+</div>
+
+</body>
+</html>

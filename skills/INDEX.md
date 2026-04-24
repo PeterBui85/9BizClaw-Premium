@@ -1,105 +1,54 @@
-# Skills — Tổng thư viện kỹ năng chuyên gia
+# Skills — Thu vien ky nang
 
-Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yêu cầu.
+Bot TU DONG doc INDEX nay va chon skill phu hop MOI KHI CEO yeu cau.
 
-## Cách hoạt động
-1. CEO nhắn yêu cầu (Telegram hoặc Zalo CEO mode)
-2. Bot đọc INDEX → match keyword → đọc SKILL.md tương ứng
-3. Bot follow quy trình chuyên gia trong skill → output chất lượng cao
+## Cach hoat dong
+1. CEO nhan yeu cau qua Telegram
+2. Bot doc INDEX → match keyword → doc SKILL.md tuong ung
+3. Bot follow quy trinh trong skill → output chat luong cao
 
-## Thư viện hiện có
-
-### Marketing (35 skills) — `skills/marketing/`
-Đọc `skills/marketing/INDEX.md` để chọn skill. Cover: copywriting, SEO, ads, CRO, email, social, strategy, growth, sales enablement.
-
-### Advisory — Cố vấn C-Level (11 skills) — `skills/advisory/`
-| Skill | File | Khi nào dùng |
+## Van hanh bot (8 skills) — `skills/operations/`
+| Skill | File | Khi nao dung |
 |---|---|---|
-| Cố vấn CEO | `ceo-advisor.md` | Chiến lược tổng thể, quyết định lớn, ưu tiên nguồn lực |
-| Cố vấn CFO | `cfo-advisor.md` | Tài chính, dòng tiền, định giá, gọi vốn |
-| Cố vấn COO | `coo-advisor.md` | Vận hành, quy trình, hiệu suất đội ngũ |
-| Cố vấn CTO | `cto-advisor.md` | Công nghệ, architecture, build vs buy |
-| Cố vấn CMO | `cmo-advisor.md` | Marketing tổng thể, brand, positioning |
-| Cố vấn CHRO | `chro-advisor.md` | Nhân sự, tuyển dụng, văn hóa, đãi ngộ |
-| Cố vấn CPO | `cpo-advisor.md` | Sản phẩm, roadmap, prioritization |
-| Cố vấn CRO | `cro-advisor.md` | Doanh thu, sales pipeline, conversion |
-| Cố vấn CISO | `ciso-advisor.md` | Bảo mật, compliance, risk |
-| Cố vấn đầu tư | `business-investment-advisor.md` | Đầu tư, M&A, valuation |
-| Cố vấn C-Level tổng hợp | `c-level-advisor-main.md` | Bất kỳ vấn đề C-level nào |
+| Quan ly lich tu dong | `cron-management.md` | Tao/sua/xoa cron, len lich gui tin |
+| Cham soc khach Zalo | `zalo-customer-care.md` | Tra loi khach hang, bao mat, pham vi bot |
+| Quan ly nhom Zalo | `zalo-group.md` | Nhom Zalo, @mention, reply rules |
+| Gui tin Zalo | `send-zalo.md` | CEO yeu cau gui tin cho khach/nhom |
+| Tra cuu kien thuc | `knowledge-base.md` | Tra cuu tai lieu de tra loi khach |
+| Theo doi khach hang | `follow-up.md` | Follow-up khach chua phan hoi |
+| Quan ly kenh | `channel-control.md` | Tam dung/tiep tuc kenh, blocklist |
+| Doc Google Sheet | `google-sheet.md` | Doc du lieu tu Google Sheet cong khai |
 
-### Strategy — Chiến lược & Ban điều hành (9 skills) — `skills/strategy/`
-| Skill | File | Khi nào dùng |
+## Noi dung & Thuong hieu (3 skills) — `skills/content/`
+| Skill | File | Khi nao dung |
 |---|---|---|
-| Họp ban điều hành | `board.md` | Chuẩn bị agenda, minute, follow-up |
-| Slide trình bày BĐH | `board-deck-builder.md` | Soạn deck báo cáo cho board |
-| Chuẩn bị họp BĐH | `board-prep.md` | Tài liệu, data, talking points |
-| Tăng trưởng doanh nghiệp | `business-growth-bundle.md` | Growth strategy tổng thể |
-| Quản lý thay đổi | `change-management.md` | Thay đổi quy trình, văn hóa, hệ thống |
-| Chiến lược ra mắt | `launch-strategy.md` | Launch sản phẩm, dịch vụ mới |
-| Chiến lược giá | `pricing-strategy.md` | Định giá, packaging |
-| Chiến lược marketing | `marketing-strategy-pmm.md` | Go-to-market, positioning |
+| Nhan hoa noi dung | `content-humanizer.md` | Bien noi dung AI thanh tu nhien |
+| Brand guidelines | `brand-guidelines.md` | Huong dan thuong hieu |
+| San xuat noi dung | `content-production.md` | Viet bai, blog, huong dan san pham |
 
-### Sales — Bán hàng & Doanh thu (5 skills) — `skills/sales/`
-| Skill | File | Khi nào dùng |
+## Marketing (8 skills) — `skills/marketing/`
+| Skill | File | Khi nao dung |
 |---|---|---|
-| Sales engineer | `sales-engineer.md` | Demo sản phẩm, technical sales |
-| Revenue operations | `revenue-operations.md` | Pipeline, forecast, handoff marketing→sales |
-| Customer success | `customer-success-manager.md` | Chăm sóc khách hàng, retention |
-| Cold email | `cold-email.md` | Email tiếp cận khách lạ B2B |
-| Referral program | `referral-program.md` | Chương trình giới thiệu |
+| Viet quang cao | `copywriting/SKILL.md` | Sales copy, tieu de, CTA |
+| Chinh sua copy | `copy-editing/SKILL.md` | Sua loi, cai thien van phong |
+| Noi dung MXH | `social-content/SKILL.md` | Bai dang Zalo, Facebook, Instagram |
+| Chien luoc noi dung | `content-strategy/SKILL.md` | Lich dang bai, chu de, pillar |
+| Email marketing | `email-sequence/SKILL.md` | Chuoi email chao mung, cham soc |
+| Quang cao tra phi | `paid-ads/SKILL.md` | Google Ads, Meta Ads |
+| Ra mat san pham | `launch-strategy/SKILL.md` | Ke hoach ra mat SP moi |
+| Chien luoc gia | `pricing-strategy/SKILL.md` | Dinh gia, khuyen mai, tier |
 
-### Content — Nội dung & Thương hiệu (9 skills) — `skills/content/`
-| Skill | File | Khi nào dùng |
+## Chien luoc (1 skill) — `skills/strategy/`
+| Skill | File | Khi nao dung |
 |---|---|---|
-| Sáng tạo nội dung | `content-creator.md` | Viết bài, blog, video script |
-| Nhân hóa nội dung | `content-humanizer.md` | Biến nội dung AI thành tự nhiên |
-| Sản xuất nội dung | `content-production.md` | Quy trình content team |
-| Chiến lược nội dung | `content-strategist.md` | Content plan, calendar |
-| Brand guidelines | `brand-guidelines.md` | Hướng dẫn thương hiệu |
-| Video content | `video-content-strategist.md` | Chiến lược video YouTube/TikTok |
-| Social media manager | `social-media-manager.md` | Quản lý social tổng thể |
-| Phân tích social | `social-media-analyzer.md` | Phân tích metrics, engagement |
-| X/Twitter growth | `x-twitter-growth.md` | Tăng trưởng trên X/Twitter |
+| Quan ly thay doi | `change-management.md` | Thay doi quy trinh, cong cu, doi ngu |
 
-### Finance — Tài chính (3 skills) — `skills/finance/`
-| Skill | File | Khi nào dùng |
+## Tai chinh (2 skills) — `skills/finance/`
+| Skill | File | Khi nao dung |
 |---|---|---|
-| Tài chính tổng hợp | `finance-bundle.md` | Báo cáo tài chính, phân tích |
-| Finance lead | `finance-lead.md` | Lãnh đạo tài chính, strategy |
-| SOC2 compliance | `soc2-compliance.md` | Tuân thủ SOC2, audit |
-
-### HR — Nhân sự (2 skills) — `skills/hr/`
-| Skill | File | Khi nào dùng |
-|---|---|---|
-| CHRO advisor | `chro-advisor.md` | Chiến lược nhân sự, tuyển dụng |
-| Change management | `change-management.md` | Quản lý thay đổi tổ chức |
-
-### Growth — Tăng trưởng & Marketing Ops (5 skills) — `skills/growth/`
-| Skill | File | Khi nào dùng |
-|---|---|---|
-| Growth marketer | `growth-marketer.md` | Tăng trưởng người dùng |
-| Marketing operations | `marketing-ops.md` | Vận hành marketing, automation |
-| Demand acquisition | `marketing-demand-acquisition.md` | Lead gen, demand gen |
-| Campaign analytics | `campaign-analytics.md` | Phân tích chiến dịch |
-| Email template builder | `email-template-builder.md` | Thiết kế template email |
-
-### Operations — Vận hành bot (7 skills) — `skills/operations/`
-| Skill | File | Khi nào dùng |
-|---|---|---|
-| Quản lý lịch tự động | `cron-management.md` | Tạo/sửa/xóa cron, lên lịch gửi tin, nhắc nhở |
-| Chăm sóc khách Zalo | `zalo-customer-care.md` | Trả lời khách hàng, bảo mật, phạm vi bot |
-| Quản lý nhóm Zalo | `zalo-group.md` | Nhóm Zalo, @mention, reply rules, bot-vs-bot |
-| Gửi tin Zalo | `send-zalo.md` | CEO yêu cầu gửi tin cho khách/nhóm |
-| Tra cứu kiến thức | `knowledge-base.md` | Tra cứu tài liệu để trả lời khách |
-| Theo dõi khách hàng | `follow-up.md` | Follow-up khách chưa phản hồi |
-| Quản lý kênh | `channel-control.md` | Tạm dừng/tiếp tục kênh, blocklist, stranger |
-| Đọc Google Sheet | `google-sheet.md` | Đọc dữ liệu từ Google Sheet công khai qua CSV |
-
-### Productivity — Công cụ CEO (1 skill)
-| Skill | File | Khi nào dùng |
-|---|---|---|
-| Quản lý lịch hẹn | `appointments.md` | Tạo/sửa/xóa lịch hẹn, reminder, push Zalo group |
+| Phan tich tai chinh | `finance-bundle.md` | Bao cao tai chinh, chi phi, loi nhuan |
+| Quan ly dong tien | `finance-lead.md` | Runway, burn rate, P&L co ban |
 
 ---
-**Tổng: 35 (marketing) + 45 (business) + 1 (productivity) = 81 skills chuyên gia**
-Nguồn: coreyhaines31/marketingskills (19.8k stars) + alirezarezvani/claude-skills (522 skills, lọc business-relevant)
+**Tong: 22 skills thuc te** cho chu shop Viet Nam.
+Skills cu (advisory, board, SOC2, Twitter, v.v.) da chuyen vao `skills/_archived/` — van truy cap duoc neu can.

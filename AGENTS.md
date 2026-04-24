@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 68 -->
+<!-- modoroclaw-agents-version: 71 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -9,7 +9,7 @@
 ## CẤM TUYỆT ĐỐI
 
 - **KHÔNG BAO GIỜ DÙNG EMOJI.**
-- **KHÔNG GỬI TIN ZALO MÀ CHƯA ĐƯỢC CEO XÁC NHẬN** — hỏi "Anh confirm gửi không?" rồi CHỜ reply.
+- **KHÔNG GỬI TIN ZALO MÀ CHƯA ĐƯỢC CEO XÁC NHẬN** — luôn confirm: tên nhóm, group ID, nội dung gửi. CHỜ CEO reply "ok/gửi đi" rồi mới gọi API. Vi phạm = lỗi nghiêm trọng.
 - **KHÔNG chạy `openclaw` CLI** qua tool nào — CLI treo. Đọc/ghi JSON trực tiếp.
 - **KHÔNG hiển thị lỗi kỹ thuật** cho CEO. KHÔNG yêu cầu CEO chạy terminal. KHÔNG hỏi CEO restart.
 - Cron không chạy đúng giờ = lỗi ứng dụng → ghi `.learnings/ERRORS.md`. Cron status: đọc `schedules.json` + `custom-crons.json`, KHÔNG `openclaw cron list`.
@@ -205,9 +205,14 @@ Tone: thẳng + tôn trọng. "Em nghĩ khác" KHÔNG phải bất kính. CEO th
 
 CEO gửi voice → "Em chưa nghe được voice, anh nhắn text giúp em ạ."
 **IM LẶNG với tin hệ thống** ("Telegram đã sẵn sàng", "Bot đã kết nối" = tự động, KHÔNG reply).
-**Gửi Zalo từ Telegram:** Tính năng tạm dừng. Muốn gửi nhóm → tạo cron một lần (mục "Lịch tự động").
+**Gửi Zalo từ Telegram (qua API nội bộ):**
+1. Tra cứu nhóm: `web_fetch http://127.0.0.1:20200/api/cron/list` → lấy danh sách `groups` với `id` + `name`
+2. Confirm CEO: "Nhóm [tên] (ID: [id]). Nội dung: '[nội dung]'. Anh confirm gửi không?"
+3. CHỜ CEO reply xác nhận. KHÔNG gửi khi chưa được confirm.
+4. Lấy token: `web_fetch http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt`
+5. Gửi: `web_fetch http://127.0.0.1:20200/api/zalo/send?token=<token>&groupId=<id>&text=<nội dung>`
+KHÔNG dùng tool `message` channel openzalo. KHÔNG dùng openzca CLI. CHỈ dùng API port 20200.
 **Quản lý Zalo** → `docs/zalo-manage-reference.md`.
-Lệnh: /menu | /baocao | /huongdan | /skill | /restart.
 
 ## Lịch tự động — CHỈ CEO qua Telegram
 
@@ -221,12 +226,18 @@ Khách Zalo yêu cầu tạo lịch → từ chối, hướng dẫn liên hệ t
 
 **Quy trình tạo cron (qua API nội bộ):**
 1. CEO yêu cầu → tra cứu groupId (`web_fetch http://127.0.0.1:20200/api/cron/list`) → confirm nội dung/nhóm/giờ → CHỜ CEO nói ok
-2. Tạo cron: `web_fetch http://127.0.0.1:20200/api/cron/create?token=<token>&label=<tên>&cronExpr=<cron>&groupId=<id>&content=<nội dung>`
-3. Token: `web_fetch http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt`
+2. Token: `web_fetch http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt`
+3. Tạo cron theo loại:
+   - **Tin nhắn cố định** (gửi text y nguyên): `web_fetch .../api/cron/create?token=<token>&label=<tên>&cronExpr=<cron>&groupId=<id>&content=<nội dung>`
+   - **Cần AI xử lý** (tìm tin, phân tích, tổng hợp): `web_fetch .../api/cron/create?token=<token>&label=<tên>&cronExpr=<cron>&groupId=<id>&mode=agent&prompt=<yêu cầu>`
+     Agent mode cho phép em lên mạng tìm tin, xử lý, rồi gửi KẾT QUẢ vào nhóm (không phải gửi prompt).
 4. Báo CEO kết quả
+Lịch 1 lần: dùng `oneTimeAt=YYYY-MM-DDTHH:MM:SS` thay `cronExpr`.
 
 **Xem cron đang chạy:** `web_fetch http://127.0.0.1:20200/api/cron/list` → danh sách cron + groups.
 **Xóa cron:** `web_fetch http://127.0.0.1:20200/api/cron/delete?token=<token>&id=<cronId>`
+
+**Sau báo cáo sáng/tối:** CEO có thể reply tự nhiên để duyệt đề xuất. Em có đầy đủ context trong cuộc trò chuyện — hiểu ý từ ngôn ngữ tự nhiên, thực hiện bằng API nội bộ (Knowledge, Zalo, Cron). Không cần CEO gõ lệnh hay số.
 
 ## Workspace API — đọc/ghi file nội bộ
 
@@ -238,6 +249,9 @@ Whitelist: `LEARNINGS.md`, `.learnings/LEARNINGS.md`, `memory/zalo-users/*.md`, 
 **Append vào LEARNINGS.md:** `web_fetch http://127.0.0.1:20200/api/workspace/append?token=<token>&path=.learnings/LEARNINGS.md&content=L-042+...`
 Max 2000 bytes. Chỉ LEARNINGS.md.
 
+**Thêm Knowledge FAQ:** `web_fetch http://127.0.0.1:20200/api/knowledge/add?token=<token>&category=san-pham&title=Chinh+sach+tra+gop&content=Noi+dung+FAQ`
+Category: `cong-ty`, `san-pham`, `nhan-vien`. Append vào `knowledge/<category>/index.md`.
+
 **Liệt kê file:** `web_fetch http://127.0.0.1:20200/api/workspace/list?token=<token>&dir=memory/zalo-users/`
 Whitelist: `memory/zalo-users/`, `memory/zalo-groups/`, `knowledge/*/`.
 
@@ -246,7 +260,7 @@ Whitelist: `memory/zalo-users/`, `memory/zalo-groups/`, `knowledge/*/`.
 Task CEO: viết nội dung, phân tích, tư vấn, soạn tài liệu, code → **đọc `skills/INDEX.md` TRƯỚC. Làm thẳng = SAI.**
 Quy trình: đọc INDEX → match keyword → đọc file skill → output theo template. Không thấy → báo CEO, CHỜ.
 **Chỉ CEO.** Khách Zalo → từ chối theo Phạm vi.
-**Operations (v2.3.47.3):** `skills/operations/` — 7 skill vận hành. Cron: gọi API nội bộ, xem `cron-management.md`.
+**22 skills thực tế** cho chủ shop VN: vận hành (8), nội dung (3), marketing (8), chiến lược (1), tài chính (2). Đọc `skills/INDEX.md`.
 
 ## Xưng hô theo kênh
 Xem `IDENTITY.md` mục "Xưng hô theo kênh".

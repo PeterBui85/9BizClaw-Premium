@@ -304,7 +304,7 @@
     .zalo-mgr-row:hover { background:var(--surface); }
     .zalo-mgr-row:last-child { border-bottom:none; }
     /* Zalo cards — distinct card per group/user, colored by state */
-    .zc { padding:10px 14px; border-radius:10px; margin-bottom:8px; border:1px solid var(--border); background:var(--surface); display:flex; align-items:center; gap:12px; transition:box-shadow 0.15s, border-color 0.15s; min-width:0; overflow:hidden; }
+    .zc { padding:10px 14px; border-radius:10px; margin-bottom:8px; border:1px solid var(--border); background:var(--surface); display:flex; align-items:flex-start; gap:12px; transition:box-shadow 0.15s, border-color 0.15s; min-width:0; overflow:hidden; }
     .zc:hover { box-shadow:var(--shadow-sm); border-color:var(--border-strong); }
     .zc:last-child { margin-bottom:0; }
     .zc .zc-avatar { width:36px; height:36px; border-radius:50%; flex-shrink:0; object-fit:cover; background:var(--bg); border:1px solid var(--border); }
@@ -314,7 +314,7 @@
     .zc .zc-name-text { font-size:14px; font-weight:600; flex:1 1 auto; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .zc .zc-meta { font-size:11.5px; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
     .zc .zc-badge { display:inline-flex; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; letter-spacing:0.2px; vertical-align:middle; white-space:nowrap; flex-shrink:0; }
-    .zc .zc-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; flex-basis:auto; }
+    .zc .zc-actions { display:flex; align-items:flex-start; gap:8px; flex-shrink:0; flex-basis:auto; padding-top:2px; }
     /* 3 state colors: green (all/on), yellow (mention), red (off/blocked) */
     .zc-state-on { border-left:4px solid #22c55e; }
     .zc-state-on .zc-badge { background:rgba(34,197,94,0.15); color:#16a34a; }
@@ -342,11 +342,6 @@
     .avatar-wrap.failed .avatar-img { display:none; }
     .avatar-wrap.failed .avatar-fallback { display:inline-flex; }
     .schedule-icon-wrap { width:36px; height:36px; border-radius:10px; background:var(--bg); border:1px solid var(--border); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--accent, #4ea1ff); }
-    /* Activity FAB (floating button) — shows on non-overview pages */
-    .activity-fab { position:fixed; bottom:20px; right:20px; width:48px; height:48px; border-radius:50%; background:var(--accent, #4ea1ff); color:#fff; border:none; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,0.4); display:none; align-items:center; justify-content:center; z-index:90; transition:transform 0.15s; }
-    .activity-fab:hover { transform:scale(1.08); }
-    .activity-fab .fab-badge { position:absolute; top:-4px; right:-4px; background:var(--danger,#e74c3c); color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:9px; display:flex; align-items:center; justify-content:center; padding:0 4px; border:2px solid var(--bg); }
-    body.compact-layout .activity-fab { display:flex; }
     body.compact-layout .activity-panel { display:none; }
     /* Activity drawer (popover from right) */
     .activity-drawer { position:fixed; top:0; right:-340px; width:320px; height:100vh; background:var(--bg); border-left:1px solid var(--border); z-index:95; transition:right 0.25s ease; display:flex; flex-direction:column; box-shadow:-8px 0 24px rgba(0,0,0,0.3); }
@@ -360,6 +355,14 @@
     .activity-drawer-backdrop.show { display:block; }
     /* Zalo 3-column layout */
     #page-zalo.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
+    #page-telegram.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
+    /* Telegram page: sidebar + main */
+    .tg-layout { display:grid; grid-template-columns:260px 1fr; gap:12px; flex:1; min-height:0; }
+    .tg-sidebar { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:0; min-height:0; overflow-y:auto; }
+    .tg-main { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; min-height:0; overflow-y:auto; }
+    .tg-sidebar .zs-section { padding:12px 0; border-bottom:1px solid var(--border); }
+    .tg-sidebar .zs-section:last-child { border-bottom:none; }
+    .zs-hint { font-size:10px; color:var(--text-muted); margin-top:2px; margin-bottom:6px; line-height:1.4; }
     /* Zalo page: sidebar + main */
     .zalo-layout { display:grid; grid-template-columns:260px minmax(0, 1fr); gap:16px; flex:1; min-height:0; min-width:0; }
     .zalo-sidebar { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; display:flex; flex-direction:column; overflow-y:auto; }
@@ -387,11 +390,14 @@
       .zalo-layout { grid-template-columns:1fr; }
       .zalo-sidebar { max-height:300px; }
       #page-zalo.page.active { height:auto; }
+      .tg-layout { grid-template-columns:1fr; }
+      .tg-sidebar { max-height:300px; }
+      #page-telegram.page.active { height:auto; }
     }
     /* Knowledge tab — 3 column layout */
     #page-knowledge.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
     .know-columns { display:grid; grid-template-columns:260px 1fr 320px; gap:12px; flex:1; min-height:0; }
-    .know-col { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+    .know-col { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden; }
     .know-col h4 { margin:0 0 12px; font-size:14px; }
     .know-folder { display:flex; align-items:center; gap:12px; padding:12px; border-radius:10px; cursor:pointer; margin-bottom:6px; border:1px solid var(--border); background:var(--bg); transition:all 0.15s; }
     .know-folder:hover { border-color:var(--accent, #4ea1ff); }
@@ -416,6 +422,15 @@
     .know-file .file-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
     .know-file .file-summary { font-size:12px; color:var(--text); margin-top:6px; line-height:1.4; padding:6px 8px; background:var(--bg); border-radius:6px; }
     .know-file .file-actions { display:flex; align-items:flex-start; }
+    .vis-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:500; cursor:pointer; margin-left:8px; vertical-align:middle; }
+    .vis-badge.vis-public { background:#e5e5e5; color:#555; }
+    .vis-badge.vis-internal { background:#fff3cd; color:#856404; }
+    .vis-badge.vis-private { background:#f8d7da; color:#721c24; }
+    .vis-badge:hover { opacity:0.8; }
+    .internal-flag { margin-left:8px; font-size:11px; color:var(--text-muted); user-select:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 6px; border:1px solid var(--border); border-radius:6px; background:var(--surface); transition:border-color .15s, color .15s, background .15s; white-space:nowrap; }
+    .internal-flag:hover { border-color:var(--border-strong); color:var(--text); }
+    .internal-flag:has(input:checked) { border-color:var(--accent); color:var(--accent); background:rgba(78,161,255,0.06); }
+    .internal-flag input { margin:0; width:14px; height:14px; accent-color:var(--accent); cursor:pointer; }
     .know-file-delete { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:4px; }
     .know-file-delete:hover { color:var(--danger, #e74c3c); background:var(--bg); }
     .know-empty { text-align:center; color:var(--text-muted); padding:60px 20px; font-size:13px; }
@@ -426,6 +441,15 @@
     .know-drop-zone strong { color:var(--text); display:block; margin-bottom:6px; }
     .know-upload-help { font-size:11px; color:var(--text-muted); margin-top:12px; padding:10px; background:var(--bg); border-radius:8px; line-height:1.5; }
     .know-progress { font-size:12px; padding:10px; background:var(--bg); border-radius:8px; margin-top:8px; }
+    /* Knowledge visibility radios — grid layout (do NOT change to flex; see docs/UI-REGRESSION-RULES.md) */
+    .visibility-radio-group { width:100%; box-sizing:border-box; min-width:0; }
+    .visibility-option { display:grid; grid-template-columns:18px minmax(0,1fr); gap:8px; align-items:start; padding:8px; border:1px solid var(--border); border-radius:6px; cursor:pointer; background:var(--bg); transition:border-color 0.15s, background 0.15s; box-sizing:border-box; width:100%; min-width:0; }
+    .visibility-option:hover { border-color:var(--border-strong); }
+    .visibility-option:has(input:checked) { border-color:var(--accent, #4ea1ff); background:var(--surface-hover, var(--bg)); }
+    .visibility-option input[type="radio"] { margin:3px 0 0 0; accent-color:var(--accent, #4ea1ff); justify-self:center; }
+    .visibility-option .radio-label { font-size:12px; line-height:1.4; color:var(--text); display:block; min-width:0; word-break:break-word; }
+    .visibility-option .radio-label strong { font-weight:600; display:block; }
+    .visibility-option .radio-label small { display:block; color:var(--text-muted); font-size:11px; margin-top:2px; }
     @media (max-width: 1200px) {
       .know-columns { grid-template-columns:1fr; }
       #page-knowledge.page.active { height:auto; }
@@ -1146,6 +1170,31 @@
       letter-spacing: -0.1px;
     }
 
+    /* === Page help button === */
+    .page-help-btn {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      flex-shrink: 0;
+      padding: 0;
+      line-height: 1;
+    }
+    .page-help-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft, rgba(229,57,53,0.08));
+    }
+
     /* === Activity panel === */
     .activity-panel {
       width: 320px !important;
@@ -1763,6 +1812,88 @@
       padding-top: 16px;
       border-top: 1px solid var(--border);
     }
+    /* === FIRST-TIME GUIDE — PRODUCT TOUR STYLE === */
+    .guide-overlay {
+      position:fixed;inset:0;z-index:10000;
+      display:none;
+      font-family:system-ui,-apple-system,sans-serif;
+      pointer-events:none;
+    }
+    .guide-overlay.show { display:block; }
+    .guide-spotlight {
+      position:fixed;z-index:10001;
+      border:2px solid #52525b;border-radius:10px;
+      box-shadow:0 0 0 9999px rgba(0,0,0,0.45);
+      transition:all .35s cubic-bezier(.4,0,.2,1);
+      pointer-events:none;
+    }
+    .guide-tooltip {
+      position:fixed;z-index:10002;
+      background:#18181b;border:1px solid #27272a;
+      border-radius:12px;padding:20px 24px;
+      max-width:420px;width:calc(100vw - 80px);
+      box-shadow:0 16px 48px rgba(0,0,0,.4);
+      color:#e5e5e5;pointer-events:all;
+      animation:guide-pop .25s ease;
+    }
+    @keyframes guide-pop {
+      from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)}
+    }
+    .guide-tooltip-arrow {
+      position:absolute;width:12px;height:12px;
+      background:#18181b;border:1px solid #27272a;
+      transform:rotate(45deg);
+    }
+    .guide-tooltip-arrow.top { top:-7px;border-right:none;border-bottom:none; }
+    .guide-tooltip-arrow.bottom { bottom:-7px;border-left:none;border-top:none; }
+    .guide-tooltip-arrow.arr-left { left:24px; }
+    .guide-tooltip-arrow.arr-right { right:24px; }
+    .guide-tooltip-arrow.side-left { left:-7px;top:24px;border-right:none;border-top:none; }
+    .guide-progress { display:flex;gap:4px;margin-bottom:16px; }
+    .guide-progress-seg {
+      height:3px;flex:1;background:#27272a;border-radius:2px;
+      transition:background .3s;
+    }
+    .guide-progress-seg.done { background:#a1a1aa; }
+    .guide-step-label {
+      font-size:11px;color:#71717a;text-transform:uppercase;
+      letter-spacing:1px;margin-bottom:6px;
+    }
+    .guide-title { font-size:18px;font-weight:600;color:#f5f5f5;margin:0 0 10px; }
+    .guide-text { color:#a1a1aa;line-height:1.6;margin:0 0 14px;font-size:13px; }
+    .guide-card {
+      background:#111113;border:1px solid #27272a;border-radius:8px;
+      padding:12px 14px;margin-bottom:8px;
+    }
+    .guide-card-header { display:flex;align-items:center;gap:8px;margin-bottom:6px; }
+    .guide-card-dot { width:7px;height:7px;border-radius:50%;flex-shrink:0;opacity:.7; }
+    .guide-card-title { font-weight:600;color:#f5f5f5;font-size:13px; }
+    .guide-card-desc { color:#a1a1aa;font-size:13px;line-height:1.5;margin:0; }
+    .guide-note {
+      background:#1c1c1e;border:1px solid #3a3a3c;border-radius:8px;
+      padding:10px 12px;margin-top:12px;
+    }
+    .guide-note p { color:#a1a1aa;font-size:12px;margin:0;line-height:1.5; }
+    .guide-footer {
+      display:flex;justify-content:space-between;align-items:center;
+      margin-top:16px;gap:12px;
+    }
+    .guide-btn {
+      padding:8px 22px;border-radius:6px;font-size:13px;
+      font-weight:500;border:none;cursor:pointer;transition:opacity .2s;
+    }
+    .guide-btn-primary { background:#f5f5f5;color:#18181b; }
+    .guide-btn-primary:disabled { opacity:.4;cursor:not-allowed; }
+    .guide-btn-back { background:transparent;color:#71717a;border:1px solid #3a3a3c; }
+    .guide-btn:hover:not(:disabled){opacity:.85}
+    .guide-btn:focus-visible{outline:2px solid #71717a;outline-offset:2px}
+    .guide-btn-primary:hover:not(:disabled){background:#e5e5e5}
+    .guide-btn-back:hover:not(:disabled){border-color:#71717a;color:#e5e5e5}
+    .guide-skip {
+      font-size:12px;color:#71717a;cursor:pointer;
+      background:none;border:none;padding:4px 8px;
+    }
+    .guide-skip:hover { color:#a1a1aa; }
   </style>
 </head>
 <body>
@@ -1822,6 +1953,14 @@
         <div class="sidebar-menu-item" data-page="zalo" onclick="switchPage('zalo')">
           <span class="icon" data-icon="message-circle"></span><span class="label">Zalo</span>
           <span class="ready-dot" id="ready-dot-zalo" data-state="checking" title="Đang kiểm tra..."></span>
+        </div>
+        <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
+          <span class="icon" data-icon="globe"></span><span class="label">Facebook</span>
+          <span class="badge">Soon</span>
+        </div>
+        <div class="sidebar-menu-item" data-page="gcal" onclick="switchPage('gcal')">
+          <span class="icon" data-icon="calendar"></span><span class="label">Google Calendar</span>
+          <span class="badge">Soon</span>
         </div>
 
         <div class="sidebar-menu-header">Cài đặt</div>
@@ -1930,8 +2069,11 @@
       <div class="page" id="page-schedules">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
-          <div><h2>Lịch tự động <span class="tip" data-tooltip="Bot chạy tự động theo lịch này">?</span></h2><div class="page-sub">Lịch bot chạy hàng ngày</div></div>
-          <button class="btn btn-secondary btn-small" onclick="loadSchedules()" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
+          <div><h2>Lịch tự động</h2><div class="page-sub">Lịch bot chạy hàng ngày</div></div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="page-help-btn" title="Bot chạy tự động theo lịch này">?</button>
+            <button class="btn btn-secondary btn-small" onclick="loadSchedules()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
+          </div>
         </div>
         <div class="main-card">
           <div id="schedule-list" style="display:flex;flex-direction:column;gap:6px">
@@ -2037,7 +2179,9 @@
             <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-telegram" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-telegram-text">Đang kiểm tra kết nối...</span></span></div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="page-help-btn" onclick="guideReplay('telegram')" title="Xem hướng dẫn trang Telegram">?</button>
             <button class="btn btn-secondary btn-small" onclick="recheckTelegram()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Kiểm tra</button>
+            <button class="btn btn-secondary btn-small" onclick="openTgChangeModal()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
             <button class="btn btn-secondary btn-small" id="telegram-pause-btn" onclick="toggleTelegramPause()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="telegram-pause-label">Tạm dừng</span></button>
           </div>
         </div>
@@ -2045,6 +2189,48 @@
           <span data-icon="pause-circle" data-icon-size="16"></span>
           <span>Bot Telegram đang tạm dừng. <span id="telegram-pause-until"></span></span>
         </div>
+
+        <div class="tg-layout">
+          <!-- LEFT: Behavior settings sidebar -->
+          <div class="tg-sidebar">
+            <div class="zs-section">
+              <div class="zs-label">Người lạ nhắn tin</div>
+              <div class="zs-hint">Khi người không phải CEO nhắn Telegram bot</div>
+              <select id="tg-stranger-policy" class="zs-select" onchange="changeTgStrangerPolicy(this.value)">
+                <option value="reply">Trả lời bình thường</option>
+                <option value="greet-only">Chào + hướng dẫn liên hệ CEO</option>
+                <option value="ignore" selected>Bỏ qua (không trả lời)</option>
+              </select>
+            </div>
+
+            <div class="zs-section">
+              <div class="zs-label">Hành vi nhóm mới</div>
+              <div class="zs-hint">Khi bot được thêm vào group Telegram mới</div>
+              <select id="tg-default-group-mode" class="zs-select" onchange="updateTgDefaultGroupMode(this.value)">
+                <option value="mention" selected>Chỉ khi @mention</option>
+                <option value="all">Mọi tin nhắn</option>
+                <option value="off">Tắt (không trả lời)</option>
+              </select>
+            </div>
+
+            <div class="zs-section">
+              <div class="zs-label">Giới hạn lịch sử</div>
+              <div class="zs-hint">Số tin nhắn bot nhớ trong mỗi cuộc hội thoại</div>
+              <select id="tg-history-limit" class="zs-select" onchange="changeTgHistoryLimit(this.value)">
+                <option value="10">10 tin</option>
+                <option value="20">20 tin</option>
+                <option value="30">30 tin</option>
+                <option value="50" selected>50 tin (tối đa)</option>
+              </select>
+            </div>
+
+            <div class="zs-section" style="border-bottom:none;margin-top:auto;padding-top:12px">
+              <button class="btn btn-small" onclick="saveTgBehavior()" style="width:100%;display:inline-flex;align-items:center;gap:6px;justify-content:center;background:#16a34a;color:#fff;font-size:12px"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
+            </div>
+          </div>
+
+          <!-- RIGHT: Main content -->
+          <div class="tg-main">
 
         <!-- Capabilities chips -->
         <div class="tg-section-label">Khả năng</div>
@@ -2074,7 +2260,7 @@
           <div class="tg-cmd-row" onclick="copyTgCmd(this)">
             <span class="tg-cmd-cat">Báo cáo</span>
             <span class="tg-cmd-label">Báo cáo sáng</span>
-            <span class="tg-cmd-text" data-cmd="Cho anh báo cáo sáng nay: tin nhắn mới, đơn hàng, sự kiện đáng chú ý">Cho anh báo cáo sáng nay: tin nhắn mới, đơn hàng, sự kiện đáng chú ý</span>
+            <span class="tg-cmd-text" data-cmd="Cho anh/chị báo cáo sáng nay: tin nhắn mới, đơn hàng, sự kiện đáng chú ý">Cho anh/chị báo cáo sáng nay: tin nhắn mới, đơn hàng, sự kiện đáng chú ý</span>
             <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
           <div class="tg-cmd-row" onclick="copyTgCmd(this)">
@@ -2116,7 +2302,7 @@
           <div class="tg-cmd-row" onclick="copyTgCmd(this)">
             <span class="tg-cmd-cat">Hệ thống</span>
             <span class="tg-cmd-label">Tạm dừng bot</span>
-            <span class="tg-cmd-text" data-cmd="Tạm dừng bot 30 phút, tôi tự xử lý khách">Tạm dừng bot 30 phút, tôi tự xử lý khách</span>
+            <span class="tg-cmd-text" data-cmd="Tạm dừng bot 30 phút, để anh/chị tự trả lời khách">Tạm dừng bot 30 phút, để anh/chị tự trả lời khách</span>
             <button class="tg-cmd-copy" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
           <div class="tg-cmd-row" onclick="copyTgCmd(this)">
@@ -2161,16 +2347,8 @@
         </div>
         <div class="tg-debounce-hint" title="Khi khách gửi nhiều tin liên tiếp (VD: 3 tin trong 2 giây), bot sẽ chờ hết thời gian này rồi gộp tất cả lại trả lời 1 lần, tránh phản hồi 3 lần riêng lẻ">Khách gửi nhiều tin liên tiếp — bot chờ gộp lại trả lời 1 lần. 0s = mỗi tin trả lời riêng. 3s = chờ khách gõ xong.</div>
 
-        <div class="tg-divider"></div>
-
-        <!-- Telegram config — "Đổi tài khoản" style (matching Zalo) -->
-        <div class="tg-section-label">Tài khoản Telegram</div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <span id="tg-cfg-summary" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
-          <button class="btn btn-secondary btn-small" onclick="openTgChangeModal()" style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap">
-            <span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản
-          </button>
-        </div>
+          </div><!-- /.tg-main -->
+        </div><!-- /.tg-layout -->
 
         <!-- Telegram change modal (hidden) -->
         <div class="modal-overlay" id="tg-change-modal" onclick="if(event.target===this)closeTgChangeModal()">
@@ -2207,34 +2385,16 @@
             <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-zalo" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-zalo-text">Đang kiểm tra kết nối...</span></span></div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="page-help-btn" onclick="guideReplay('zalo')" title="Xem hướng dẫn trang Zalo">?</button>
             <button class="btn btn-secondary btn-small" onclick="recheckZaloFull()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
             <button class="btn btn-secondary btn-small" id="reconnect-zalo-btn" onclick="reconnectZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
             <button class="btn btn-secondary btn-small" id="zalo-pause-btn" onclick="toggleZaloPause()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="zalo-pause-label">Tạm dừng</span></button>
+            <button class="btn btn-small zalo-save-btn" onclick="saveZaloManager()" style="display:inline-flex;align-items:center;gap:6px;background:#16a34a;color:#fff;font-size:12px"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
           </div>
         </div>
         <div id="zalo-pause-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#2a2017;border:1px solid #5c4a1e;border-radius:8px;font-size:12px;color:#e8c66a;align-items:center;gap:8px">
           <span data-icon="pause-circle" data-icon-size="16"></span>
           <span>Bot Zalo đang tạm dừng. <span id="zalo-pause-until"></span></span>
-        </div>
-
-        <!-- Debounce dropdown -->
-        <div class="ds-section">
-          <div class="ds-section-header">
-            <h3 class="ds-section-title">Thời gian gộp tin khách</h3>
-          </div>
-          <div class="ds-card" style="padding:16px 18px">
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <select id="zl-debounce-select" onchange="onDebounceSelect('zalo', this.value)" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;min-width:180px;cursor:pointer">
-                <option value="0">Tắt (trả lời ngay)</option>
-                <option value="1000">1 giây</option>
-                <option value="2000">2 giây</option>
-                <option value="3000" selected>3 giây</option>
-                <option value="4000">4 giây</option>
-                <option value="5000">5 giây</option>
-              </select>
-            </div>
-            <p class="ds-section-desc" style="margin-top:10px;font-size:12px;line-height:1.5" title="Khi khách gửi nhiều tin liên tiếp (VD: 3 tin trong 2 giây), bot sẽ chờ hết thời gian này rồi gộp tất cả lại trả lời 1 lần, tránh phản hồi 3 lần riêng lẻ">Khách gửi nhiều tin liên tiếp — bot chờ gộp lại trả lời 1 lần. 0s = mỗi tin trả lời riêng. 3s = chờ khách gõ xong.</p>
-          </div>
         </div>
 
         <div class="zalo-layout">
@@ -2244,7 +2404,7 @@
               <div class="switch-row" style="padding:0;margin:0">
                 <div>
                   <div style="font-weight:600;font-size:13px">Bật Zalo</div>
-                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Bấm "Lưu cấu hình" để áp dụng — cần khởi động lại gateway</div>
+                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Thay đổi cần lưu và khởi động lại gateway</div>
                 </div>
                 <label class="toggle-switch"><input type="checkbox" id="zalo-mgr-enabled"><span class="toggle-slider"></span></label>
               </div>
@@ -2273,10 +2433,18 @@
                 <option value="off">Tắt</option>
               </select>
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
-              <button class="btn btn-secondary btn-small" onclick="refreshZaloCache()" style="display:inline-flex;align-items:center;gap:6px;justify-content:center;font-size:12px"><span data-icon="refresh-cw" data-icon-size="13"></span>Đồng bộ</button>
-              <button class="btn btn-small zalo-save-btn" onclick="saveZaloManager()" style="display:inline-flex;align-items:center;gap:6px;justify-content:center;background:#16a34a;color:#fff;font-size:12px"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
+            <div class="zs-section">
+              <label class="zs-label">Gộp tin khách <span class="tip" data-tooltip="Khách gửi nhiều tin liên tiếp, bot chờ gộp lại trả lời 1 lần thay vì reply từng tin">?</span></label>
+              <select id="zl-debounce-select" class="zs-select" onchange="onDebounceSelect('zalo', this.value)">
+                <option value="0">Tắt (trả lời ngay)</option>
+                <option value="1000">1 giây</option>
+                <option value="2000">2 giây</option>
+                <option value="3000" selected>3 giây</option>
+                <option value="4000">4 giây</option>
+                <option value="5000">5 giây</option>
+              </select>
             </div>
+            <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);text-align:center">Bấm "Refresh" ở trên để đồng bộ nhóm + bạn bè</div>
           </div>
 
           <!-- RIGHT: Groups/Friends tabs -->
@@ -2324,6 +2492,12 @@
         <div class="page-header">
           <span class="page-icon" data-icon="book-open" data-icon-size="26"></span>
           <div><h2>Tài liệu doanh nghiệp</h2><div class="page-sub">Thêm tài liệu để bot tự đọc và dùng khi khách hỏi</div></div>
+          <button class="page-help-btn" style="margin-left:auto" title="Upload file PDF, Word, text vào đây. Bot sẽ đọc và dùng khi khách hỏi.">?</button>
+        </div>
+        <div id="visibility-migration-banner" style="display:none; padding:12px 16px; background:#fff8e1; border-left:3px solid #ffa000; margin-bottom:12px; border-radius:4px; color:#333">
+          <strong>Mới v2.3.48</strong>: anh/chị đã có thể chọn file nào KHÁCH thấy, file nào CHỈ NHÂN VIÊN hoặc CHỈ CEO.
+          Mặc định mọi file hiện tại = Công khai. Vào xem và đánh dấu lại các file có nội dung nhạy cảm.
+          <button onclick="dismissVisibilityBanner()" style="margin-left:12px;padding:4px 10px;background:none;border:1px solid #ffa000;border-radius:4px;cursor:pointer;color:#333">Đã hiểu</button>
         </div>
 
         <div class="know-columns">
@@ -2360,6 +2534,32 @@
 
           <div class="know-col">
             <h4>Thêm tài liệu</h4>
+            <div class="form-row" style="margin-bottom:12px">
+              <label class="form-label" style="font-size:12px;font-weight:600;color:var(--text)">Ai được thấy file này?</label>
+              <div class="visibility-radio-group" style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+                <label class="visibility-option">
+                  <input type="radio" name="visibility" value="public" checked>
+                  <span class="radio-label">
+                    <strong>Công khai</strong> — mọi khách hàng thấy
+                    <small>Bảng giá, catalog, chính sách (mặc định)</small>
+                  </span>
+                </label>
+                <label class="visibility-option">
+                  <input type="radio" name="visibility" value="internal">
+                  <span class="radio-label">
+                    <strong>Nội bộ</strong> — CEO + nhân viên nội bộ
+                    <small>Sổ tay NV, SOP, quy định chỉ nhân viên cần biết</small>
+                  </span>
+                </label>
+                <label class="visibility-option">
+                  <input type="radio" name="visibility" value="private">
+                  <span class="radio-label">
+                    <strong>Chỉ mình tôi</strong> — chỉ CEO qua Telegram
+                    <small>Ghi chú cá nhân, tài chính, giá nhập</small>
+                  </span>
+                </label>
+              </div>
+            </div>
             <div class="know-drop-zone" id="know-drop-zone" data-max-mb="100" onclick="pickKnowledgeFiles()" data-tooltip="Kéo thả hoặc bấm để thêm file. PDF, Word, Excel, TXT. Tối đa 100MB/file.">
               <div class="upload-icon" data-icon="upload" data-icon-size="36"></div>
               <strong>Click để chọn file</strong>
@@ -2387,6 +2587,7 @@
             <h2>Tính cách bot</h2>
             <div class="page-sub">Kết hợp giọng và tính cách để tạo phong cách giao tiếp riêng cho bot. Thay đổi có hiệu lực ngay sau khi lưu.</div>
           </div>
+          <button class="page-help-btn" style="margin-left:auto" title="Chọn giọng nói, cách xưng hô và tính cách cho bot">?</button>
         </div>
 
         <div class="persona-section">
@@ -2470,6 +2671,7 @@
             <h2>Tình trạng hôm nay</h2>
             <div class="page-sub">Cập nhật tình hình hôm nay để bot trả lời khách chính xác hơn. Thông tin sẽ tự reset lúc 00:00.</div>
           </div>
+          <button class="page-help-btn" style="margin-left:auto" title="Ghi thông tin tạm thời hôm nay (hết hàng, nghỉ phép...) để bot biết và trả lời khách đúng">?</button>
         </div>
 
         <div class="state-section">
@@ -2538,7 +2740,8 @@
             <h2>Lịch hẹn</h2>
             <div class="page-sub">Quản lý lịch hẹn với khách — bot tự động nhắc và gửi link meeting</div>
           </div>
-          <div style="margin-left:auto;display:flex;gap:8px">
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="page-help-btn" title="Tạo lịch hẹn ở đây hoặc nhắn Telegram cho bot">?</button>
             <button class="btn btn-secondary btn-small" onclick="loadAppointments()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="12"></span>Làm mới</button>
             <button class="btn btn-primary btn-small" onclick="openApptForm()"><span data-icon="plus" data-icon-size="12" style="margin-right:4px"></span>Tạo lịch hẹn</button>
           </div>
@@ -2688,7 +2891,8 @@
         <div class="page-header">
           <span class="page-icon" data-icon="cpu" data-icon-size="26"></span>
           <div><h2>9Router</h2><div class="page-sub">Quản lý AI provider, model, API key — Mật khẩu mặc định: <code style="background:rgba(78,161,255,0.15);padding:1px 6px;border-radius:4px">123456</code></div></div>
-          <div style="margin-left:auto;display:flex;gap:8px">
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="page-help-btn" title="Cấu hình AI provider (ChatGPT Plus, API key, model)">?</button>
             <button class="btn btn-secondary btn-small" onclick="reloadEmbed('9router')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Reload</button>
             <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:20128/')">Mở trong browser ↗</button>
           </div>
@@ -2698,12 +2902,41 @@
         </div>
       </div>
 
+      <!-- PAGE: Facebook (coming soon) -->
+      <div class="page" id="page-facebook">
+        <div class="page-header">
+          <span class="page-icon" data-icon="globe" data-icon-size="26"></span>
+          <div><h2>Facebook</h2><div class="page-sub">Kết nối Fanpage Facebook để bot tự động trả lời comment và inbox</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;text-align:center">
+          <div style="width:80px;height:80px;border-radius:20px;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:24px"><span data-icon="globe" data-icon-size="36" style="color:var(--text-muted)"></span></div>
+          <h3 style="margin:0 0 8px;font-size:20px;color:var(--text)">Coming soon</h3>
+          <p style="margin:0 0 24px;font-size:14px;color:var(--text-muted);max-width:400px;line-height:1.6">Tính năng kết nối Facebook Fanpage đang được phát triển. Bot sẽ tự động trả lời comment, inbox và quản lý khách hàng từ Facebook.</p>
+          <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="message-circle" data-icon-size="14"></span>Theo dõi cập nhật</button>
+        </div>
+      </div>
+
+      <!-- PAGE: Google Calendar (coming soon) -->
+      <div class="page" id="page-gcal">
+        <div class="page-header">
+          <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
+          <div><h2>Google Calendar</h2><div class="page-sub">Đồng bộ lịch Google để bot tự động nhắc và quản lý lịch hẹn</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;text-align:center">
+          <div style="width:80px;height:80px;border-radius:20px;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:24px"><span data-icon="calendar" data-icon-size="36" style="color:var(--text-muted)"></span></div>
+          <h3 style="margin:0 0 8px;font-size:20px;color:var(--text)">Coming soon</h3>
+          <p style="margin:0 0 24px;font-size:14px;color:var(--text-muted);max-width:400px;line-height:1.6">Tính năng kết nối Google Calendar đang được phát triển. Bot sẽ tự động đồng bộ lịch, nhắc hẹn và kiểm tra lịch trống khi khách đặt lịch.</p>
+          <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="message-circle" data-icon-size="14"></span>Theo dõi cập nhật</button>
+        </div>
+      </div>
+
       <!-- PAGE: OpenClaw Gateway (embedded web UI) -->
       <div class="page" id="page-openclaw">
         <div class="page-header">
           <span class="page-icon" data-icon="zap" data-icon-size="26"></span>
           <div><h2>OpenClaw Gateway</h2><div class="page-sub">Web UI gateway — phiên, log, agent</div></div>
-          <div style="margin-left:auto;display:flex;gap:8px">
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="page-help-btn" title="Giao diện quản lý gateway — xem log, phiên, trạng thái agent">?</button>
             <button class="btn btn-secondary btn-small" onclick="copyAndShowGatewayToken()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="check" data-icon-size="14"></span>Copy token</button>
             <button class="btn btn-secondary btn-small" onclick="reloadEmbed('openclaw')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Reload</button>
             <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:18789/')">Mở trong browser ↗</button>
@@ -2728,24 +2961,15 @@
 
   </div>
 
-  <!-- Activity FAB (shown on non-Overview pages) -->
-  <button class="activity-fab" id="activity-fab" onclick="toggleActivityDrawer()" title="Hoạt động gần đây">
-    <span data-icon="activity" data-icon-size="22"></span>
-    <span class="fab-badge" id="activity-fab-badge" style="display:none">0</span>
-  </button>
 
   <!-- Support FAB + menu -->
   <button class="support-fab" id="support-fab" onclick="toggleSupportMenu()">
     <span data-icon="help-circle" data-icon-size="20"></span>
   </button>
   <div class="support-menu" id="support-menu" style="display:none">
-    <div class="support-menu-item" onclick="window.claw.openExternal('https://youtube.com/@modoro')">
-      <span data-icon="eye" data-icon-size="16"></span>
-      Xem video hướng dẫn
-    </div>
-    <div class="support-menu-item" onclick="window.claw.openExternal('https://t.me/+qg8RQm1sq4AwODI1')">
+    <div class="support-menu-item" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')">
       <span data-icon="message-circle" data-icon-size="16"></span>
-      Liên hệ MODORO
+      Liên hệ MODORO / Mua membership
     </div>
     <div class="support-menu-item" onclick="replayWalkthrough()">
       <span data-icon="play-circle" data-icon-size="16"></span>
@@ -2925,7 +3149,7 @@
       </div>
       <div id="zum-body" class="zum-body"></div>
       <div class="zum-footer">
-        <textarea id="zum-note-input" placeholder="Ghi chú riêng của anh về khách này (không gửi cho khách)..." rows="2"></textarea>
+        <textarea id="zum-note-input" placeholder="Ghi chú riêng của anh/chị về khách này (không gửi cho khách)..." rows="2"></textarea>
         <button id="zum-save-btn" class="btn btn-primary btn-small" onclick="saveZumNote()" style="margin-top:8px">Lưu ghi chú</button>
       </div>
     </div>
@@ -3011,16 +3235,6 @@
         while (list.children.length > 50) list.lastChild.remove();
       });
       _activityCount++;
-      // Show unread badge on FAB when drawer closed
-      const drawerOpen = document.getElementById('activity-drawer')?.classList.contains('show');
-      if (!drawerOpen && document.body.classList.contains('compact-layout')) {
-        const unread = _activityCount - _activitySeen;
-        const badge = document.getElementById('activity-fab-badge');
-        if (badge && unread > 0) {
-          badge.textContent = unread > 9 ? '9+' : unread;
-          badge.style.display = 'flex';
-        }
-      }
     }
 
     // Theme toggle
@@ -3066,8 +3280,6 @@
       backdrop.classList.toggle('show', willShow);
       if (willShow) {
         _activitySeen = _activityCount;
-        const badge = document.getElementById('activity-fab-badge');
-        if (badge) badge.style.display = 'none';
       }
     }
 
@@ -3099,6 +3311,19 @@
 
       try {
         const result = await window.claw.toggleBot();
+        if (result.pending) {
+          addActivity('Gateway đang khởi động lại... vui lòng đợi');
+          document.getElementById('status-text').textContent = 'Đang khởi động lại...';
+          btn.textContent = 'Đang khởi động...';
+          for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+              const s = await window.claw.getBotStatus();
+              if (s && s.running) { updateBotStatus(true); addActivity('Trợ lý đã khởi động'); break; }
+            } catch {}
+          }
+          return;
+        }
         updateBotStatus(result.running);
         if (result.running) {
           addActivity('Trợ lý đã khởi động, đang kết nối kênh...');
@@ -3266,7 +3491,6 @@
         currentSchedules = [
           { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: true, description: 'Doanh thu, lịch họp, việc cần xử lý' },
           { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true, description: 'Kết quả ngày, vấn đề tồn đọng' },
-          { id: 'heartbeat', label: 'Kiểm tra tự động', time: 'Mỗi 30 phút', enabled: true, description: 'Email, lịch, tin nhắn khẩn' },
         ];
       }
       try {
@@ -3309,7 +3533,6 @@
     const SCHEDULE_ICON_MAP = {
       morning: 'sun',
       evening: 'moon',
-      heartbeat: 'activity',
       meditation: 'sparkles',
       weekly: 'calendar',
       monthly: 'calendar',
@@ -3401,6 +3624,26 @@
       const backdrop = document.getElementById('activity-drawer-backdrop');
       if (drawer) drawer.classList.remove('show');
       if (backdrop) backdrop.classList.remove('show');
+      // Dismiss active guide when switching pages
+      const _goEl = document.getElementById('guide-overlay');
+      if (_goEl && _goEl.classList.contains('show')) _guideDismiss();
+      // First-time guide check on tab entry
+      if (page === 'zalo' && !localStorage.getItem('zalo-guide-complete') && !_guideCheckInFlight.zalo) {
+        _guideCheckInFlight.zalo = true;
+        window.claw.checkGuideNeeded('zalo').then(r => {
+          _guideCheckInFlight.zalo = false;
+          if (r.needed) guideInit('zalo');
+          else localStorage.setItem('zalo-guide-complete', '1');
+        }).catch(() => { _guideCheckInFlight.zalo = false; });
+      }
+      if (page === 'telegram' && !localStorage.getItem('telegram-guide-complete') && !_guideCheckInFlight.telegram) {
+        _guideCheckInFlight.telegram = true;
+        window.claw.checkGuideNeeded('telegram').then(r => {
+          _guideCheckInFlight.telegram = false;
+          if (r.needed) guideInit('telegram');
+          else localStorage.setItem('telegram-guide-complete', '1');
+        }).catch(() => { _guideCheckInFlight.telegram = false; });
+      }
       // Lazy load heavy data when entering Zalo page, refresh if already loaded
       if (page === 'zalo') {
         if (!zaloDataLoaded) loadZaloManagerData();
@@ -3413,11 +3656,13 @@
       if (page === 'telegram') {
         loadInboundDebounce();
         loadTgConfigSummary();
+        loadTgBehavior();
       }
       if (page === 'schedules') {
         loadSchedules();
       }
       if (page === 'knowledge') {
+        window._visibilityUserTouched = false;
         if (!knowledgeInitialized) initKnowledge();
         else refreshKnowledgeFiles();
       }
@@ -3957,14 +4202,37 @@
     // ============================================
     let knowledgeInitialized = false;
     let currentKnowledgeCategory = 'cong-ty';
+    let currentUploadVisibility = 'public';
     let _knowFolders = [];
     const KNOW_ICONS = { 'cong-ty': 'building', 'san-pham': 'shopping-bag', 'nhan-vien': 'users' };
 
     async function initKnowledge() {
       knowledgeInitialized = true;
       setupKnowledgeDragDrop();
+      setupVisibilityRadios();
+      try {
+        if (!localStorage.getItem('v2.3.48-knowledge-visibility-seen')) {
+          const el = document.getElementById('visibility-migration-banner');
+          if (el) el.style.display = 'block';
+        }
+      } catch {}
       await renderKnowledgeFolders();
       await refreshKnowledgeFiles();
+    }
+
+    function setupVisibilityRadios() {
+      document.querySelectorAll('input[name="visibility"]').forEach(r => {
+        r.addEventListener('change', (e) => {
+          currentUploadVisibility = e.target.value;
+          window._visibilityUserTouched = true;
+        });
+      });
+    }
+
+    function dismissVisibilityBanner() {
+      try { localStorage.setItem('v2.3.48-knowledge-visibility-seen', String(Date.now())); } catch {}
+      const el = document.getElementById('visibility-migration-banner');
+      if (el) el.style.display = 'none';
     }
 
     async function renderKnowledgeFolders() {
@@ -3996,6 +4264,13 @@
 
     function selectKnowledgeFolder(cat) {
       currentKnowledgeCategory = cat;
+      if (!window._visibilityUserTouched && cat === 'nhan-vien') {
+        const r = document.querySelector('input[name="visibility"][value="internal"]');
+        if (r) {
+          r.checked = true;
+          currentUploadVisibility = 'internal';
+        }
+      }
       document.querySelectorAll('.know-folder').forEach(f => {
         f.classList.toggle('active', f.dataset.cat === cat);
       });
@@ -4108,11 +4383,16 @@
         list.innerHTML = files.map(f => {
           const sizeKB = (f.filesize / 1024).toFixed(1);
           const date = new Date(f.created_at + 'Z').toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          const vis = f.visibility || 'public';
+          const visLabel = vis === 'private' ? 'Chỉ CEO' : vis === 'internal' ? 'Nội bộ' : 'Công khai';
+          const visBadge = (f.id != null)
+            ? `<span class="vis-badge vis-${vis}" data-doc-id="${f.id}" onclick="editVisibility(${f.id}, this)" title="Đổi tầng hiển thị">${visLabel}</span>`
+            : `<span class="vis-badge vis-${vis}" title="Tầng hiển thị (cần DB để chỉnh)">${visLabel}</span>`;
           return `
             <div class="know-file">
               <div class="file-icon" data-icon="file-text" data-icon-size="20"></div>
               <div class="file-info">
-                <div class="file-name">${esc(f.filename)}</div>
+                <div class="file-name">${esc(f.filename)}${visBadge}</div>
                 <div class="file-meta">${sizeKB} KB · ${esc(f.filetype || 'unknown')} · ${date} · ${f.word_count || 0} từ</div>
                 ${f.summary ? `<div class="file-summary">${esc(f.summary)}</div>` : ''}
               </div>
@@ -4128,6 +4408,24 @@
       } catch (e) {
         list.innerHTML = '<div class="know-empty">Lỗi load: ' + esc(e.message) + '</div>';
       }
+    }
+
+    async function editVisibility(docId, el) {
+      const current = el.classList.contains('vis-private') ? 'private'
+                    : el.classList.contains('vis-internal') ? 'internal' : 'public';
+      const next = prompt(
+        `Đổi tầng hiển thị cho file (hiện tại: ${current}):\n\n` +
+        `1 = Công khai (khách thấy)\n` +
+        `2 = Nội bộ (nhân viên)\n` +
+        `3 = Chỉ mình tôi`,
+        current === 'public' ? '1' : current === 'internal' ? '2' : '3'
+      );
+      if (!next) return;
+      const vis = next === '1' ? 'public' : next === '2' ? 'internal' : next === '3' ? 'private' : null;
+      if (!vis) return alert('Giá trị không hợp lệ');
+      const r = await window.claw.setKnowledgeVisibility(docId, vis);
+      if (!r || !r.success) return alert('Lỗi: ' + (r && r.error ? r.error : 'unknown'));
+      refreshKnowledgeFiles();
     }
 
     async function pickKnowledgeFiles() {
@@ -4151,7 +4449,7 @@
         const filename = fp.split(/[\\/]/).pop();
         progressEl.textContent = `Đang xử lý ${i + 1}/${paths.length}: ${filename}...`;
         try {
-          const r = await window.claw.uploadKnowledgeFile(currentKnowledgeCategory, fp, filename);
+          const r = await window.claw.uploadKnowledgeFile(currentKnowledgeCategory, fp, filename, currentUploadVisibility);
           if (r?.success) {
             success++;
             addActivity(`Đã thêm: ${r.filename}`);
@@ -4365,6 +4663,10 @@
               <option value="all" ${mode === 'all' ? 'selected' : ''}>Mọi tin</option>
               <option value="off" ${mode === 'off' ? 'selected' : ''}>Tắt</option>
             </select>
+            <label class="internal-flag" title="Nếu tick, nhân viên trong group này truy cập được file Nội bộ">
+              <input type="checkbox" data-group-id="${escAttr(g.groupId)}" ${gSettings.internal ? 'checked' : ''} onchange="updateGroupInternal('${escAttr(g.groupId)}', this.checked)">
+              Nội bộ
+            </label>
           </div>
         </div>`;
     }
@@ -4431,6 +4733,20 @@
         const i = arr.indexOf(groupId);
         if (i !== -1) arr.splice(i, 1);
       }
+    }
+
+    function updateGroupInternal(groupId, isInternal) {
+      if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
+      const prev = zaloMgrConfig.groupSettings[groupId] || {};
+      zaloMgrConfig.groupSettings[groupId] = { ...prev, internal: !!isInternal };
+      const internalCount = Object.values(zaloMgrConfig.groupSettings)
+        .filter(g => g && g.internal).length;
+      try {
+        if (typeof showToast === 'function') {
+          showToast(`Đã lưu. ${internalCount} group nội bộ.`, 'success');
+        }
+      } catch {}
+      autoSaveZaloManager();
     }
 
     // Debounced auto-save for workspace-file changes (blocklist, groupSettings,
@@ -4525,7 +4841,8 @@
 
     function setGroupMode(groupId, mode) {
       if (!zaloMgrConfig.groupSettings) zaloMgrConfig.groupSettings = {};
-      zaloMgrConfig.groupSettings[groupId] = { mode };
+      const prev = zaloMgrConfig.groupSettings[groupId] || {};
+      zaloMgrConfig.groupSettings[groupId] = { ...prev, mode };
       // Sync allowFrom: "off" = remove from allowlist, "mention"/"all" = add
       if (!zaloMgrConfig.groupAllowFrom) zaloMgrConfig.groupAllowFrom = [];
       if (isOpenGroupMode()) {
@@ -4726,8 +5043,8 @@
     function renderSchedules() {
       const list = document.getElementById('schedule-list');
       list.innerHTML = '';
-      // Fixed schedules
-      currentSchedules.forEach((s, i) => {
+      // Fixed schedules (heartbeat hidden — watchdog runs silently, status shown via sidebar dots)
+      currentSchedules.filter(s => s.id !== 'heartbeat').forEach((s, i) => {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;' + (i > 0 ? 'border-top:1px solid var(--border);' : '');
         row.innerHTML = `
@@ -4786,7 +5103,7 @@
         const hint = document.createElement('div');
         hint.id = 'schedule-custom-hint';
         hint.className = 'schedule-hint';
-        hint.innerHTML = 'Muốn thêm lịch mới? Nhắn bot trên Telegram: <strong>"Nhắc anh uống nước mỗi 2 tiếng"</strong>';
+        hint.innerHTML = 'Muốn thêm lịch mới? Nhắn bot trên Telegram: <strong>"Nhắc uống nước mỗi 2 tiếng"</strong>';
         list.parentNode.appendChild(hint);
       }
     }
@@ -4847,10 +5164,10 @@
       if (info.ready) {
         state = 'ready';
         if (channel === 'telegram') {
-          summary = 'Sẵn sàng — anh nhắn Telegram cho bot ngay'
+          summary = 'Sẵn sàng — nhắn Telegram cho bot ngay'
             + (info.username ? ' (@' + info.username + ')' : '');
         } else {
-          summary = 'Sẵn sàng — anh nhắn Zalo cho bot ngay';
+          summary = 'Sẵn sàng — nhắn Zalo cho bot ngay';
         }
       } else if (isAwaitingConfirmation) {
         state = 'checking';
@@ -4980,6 +5297,49 @@
       });
     }
 
+    // --- Telegram behavior sidebar ---
+    let tgBehaviorConfig = { strangerPolicy: 'ignore', defaultGroupMode: 'mention', historyLimit: 50 };
+
+    async function loadTgBehavior() {
+      try {
+        const cfg = await window.claw.getTelegramBehavior();
+        if (cfg) {
+          tgBehaviorConfig = { ...tgBehaviorConfig, ...cfg };
+          const sp = document.getElementById('tg-stranger-policy');
+          if (sp) sp.value = tgBehaviorConfig.strangerPolicy || 'ignore';
+          const gm = document.getElementById('tg-default-group-mode');
+          if (gm) gm.value = tgBehaviorConfig.defaultGroupMode || 'mention';
+          const hl = document.getElementById('tg-history-limit');
+          if (hl) hl.value = String(tgBehaviorConfig.historyLimit || 50);
+        }
+      } catch (e) { console.warn('[tg-behavior] load error:', e); }
+    }
+
+    function changeTgStrangerPolicy(value) {
+      tgBehaviorConfig.strangerPolicy = value;
+    }
+
+    function updateTgDefaultGroupMode(value) {
+      tgBehaviorConfig.defaultGroupMode = value;
+    }
+
+    function changeTgHistoryLimit(value) {
+      tgBehaviorConfig.historyLimit = parseInt(value, 10) || 50;
+    }
+
+    async function saveTgBehavior() {
+      try {
+        const r = await window.claw.saveTelegramBehavior(tgBehaviorConfig);
+        if (r && r.success) {
+          if (typeof showToast === 'function') showToast('Đã lưu cấu hình Telegram', 'success');
+        } else {
+          if (typeof showToast === 'function') showToast('Lỗi: ' + (r?.error || 'unknown'), 'error');
+        }
+      } catch (e) {
+        console.error('[tg-behavior] save error:', e);
+      }
+    }
+
     // --- Telegram config: "Đổi tài khoản" modal ---
     let _tgCfgCache = {};
 
@@ -5063,7 +5423,7 @@
         _lastChannelStatus.checkedAt = new Date().toISOString();
         applyChannelStatus('telegram', info, _lastChannelStatus.checkedAt);
         if (info.ready) {
-          showToast('Telegram sẵn sàng — anh nhắn được rồi', 'success');
+          showToast('Telegram sẵn sàng — nhắn được rồi', 'success');
         } else if (info.awaitingConfirmation) {
           showToast(info.error || 'Telegram đang chờ tin xác nhận sẵn sàng', 'info');
         } else {
@@ -5081,7 +5441,7 @@
         _lastChannelStatus.checkedAt = new Date().toISOString();
         applyChannelStatus('zalo', info, _lastChannelStatus.checkedAt);
         if (info.ready) {
-          showToast('Zalo sẵn sàng — anh nhắn được rồi', 'success');
+          showToast('Zalo sẵn sàng — nhắn được rồi', 'success');
         } else if (info.awaitingConfirmation) {
           showToast(info.error || 'Zalo đang chờ tin xác nhận sẵn sàng', 'info');
         } else {
@@ -5536,7 +5896,7 @@
             <div class="zum-empty">
               <div class="zum-empty-icon">${icon('user-x', 32)}</div>
               <div class="zum-empty-title">Chưa có hồ sơ</div>
-              <div class="zum-empty-desc">Bot sẽ tự ghi note về khách này sau lần trao đổi đầu tiên trên Zalo. Anh có thể thêm ghi chú riêng ở dưới.</div>
+              <div class="zum-empty-desc">Bot sẽ tự ghi note về khách này sau lần trao đổi đầu tiên trên Zalo. Anh/chị có thể thêm ghi chú riêng ở dưới.</div>
             </div>
           `;
           return;
@@ -6381,7 +6741,7 @@
       }
     }
     async function handleImportWorkspace(ev) {
-      if (!confirm('Khôi phục sẽ GHI ĐÈ dữ liệu hiện tại. Chỉ làm khi anh chắc chắn. Tiếp tục?')) return;
+      if (!confirm('Khôi phục sẽ GHI ĐÈ dữ liệu hiện tại. Chỉ làm khi anh/chị chắc chắn. Tiếp tục?')) return;
       try {
         const r = await window.claw.importWorkspace();
         if (!r || r.canceled) return;
@@ -6572,6 +6932,10 @@
       }
 
       document.addEventListener('keydown', (e) => {
+        if (document.querySelector('.guide-overlay.show')) {
+          if (e.key === 'Escape') _guideDismiss();
+          return;
+        }
         if (e.key === 'Escape') {
           if (anyModalOpen()) { e.preventDefault(); closeAllModals(); return; }
         }
@@ -6603,6 +6967,393 @@
 
       window.__kbdPalette = { open: openPalette, close: closePalette, openHelp, closeHelp };
     })();
+
+    // === FIRST-TIME CHANNEL GUIDE ===
+    function _guideEsc(s) {
+      const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+    }
+
+    const ZALO_GUIDE_STEPS = [
+      {
+        title: 'Chào mừng',
+        target: null,
+        render: () => `
+          <h2 class="guide-title">Chào mừng đến trang Zalo</h2>
+          <p class="guide-text">Bot sẽ tự động trả lời khách hàng qua Zalo thay anh/chị. Hướng dẫn nhanh các chức năng chính bên dưới.</p>`
+      },
+      {
+        title: 'Chế độ trả lời',
+        target: '#zalo-mode-select',
+        render: () => `
+          <h2 class="guide-title">Chế độ trả lời</h2>
+          <p class="guide-text">Chọn cách bot phản hồi khách:</p>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#22c55e"></div><span class="guide-card-title">Tự động trả lời</span></div>
+            <p class="guide-card-desc">Khách nhắn tin &rarr; bot trả lời ngay. Phù hợp khi đã có tài liệu Knowledge.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#eab308"></div><span class="guide-card-title">Chỉ đọc + tóm tắt cuối ngày</span></div>
+            <p class="guide-card-desc">Bot đọc, KHÔNG trả lời, gửi tóm tắt cuối ngày cho anh/chị.</p>
+          </div>
+          <div class="guide-note"><p>Mặc định: Tự động trả lời. Anh/chị có thể đổi bất kỳ lúc nào ở tab Zalo.</p></div>`
+      },
+      {
+        title: 'Chính sách người lạ',
+        target: '#zalo-stranger-policy',
+        render: () => `
+          <h2 class="guide-title">Chính sách người lạ</h2>
+          <p class="guide-text">Khi một người chưa có trong danh bạ Zalo nhắn tin, bot xử lý theo chính sách anh/chị chọn:</p>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#22c55e"></div><span class="guide-card-title">Trả lời bình thường</span></div>
+            <p class="guide-card-desc">Bot trả lời tất cả mọi người, kể cả người lạ. Phù hợp khi muốn tiếp khách mới qua Zalo.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#eab308"></div><span class="guide-card-title">Chào 1 lần</span></div>
+            <p class="guide-card-desc">Bot gửi 1 câu chào duy nhất, sau đó im. Anh/chị tự quyết định có muốn tiếp tục không.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#ef4444"></div><span class="guide-card-title">Bỏ qua</span></div>
+            <p class="guide-card-desc">Bot hoàn toàn không trả lời người lạ. Chỉ phục vụ người đã có trong danh bạ.</p>
+          </div>
+          <div class="guide-note"><p>Anh/chị có thể đổi bất kỳ lúc nào ở dropdown này.</p></div>`
+      },
+      {
+        title: 'Nhóm Zalo',
+        target: '#zalo-default-group-mode',
+        render: () => `
+          <h2 class="guide-title">Nhóm Zalo</h2>
+          <p class="guide-text">Bot có thể tham gia trả lời trong các nhóm Zalo. Mỗi nhóm có 3 chế độ:</p>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#eab308"></div><span class="guide-card-title">Chỉ khi @mention</span></div>
+            <p class="guide-card-desc">Bot chỉ trả lời khi được @ tên trong nhóm. An toàn nhất cho nhóm khách hàng.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#22c55e"></div><span class="guide-card-title">Tất cả tin nhắn</span></div>
+            <p class="guide-card-desc">Bot trả lời mọi tin nhắn trong nhóm. Phù hợp cho nhóm hỗ trợ nội bộ.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#ef4444"></div><span class="guide-card-title">Tắt</span></div>
+            <p class="guide-card-desc">Bot không trả lời trong nhóm này.</p>
+          </div>
+          <div class="guide-note"><p>Quản lý từng nhóm riêng ở tab "Nhóm" trong trang Zalo.</p></div>`
+      },
+      {
+        title: 'Tạm dừng & Tiếp quản',
+        target: '#zalo-pause-btn',
+        render: () => `
+          <h2 class="guide-title">Tạm dừng & Tiếp quản</h2>
+          <p class="guide-text">Khi anh/chị muốn tự tay trả lời khách, có 2 cách dừng bot:</p>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#3b82f6"></div><span class="guide-card-title">Nút "Tạm dừng" trên Dashboard</span></div>
+            <p class="guide-card-desc">Tạm dừng toàn bộ kênh Zalo. Bot im hoàn toàn cho đến khi anh/chị bấm "Tiếp tục".</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#22c55e"></div><span class="guide-card-title">Gõ /tamdung trong Zalo</span></div>
+            <p class="guide-card-desc">Anh/chị đang chat với khách trên Zalo, gõ <strong>/tamdung</strong> ngay trong cuộc chat &rarr; bot im cho cuộc chat đó. Gõ <strong>/tieptuc</strong> để bot hoạt động lại. Tự động hết hiệu lực sau 1 tiếng.</p>
+          </div>
+          <div class="guide-note"><p>Đây là cách anh/chị tiếp quản bất kỳ cuộc chat nào mà không cần mở Dashboard.</p></div>`
+      },
+      {
+        title: 'Danh sách nhóm',
+        target: '.zalo-tab-bar',
+        onEnter: () => switchZaloTab('groups'),
+        render: () => `
+          <h2 class="guide-title">Quản lý từng nhóm</h2>
+          <p class="guide-text">Danh sách tất cả nhóm Zalo mà bot tham gia. Mỗi nhóm có:</p>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#22c55e"></div><span class="guide-card-title">Chế độ trả lời</span></div>
+            <p class="guide-card-desc">Dropdown chọn: <strong>Mọi tin</strong> (xanh), <strong>@mention</strong> (vàng), hoặc <strong>Tắt</strong> (đỏ) cho từng nhóm riêng.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#3b82f6"></div><span class="guide-card-title">Nút tóm tắt</span></div>
+            <p class="guide-card-desc">Nút giấy bên cạnh hiện khi bot đã ghi nhận lịch sử nhóm. Bấm vào để xem tóm tắt: chủ đề nhóm hay nói gì, ai hoạt động, nội dung nổi bật.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#eab308"></div><span class="guide-card-title">Nội bộ</span></div>
+            <p class="guide-card-desc">Tick "Nội bộ" nếu nhóm này là nhóm nhân viên. Bot sẽ cho phép thành viên nhóm truy cập tài liệu Nội bộ (không phải chỉ tài liệu Công khai).</p>
+          </div>`
+      },
+      {
+        title: 'Danh sách bạn bè',
+        target: '.zalo-tab-bar',
+        onEnter: () => switchZaloTab('friends'),
+        render: () => `
+          <h2 class="guide-title">Quản lý bạn bè</h2>
+          <p class="guide-text">Danh sách bạn bè Zalo (khách nhắn tin trực tiếp). Mỗi người có:</p>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#22c55e"></div><span class="guide-card-title">Bật / Tắt</span></div>
+            <p class="guide-card-desc">Toggle bật/tắt bot cho từng người. Tắt = bot không trả lời người này (blocklist). Dùng khi spam hoặc không muốn bot phản hồi.</p>
+          </div>
+          <div class="guide-card">
+            <div class="guide-card-header"><div class="guide-card-dot" style="background:#3b82f6"></div><span class="guide-card-title">Hồ sơ khách</span></div>
+            <p class="guide-card-desc">Nút giấy bên cạnh mở hồ sơ khách hàng: bot tự động ghi lại lịch sử hội thoại, sở thích, sản phẩm quan tâm sau mỗi cuộc chat.</p>
+          </div>
+          <div class="guide-note"><p>Bot tự học và nhớ từng khách. Lần sau khách quay lại, bot biết họ là ai và đã hỏi gì.</p></div>`
+      },
+      {
+        title: 'Hoàn tất',
+        target: null,
+        render: () => `
+          <h2 class="guide-title">Hoàn tất</h2>
+          <p class="guide-text">Anh/chị đã nắm rõ các chức năng chính của kênh Zalo. Bot sẽ bắt đầu hoạt động.</p>
+          <div class="guide-note"><p>Bộ lọc bảo vệ hoạt động tự động -- đường dẫn file, API key, dữ liệu cấu hình nội bộ sẽ không bao giờ lọt ra ngoài cho khách.</p></div>`
+      }
+    ];
+
+    const TELEGRAM_GUIDE_STEPS = [
+      {
+        title: 'Chào mừng',
+        target: null,
+        render: () => `
+          <h2 class="guide-title">Chào mừng đến trang Telegram</h2>
+          <p class="guide-text">Đây là kênh riêng của anh/chị — chỉ anh/chị sử dụng. Mọi thứ anh/chị gửi ở đây bot đều đọc và trả lời.</p>
+          <div class="guide-note"><p>Khách hàng không thấy kênh Telegram. Anh/chị có thể thoải mái ra lệnh, hỏi báo cáo, quản lý bot từ đây.</p></div>`
+      },
+      {
+        title: 'Lệnh cơ bản',
+        target: '.tg-cmds',
+        render: () => `
+          <h2 class="guide-title">Lệnh cơ bản</h2>
+          <p class="guide-text">Anh/chị có thể ra lệnh cho bot bằng tiếng Việt tự nhiên. Một số ví dụ:</p>
+          <div class="guide-card"><p class="guide-card-desc"><strong>Hỏi báo cáo:</strong> "Hôm nay có bao nhiêu khách nhắn Zalo?"</p></div>
+          <div class="guide-card"><p class="guide-card-desc"><strong>Quản lý bot:</strong> "Tạm dừng Zalo 30 phút" hoặc "Bật lại Zalo"</p></div>
+          <div class="guide-card"><p class="guide-card-desc"><strong>Gửi tin nhóm:</strong> "Gửi nhóm BĐS: Chào mọi người, tuần này có dự án mới"</p></div>
+          <div class="guide-note"><p>Click vào lệnh bất kỳ bên dưới để copy. Dán vào Telegram và gửi cho bot.</p></div>`
+      },
+      {
+        title: 'Cron & Báo cáo',
+        target: '#telegram-pause-btn',
+        render: () => `
+          <h2 class="guide-title">Lịch tự động (Cron)</h2>
+          <p class="guide-text">Anh/chị có thể đặt lịch để bot tự động thực hiện công việc:</p>
+          <div class="guide-card"><p class="guide-card-desc"><strong>Báo cáo sáng:</strong> "Mỗi sáng 7:30, gửi cho anh/chị tóm tắt tin nhắn Zalo hôm qua"</p></div>
+          <div class="guide-card"><p class="guide-card-desc"><strong>Nhắc nhóm:</strong> "Mỗi thứ 2, gửi nhóm Sale: Nhớ cập nhật báo cáo tuần"</p></div>
+          <div class="guide-card"><p class="guide-card-desc"><strong>Báo cáo tối:</strong> "Mỗi tối 18:00, tổng kết hoạt động hôm nay"</p></div>
+          <div class="guide-note"><p>Tạo cron bằng cách nhắn Telegram cho bot. Bot sẽ xác nhận lịch và bắt đầu chạy tự động.</p></div>`
+      },
+      {
+        title: 'Hoàn tất',
+        target: null,
+        render: () => `
+          <h2 class="guide-title">Hoàn tất</h2>
+          <p class="guide-text">Anh/chị đã hiểu cách sử dụng kênh Telegram. Bấm "Đã hiểu" để bắt đầu sử dụng.</p>
+          <div class="guide-note"><p>Anh/chị có thể xem lại hướng dẫn này bất kỳ lúc nào ở phần cài đặt trang Telegram.</p></div>`
+      }
+    ];
+
+    let _guideCurrentStep = {};
+    let _guideTimers = {};
+    const _guideCheckInFlight = {};
+
+    function _guidePositionTooltip(channel) {
+      const steps = channel === 'zalo' ? ZALO_GUIDE_STEPS : TELEGRAM_GUIDE_STEPS;
+      const step = _guideCurrentStep[channel];
+      const def = steps[step];
+      const spotlight = document.getElementById('guide-spotlight');
+      const tooltip = document.getElementById('guide-tooltip');
+      if (!spotlight || !tooltip) return;
+
+      const targetEl = def.target ? document.querySelector(def.target) : null;
+      if (targetEl) {
+        const rect = targetEl.getBoundingClientRect();
+        const pad = 8;
+        spotlight.style.display = 'block';
+        spotlight.style.left = (rect.left - pad) + 'px';
+        spotlight.style.top = (rect.top - pad) + 'px';
+        spotlight.style.width = (rect.width + pad * 2) + 'px';
+        spotlight.style.height = (rect.height + pad * 2) + 'px';
+
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        let tLeft, tTop, arrowClass = '';
+
+        const spaceRight = vw - rect.right;
+        const useRightPlacement = rect.right < vw * 0.45 && spaceRight > tooltipRect.width + 32;
+
+        if (useRightPlacement) {
+          tLeft = rect.right + pad + 16;
+          tTop = Math.max(16, Math.min(vh - tooltipRect.height - 16, rect.top));
+          arrowClass = 'side-left';
+        } else {
+          const spaceBelow = vh - rect.bottom;
+          const spaceAbove = rect.top;
+          let arrowPos = 'top', arrowSide = 'arr-left';
+          if (spaceBelow > tooltipRect.height + 24) {
+            tTop = rect.bottom + 16;
+            arrowPos = 'top';
+          } else if (spaceAbove > tooltipRect.height + 24) {
+            tTop = rect.top - tooltipRect.height - 16;
+            arrowPos = 'bottom';
+          } else {
+            tTop = Math.max(16, Math.min(vh - tooltipRect.height - 16, rect.top));
+            arrowPos = '';
+          }
+          tLeft = Math.max(16, Math.min(vw - tooltipRect.width - 16, rect.left));
+          if (tLeft + tooltipRect.width / 2 < rect.left + rect.width / 2) arrowSide = 'arr-left';
+          else arrowSide = 'arr-right';
+          arrowClass = arrowPos ? (arrowPos + ' ' + arrowSide) : '';
+        }
+
+        tooltip.style.left = tLeft + 'px';
+        tooltip.style.top = tTop + 'px';
+
+        const arrow = tooltip.querySelector('.guide-tooltip-arrow');
+        if (arrow) {
+          arrow.className = 'guide-tooltip-arrow ' + arrowClass;
+          arrow.style.display = arrowClass ? 'block' : 'none';
+        }
+      } else {
+        spotlight.style.display = 'none';
+        const tooltipW = Math.min(420, window.innerWidth - 80);
+        tooltip.style.left = Math.max(16, (window.innerWidth - tooltipW) / 2) + 'px';
+        tooltip.style.top = Math.max(80, (window.innerHeight - 400) / 2) + 'px';
+        const arrow = tooltip.querySelector('.guide-tooltip-arrow');
+        if (arrow) arrow.style.display = 'none';
+      }
+    }
+
+    function _guideOnResize() {
+      const overlay = document.getElementById('guide-overlay');
+      if (!overlay || !overlay.classList.contains('show')) return;
+      const ch = overlay.dataset.channel;
+      if (ch) _guidePositionTooltip(ch);
+    }
+    window.addEventListener('resize', _guideOnResize);
+    document.querySelector('.main-content')?.addEventListener('scroll', _guideOnResize, { passive: true });
+
+    function guideInit(channel) {
+      const steps = channel === 'zalo' ? ZALO_GUIDE_STEPS : TELEGRAM_GUIDE_STEPS;
+      const raw = parseInt(localStorage.getItem(channel + '-guide-step'), 10);
+      const savedStep = Number.isNaN(raw) ? 0 : raw;
+      _guideCurrentStep[channel] = Math.min(savedStep, steps.length - 1);
+      const overlay = document.getElementById('guide-overlay');
+      if (!overlay) return;
+      const activeChannel = overlay.dataset.channel;
+      if (activeChannel && activeChannel !== channel && overlay.classList.contains('show')) {
+        if (_guideTimers[activeChannel]) { clearInterval(_guideTimers[activeChannel]); delete _guideTimers[activeChannel]; }
+      }
+      overlay.classList.add('show');
+      overlay.dataset.channel = channel;
+      _guideRender(channel);
+    }
+
+    function _guideRender(channel) {
+      const steps = channel === 'zalo' ? ZALO_GUIDE_STEPS : TELEGRAM_GUIDE_STEPS;
+      const step = _guideCurrentStep[channel];
+      const total = steps.length;
+      const def = steps[step];
+      const isLast = step === total - 1;
+      const isFirst = step === 0;
+
+      const progressEl = document.getElementById('guide-progress');
+      const labelEl = document.getElementById('guide-step-label');
+      const contentEl = document.getElementById('guide-content');
+      const footerEl = document.getElementById('guide-footer');
+      if (!progressEl || !contentEl || !footerEl) return;
+
+      if (def.onEnter) def.onEnter();
+      progressEl.innerHTML = Array.from({ length: total }, (_, i) =>
+        '<div class="guide-progress-seg ' + (i <= step ? 'done' : '') + '"></div>').join('');
+      if (labelEl) labelEl.textContent = 'Bước ' + (step + 1) + ' / ' + total;
+      contentEl.innerHTML = def.render();
+
+      const finishLabel = channel === 'zalo' ? 'Bắt đầu' : 'Đã hiểu';
+      if (isLast) {
+        footerEl.innerHTML = (isFirst ? '<div></div>' : '<button class="guide-btn guide-btn-back" onclick="guideBack(\'' + channel + '\')">Quay lại</button>') +
+          '<button class="guide-btn guide-btn-primary" id="guide-next-btn" disabled onclick="guideFinish(\'' + channel + '\')">' + finishLabel + ' (3s)</button>';
+        _guideStartTimer(channel);
+      } else {
+        footerEl.innerHTML = (isFirst ? '<div></div>' : '<button class="guide-btn guide-btn-back" onclick="guideBack(\'' + channel + '\')">Quay lại</button>') +
+          '<button class="guide-btn guide-btn-primary" id="guide-next-btn" disabled onclick="guideNext(\'' + channel + '\')">Tiếp tục (3s)</button>';
+        _guideStartTimer(channel);
+      }
+      localStorage.setItem(channel + '-guide-step', String(step));
+
+      if (def.target) {
+        const targetEl = document.querySelector(def.target);
+        if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      const tooltip = document.getElementById('guide-tooltip');
+      if (tooltip) {
+        tooltip.style.animation = 'none';
+        tooltip.offsetHeight;
+        tooltip.style.animation = '';
+      }
+      requestAnimationFrame(() => _guidePositionTooltip(channel));
+    }
+
+    function _guideStartTimer(channel) {
+      const btn = document.getElementById('guide-next-btn');
+      if (!btn) return;
+      let remaining = 3;
+      btn.disabled = true;
+      const label = btn.textContent.replace(/ \(\d+s\)/, '');
+      btn.textContent = label + ' (' + remaining + 's)';
+      if (_guideTimers[channel]) clearInterval(_guideTimers[channel]);
+      _guideTimers[channel] = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(_guideTimers[channel]);
+          btn.disabled = false;
+          btn.textContent = label;
+        } else {
+          btn.textContent = label + ' (' + remaining + 's)';
+        }
+      }, 1000);
+    }
+
+    function guideNext(channel) {
+      const steps = channel === 'zalo' ? ZALO_GUIDE_STEPS : TELEGRAM_GUIDE_STEPS;
+      if (_guideCurrentStep[channel] < steps.length - 1) {
+        _guideCurrentStep[channel]++;
+        _guideRender(channel);
+      }
+    }
+
+    function guideBack(channel) {
+      if (_guideCurrentStep[channel] > 0) {
+        _guideCurrentStep[channel]--;
+        _guideRender(channel);
+      }
+    }
+
+    function _guideDismiss() {
+      const overlay = document.getElementById('guide-overlay');
+      const spotlight = document.getElementById('guide-spotlight');
+      const channel = overlay ? overlay.dataset.channel : null;
+      if (channel) {
+        if (_guideTimers[channel]) { clearInterval(_guideTimers[channel]); delete _guideTimers[channel]; }
+        localStorage.setItem(channel + '-guide-complete', '1');
+        localStorage.removeItem(channel + '-guide-step');
+        try { window.claw.markGuideComplete(channel); } catch {}
+      }
+      if (overlay) overlay.classList.remove('show');
+      if (spotlight) spotlight.style.display = 'none';
+    }
+
+    function guideFinish(channel) {
+      _guideDismiss();
+    }
+
+    function guideReplay(channel) {
+      localStorage.removeItem(channel + '-guide-complete');
+      localStorage.removeItem(channel + '-guide-step');
+      _guideCurrentStep[channel] = 0;
+      guideInit(channel);
+    }
   </script>
+<!-- FIRST-TIME GUIDE (spotlight + tooltip) -->
+<div class="guide-overlay" id="guide-overlay">
+  <div class="guide-spotlight" id="guide-spotlight"></div>
+  <div class="guide-tooltip" id="guide-tooltip">
+    <div class="guide-tooltip-arrow top arr-left"></div>
+    <div class="guide-progress" id="guide-progress"></div>
+    <div class="guide-step-label" id="guide-step-label"></div>
+    <div id="guide-content"></div>
+    <div class="guide-footer" id="guide-footer"></div>
+    <button class="guide-skip" onclick="_guideDismiss()">Bỏ qua</button>
+  </div>
+</div>
 </body>
 </html>

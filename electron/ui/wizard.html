@@ -234,12 +234,13 @@
     .wz-input::placeholder, .wz-textarea::placeholder {
       color: var(--text-tertiary);
     }
-    .wz-field-secure { display:flex; align-items:center; gap:8px; }
+    .wz-field-secure { display:flex; align-items:stretch; gap:8px; }
     .wz-field-secure .wz-input { flex:1; }
     .wz-toggle-vis {
-      width:44px; height:44px; flex-shrink:0; border:1px solid var(--border); border-radius:10px;
+      width:44px; flex-shrink:0; border:1px solid var(--border); border-radius:10px;
       background:var(--surface); cursor:pointer; display:inline-flex; align-items:center;
       justify-content:center; color:var(--text-muted); transition:border-color 0.15s, color 0.15s;
+      box-sizing:border-box;
     }
     .wz-toggle-vis:hover { border-color:var(--border-strong); color:var(--text); }
     .wz-toggle-vis svg { width:18px; height:18px; }
@@ -1258,12 +1259,14 @@
                     Làm mới mã QR
                   </button>
                 </div>
-                <div id="zalo-login-success" class="wz-hidden" style="margin-top:18px;padding:18px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:10px">
-                  <div style="display:flex;align-items:center;gap:12px">
-                    <span data-icon="check" data-icon-size="22" style="color:var(--success)"></span>
-                    <div>
+                <div id="zalo-login-success" class="wz-hidden" style="margin-top:18px;padding:20px 24px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:12px">
+                  <div style="display:flex;align-items:center;justify-content:center;gap:14px">
+                    <div style="width:36px;height:36px;border-radius:50%;background:rgba(74,222,128,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                      <span data-icon="check" data-icon-size="20" style="color:var(--success)"></span>
+                    </div>
+                    <div style="text-align:left">
                       <div style="font-size:14px;font-weight:600;color:var(--success)">Zalo đã kết nối thành công</div>
-                      <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">Trợ lý sẽ nhận tin nhắn từ tài khoản Zalo này.</div>
+                      <div style="font-size:12px;color:var(--text-tertiary);margin-top:3px">Trợ lý sẽ nhận tin nhắn từ tài khoản Zalo này.</div>
                     </div>
                   </div>
                 </div>
@@ -1273,7 +1276,7 @@
 
             <div class="wz-field" style="margin-top:24px">
               <label class="wz-label">Chế độ Zalo</label>
-              <div class="wz-grid cols-3">
+              <div class="wz-grid cols-2">
                 <label class="wz-choice is-checked" data-radio="zalo-mode">
                   <input type="radio" name="zalo-mode" value="auto" checked>
                   <div class="wz-choice-body">
@@ -1286,16 +1289,8 @@
                   <input type="radio" name="zalo-mode" value="read">
                   <div class="wz-choice-body">
                     <div class="wz-choice-icon"><span data-icon="eye"></span></div>
-                    <div class="wz-choice-title">Chỉ đọc</div>
-                    <div class="wz-choice-desc">Đọc tin, báo Telegram, không tự trả lời</div>
-                  </div>
-                </label>
-                <label class="wz-choice" data-radio="zalo-mode">
-                  <input type="radio" name="zalo-mode" value="daily">
-                  <div class="wz-choice-body">
-                    <div class="wz-choice-icon"><span data-icon="clipboard-list"></span></div>
-                    <div class="wz-choice-title">Tóm tắt cuối ngày</div>
-                    <div class="wz-choice-desc">Tổng hợp 1 lần / ngày qua Telegram</div>
+                    <div class="wz-choice-title">Chỉ đọc + tóm tắt cuối ngày</div>
+                    <div class="wz-choice-desc">Đọc tin, tóm tắt cuối ngày qua Telegram, không tự trả lời</div>
                   </div>
                 </label>
               </div>
@@ -1317,6 +1312,10 @@
 
             <div class="wz-summary" id="summary"></div>
 
+            <button class="wz-btn wz-btn-primary" id="dashboard-btn" onclick="launchDashboard()" type="button" style="margin-bottom:24px">
+              Khởi động trợ lý
+            </button>
+
             <div class="wz-alert success">
               <span data-icon="lightbulb" data-icon-size="18" style="flex-shrink:0;margin-top:1px"></span>
               <div>
@@ -1324,47 +1323,6 @@
               </div>
             </div>
 
-            <!-- Roadmap — 4 items, concrete months, low hype -->
-            <div class="wz-coming-soon">
-              <div class="wz-cs-head">
-                <p class="wz-cs-title">Lộ trình phát triển</p>
-                <p class="wz-cs-sub">Tính năng đang được xây dựng cho các bản cập nhật tới</p>
-              </div>
-              <div class="wz-cs-grid">
-                <div class="wz-cs-item">
-                  <span class="wz-cs-icon"><span data-icon="message-circle" data-icon-size="16"></span></span>
-                  <div class="wz-cs-body">
-                    <div class="wz-cs-row"><strong>Facebook Messenger API</strong><span class="wz-cs-tag">Tháng 4 · 2026</span></div>
-                    <p>Bot trả lời khách trên Fanpage qua Meta Business API (chỉ Fanpage, không phải Facebook cá nhân)</p>
-                  </div>
-                </div>
-                <div class="wz-cs-item">
-                  <span class="wz-cs-icon"><span data-icon="activity" data-icon-size="16"></span></span>
-                  <div class="wz-cs-body">
-                    <div class="wz-cs-row"><strong>Dashboard analytics</strong><span class="wz-cs-tag">Tháng 5 · 2026</span></div>
-                    <p>Biểu đồ doanh thu, khách mới, conversion</p>
-                  </div>
-                </div>
-                <div class="wz-cs-item">
-                  <span class="wz-cs-icon"><span data-icon="phone-call" data-icon-size="16"></span></span>
-                  <div class="wz-cs-body">
-                    <div class="wz-cs-row"><strong>Gọi điện AI</strong><span class="wz-cs-tag">Tháng 9 · 2026</span></div>
-                    <p>Bot nghe máy giúp khi sếp bận họp</p>
-                  </div>
-                </div>
-                <div class="wz-cs-item">
-                  <span class="wz-cs-icon"><span data-icon="clipboard-list" data-icon-size="16"></span></span>
-                  <div class="wz-cs-body">
-                    <div class="wz-cs-row"><strong>CRM tích hợp</strong><span class="wz-cs-tag">Tháng 9 · 2026</span></div>
-                    <p>Tự lưu khách hàng, deal và theo dõi</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <button class="wz-btn wz-btn-primary" id="dashboard-btn" onclick="launchDashboard()" type="button">
-              Khởi động trợ lý
-            </button>
           </section>
 
         </div>
@@ -1497,6 +1455,15 @@
       if (currentStep === 1) {
         const name = document.getElementById('ceo-name').value.trim();
         if (!name) { markFieldError('ceo-name'); return showError('Vui lòng nhập họ tên của anh/chị.'); }
+        const hasViDiacritics = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]/.test(name);
+        if (!hasViDiacritics && /^[a-zA-Z\s]+$/.test(name)) {
+          if (!confirm('Tên "' + name + '" chưa có dấu tiếng Việt.\n\nBot sẽ dùng tên này để xưng hô với khách hàng. Anh/chị có muốn sửa lại cho đúng dấu không?\n\nBấm OK để quay lại sửa, Cancel để giữ nguyên.')) {
+            // user chose to keep as-is
+          } else {
+            markFieldError('ceo-name');
+            return;
+          }
+        }
       }
       if (currentStep === '1b') {
         if (!document.getElementById('industry').value) { markFieldError('industry'); return showError('Vui lòng chọn lĩnh vực kinh doanh.'); }
@@ -1524,7 +1491,7 @@
           if (!loggedIn) {
             const ok = window.confirm(
               'Zalo chưa đăng nhập.\n\n' +
-              'Bot sẽ không nhận tin Zalo cho đến khi anh login lại ở Dashboard → Zalo.\n\n' +
+              'Bot sẽ không nhận tin Zalo cho đến khi anh/chị login lại ở Dashboard → Zalo.\n\n' +
               'Vẫn tiếp tục hoàn tất cài đặt?'
             );
             if (!ok) return;
@@ -1746,7 +1713,7 @@
       // Fast path uses 9router HTTP API (POST /api/providers + test endpoint)
       // — usually completes in 3-5 seconds
       result.className = 'wz-alert';
-      result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang kiểm tra Ollama API key qua 9Router...</strong><br>(thường mất 3-5 giây)</div>`;
+      result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang kiểm tra Ollama API key qua 9Router...</strong><br>(thường mất 5-20 giây)</div>`;
       const res = await window.claw.setup9RouterAuto({ ollamaKey });
       btn.disabled = false; btn.classList.remove('loading');
       if (res.success) {
@@ -1954,7 +1921,7 @@
       summary.innerHTML = `
         <div class="wz-summary-row">
           <div class="wz-summary-icon">${icon('user',16)}</div>
-          <div class="wz-summary-label">Nguoi dung</div>
+          <div class="wz-summary-label">Người dùng</div>
           <div class="wz-summary-value">${esc(name)}${company ? ' — ' + esc(company) : ''}</div>
         </div>
         <div class="wz-summary-row">

@@ -197,7 +197,7 @@ if (!openclawCli) {
       allow: ['openzalo'],
     },
     models: { providers: { ninerouter: { baseUrl: 'http://127.0.0.1:20128/v1', apiKey: 'sk-fake', api: 'openai-completions', models: [{ id: 'main', name: 'fake' }] } } },
-    agents: { defaults: { model: 'ninerouter/main', workspace: tmpDir, blockStreamingDefault: 'off', contextInjection: 'continuation-skip' } },
+    agents: { defaults: { model: 'ninerouter/main', workspace: tmpDir, blockStreamingDefault: 'off', contextInjection: 'always' } },
     tools: {
       allow: ['message', 'web_search', 'web_fetch', 'update_plan'],
       loopDetection: { enabled: true },
@@ -456,6 +456,16 @@ if (fs.existsSync(agentsPath)) {
 }
 
 // =========================================================================
+// TEST 7b: prompt template files exist in electron/prompts/
+// =========================================================================
+section('Prompt templates');
+for (const pf of ['evening-briefing.md', 'morning-briefing.md', 'weekly-report.md', 'monthly-report.md']) {
+  const pp = path.join(__dirname, '..', 'prompts', pf);
+  if (!fs.existsSync(pp)) fail(`prompt template missing: prompts/${pf}`);
+  else pass(`prompt template ${pf}`);
+}
+
+// =========================================================================
 // TEST 8: RAG accuracy (gated — only if vendor/models exists)
 // =========================================================================
 // Skips silently during pre-prebuild:models states (e.g. standalone smoke,
@@ -646,6 +656,76 @@ if (missingPrefixes.length > 0) {
   fail('files allowlist coverage', `main.js require('./${missingPrefixes.join("/...'), require('./")}/...') but package.json build.files does NOT include [${missingPrefixes.join(', ')}] — shipped .exe will crash at launch with "Cannot find module ./${missingPrefixes[0]}/...". Add "${missingPrefixes[0]}/**/*" to build.files.`);
 } else {
   pass(`files allowlist covers all local require prefixes [${[...prefixes].join(', ')}]`);
+}
+
+// =========================================================================
+// FIRST-TIME GUIDE (spotlight + tooltip product tour)
+// =========================================================================
+section('guide-overlay');
+{
+  const dashHtml = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  const hasOverlay = dashHtml.includes('id="guide-overlay"');
+  const hasSpotlight = dashHtml.includes('id="guide-spotlight"');
+  const hasTooltip = dashHtml.includes('id="guide-tooltip"');
+  const hasGuideCSS = dashHtml.includes('.guide-overlay');
+  if (!hasOverlay || !hasSpotlight || !hasTooltip || !hasGuideCSS) {
+    fail('guide-overlay', 'Missing guide spotlight/tooltip elements in dashboard.html');
+  } else {
+    pass('guide-overlay');
+  }
+}
+
+section('guide-overlay-js-functions');
+{
+  const dashHtml = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  const requiredFns = [
+    'function guideInit(',
+    'function guideFinish(',
+    'function guideNext(',
+    'function guideBack(',
+    '_guidePositionTooltip',
+  ];
+  const missingFns = requiredFns.filter(fn => !dashHtml.includes(fn));
+  if (missingFns.length > 0) {
+    fail('guide-overlay-js-functions', `dashboard.html missing guide functions: [${missingFns.join(', ')}] — guide will be non-functional`);
+  } else {
+    pass(`guide-overlay-js-functions (${requiredFns.length} functions verified)`);
+  }
+}
+
+section('guide-overlay-preload-bridges');
+{
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+  const requiredBridges = [
+    'checkGuideNeeded',
+    'markGuideComplete',
+  ];
+  const missingBridges = requiredBridges.filter(b => !preloadSrc.includes(b));
+  if (missingBridges.length > 0) {
+    fail('guide-overlay-preload-bridges', `preload.js missing guide bridges: [${missingBridges.join(', ')}] — guide IPC calls will fail at runtime`);
+  } else {
+    pass(`guide-overlay-preload-bridges (${requiredBridges.length} bridges verified)`);
+  }
+}
+
+section('guide-overlay-no-emoji');
+{
+  const dashHtml = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  const stepsIdx = dashHtml.indexOf('ZALO_GUIDE_STEPS');
+  const overlayIdx = dashHtml.indexOf('id="guide-overlay"');
+  if (stepsIdx === -1 && overlayIdx === -1) {
+    warn('guide-overlay-no-emoji', 'Could not locate guide step arrays or overlay div to scan for emoji — skipped');
+  } else {
+    const startIdx = stepsIdx !== -1 ? stepsIdx : overlayIdx;
+    const endIdx = overlayIdx !== -1 ? overlayIdx + 2000 : startIdx + 17000;
+    const guideSection = dashHtml.slice(startIdx, endIdx);
+    const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
+    if (emojiRegex.test(guideSection)) {
+      fail('guide-overlay-no-emoji', 'Guide section contains emoji characters — violates premium no-emoji rule.');
+    } else {
+      pass('guide-overlay-no-emoji');
+    }
+  }
 }
 
 // =========================================================================
