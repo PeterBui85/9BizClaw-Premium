@@ -12734,7 +12734,7 @@ function startCronApi() {
         return jsonResp(res, 400, { error: 'unknown groupId: ' + tId + '. Check /api/cron/list for available groups.' });
       }
       try {
-        const ok = await sendZaloTo({ id: String(tId), isGroup }, String(text));
+        const ok = await sendZaloTo({ id: String(tId), isGroup }, String(text), { skipFilter: true });
         if (ok) {
           console.log(`[cron-api] /api/zalo/send OK → ${isGroup ? 'group' : 'user'} ${tId}`);
           return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup });
