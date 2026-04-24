@@ -231,6 +231,7 @@ Khách Zalo yêu cầu tạo lịch → từ chối, hướng dẫn liên hệ t
    - **Tin nhắn cố định** (gửi text y nguyên): `web_fetch .../api/cron/create?token=<token>&label=<tên>&cronExpr=<cron>&groupId=<id>&content=<nội dung>`
    - **Cần AI xử lý** (tìm tin, phân tích, tổng hợp): `web_fetch .../api/cron/create?token=<token>&label=<tên>&cronExpr=<cron>&groupId=<id>&mode=agent&prompt=<yêu cầu>`
      Agent mode cho phép em lên mạng tìm tin, xử lý, rồi gửi KẾT QUẢ vào nhóm (không phải gửi prompt).
+     **Prompt agent mode PHẢI viết tiếng Việt CÓ DẤU đầy đủ** (ví dụ: "Tìm tin tức mới nhất về AI" chứ KHÔNG "Tim tin tuc moi nhat ve AI"). URL encoding tự xử lý — em chỉ cần viết đúng tiếng Việt.
 4. Báo CEO kết quả
 Lịch 1 lần: dùng `oneTimeAt=YYYY-MM-DDTHH:MM:SS` thay `cronExpr`.
 

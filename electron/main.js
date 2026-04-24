@@ -10220,7 +10220,7 @@ async function sendZaloTo(target, text, opts = {}) {
     return null;
   }
 
-  const ZALO_CHUNK = 780;
+  const ZALO_CHUNK = 2000;
   const chunks = [];
   if (text.length > ZALO_CHUNK) {
     let remaining = text;
@@ -12515,10 +12515,13 @@ function startCronApi() {
           if (!resolvedGroupName) {
             return jsonResp(res, 400, { error: 'unknown groupId: ' + groupId + '. Check /api/cron/list for available groups.' });
           }
-          finalPrompt += '\n\n---\nSAU KHI HOAN THANH: gui ket qua vao nhom Zalo bang cach goi 2 API:\n'
-            + '1. Doc token: web_fetch url=http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt\n'
-            + '2. Gui tin: web_fetch url=http://127.0.0.1:20200/api/zalo/send?token=TOKEN_VỪA_ĐỌC&groupId=' + resolvedGroupId + '&text=KET_QUA\n'
-            + 'Viet tieng Viet, ngan gon, KHONG dung emoji, KHONG tu xung la AI/bot/tro ly.';
+          finalPrompt += '\n\n---\nSAU KHI HOÀN THÀNH: gửi kết quả vào nhóm Zalo bằng cách gọi 2 API:\n'
+            + '1. Đọc token: web_fetch url=http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt\n'
+            + '2. Gửi tin: web_fetch url=http://127.0.0.1:20200/api/zalo/send?token=TOKEN_VỪA_ĐỌC&groupId=' + resolvedGroupId + '&text=KẾT_QUẢ\n'
+            + 'QUY TẮC VIẾT:\n'
+            + '- Viết tiếng Việt CÓ DẤU đầy đủ (ví dụ: "trí tuệ nhân tạo" chứ KHÔNG "tri tue nhan tao")\n'
+            + '- Viết dạng đoạn văn tự nhiên như đang chat, KHÔNG dùng danh sách số (1. 2. 3.), KHÔNG dùng bullet points\n'
+            + '- Ngắn gọn, KHÔNG dùng emoji, KHÔNG tự xưng là AI/bot/trợ lý.';
         }
 
         const id = 'cron_' + Date.now();
