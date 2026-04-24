@@ -53,6 +53,13 @@ Thumbs.db
 .openclaude/
 .openzca/
 
+# Apple signing certs — NEVER commit (secrets live in GitHub Secrets only)
+mac/
+*.p12
+*.cer
+*.certSigningRequest
+cert-base64.txt
+
 # Zalo QR codes — may contain valid session
 qr.png
 *-qr.png

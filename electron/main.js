@@ -19,6 +19,9 @@ app.disableHardwareAcceleration();
 // ============================================
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+  const dbgPath = path.join(process.env.APPDATA || '', '9bizclaw', 'logs', 'singleton-blocked.log');
+  try { fs.mkdirSync(path.dirname(dbgPath), { recursive: true }); } catch {}
+  try { fs.appendFileSync(dbgPath, `[${new Date().toISOString()}] single-instance blocked — another instance holds the lock\n`); } catch {}
   app.quit();
   process.exit(0);
 }

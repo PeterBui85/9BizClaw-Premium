@@ -83,13 +83,35 @@ jobs:
           TARGET_ARCH: ${{ matrix.arch }}
         run: node scripts/prebuild-vendor.js
 
+      - name: Import signing certificate
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MAC_CERT_P12_BASE64" ]; then
+            echo "⚠ No signing cert — building unsigned"
+            echo "SIGN_AVAILABLE=false" >> $GITHUB_ENV
+          else
+            CERT_PATH="$RUNNER_TEMP/cert.p12"
+            echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+            KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+            KEYCHAIN_PASS="ci-$(openssl rand -hex 12)"
+            security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+            security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+            security list-keychains -d user -s "$KEYCHAIN_PATH" "$(security default-keychain -d user | xargs)"
+            security find-identity -v "$KEYCHAIN_PATH"
+            rm -f "$CERT_PATH"
+            echo "SIGN_AVAILABLE=true" >> $GITHUB_ENV
+            echo "✓ Signing cert imported"
+          fi
+
       - name: Build .dmg
         working-directory: electron
         env:
-          # No Apple Developer cert → ship unsigned .dmg. User opens via
-          # System Settings → Privacy & Security → "Open Anyway" the first time.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # GitHub-provided token so electron-builder can publish on tag.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.SIGN_AVAILABLE == 'true' && 'true' || 'false' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
@@ -216,11 +238,9 @@ jobs:
 
             **Cài đặt:**
             1. Double-click file `.dmg`
-            2. Kéo icon **MODOROClaw** vào thư mục **Applications**
-            3. Mở Launchpad → click MODOROClaw
-            4. Lần đầu tiên macOS sẽ cảnh báo "không verify được" → vào
-               **System Settings → Privacy & Security** → cuộn xuống dưới →
-               click **"Open Anyway"** → Open. Sau lần này không bị nữa.
+            2. Kéo icon **9BizClaw** vào thư mục **Applications**
+            3. Mở Launchpad hoặc Applications → click 9BizClaw
+            4. Lần đầu macOS có thể hỏi "bạn có muốn mở app tải từ internet?" → click **Open**
 
             App đã bundle SẴN: Node.js, openclaw, 9router. **Không cần cài
             Homebrew/Node/npm/Terminal — chỉ double-click là chạy.**
