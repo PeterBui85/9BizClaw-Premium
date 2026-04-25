@@ -205,7 +205,7 @@ jobs:
       - name: Upload .dmg artifact
         uses: actions/upload-artifact@v5
         with:
-          name: MODOROClaw-mac-${{ matrix.arch }}
+          name: 9BizClaw-mac-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.dmg.blockmap
@@ -235,7 +235,7 @@ jobs:
           files: release/*
           generate_release_notes: true
           body: |
-            ## MODOROClaw Mac Release
+            ## 9BizClaw Premium Mac Release
 
             **Tải file `.dmg` phù hợp với máy Mac của bạn:**
             - **Apple Silicon (M1/M2/M3/M4)**: file có chữ `arm64`

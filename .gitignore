@@ -53,6 +53,10 @@ Thumbs.db
 .openclaude/
 .openzca/
 
+# License private key — NEVER commit (stays on Peter's machine only)
+*license*private*
+.claw-license-*
+
 # Apple signing certs — NEVER commit (secrets live in GitHub Secrets only)
 mac/
 *.p12

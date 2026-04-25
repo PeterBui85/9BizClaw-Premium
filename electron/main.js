@@ -17122,7 +17122,9 @@ ipcMain.handle('activate-license', async (_event, { key }) => {
 ipcMain.handle('get-license-status', async () => {
   const license = require('./lib/license');
   license.init(getWorkspace);
-  return license.checkLicenseStatus();
+  const status = license.checkLicenseStatus();
+  status.machineId = license.getMachineId();
+  return status;
 });
 
 ipcMain.handle('deactivate-license', async () => {
@@ -17152,7 +17154,7 @@ ipcMain.handle('toggle-bot', async () => {
 //  Mac: download correct DMG (arm64/x64) → mount → admin cp → xattr → relaunch
 // ============================================
 
-const UPDATE_REPO = 'modoro-digital/MODOROClaw';
+const UPDATE_REPO = 'huybt-peter/9BizClaw-Premium';
 let _latestRelease = null; // cached { version, body, html_url, assets }
 let _updateDownloadInFlight = false; // H1: concurrency guard
 
@@ -17805,22 +17807,27 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
-  // License revalidation (membership builds only) — background check 15s after boot
+  // License check (membership builds only) — verify signature + check revocation 15s after boot
   if (require('./package.json').membership === true) {
     setTimeout(async () => {
       try {
         const license = require('./lib/license');
         license.init(getWorkspace);
         const ls = license.checkLicenseStatus();
-        if (ls.status === 'grace_warning') {
-          const daysLeft = ls.daysLeft || (45 - (ls.daysSinceValidation || 0));
-          sendCeoAlert('[Bản quyền] Bản quyền MODOROClaw cần được gia hạn. Còn ' + daysLeft + ' ngày trước khi bị khóa. Kết nối internet để tự động gia hạn.');
+        if (ls.status === 'expired') {
+          sendCeoAlert('[Bản quyền] Bản quyền 9BizClaw đã hết hạn. Liên hệ tech@modoro.com.vn để gia hạn.');
+        } else if (ls.status === 'valid' && ls.daysLeft !== null && ls.daysLeft <= 14) {
+          sendCeoAlert('[Bản quyền] Bản quyền 9BizClaw sẽ hết hạn trong ' + ls.daysLeft + ' ngày. Liên hệ gia hạn sớm.');
         }
-        if (ls.status === 'valid' || ls.status === 'grace_warning') {
+        if (ls.status === 'valid') {
           const result = await license.revalidateLicense();
-          console.log('[license] revalidation:', result ? 'ok' : 'skipped/failed');
+          console.log('[license] revalidation:', result ? 'ok (not revoked)' : 'revoked or check failed');
+          if (!result) {
+            sendCeoAlert('[Bản quyền] Key đã bị thu hồi. Liên hệ tech@modoro.com.vn.');
+            mainWindow.loadFile(path.join(__dirname, 'ui', 'license.html'));
+          }
         }
-      } catch (e) { console.error('[license] revalidation error:', e?.message); }
+      } catch (e) { console.error('[license] check error:', e?.message); }
     }, 15000);
   }
 

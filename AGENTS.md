@@ -270,7 +270,7 @@ Tự tạo thư mục nếu chưa có.
 **Liệt kê thư mục:** `web_fetch http://127.0.0.1:20200/api/file/list?token=<token>&path=C:/Users/CEO/Desktop`
 Trả danh sách file/folder (max 200 entries).
 
-**Chạy lệnh:** `web_fetch http://127.0.0.1:20200/api/exec?token=<token>&command=dir+C:\Users\buitu\Desktop`
+**Chạy lệnh:** `web_fetch http://127.0.0.1:20200/api/exec?token=<token>&command=dir+C:\Users\CEO\Desktop`
 Timeout mặc định 30s, max 120s. Output max 50KB.
 
 CHỈ thực hiện khi CEO Telegram yêu cầu. KHÔNG BAO GIỜ dùng từ Zalo.

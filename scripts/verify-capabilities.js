@@ -9,7 +9,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const cfg = JSON.parse(fs.readFileSync('C:/Users/buitu/.openclaw/openclaw.json', 'utf-8'));
+const cfg = JSON.parse(fs.readFileSync(path.join(require('os').homedir(), '.openclaw', 'openclaw.json'), 'utf-8'));
 const TOKEN = cfg.channels.telegram.botToken;
 const CHAT_ID = cfg.channels.telegram.allowFrom[0];
 

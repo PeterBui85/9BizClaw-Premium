@@ -1,7 +1,7 @@
 {
   "name": "9bizclaw",
   "version": "2.3.49",
-  "membership": false,
+  "membership": true,
   "description": "9BizClaw — Trợ Lý AI Cho CEO (OpenClaw Desktop)",
   "author": "MODORO Tech Corp",
   "repository": {

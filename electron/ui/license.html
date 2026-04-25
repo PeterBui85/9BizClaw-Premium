@@ -8,7 +8,6 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
   <style>
-    /* ===== License page — same visual system as wizard.html ===== */
     html, body { height: 100%; overflow: hidden; }
     body { background: var(--bg); }
 
@@ -149,7 +148,7 @@
       margin: 0 0 40px;
     }
 
-    /* ===== Key input group ===== */
+    /* ===== Key input ===== */
     .lk-key-group {
       margin-bottom: 32px;
     }
@@ -161,81 +160,70 @@
       margin-bottom: 10px;
       letter-spacing: -0.1px;
     }
-    .lk-key-row {
-      display: flex;
-      align-items: center;
-      gap: 0;
-    }
-    .lk-key-prefix {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 52px;
-      padding: 0 16px;
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      border-right: none;
-      border-radius: 10px 0 0 10px;
-      font-size: 15px;
-      font-weight: 700;
-      font-family: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace;
-      color: var(--text-secondary);
-      letter-spacing: 1px;
-      user-select: none;
-      flex-shrink: 0;
-    }
-    .lk-key-sep {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 52px;
-      width: 20px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      font-size: 18px;
-      font-weight: 400;
-      color: var(--text-tertiary);
-      user-select: none;
-      flex-shrink: 0;
-    }
-    .lk-key-input {
-      width: 0;
-      flex: 1;
-      height: 52px;
-      padding: 0;
-      text-align: center;
+    .lk-key-textarea {
+      width: 100%;
+      min-height: 88px;
+      padding: 14px 16px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-left: none;
-      border-right: none;
-      border-radius: 0;
+      border-radius: 10px;
       color: var(--text);
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 500;
       font-family: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace;
-      letter-spacing: 3px;
+      line-height: 1.5;
+      resize: vertical;
       outline: none;
       transition: all 0.2s ease;
-      margin: 0;
+      box-sizing: border-box;
+      word-break: break-all;
     }
-    .lk-key-input:first-of-type {
-      border-left: 1px solid var(--border);
-    }
-    .lk-key-input:last-of-type {
-      border-right: 1px solid var(--border);
-      border-radius: 0 10px 10px 0;
-    }
-    .lk-key-input:focus {
+    .lk-key-textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 4px var(--accent-glow);
-      z-index: 1;
-      position: relative;
     }
-    .lk-key-input::placeholder {
+    .lk-key-textarea::placeholder {
       color: var(--text-tertiary);
-      letter-spacing: 1px;
       font-weight: 400;
+      word-break: normal;
+    }
+
+    /* ===== Machine ID display ===== */
+    .lk-machine-id {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--surface-hover);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      font-family: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .lk-machine-id:hover {
+      background: var(--surface-active);
+      color: var(--text-secondary);
+    }
+    .lk-machine-id-label {
+      font-family: inherit;
+      font-weight: 600;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .lk-machine-id-value {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lk-machine-id-hint {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      white-space: nowrap;
     }
 
     /* ===== Activate button ===== */
@@ -372,7 +360,6 @@
       box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
     }
 
-    /* ===== Scrollbar ===== */
     ::-webkit-scrollbar { width: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -381,7 +368,6 @@
 </head>
 <body>
   <div class="lk-shell">
-    <!-- ===== LEFT BRAND PANEL ===== -->
     <aside class="lk-brand">
       <button class="lk-theme-toggle" id="theme-toggle" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">
         <span id="theme-icon"></span>
@@ -402,30 +388,26 @@
       </div>
 
       <div class="lk-brand-foot">
-        Key bản quyền gắn với máy tính của anh/chị. Mỗi key hỗ trợ tối đa 2 máy.
+        Bản quyền gắn với máy tính của anh/chị. Dán key vào ô bên phải để kích hoạt.
       </div>
     </aside>
 
-    <!-- ===== RIGHT FORM PANEL ===== -->
     <main class="lk-form-panel">
       <div class="lk-form-content">
         <h2>Kích hoạt bản quyền</h2>
-        <p class="lk-step-desc">Nhập key bản quyền để sử dụng MODOROClaw phiên bản Premium.</p>
+        <p class="lk-step-desc">Dán license key đã nhận từ 9Biz để kích hoạt phiên bản Premium.</p>
 
         <div class="lk-key-group">
           <label class="lk-key-label">License key</label>
-          <div class="lk-key-row">
-            <div class="lk-key-prefix">CLAW</div>
-            <div class="lk-key-sep">-</div>
-            <input type="text" class="lk-key-input" id="key-1" maxlength="4" placeholder="XXXX" autocomplete="off" spellcheck="false">
-            <div class="lk-key-sep">-</div>
-            <input type="text" class="lk-key-input" id="key-2" maxlength="4" placeholder="XXXX" autocomplete="off" spellcheck="false">
-            <div class="lk-key-sep">-</div>
-            <input type="text" class="lk-key-input" id="key-3" maxlength="4" placeholder="XXXX" autocomplete="off" spellcheck="false">
+          <textarea class="lk-key-textarea" id="key-input" placeholder="CLAW-eyJlIjoiZW1haWxAZXhhb..." spellcheck="false" autocomplete="off"></textarea>
+          <div class="lk-machine-id" id="machine-id" title="Nhan de copy">
+            <span class="lk-machine-id-label">Machine ID:</span>
+            <span class="lk-machine-id-value" id="machine-id-value">loading...</span>
+            <span class="lk-machine-id-hint">nhấn để copy</span>
           </div>
         </div>
 
-        <button class="lk-btn" id="btn-activate" disabled>Kích hoạt</button>
+        <button class="lk-btn" id="btn-activate" disabled>Kich hoat</button>
 
         <div class="lk-status" id="status-msg">
           <span class="lk-status-icon" id="status-icon"></span>
@@ -440,25 +422,22 @@
   </div>
 
   <script>
-    // ===== SVG Icons (subset from wizard.html) =====
-    const ICONS = {
+    var ICONS = {
       sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
       moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
       'alert-circle': '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
-      check: '<polyline points="20 6 9 17 4 12"/>',
       'check-circle': '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
     };
 
     function icon(name, size) {
       size = size || 18;
-      var path = ICONS[name] || ICONS['alert-circle'];
-      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;display:inline-block;vertical-align:middle">' + path + '</svg>';
+      var p = ICONS[name] || ICONS['alert-circle'];
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;display:inline-block;vertical-align:middle">' + p + '</svg>';
     }
 
-    // ===== Theme =====
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
-      try { localStorage.setItem('theme', theme); } catch (e) { /* noop */ }
+      try { localStorage.setItem('theme', theme); } catch (e) {}
       var iconEl = document.getElementById('theme-icon');
       if (iconEl) iconEl.innerHTML = icon(theme === 'dark' ? 'sun' : 'moon', 18);
     }
@@ -467,132 +446,7 @@
       applyTheme(cur === 'dark' ? 'light' : 'dark');
     }
 
-    // ===== Valid charset =====
-    var VALID_CHARS = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-
-    function filterChar(c) {
-      c = c.toUpperCase();
-      if (VALID_CHARS.indexOf(c) === -1) return '';
-      return c;
-    }
-
-    function filterInput(str) {
-      var out = '';
-      for (var i = 0; i < str.length; i++) {
-        var c = filterChar(str[i]);
-        if (c) out += c;
-      }
-      return out;
-    }
-
-    // ===== Key input logic =====
-    var fields = [
-      document.getElementById('key-1'),
-      document.getElementById('key-2'),
-      document.getElementById('key-3')
-    ];
-    var btnActivate = document.getElementById('btn-activate');
-
-    function updateButtonState() {
-      var allFull = fields.every(function(f) { return f.value.length === 4; });
-      btnActivate.disabled = !allFull;
-    }
-
-    function handleKeyInput(e, idx) {
-      var field = fields[idx];
-      // Filter to valid chars only
-      var filtered = filterInput(field.value);
-      if (filtered.length > 4) filtered = filtered.substring(0, 4);
-      field.value = filtered;
-      updateButtonState();
-
-      // Auto-advance when field is full
-      if (filtered.length === 4 && idx < 2) {
-        fields[idx + 1].focus();
-        fields[idx + 1].select();
-      }
-    }
-
-    function handleKeyDown(e, idx) {
-      // Backspace on empty field => go to previous
-      if (e.key === 'Backspace' && fields[idx].value.length === 0 && idx > 0) {
-        e.preventDefault();
-        fields[idx - 1].focus();
-        var prev = fields[idx - 1];
-        prev.value = prev.value.substring(0, prev.value.length - 1);
-        updateButtonState();
-      }
-      // Tab/Enter behavior
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (fields[idx].value.length === 4 && idx < 2) {
-          fields[idx + 1].focus();
-        } else if (fields.every(function(f) { return f.value.length === 4; })) {
-          activateKey();
-        }
-      }
-    }
-
-    function handlePaste(e, idx) {
-      e.preventDefault();
-      var pasted = (e.clipboardData || window.clipboardData).getData('text').trim().toUpperCase();
-
-      // Strip CLAW- prefix if present
-      if (pasted.indexOf('CLAW-') === 0) {
-        pasted = pasted.substring(5);
-      }
-
-      // Remove all dashes
-      pasted = pasted.replace(/-/g, '');
-
-      // Filter to valid chars
-      pasted = filterInput(pasted);
-
-      // Split into 3 groups of 4
-      if (pasted.length >= 4) {
-        fields[0].value = pasted.substring(0, 4);
-      }
-      if (pasted.length >= 8) {
-        fields[1].value = pasted.substring(4, 8);
-      }
-      if (pasted.length >= 12) {
-        fields[2].value = pasted.substring(8, 12);
-      } else if (pasted.length > 8) {
-        fields[2].value = pasted.substring(8);
-      } else if (pasted.length > 4 && pasted.length <= 8) {
-        fields[1].value = pasted.substring(4);
-        fields[1].focus();
-        updateButtonState();
-        return;
-      } else if (pasted.length <= 4) {
-        fields[0].value = pasted;
-        if (pasted.length === 4 && idx < 2) {
-          fields[idx + 1].focus();
-        }
-        updateButtonState();
-        return;
-      }
-
-      // Focus the last non-full field, or the last field
-      for (var i = 0; i < 3; i++) {
-        if (fields[i].value.length < 4) {
-          fields[i].focus();
-          updateButtonState();
-          return;
-        }
-      }
-      fields[2].focus();
-      updateButtonState();
-    }
-
-    // Attach listeners
-    fields.forEach(function(field, idx) {
-      field.addEventListener('input', function(e) { handleKeyInput(e, idx); });
-      field.addEventListener('keydown', function(e) { handleKeyDown(e, idx); });
-      field.addEventListener('paste', function(e) { handlePaste(e, idx); });
-    });
-
-    // ===== Status display =====
+    // ===== Status =====
     var statusEl = document.getElementById('status-msg');
     var statusIcon = document.getElementById('status-icon');
     var statusText = document.getElementById('status-text');
@@ -602,17 +456,30 @@
       statusIcon.innerHTML = icon(type === 'error' ? 'alert-circle' : 'check-circle', 16);
       statusText.textContent = message;
     }
-
     function hideStatus() {
       statusEl.className = 'lk-status';
     }
 
+    // ===== Key input =====
+    var keyInput = document.getElementById('key-input');
+    var btnActivate = document.getElementById('btn-activate');
+
+    function updateButtonState() {
+      var val = keyInput.value.trim();
+      btnActivate.disabled = !val || val.length < 20;
+    }
+
+    keyInput.addEventListener('input', updateButtonState);
+    keyInput.addEventListener('paste', function() {
+      setTimeout(updateButtonState, 50);
+    });
+
     // ===== Error messages =====
     var ERROR_MESSAGES = {
       invalid_key: 'Key không hợp lệ. Vui lòng kiểm tra lại.',
+      expired: 'Key đã hết hạn. Liên hệ hỗ trợ để gia hạn.',
+      write_failed: 'Không ghi được license. Kiểm tra quyền truy cập thư mục.',
       revoked: 'Key đã bị thu hồi. Liên hệ hỗ trợ.',
-      max_machines: 'Key đã được kích hoạt trên số máy tối đa. Liên hệ hỗ trợ.',
-      network: 'Không kết nối được server. Kiểm tra mạng và thử lại.'
     };
 
     // ===== Activate =====
@@ -620,25 +487,22 @@
 
     async function activateKey() {
       if (isActivating) return;
-      if (!fields.every(function(f) { return f.value.length === 4; })) return;
+      var key = keyInput.value.trim();
+      if (!key || key.length < 20) return;
 
       isActivating = true;
       hideStatus();
       btnActivate.classList.add('loading');
       btnActivate.disabled = true;
 
-      var key = 'CLAW-' + fields[0].value + '-' + fields[1].value + '-' + fields[2].value;
-
       try {
         var result = await window.claw.activateLicense(key);
 
         if (result && result.success) {
-          showStatus('success', 'Kích hoạt thành công. Đang chuyển hướng…');
+          showStatus('success', 'Kích hoạt thành công. Đang chuyển hướng...');
           btnActivate.classList.remove('loading');
 
-          // Brief delay for user to see success, then redirect
           setTimeout(function() {
-            // Check if already configured => go to dashboard, else wizard
             if (result.configured) {
               window.location.href = 'dashboard.html';
             } else {
@@ -648,13 +512,11 @@
           return;
         }
 
-        // Handle specific errors
         var errCode = (result && result.error) || 'invalid_key';
         var msg = ERROR_MESSAGES[errCode] || ERROR_MESSAGES.invalid_key;
         showStatus('error', msg);
       } catch (err) {
-        // Network / IPC error
-        showStatus('error', ERROR_MESSAGES.network);
+        showStatus('error', 'Lỗi kích hoạt. Vui lòng thử lại.');
       } finally {
         isActivating = false;
         btnActivate.classList.remove('loading');
@@ -663,19 +525,46 @@
     }
 
     btnActivate.addEventListener('click', activateKey);
+    keyInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        activateKey();
+      }
+    });
+
+    // ===== Machine ID =====
+    var machineIdEl = document.getElementById('machine-id');
+    var machineIdValue = document.getElementById('machine-id-value');
+
+    (async function loadMachineId() {
+      try {
+        var status = await window.claw.getLicenseStatus();
+        if (status && status.machineId) {
+          machineIdValue.textContent = status.machineId;
+        }
+      } catch (e) {
+        machineIdValue.textContent = '---';
+      }
+    })();
+
+    machineIdEl.addEventListener('click', function() {
+      var mid = machineIdValue.textContent;
+      if (mid && mid !== 'loading...' && mid !== '---') {
+        navigator.clipboard.writeText(mid).then(function() {
+          var hint = machineIdEl.querySelector('.lk-machine-id-hint');
+          hint.textContent = 'đã copy!';
+          setTimeout(function() { hint.textContent = 'nhấn để copy'; }, 2000);
+        });
+      }
+    });
 
     // ===== Init =====
     (function init() {
-      // Restore theme
       var theme = 'dark';
-      try { theme = localStorage.getItem('theme') || localStorage.getItem('mc-theme') || 'dark'; } catch (e) { /* noop */ }
+      try { theme = localStorage.getItem('theme') || localStorage.getItem('mc-theme') || 'dark'; } catch (e) {}
       applyTheme(theme);
-
-      // Theme toggle
       document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
-
-      // Focus first field
-      fields[0].focus();
+      keyInput.focus();
     })();
   </script>
 </body>
