@@ -93,19 +93,24 @@ jobs:
             echo "SIGN_AVAILABLE=false" >> $GITHUB_ENV
           else
             CERT_PATH="$RUNNER_TEMP/cert.p12"
-            echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
-            KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
-            KEYCHAIN_PASS="ci-$(openssl rand -hex 12)"
-            security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-            security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-            security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-            security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-            security list-keychains -d user -s "$KEYCHAIN_PATH" "$(security default-keychain -d user | xargs)"
-            security find-identity -v "$KEYCHAIN_PATH"
-            rm -f "$CERT_PATH"
-            echo "SIGN_AVAILABLE=true" >> $GITHUB_ENV
-            echo "✓ Signing cert imported"
+            if ! echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH" 2>/dev/null || [ ! -s "$CERT_PATH" ]; then
+              echo "⚠ MAC_CERT_P12_BASE64 secret is set but base64 decode failed — building unsigned"
+              echo "SIGN_AVAILABLE=false" >> $GITHUB_ENV
+              rm -f "$CERT_PATH"
+            else
+              KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+              KEYCHAIN_PASS="ci-$(openssl rand -hex 12)"
+              security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+              security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+              security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+              security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+              security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+              security list-keychains -d user -s "$KEYCHAIN_PATH" "$(security default-keychain -d user | xargs)"
+              security find-identity -v "$KEYCHAIN_PATH"
+              rm -f "$CERT_PATH"
+              echo "SIGN_AVAILABLE=true" >> $GITHUB_ENV
+              echo "✓ Signing cert imported"
+            fi
           fi
 
       - name: Build .dmg
