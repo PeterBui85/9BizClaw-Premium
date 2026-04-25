@@ -12516,10 +12516,40 @@ function startCronApi() {
     const urlPath = (new URL(req.url, 'http://127.0.0.1')).pathname;
     const params = await parseBody(req);
 
-    const readOnlyEndpoints = ['/api/cron/list', '/api/workspace/read', '/api/workspace/list', '/api/file/read', '/api/file/list', '/api/file/search', '/api/system/info'];
-    const isMutation = !readOnlyEndpoints.includes(urlPath);
-    if (isMutation && params.token !== _cronApiToken) {
+    // Token-free: only endpoints needed to bootstrap (get token, list crons).
+    // All file/exec/system endpoints REQUIRE token — defense against indirect
+    // prompt injection where Zalo customer tricks agent into autonomous file reads.
+    const tokenFreeEndpoints = ['/api/cron/list', '/api/workspace/read', '/api/workspace/list'];
+    const requiresToken = !tokenFreeEndpoints.includes(urlPath);
+    if (requiresToken && params.token !== _cronApiToken) {
       return jsonResp(res, 403, { error: 'invalid or missing token. Read cron-api-token.txt via /api/workspace/read?path=cron-api-token.txt first.' });
+    }
+
+    // Path sandboxing: block reads/writes to sensitive files regardless of token.
+    // Even CEO shouldn't accidentally leak these through bot context.
+    if (urlPath.startsWith('/api/file/') || urlPath === '/api/workspace/read') {
+      const reqPath = String(params.path || '').toLowerCase().replace(/\\/g, '/');
+      const SENSITIVE_PATTERNS = [
+        /credentials\.json/i,
+        /\.p12$/i,
+        /\.pem$/i,
+        /\.key$/i,
+        /private.*key/i,
+        /\.env$/i,
+        /cron-api-token\.txt/i,
+        /rag-secret\.txt/i,
+        /bot.*token/i,
+        /secret/i,
+        /password/i,
+        /\.ssh\//i,
+        /\.gnupg\//i,
+      ];
+      // Allow cron-api-token.txt ONLY via /api/workspace/read (needed to bootstrap)
+      const isTokenBootstrap = urlPath === '/api/workspace/read' && /cron-api-token\.txt$/i.test(reqPath);
+      if (!isTokenBootstrap && SENSITIVE_PATTERNS.some(p => p.test(reqPath))) {
+        auditLog('file_api_blocked', { urlPath, path: reqPath, reason: 'sensitive path' });
+        return jsonResp(res, 403, { error: 'SECURITY: access to sensitive file blocked. Path matched security filter.' });
+      }
     }
 
     if (urlPath === '/api/cron/create') {
@@ -13058,6 +13088,26 @@ function startCronApi() {
       const cmd = String(params.command || '');
       if (!cmd) return jsonResp(res, 400, { error: 'command required' });
       if (cmd.length > 2000) return jsonResp(res, 400, { error: 'command too long (max 2000 chars)' });
+      // Block catastrophic commands that could destroy the system
+      const cmdLower = cmd.toLowerCase().replace(/\s+/g, ' ').trim();
+      const DANGEROUS_PATTERNS = [
+        /\brm\s+-rf\s+[\/\\]/i,       // rm -rf /
+        /\bformat\s+[a-z]:/i,          // format C:
+        /\bdel\s+\/[sfq]/i,            // del /s /f /q
+        /\brmdir\s+\/s/i,              // rmdir /s
+        /\brd\s+\/s/i,                 // rd /s
+        /\bmkfs\b/i,                   // mkfs
+        /\bdd\s+if=/i,                 // dd if=
+        /\b(shutdown|reboot|halt)\b/i, // system shutdown
+        /\btaskkill\s+\/f\s+\/im\s+\*/i, // kill all processes
+        /\bnet\s+user\b/i,             // user account manipulation
+        /\breg\s+(delete|add)\b/i,     // registry manipulation
+      ];
+      if (DANGEROUS_PATTERNS.some(p => p.test(cmdLower))) {
+        auditLog('exec_blocked', { command: cmd, reason: 'dangerous command pattern' });
+        return jsonResp(res, 403, { error: 'SECURITY: command blocked — matches dangerous pattern. This is a safety guard.' });
+      }
+      auditLog('exec_run', { command: cmd.slice(0, 200), cwd: params.cwd || '(default)' });
       const timeoutMs = Math.min(parseInt(params.timeout) || 30000, 120000);
       const cwd = params.cwd ? String(params.cwd) : undefined;
       const { exec: execAsync } = require('child_process');

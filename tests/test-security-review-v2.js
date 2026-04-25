@@ -299,7 +299,7 @@ assert(mainSrc.includes('_withMemoryFileLock(profilePath'), 'append uses memory 
 console.log('\n[Fork version]');
 
 const vendorPatchesSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'lib', 'vendor-patches.js'), 'utf-8');
-assert(vendorPatchesSrc.includes("fork-v20-review-fixes"), 'fork version is v20-review-fixes (in vendor-patches module)');
+assert(vendorPatchesSrc.includes("fork-v21-file-api-hardening"), 'fork version is v21-file-api-hardening (in vendor-patches module)');
 
 // ============================================================
 // TEST 13: AGENTS.md — token bootstrap via workspace read
@@ -316,13 +316,13 @@ assert(agentsContent.includes('version: 73'), 'AGENTS.md: version 73');
 // ============================================================
 console.log('\n[Workspace read auth]');
 
-const readOnlyMatch = mainSrc.match(/const readOnlyEndpoints = \[([^\]]+)\]/);
+const readOnlyMatch = mainSrc.match(/const tokenFreeEndpoints = \[([^\]]+)\]/);
 if (readOnlyMatch) {
-  assert(readOnlyMatch[1].includes('/api/workspace/read'), 'workspace/read is read-only (no auth)');
-  assert(readOnlyMatch[1].includes('/api/workspace/list'), 'workspace/list is read-only (no auth)');
-  assert(readOnlyMatch[1].includes('/api/cron/list'), 'cron/list is read-only (no auth)');
+  assert(readOnlyMatch[1].includes('/api/workspace/read'), 'workspace/read is token-free (no auth)');
+  assert(readOnlyMatch[1].includes('/api/workspace/list'), 'workspace/list is token-free (no auth)');
+  assert(readOnlyMatch[1].includes('/api/cron/list'), 'cron/list is token-free (no auth)');
 } else {
-  assert(false, 'readOnlyEndpoints not found');
+  assert(false, 'tokenFreeEndpoints not found');
 }
 
 // ============================================================

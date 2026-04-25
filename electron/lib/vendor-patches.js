@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const OPENZALO_FORK_VERSION = 'fork-v20-review-fixes';
+const OPENZALO_FORK_VERSION = 'fork-v21-file-api-hardening';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
