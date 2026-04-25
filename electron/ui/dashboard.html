@@ -1926,13 +1926,7 @@
           <span class="icon" data-icon="sparkles"></span>
           <span class="label">Tính cách bot</span>
         </div>
-        <div class="sidebar-menu-item" data-page="shop-state" onclick="switchPage('shop-state')">
-          <span class="icon" data-icon="alert-circle"></span>
-          <span class="label">Tình trạng hôm nay</span>
-        </div>
-        <div class="sidebar-menu-item" data-page="calendar" onclick="switchPage('calendar')">
-          <span class="icon" data-icon="calendar"></span><span class="label">Lịch hẹn</span>
-        </div>
+        <!-- shop-state + calendar: UI hidden, backend retained -->
 
         <div class="sidebar-menu-header">Kênh</div>
         <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
@@ -2653,8 +2647,8 @@
         </div>
       </div>
 
-      <!-- PAGE: Tình trạng hôm nay -->
-      <div class="page" id="page-shop-state">
+      <!-- PAGE: Tình trạng hôm nay (hidden — backend retained) -->
+      <div class="page" id="page-shop-state" style="display:none!important">
         <div class="page-header">
           <span class="page-icon" data-icon="clipboard" data-icon-size="26"></span>
           <div>
@@ -2722,8 +2716,8 @@
         </div>
       </div>
 
-      <!-- PAGE: Google Calendar -->
-      <div class="page" id="page-calendar">
+      <!-- PAGE: Lịch hẹn (hidden — backend retained) -->
+      <div class="page" id="page-calendar" style="display:none!important">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
           <div>
@@ -3029,7 +3023,7 @@
     <!-- Step card -->
     <div id="walkthrough-card" style="position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 22px;width:360px;box-shadow:0 16px 48px rgba(0,0,0,0.5);transition:all 0.35s cubic-bezier(0.4,0,0.2,1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div id="walkthrough-progress" style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:0.3px">Bước 1 / 8</div>
+        <div id="walkthrough-progress" style="font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:0.3px">Bước 1 / 6</div>
         <button onclick="walkthroughSkip()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:4px 8px;border-radius:6px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='none'">Bỏ qua</button>
       </div>
       <h3 id="walkthrough-title" style="margin:0 0 8px;font-size:16px;font-weight:600;color:var(--text)">Title</h3>
@@ -6504,20 +6498,14 @@
         pageBefore: 'zalo',
       },
       {
-        target: '[data-page="calendar"]',
-        title: 'Bước 5: Lịch hẹn tự động',
-        desc: 'Quản lý lịch hẹn local. Nhắn Telegram cho bot: "thêm lịch mai 3pm họp anh Minh link zoom.us/abc" — bot tự tạo. Hoặc dùng form tạo nhanh ở tab này.',
-        pageBefore: 'calendar',
-      },
-      {
         target: '[data-page="schedules"]',
-        title: 'Bước 6: Lịch tự động (cron)',
+        title: 'Bước 5: Lịch tự động (cron)',
         desc: 'Bot tự chạy: báo cáo sáng 7:30, báo cáo tối 21:00, follow-up khách Zalo 9:30. Có thể nhắn bot trên Telegram: "tạo cron nhắc tôi mỗi sáng 8h" để thêm.',
         pageBefore: 'schedules',
       },
       {
         target: '#support-fab',
-        title: 'Bước 7: Cần hỗ trợ?',
+        title: 'Bước 6: Cần hỗ trợ?',
         desc: 'Bấm nút "?" này bất cứ lúc nào để: xem video hướng dẫn, liên hệ MODORO, xem lại walkthrough này, hoặc mở log khi cần debug.',
         pageBefore: 'overview',
       },
@@ -6762,7 +6750,6 @@
         { id: 'page-overview', label: 'Mở Tổng quan', keywords: 'overview dashboard tong quan' },
         { id: 'page-telegram', label: 'Mở Telegram', keywords: 'telegram tele' },
         { id: 'page-zalo', label: 'Mở Zalo', keywords: 'zalo' },
-        { id: 'page-calendar', label: 'Mở Lịch hẹn', keywords: 'calendar lich hen' },
         { id: 'page-knowledge', label: 'Mở Knowledge', keywords: 'knowledge tai lieu' },
         { id: 'page-schedules', label: 'Mở Lịch tự động', keywords: 'schedules lich tu dong cron' },
         { id: 'page-9router', label: 'Mở AI Models', keywords: 'ai models 9router' },

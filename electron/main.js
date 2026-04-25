@@ -11261,6 +11261,11 @@ let _lastChannelState = { telegram: null, zalo: null };
 let _lastChannelAlertAt = { telegram: 0, zalo: 0 };
 let _channelStatusBroadcastInFlight = false;
 let _channelStatusTickCount = 0;
+// Grace period: absorb brief disconnects (network blip, DNS hiccup) so the
+// status dot doesn't flash red on transient failures. Only flip to not-ready
+// after 3 consecutive probe failures (~2+ min at 45s interval).
+const _CHANNEL_FAIL_GRACE = 3;
+let _channelConsecutiveFails = { telegram: 0, zalo: 0 };
 async function broadcastChannelStatusOnce() {
   if (_channelStatusBroadcastInFlight) return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -11319,9 +11324,28 @@ async function broadcastChannelStatusOnce() {
     if (tgFresh || zlFresh) {
       console.log(`[channel-status] skip probe (marker fresh) telegram=${!!tgFresh} zalo=${!!zlFresh}`);
     }
+    // Grace period: if a channel was previously ready and just failed, keep
+    // reporting ready until _CHANNEL_FAIL_GRACE consecutive failures. Prevents
+    // the dot from flashing red on brief network blips (a few seconds).
+    const rawProbes = { telegram: tg, zalo: zl };
+    const smoothed = {};
+    for (const ch of ['telegram', 'zalo']) {
+      const probe = rawProbes[ch];
+      const prev = _lastChannelState[ch];
+      if (probe.ready) {
+        _channelConsecutiveFails[ch] = 0;
+        smoothed[ch] = probe;
+      } else if (prev && prev.ready && _channelConsecutiveFails[ch] < _CHANNEL_FAIL_GRACE) {
+        _channelConsecutiveFails[ch]++;
+        console.log(`[channel-status] ${ch} probe failed but within grace (${_channelConsecutiveFails[ch]}/${_CHANNEL_FAIL_GRACE}) — keeping green`);
+        smoothed[ch] = { ...prev, gracePeriod: true };
+      } else {
+        smoothed[ch] = probe;
+      }
+    }
     mainWindow.webContents.send('channel-status', {
-      telegram: { ...tg, paused: isChannelPaused('telegram') },
-      zalo: { ...zl, paused: isChannelPaused('zalo') },
+      telegram: { ...smoothed.telegram, paused: isChannelPaused('telegram') },
+      zalo: { ...smoothed.zalo, paused: isChannelPaused('zalo') },
       checkedAt: new Date().toISOString(),
     });
 
