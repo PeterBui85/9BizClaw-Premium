@@ -583,7 +583,7 @@ export async function handleOpenzaloInbound(params: {
   // Drop Zalo group system event notifications before they reach the AI.
   // These are automated event strings ("X đã thêm Y vào nhóm", etc.), not real messages.
   // Replying to them looks broken to the entire customer group.
-  // Length guard: system events are short (<120 chars). Real customer messages
+  // Length guard: system events are short (<200 chars). Real customer messages
   // mentioning "thay avatar nhóm" in a longer sentence should pass through.
   if (message.isGroup) {
     const __sysMsgText = (rawBody || '').trim();
@@ -598,7 +598,7 @@ export async function handleOpenzaloInbound(params: {
       /đã đặt tên cho nhóm/,
       /đã xóa lịch sử trò chuyện/,
     ];
-    if (__sysMsgText && __sysMsgText.length < 120 && __sysMsgPatterns.some(p => p.test(__sysMsgText))) {
+    if (__sysMsgText && __sysMsgText.length < 200 && __sysMsgPatterns.some(p => p.test(__sysMsgText))) {
       runtime.log?.(`openzalo: drop group system event in ${message.threadId}: ${__sysMsgText.slice(0, 80)}`);
       return;
     }
@@ -626,12 +626,18 @@ export async function handleOpenzaloInbound(params: {
     runtime.log?.('openzalo: sender-dedup check error: ' + String(__ddErr));
   }
   // === END 9BizClaw SENDER-DEDUP PATCH ===
-  // === 9BizClaw COMMAND-BLOCK PATCH v1 ===
+  // === 9BizClaw COMMAND-BLOCK PATCH v2 ===
   // Hard gate: rewrite rawBody when Zalo message contains admin command patterns.
   // Agent never sees original command → cannot execute. Telegram unaffected (separate plugin).
-  // Pattern targets: cron management, group messaging, broadcast, exec commands.
-  // Does NOT match customer requests like "hẹn lịch", "đặt lịch hẹn" (legitimate CS).
-  if (rawBody) {
+  // v2: skip for internal groups — staff can use admin commands via Zalo.
+  const __cbIsInternal = (() => {
+    if (!message.isGroup) return false;
+    try {
+      const gs = (global as any).__mcReadGroupSettings?.() || {};
+      return gs[message.threadId]?.internal === true;
+    } catch { return false; }
+  })();
+  if (rawBody && !__cbIsInternal) {
     const __cbOrig = rawBody.toLowerCase();
     const __cbStripped = __cbOrig.normalize('NFKD').replace(/[​-‏‪-‮﻿­⁠⁡-⁤⁪-⁯̀-ͯ]/g, '').normalize('NFC');
     const __cbPatterns: RegExp[] = [
@@ -667,13 +673,14 @@ export async function handleOpenzaloInbound(params: {
       /\bsend\s+(?:msg|message)\s+(?:to\s+)?(?:group|all)\b/i,
       /\bexecute?\s+(?:command|shell|script|cmd)\b/i,
       /\brun\s+(?:command|shell|script|cmd)\b/i,
+      /\b(?:schedule|set\s*up|make)\s+(?:a\s+)?cron\b/i,
     ];
     if (__cbPatterns.some(p => p.test(__cbOrig) || p.test(__cbStripped))) {
       runtime.log?.(`openzalo: COMMAND-BLOCK from ${message.senderId}${message.isGroup ? ' (group)' : ''}: ${rawBody.slice(0, 120)}`);
       rawBody = '[nội dung nội bộ đã được lọc]';
     }
   }
-  // === END 9BizClaw COMMAND-BLOCK PATCH v1 ===
+  // === END 9BizClaw COMMAND-BLOCK PATCH v2 ===
   // === 9BizClaw MEDIA-TYPE-FILTER PATCH v1 ===
   // Skip AI processing for media types that have no extractable text content.
   // Stickers, voice messages, GIFs, and file attachments without caption will
@@ -688,29 +695,28 @@ export async function handleOpenzaloInbound(params: {
     }
   }
   // === END 9BizClaw MEDIA-TYPE-FILTER PATCH v1 ===
-  // === 9BizClaw GROUP-RATE-LIMIT PATCH v1 ===
-  // Throttle inbound messages per group to prevent bot CPU exhaustion from spam.
-  // Max 10 messages per group per 60s window. Excess messages are silently dropped.
-  if (message.isGroup) {
-    const __rlMap = ((global as any).__mcGroupRateLimit ??= new Map<string, number[]>());
-    const __rlKey = String(message.threadId || "");
+  // === 9BizClaw RATE-LIMIT PATCH v2 ===
+  // Throttle inbound messages per sender/group to prevent CPU exhaustion from spam.
+  // Groups: 20/60s. DMs: 15/60s. Excess messages silently dropped.
+  {
+    const __rlMap = ((global as any).__mcRateLimit ??= new Map<string, number[]>());
+    const __rlKey = message.isGroup ? ('g:' + String(message.threadId || "")) : ('d:' + String(message.senderId || ""));
     const __rlNow = Date.now();
     const __rlWindow = 60000;
-    const __rlMax = 10;
+    const __rlMax = message.isGroup ? 20 : 15;
     let __rlHits = __rlMap.get(__rlKey) || [];
     __rlHits = __rlHits.filter((t: number) => __rlNow - t < __rlWindow);
     if (__rlHits.length >= __rlMax) {
-      runtime.log?.(`openzalo: group ${__rlKey} rate-limited (${__rlHits.length}/${__rlMax} in ${__rlWindow / 1000}s) — drop`);
+      runtime.log?.(`openzalo: ${message.isGroup ? 'group' : 'DM'} ${__rlKey} rate-limited (${__rlHits.length}/${__rlMax} in ${__rlWindow / 1000}s) — drop`);
       return;
     }
     __rlHits.push(__rlNow);
     __rlMap.set(__rlKey, __rlHits);
-    // Prune old groups every 200 entries
     if (__rlMap.size > 200) {
       for (const [k, v] of __rlMap) { if (!v.length || __rlNow - v[v.length - 1] > __rlWindow * 2) __rlMap.delete(k); }
     }
   }
-  // === END 9BizClaw GROUP-RATE-LIMIT PATCH v1 ===
+  // === END 9BizClaw RATE-LIMIT PATCH v2 ===
   // === 9BizClaw MSG-LENGTH-GATE PATCH v1 ===
   // Hard cap at 2000 chars. Messages beyond this are almost always prompt injection
   // attempts or paste-bombs. Truncate with marker so agent knows content was cut.
@@ -719,6 +725,33 @@ export async function handleOpenzaloInbound(params: {
     rawBody = rawBody.slice(0, 2000) + '\n[... tin nhắn quá dài, đã cắt bớt]';
   }
   // === END 9BizClaw MSG-LENGTH-GATE PATCH v1 ===
+  // === 9BizClaw BOT-LOOP-BREAKER PATCH v1 ===
+  // Track consecutive bot-reply-triggering messages per group. If a single sender
+  // triggers 5+ replies in 3 minutes without any other human participant, hard-stop.
+  if (message.isGroup) {
+    const __blMap = ((global as any).__mcBotLoopTracker ??= new Map<string, { sender: string; count: number; since: number }>());
+    const __blKey = String(message.threadId || "");
+    const __blSender = String(message.senderId || "");
+    const __blNow = Date.now();
+    const __blEntry = __blMap.get(__blKey);
+    if (__blEntry) {
+      if (__blEntry.sender === __blSender && __blNow - __blEntry.since < 180000) {
+        __blEntry.count++;
+        if (__blEntry.count >= 5) {
+          runtime.log?.(`openzalo: BOT-LOOP-BREAKER — ${__blSender} in group ${__blKey} triggered ${__blEntry.count} consecutive replies in ${Math.round((__blNow - __blEntry.since) / 1000)}s — dropping`);
+          return;
+        }
+      } else {
+        __blMap.set(__blKey, { sender: __blSender, count: 1, since: __blNow });
+      }
+    } else {
+      __blMap.set(__blKey, { sender: __blSender, count: 1, since: __blNow });
+    }
+    if (__blMap.size > 200) {
+      for (const [k, v] of __blMap) { if (__blNow - v.since > 300000) __blMap.delete(k); }
+    }
+  }
+  // === END 9BizClaw BOT-LOOP-BREAKER PATCH v1 ===
   // === 9BizClaw OUT-OF-SCOPE FILTER v1 ===
   // Code-level guard: auto-refuse requests that are outside bot scope BEFORE
   // the LLM sees them. continuation-skip may lose AGENTS.md rules on message 2+,
@@ -733,8 +766,8 @@ export async function handleOpenzaloInbound(params: {
       /viết\s*(code|chương trình|script|phần mềm|app|web|html|css|python|javascript|java|sql|c\+\+)/i,
       /làm\s*(bài|slide|powerpoint|excel|word|luận văn|đồ án|assignment|homework)/i,
       /dịch\s*(giúp|cho|hộ)?\s*(em|anh|tôi|mình)?\s*(sang|từ|qua)?\s*(tiếng|english|việt|trung|hàn|nhật|pháp|đức)/i,
-      /dịch\s*(thuật|giúp|hộ|cho)\b/i,
-      /translate\b/i,
+      /dịch\s*thuật\s*(giúp|cho|hộ)\b/i,
+      /translate\s+(this|for|to|from|into)\b/i,
       /giải\s*(toán|bài tập|đề|phương trình)/i,
       /viết\s*(văn|luận|báo cáo|tiểu luận|essay|report)/i,
       /viết\s*(giúp|cho|hộ)\s*(em|anh|tôi|mình)?\s*(bài|cái|một)/i,
@@ -886,7 +919,8 @@ export async function handleOpenzaloInbound(params: {
     }
 
     let __ragCtx = '';
-    if (__ragNow > __ragG.__ragCooldownUntil && (rawBody || '').trim().length >= 3) {
+    const __ragIsCommandBlocked = rawBody === '[nội dung nội bộ đã được lọc]';
+    if (!__ragIsCommandBlocked && __ragNow > __ragG.__ragCooldownUntil && (rawBody || '').trim().length >= 3) {
       if (!__ragG.__ragSecret) {
         try {
           const fs = require('fs');
@@ -1058,7 +1092,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
           runtime.log?.(`openzalo: non-friend ${__fcSender} — sending friend request proactively`);
           let __fcFriendReqSent = false;
           try {
-            const __fcExec = require("node:child_process").execFileSync;
+            const { execFile: __fcExecAsync } = require("node:child_process");
             const __fcHome2 = require("node:os").homedir();
             const __fcAppDir = "9bizclaw";
             let __fcAppBase;
@@ -1073,16 +1107,25 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
             }
             const __fcVendorCli = __fcPath.join(__fcAppBase, __fcAppDir, "vendor", "node_modules", "openzca", "dist", "cli.js");
             const __fcNodeBin = __fcPath.join(__fcAppBase, __fcAppDir, "vendor", "node", process.platform === "win32" ? "node.exe" : "bin/node");
+            const __fcFriendMsg = "Xin chào, mình là trợ lý AI. Kết bạn để mình hỗ trợ bạn nhé!";
             if (__fcFs.existsSync(__fcVendorCli) && __fcFs.existsSync(__fcNodeBin)) {
-              __fcExec(__fcNodeBin, [__fcVendorCli, "friend", "request", __fcSender, "--message", "Xin chào, mình là trợ lý AI. Kết bạn để mình hỗ trợ bạn nhé!"], { timeout: 10000, windowsHide: true, stdio: "ignore" });
-              runtime.log?.(`openzalo: friend request sent via CLI to ${__fcSender}`);
-              __fcFriendReqSent = true;
+              await new Promise<void>((resolve) => {
+                __fcExecAsync(__fcNodeBin, [__fcVendorCli, "friend", "request", __fcSender, "--message", __fcFriendMsg], { timeout: 10000, windowsHide: true, stdio: "ignore" }, (err: any) => {
+                  if (err) runtime.log?.(`openzalo: friend request CLI failed: ${String(err)}`);
+                  else { runtime.log?.(`openzalo: friend request sent via CLI to ${__fcSender}`); __fcFriendReqSent = true; }
+                  resolve();
+                });
+              });
             } else {
               try {
                 const __fcCmd = process.platform === "win32" ? "openzca.cmd" : "openzca";
-                __fcExec(__fcCmd, ["friend", "request", __fcSender, "--message", "Xin chào, mình là trợ lý AI. Kết bạn để mình hỗ trợ bạn nhé!"], { timeout: 10000, windowsHide: true, stdio: "ignore", shell: process.platform === "win32" });
-                runtime.log?.(`openzalo: friend request sent via PATH to ${__fcSender}`);
-                __fcFriendReqSent = true;
+                await new Promise<void>((resolve) => {
+                  __fcExecAsync(__fcCmd, ["friend", "request", __fcSender, "--message", __fcFriendMsg], { timeout: 10000, windowsHide: true, stdio: "ignore", shell: process.platform === "win32" } as any, (err: any) => {
+                    if (err) runtime.log?.(`openzalo: openzca CLI not found — cannot send friend request: ${String(err)}`);
+                    else { runtime.log?.(`openzalo: friend request sent via PATH to ${__fcSender}`); __fcFriendReqSent = true; }
+                    resolve();
+                  });
+                });
               } catch (__fcPathErr) {
                 runtime.log?.(`openzalo: openzca CLI not found — cannot send friend request: ${String(__fcPathErr)}`);
               }
@@ -1886,7 +1929,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
           return;
         }
         if (__mcBuffer.text) {
-          __mcBuffer.text += (/[.!?…]$/.test(__mcBuffer.text) ? " " : "") + text;
+          __mcBuffer.text += (/\s$/.test(__mcBuffer.text) || /^\s/.test(text) ? "" : " ") + text;
         } else {
           __mcBuffer.text = text;
           __mcBuffer.firstPayload = payload;

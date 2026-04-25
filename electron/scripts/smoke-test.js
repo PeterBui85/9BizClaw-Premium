@@ -337,31 +337,31 @@ if (!openzaloSrc && isCiBuild && process.platform === 'darwin') {
 }
 
 if (openzaloSrc) {
-  // Anchor 1: ensureOpenzaloShellFix anchor or already-patched marker
+  // Anchor 1: openzca.ts shell-fix (fork file)
   checkPatchAnchor(
     'openzca.ts spawn anchor',
     path.join(openzaloSrc, 'openzca.ts'),
     /spawn\s*\(\s*binary\s*,/,
     '9BizClaw PATCH',
-    'ensureOpenzaloShellFix() in main.js may need updated patch template at electron/patches/openzalo-openzca.ts'
+    'openzalo fork openzca.ts missing shell-fix patch — check electron/patches/openzalo-fork/openzca.ts'
   );
 
-  // Anchor 2: ensureOpenzaloForceOneMessageFix anchor or already-patched marker
+  // Anchor 2: inbound.ts blockStreaming (fork file)
   checkPatchAnchor(
     'inbound.ts disableBlockStreaming anchor',
     path.join(openzaloSrc, 'inbound.ts'),
     /disableBlockStreaming:\s*\n?\s*typeof account\.config\.blockStreaming === ["']boolean["']/,
     '9BizClaw FORCE-ONE-MESSAGE PATCH',
-    'ensureOpenzaloForceOneMessageFix() regex needs updating — openzalo plugin restructured'
+    'openzalo fork inbound.ts missing force-one-message patch — check electron/patches/openzalo-fork/inbound.ts'
   );
 
-  // Anchor 3: ensureZaloBlocklistFix anchor or already-patched marker
+  // Anchor 3: inbound.ts blocklist (fork file)
   checkPatchAnchor(
     'inbound.ts blocklist anchor',
     path.join(openzaloSrc, 'inbound.ts'),
     /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
     '9BizClaw BLOCKLIST PATCH',
-    'ensureZaloBlocklistFix() anchor missing — openzalo plugin restructured'
+    'openzalo fork inbound.ts missing blocklist patch — check electron/patches/openzalo-fork/inbound.ts'
   );
 } else {
   warn('openzalo plugin source', 'not found in vendor or ~/.openclaw/extensions — patch anchors skipped');
@@ -375,7 +375,7 @@ const forkDir = path.join(__dirname, '..', 'patches', 'openzalo-fork');
 const forkChecks = [
   {
     file: 'inbound.ts',
-    markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH'],
+    markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH', 'COMMAND-BLOCK PATCH', 'RATE-LIMIT', 'BOT-LOOP-BREAKER'],
   },
   {
     file: 'send.ts',

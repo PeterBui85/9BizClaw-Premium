@@ -525,15 +525,20 @@ export async function sendTextOpenzalo(options: SendTextOptions): Promise<Openza
       try { logOutbound("error", "transport gate error — allowing send", { err: String(__ofGateErr) }); } catch {}
       // Gate itself errored — fail-OPEN so messages still deliver
     }
+    // Internal groups skip the output filter — staff can see raw data.
+    const __ofIsInternal = (() => {
+      if (!target.isGroup) return false;
+      try {
+        const gs = (global as any).__mcReadGroupSettings?.() || {};
+        return gs[String(target.threadId)]?.internal === true;
+      } catch { return false; }
+    })();
+    if (__ofIsInternal) {
+      try { logOutbound("info", "internal group — output filter skipped", { to: target.threadId }); } catch {}
+    }
     // Patterns that MUST NEVER appear in a customer-facing Zalo reply.
-    // Case-insensitive, matching any occurrence. Order matters: more
-    // specific patterns first so audit log shows the most informative match.
-    //
-    // REGEX ANCHOR NOTE: \b only works for ASCII-word transitions
-    // ([a-zA-Z0-9_]). For patterns with branches starting with Vietnamese
-    // chars (đã, đọc, ạ, ơ, ...), use (?<![a-zA-Z0-9_]) lookbehind at
-    // start and (?![a-zA-Z0-9_]) lookahead at end. \b is fine for
-    // English-only or "em-prefix" branches.
+    // Skipped for internal groups (staff can see technical details).
+    if (!__ofIsInternal) {
     const __ofSanitized = body.replace(/[​-‏‪-‮﻿­⁠⁡-⁤⁪-⁯]/g, '');
     const __ofBlockPatterns: { name: string; re: RegExp }[] = [
       // --- Layer A: file paths + secrets ---
@@ -700,6 +705,7 @@ export async function sendTextOpenzalo(options: SendTextOptions): Promise<Openza
         }
       })();
     }
+    } // end if (!__ofIsInternal)
   } catch (__ofE) {
     try { logOutbound("error", "output filter error", { err: String(__ofE) }); } catch {}
     return { messageId: "transport-gated", kind: "text" as const };

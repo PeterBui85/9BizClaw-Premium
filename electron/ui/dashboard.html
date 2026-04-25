@@ -354,8 +354,8 @@
     .activity-drawer-backdrop { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:94; display:none; }
     .activity-drawer-backdrop.show { display:block; }
     /* Zalo 3-column layout */
-    #page-zalo.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
-    #page-telegram.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); }
+    #page-zalo.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); overflow:hidden; }
+    #page-telegram.page.active { display:flex; flex-direction:column; height:calc(100vh - 32px); overflow:hidden; }
     /* Telegram page: sidebar + main */
     .tg-layout { display:grid; grid-template-columns:260px 1fr; gap:12px; flex:1; min-height:0; }
     .tg-sidebar { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:0; min-height:0; overflow-y:auto; }
@@ -364,8 +364,8 @@
     .tg-sidebar .zs-section:last-child { border-bottom:none; }
     .zs-hint { font-size:10px; color:var(--text-muted); margin-top:2px; margin-bottom:6px; line-height:1.4; }
     /* Zalo page: sidebar + main */
-    .zalo-layout { display:grid; grid-template-columns:260px minmax(0, 1fr); gap:16px; flex:1; min-height:0; min-width:0; }
-    .zalo-sidebar { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; display:flex; flex-direction:column; overflow-y:auto; }
+    .zalo-layout { display:grid; grid-template-columns:260px minmax(0, 1fr); gap:16px; flex:1; min-height:0; min-width:0; overflow:hidden; }
+    .zalo-sidebar { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
     .zs-section { margin-bottom:14px; }
     .zs-label { display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:5px; letter-spacing:0.3px; }
     .zs-select { width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:7px; color:var(--text); font-size:12px; }
@@ -521,23 +521,12 @@
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
     .zalo-saving-overlay { position:absolute; inset:0; background:var(--bg, rgba(0,0,0,0.15)); opacity:0.35; pointer-events:none; border-radius:inherit; transition:opacity 0.2s; z-index:5; }
     .page-header { display:flex; align-items:center; gap:12px; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
-    /* Telegram + Zalo: freeze header at top while body scrolls */
+    /* Telegram + Zalo: header stays fixed, only lists scroll */
     #page-telegram .page-header,
     #page-zalo .page-header {
-      position: sticky;
-      top: 0;
+      flex-shrink: 0;
       z-index: 20;
       background: var(--bg);
-      margin-top: -20px;
-      padding-top: 20px;
-    }
-    @media (min-width: 768px) {
-      #page-telegram .page-header,
-      #page-zalo .page-header { margin-top: -28px; padding-top: 28px; }
-    }
-    @media (min-width: 1280px) {
-      #page-telegram .page-header,
-      #page-zalo .page-header { margin-top: -24px; padding-top: 24px; }
     }
     .page-header h2 { margin:0; font-size:18px; }
     .page-header .page-icon { font-size:24px; }
@@ -548,7 +537,7 @@
     /* Inline Zalo manager (full page, not modal) */
     .zalo-section { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
     .zalo-section h4 { margin:0 0 10px; font-size:14px; }
-    .zalo-list-container { max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; background:var(--bg); }
+    /* zalo-list-container base styles handled by .zalo-main scoped rule above */
     /* Properly aligned radio/checkbox rows for dark theme */
     .zalo-radio-group { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
     .zalo-radio-row,
@@ -2389,27 +2378,31 @@
             <button class="page-help-btn" onclick="guideReplay('zalo')" title="Xem hướng dẫn trang Zalo">?</button>
             <button class="btn btn-secondary btn-small" onclick="recheckZaloFull()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Refresh</button>
             <button class="btn btn-secondary btn-small" id="reconnect-zalo-btn" onclick="reconnectZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
-            <button class="btn btn-secondary btn-small" id="zalo-pause-btn" onclick="toggleZaloPause()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="zalo-pause-label">Tạm dừng</span></button>
-            <button class="btn btn-small zalo-save-btn" id="zalo-save-main" onclick="saveZaloManager()" style="display:none;align-items:center;gap:6px;background:#16a34a;color:#fff;font-size:12px;animation:pulse-save 1.5s ease-in-out infinite"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
+            <button class="btn btn-secondary btn-small" id="zalo-pause-btn" onclick="toggleZaloPause()" title="Tạm dừng bot Zalo 30 phút. Bot sẽ im lặng hoàn toàn, không trả lời bất kỳ tin nhắn nào cho đến khi bật lại." style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="zalo-pause-label">Tạm dừng</span></button>
           </div>
         </div>
-        <div id="zalo-pause-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#2a2017;border:1px solid #5c4a1e;border-radius:8px;font-size:12px;color:#e8c66a;align-items:center;gap:8px">
+        <div id="zalo-pause-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#2a2017;border:1px solid #5c4a1e;border-radius:8px;font-size:12px;color:#e8c66a;align-items:center;gap:8px;flex-shrink:0">
           <span data-icon="pause-circle" data-icon-size="16"></span>
           <span>Bot Zalo đang tạm dừng. <span id="zalo-pause-until"></span></span>
+        </div>
+
+        <!-- Zalo master toggle bar -->
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-shrink:0">
+          <div class="switch-row" style="padding:0;margin:0;flex:1">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="font-weight:600;font-size:14px">Bật Zalo</div>
+              <div id="zalo-enabled-hint" style="display:none;font-size:11px;color:#e8c66a;font-weight:500">Chưa lưu</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button class="btn btn-small zalo-save-btn" id="zalo-save-main" onclick="saveZaloManager()" disabled style="display:inline-flex;align-items:center;gap:6px;background:#555;color:#999;font-size:12px;cursor:not-allowed;opacity:0.5"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
+              <label class="toggle-switch"><input type="checkbox" id="zalo-mgr-enabled" onchange="onZaloEnabledToggle()"><span class="toggle-slider"></span></label>
+            </div>
+          </div>
         </div>
 
         <div class="zalo-layout">
           <!-- LEFT: Settings sidebar (always visible) -->
           <div class="zalo-sidebar">
-            <div class="zs-section">
-              <div class="switch-row" style="padding:0;margin:0">
-                <div>
-                  <div style="font-weight:600;font-size:13px">Bật Zalo</div>
-                  <div id="zalo-enabled-hint" style="display:none;font-size:10px;color:#e8c66a;margin-top:2px;font-weight:500">Chưa lưu — bấm "Lưu cấu hình" phía trên</div>
-                </div>
-                <label class="toggle-switch"><input type="checkbox" id="zalo-mgr-enabled" onchange="onZaloEnabledToggle()"><span class="toggle-slider"></span></label>
-              </div>
-            </div>
             <div class="zs-section">
               <label class="zs-label">Chế độ trả lời</label>
               <select id="zalo-mode-select" class="zs-select" onchange="changeZaloMode(this.value)">
@@ -2418,7 +2411,7 @@
               </select>
               <div id="zalo-mode-status" style="display:none;margin-top:4px"><div class="test-result success" style="margin:0;font-size:11px">Đã cập nhật</div></div>
             </div>
-            <div class="zs-section">
+            <div class="zs-section" style="padding-top:14px;border-top:1px solid var(--border)">
               <label class="zs-label">Người lạ nhắn tin</label>
               <select id="zalo-stranger-policy" class="zs-select" onchange="changeStrangerPolicy(this.value)">
                 <option value="reply">Trả lời bình thường</option>
@@ -2426,7 +2419,7 @@
                 <option value="ignore">Không trả lời</option>
               </select>
             </div>
-            <div class="zs-section">
+            <div class="zs-section" style="padding-top:14px;border-top:1px solid var(--border)">
               <label class="zs-label">Hành vi nhóm mới <span class="tip" data-tooltip="Khi bot được thêm vào nhóm mới, mode mặc định">?</span></label>
               <select id="zalo-default-group-mode" class="zs-select" onchange="updateDefaultGroupMode(this.value)">
                 <option value="mention">@mention (chỉ reply khi tag)</option>
@@ -2434,7 +2427,7 @@
                 <option value="off">Tắt</option>
               </select>
             </div>
-            <div class="zs-section">
+            <div class="zs-section" style="padding-top:14px;border-top:1px solid var(--border)">
               <label class="zs-label">Gộp tin khách <span class="tip" data-tooltip="Khách gửi nhiều tin liên tiếp, bot chờ gộp lại trả lời 1 lần thay vì reply từng tin">?</span></label>
               <select id="zl-debounce-select" class="zs-select" onchange="onDebounceSelect('zalo', this.value)">
                 <option value="0">Tắt (trả lời ngay)</option>
@@ -2445,7 +2438,6 @@
                 <option value="5000">5 giây</option>
               </select>
             </div>
-            <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border);font-size:10px;color:var(--text-muted);text-align:center;line-height:1.5">Nhóm, bạn bè, chế độ: tự lưu ngay.<br>Bật/tắt Zalo: cần bấm "Lưu cấu hình".</div>
           </div>
 
           <!-- RIGHT: Groups/Friends tabs -->
@@ -4694,7 +4686,7 @@
         btn.id = 'zalo-groups-load-more';
         btn.className = 'btn btn-secondary';
         btn.style.cssText = 'width:100%;margin-top:8px;padding:10px';
-        btn.textContent = `Xem them ${Math.min(remaining, ZALO_GROUPS_PAGE_SIZE)} / ${remaining} nhom con lai`;
+        btn.textContent = `Xem thêm ${Math.min(remaining, ZALO_GROUPS_PAGE_SIZE)} / ${remaining} nhóm còn lại`;
         btn.onclick = _renderMoreGroups;
         fragment.appendChild(btn);
       }
@@ -4765,7 +4757,14 @@
       const dirty = _zaloEnabledSaved !== null && cur !== _zaloEnabledSaved;
       const btn = document.getElementById('zalo-save-main');
       const hint = document.getElementById('zalo-enabled-hint');
-      if (btn) btn.style.display = dirty ? 'inline-flex' : 'none';
+      if (btn) {
+        btn.disabled = !dirty;
+        btn.style.background = dirty ? '#16a34a' : '#555';
+        btn.style.color = dirty ? '#fff' : '#999';
+        btn.style.cursor = dirty ? 'pointer' : 'not-allowed';
+        btn.style.opacity = dirty ? '1' : '0.5';
+        btn.style.animation = dirty ? 'pulse-save 1.5s ease-in-out infinite' : 'none';
+      }
       if (hint) hint.style.display = dirty ? 'block' : 'none';
     }
     let _zaloAutoSaveTimer = null;
@@ -4897,15 +4896,6 @@
       autoSaveZaloManager();
     }
 
-    function toggleAllGroups(checked) {
-      if (checked) {
-        zaloMgrConfig.groupAllowFrom = zaloGroups.map(g => g.groupId);
-      } else {
-        zaloMgrConfig.groupAllowFrom = [];
-      }
-      zaloMgrConfig.groupPolicy = 'allowlist';
-      renderZaloGroups();
-    }
 
     const ZALO_FRIENDS_PAGE_SIZE = 30;
     let _zaloFriendsSorted = [];
@@ -5515,12 +5505,12 @@
         const zlBtn = document.getElementById('zalo-pause-label');
         const zlBanner = document.getElementById('zalo-pause-banner');
         if (zl.paused) {
-          if (zlBtn) zlBtn.textContent = 'Bật Zalo';
+          if (zlBtn) zlBtn.textContent = 'Tiếp tục';
           if (zlBanner) { zlBanner.style.display = 'flex'; }
           const zlUntil = document.getElementById('zalo-pause-until');
           if (zlUntil) {
             if (zl.permanent) {
-              zlUntil.textContent = 'Zalo chưa được bật — bấm "Bật Zalo" để bot bắt đầu nhận tin.';
+              zlUntil.textContent = 'Zalo đang tạm dừng — bấm "Tiếp tục" để bot bắt đầu nhận tin.';
             } else if (zl.until) {
               const d = new Date(zl.until);
               zlUntil.textContent = 'Đến ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });

@@ -299,7 +299,7 @@ assert(mainSrc.includes('_withMemoryFileLock(profilePath'), 'append uses memory 
 console.log('\n[Fork version]');
 
 const vendorPatchesSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'lib', 'vendor-patches.js'), 'utf-8');
-assert(vendorPatchesSrc.includes("fork-v17-mention-fix"), 'fork version is v17-mention-fix (in vendor-patches module)');
+assert(vendorPatchesSrc.includes("fork-v19-internal-groups"), 'fork version is v19-internal-groups (in vendor-patches module)');
 
 // ============================================================
 // TEST 13: AGENTS.md — token bootstrap via workspace read

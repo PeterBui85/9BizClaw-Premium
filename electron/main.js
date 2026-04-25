@@ -2423,16 +2423,16 @@ async function sendCeoAlert(text) {
     console.error('[sendCeoAlert] Telegram failed:', e?.message);
   }
   if (!delivered) {
-    // Both channels failed — write to disk as last resort so nothing is silently lost
+    // Telegram failed — write to disk as last resort so nothing is silently lost
     try {
       const logsDir = path.join(getWorkspace(), 'logs');
       fs.mkdirSync(logsDir, { recursive: true });
       const missedFile = path.join(logsDir, 'ceo-alerts-missed.log');
       const entry = `${new Date().toISOString()} — UNDELIVERED: ${text.slice(0, 500)}\n`;
       fs.appendFileSync(missedFile, entry, 'utf-8');
-      console.error('[sendCeoAlert] BOTH channels failed — wrote to ceo-alerts-missed.log');
+      console.error('[sendCeoAlert] Telegram failed — wrote to ceo-alerts-missed.log');
     } catch (e) {
-      console.error('[sendCeoAlert] BOTH channels failed AND disk write failed:', e?.message);
+      console.error('[sendCeoAlert] Telegram failed AND disk write failed:', e?.message);
     }
   }
   return delivered;
@@ -9828,7 +9828,10 @@ function isChannelPaused(channel) {
     // Expired — clean up
     try { fs.unlinkSync(p); } catch {}
     return false;
-  } catch { return false; }
+  } catch {
+    console.error(`[pause] ${channel} unexpected error — treating as paused (fail closed)`);
+    return true;
+  }
 }
 
 function pauseChannel(channel, durationMin = 30) {
@@ -10415,7 +10418,7 @@ async function apptDispatcherTick() {
             for (const ch of channels) {
               try {
                 if (ch === 'telegram') anySent = !!(await sendTelegram(text)) || anySent;
-                else if (ch === 'zalo') anySent = !!(await sendZalo(text)) || anySent;
+                else if (ch === 'zalo') { console.log('[apptDispatcher] Zalo reminder skipped — direct CEO send disabled, use Telegram'); }
               } catch (e) { console.error('[apptDispatcher] reminder send:', e.message); }
             }
             if (anySent) {
@@ -12388,7 +12391,25 @@ async function processEscalationQueue() {
 
 function startEscalationChecker() {
   if (_escalationInterval) clearInterval(_escalationInterval);
-  _escalationInterval = setInterval(processEscalationQueue, 30 * 1000); // check every 30s
+  // Recover orphaned .processing.* files from previous crash
+  try {
+    const ws = getWorkspace();
+    const logsDir = path.join(ws, 'logs');
+    if (fs.existsSync(logsDir)) {
+      const orphans = fs.readdirSync(logsDir).filter(f => f.startsWith('escalation-queue.jsonl.processing.'));
+      for (const orphan of orphans) {
+        const orphanPath = path.join(logsDir, orphan);
+        const queueFile = path.join(logsDir, 'escalation-queue.jsonl');
+        try {
+          const content = fs.readFileSync(orphanPath, 'utf-8').trim();
+          if (content) fs.appendFileSync(queueFile, (content.endsWith('\n') ? content : content + '\n'), 'utf-8');
+          fs.unlinkSync(orphanPath);
+          console.log(`[escalation] recovered orphaned ${orphan} (${content.split('\n').length} entries)`);
+        } catch (e) { console.warn('[escalation] orphan recovery failed:', e?.message); }
+      }
+    }
+  } catch {}
+  _escalationInterval = setInterval(processEscalationQueue, 30 * 1000);
   _escalationInterval.unref?.();
 }
 
@@ -13499,14 +13520,12 @@ function _startCronJobsInner() {
       c.oneTimeAt = c.cronExpr.replace(/\.000Z$/, '').replace(/Z$/, '');
       delete c.cronExpr;
       // Write healed version back to file so it doesn't re-trigger
-      try {
-        await _withCustomCronLock(async () => {
-          const customCronsPath = getCustomCronsPath();
-          const all = loadCustomCrons();
-          const idx = all.findIndex(x => x && x.id === c.id);
-          if (idx >= 0) { all[idx] = c; writeJsonAtomic(customCronsPath, all); }
-        });
-      } catch {}
+      _withCustomCronLock(async () => {
+        const customCronsPath = getCustomCronsPath();
+        const all = loadCustomCrons();
+        const idx = all.findIndex(x => x && x.id === c.id);
+        if (idx >= 0) { all[idx] = c; writeJsonAtomic(customCronsPath, all); }
+      }).catch(e => { console.warn('[cron] inline-heal write failed:', e?.message); });
       // Fall through to oneTimeAt scheduling below — need to re-enter the loop
       // by checking oneTimeAt condition. Simplest: just goto the oneTimeAt handler.
     }
