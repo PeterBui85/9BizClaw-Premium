@@ -4578,7 +4578,15 @@
       _zaloEnabledSaved = zaloMgrConfig.enabled !== false;
       const btn = document.getElementById('zalo-save-main');
       const hint = document.getElementById('zalo-enabled-hint');
-      if (btn) btn.style.display = 'none';
+      if (btn) {
+        btn.style.display = 'inline-flex';
+        btn.disabled = true;
+        btn.style.background = '#555';
+        btn.style.color = '#999';
+        btn.style.cursor = 'not-allowed';
+        btn.style.opacity = '0.5';
+        btn.style.animation = 'none';
+      }
       if (hint) hint.style.display = 'none';
       const spEl = document.getElementById('zalo-stranger-policy');
       if (spEl) spEl.value = zaloMgrConfig.strangerPolicy || 'ignore';
