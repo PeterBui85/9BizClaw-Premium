@@ -18019,6 +18019,18 @@ app.whenReady().then(async () => {
   // Re-index any Knowledge files that exist on disk but are missing from DB
   // (e.g. uploaded while better-sqlite3 was broken). Non-blocking.
   try { ensureKnowledgeFolders(); } catch {}
+  // Always regenerate index.md from disk files at boot — even when DB is
+  // broken (ABI mismatch after upgrade). rewriteKnowledgeIndex reads DB if
+  // available, but merges in disk-only files so the bot's bootstrap context
+  // always sees every document the CEO uploaded. Without this, upgrading
+  // the app could leave index.md stale → bot forgets all knowledge.
+  try {
+    for (const cat of getKnowledgeCategories()) {
+      try { rewriteKnowledgeIndex(cat); } catch (e) {
+        console.warn('[knowledge] boot index rewrite for', cat, 'failed:', e.message);
+      }
+    }
+  } catch {}
   backfillKnowledgeFromDisk().catch(e => console.error('[knowledge] backfill error:', e.message));
   // K1: chunk-level backfill — fire-and-forget 10s after boot so gateway warmup
   // takes priority. Non-blocking; safe no-op if DB still broken.

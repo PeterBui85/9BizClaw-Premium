@@ -488,7 +488,6 @@
     .ready-dot[data-state="not-ready"] { background:#ef4444; box-shadow:0 0 0 2px var(--surface), 0 0 6px rgba(239,68,68,0.6); }
     .ready-dot[data-state="checking"] { background:#94a3b8; animation:pulse-dot 1.4s ease-in-out infinite; }
     @keyframes pulse-dot { 0%,100%{opacity:0.5} 50%{opacity:1} }
-    @keyframes pulse-save { 0%,100%{box-shadow:0 0 0 0 rgba(22,163,106,0.4)} 50%{box-shadow:0 0 0 6px rgba(22,163,106,0)} }
     @keyframes pulse-update { 0%,100%{transform:scale(1)} 50%{transform:scale(1.02)} }
     /* Inline status pill in channel page headers — explicit text for CEO */
     .ready-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:500; line-height:1; }
@@ -2391,10 +2390,8 @@
           <div class="switch-row" style="padding:0;margin:0;flex:1">
             <div style="display:flex;align-items:center;gap:10px">
               <div style="font-weight:600;font-size:14px">Bật Zalo</div>
-              <div id="zalo-enabled-hint" style="display:none;font-size:11px;color:#e8c66a;font-weight:500">Chưa lưu</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
-              <button class="btn btn-small zalo-save-btn" id="zalo-save-main" onclick="saveZaloManager()" disabled style="display:inline-flex;align-items:center;gap:6px;background:#555;color:#999;font-size:12px;cursor:not-allowed;opacity:0.5"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
               <label class="toggle-switch"><input type="checkbox" id="zalo-mgr-enabled" onchange="onZaloEnabledToggle()"><span class="toggle-slider"></span></label>
             </div>
           </div>
@@ -4576,18 +4573,6 @@
       document.getElementById('zalo-mgr-group-count').textContent = zaloGroups.length;
       document.getElementById('zalo-mgr-enabled').checked = zaloMgrConfig.enabled !== false;
       _zaloEnabledSaved = zaloMgrConfig.enabled !== false;
-      const btn = document.getElementById('zalo-save-main');
-      const hint = document.getElementById('zalo-enabled-hint');
-      if (btn) {
-        btn.style.display = 'inline-flex';
-        btn.disabled = true;
-        btn.style.background = '#555';
-        btn.style.color = '#999';
-        btn.style.cursor = 'not-allowed';
-        btn.style.opacity = '0.5';
-        btn.style.animation = 'none';
-      }
-      if (hint) hint.style.display = 'none';
       const spEl = document.getElementById('zalo-stranger-policy');
       if (spEl) spEl.value = zaloMgrConfig.strangerPolicy || 'ignore';
       const defModeEl = document.getElementById('zalo-default-group-mode');
@@ -4757,23 +4742,15 @@
 
     // Debounced auto-save for workspace-file changes (blocklist, groupSettings,
     // strangerPolicy). These files are read realtime by inbound.ts patches —
-    // zero gateway restart needed. Master Zalo on/off is NOT auto-saved (it
-    // triggers hard restart) and keeps the explicit "Lưu cấu hình" button.
+    // zero gateway restart needed. Master Zalo on/off auto-saves and restarts
+    // gateway immediately — no explicit save button needed.
     let _zaloEnabledSaved = null;
     function onZaloEnabledToggle() {
       const cur = document.getElementById('zalo-mgr-enabled').checked;
-      const dirty = _zaloEnabledSaved !== null && cur !== _zaloEnabledSaved;
-      const btn = document.getElementById('zalo-save-main');
-      const hint = document.getElementById('zalo-enabled-hint');
-      if (btn) {
-        btn.disabled = !dirty;
-        btn.style.background = dirty ? '#16a34a' : '#555';
-        btn.style.color = dirty ? '#fff' : '#999';
-        btn.style.cursor = dirty ? 'pointer' : 'not-allowed';
-        btn.style.opacity = dirty ? '1' : '0.5';
-        btn.style.animation = dirty ? 'pulse-save 1.5s ease-in-out infinite' : 'none';
+      if (_zaloEnabledSaved !== null && cur !== _zaloEnabledSaved) {
+        _zaloEnabledSaved = cur;
+        saveZaloManager();
       }
-      if (hint) hint.style.display = dirty ? 'block' : 'none';
     }
     let _zaloAutoSaveTimer = null;
     // Freshness cache for the `enabled` flag. When cached value is younger
@@ -5011,13 +4988,8 @@
 
     async function saveZaloManager() {
       zaloMgrConfig.enabled = document.getElementById('zalo-mgr-enabled').checked;
-      // Always send open policy — native openzalo gate must let ALL groups through.
-      // Group filtering is handled by code-level patch reading zalo-group-settings.json.
       zaloMgrConfig.groupPolicy = 'open';
       zaloMgrConfig.groupAllowFrom = ['*'];
-      // Apply loading state to ALL save buttons (one per tab)
-      const saveBtns = document.querySelectorAll('.zalo-save-btn');
-      saveBtns.forEach(btn => { btn.disabled = true; btn.classList.add('is-loading'); });
       try {
         const result = await window.claw.saveZaloManagerConfig(zaloMgrConfig);
         if (result?.success) {
@@ -5025,11 +4997,8 @@
           showToast('Đã lưu cấu hình Zalo');
           markZmFresh(zaloMgrConfig.enabled);
           _zaloEnabledSaved = zaloMgrConfig.enabled;
-          onZaloEnabledToggle();
           try { await loadZaloManagerData(); } catch (e) { console.warn('reload zalo data failed', e); }
         } else if (result?.error === 'BOOT_IN_PROGRESS') {
-          // Soft info toast — not a red error. Bot is still booting; user can
-          // retry in a few seconds.
           addActivity('Bot đang khởi động — chưa lưu được');
           showToast(result.message || 'Bot đang khởi động, vui lòng đợi vài giây rồi thử lại', 'info');
         } else {
@@ -5040,8 +5009,6 @@
       } catch (e) {
         addActivity('Lỗi: ' + e.message);
         showToast('Lỗi: ' + e.message, 'error');
-      } finally {
-        saveBtns.forEach(btn => { btn.disabled = false; btn.classList.remove('is-loading'); });
       }
     }
     async function deleteCustomCron(id) {
