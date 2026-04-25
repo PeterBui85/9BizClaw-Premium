@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, powerSaveBlocker, powerMonitor } = require('electron');
+﻿const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, powerSaveBlocker, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
@@ -199,6 +199,53 @@ function purgeAgentSessions(caller) {
     console.warn(`[${caller}] session purge failed:`, pe?.message || pe);
     return 0;
   }
+}
+
+// ─── Brand Assets ────────────────────────────────────────────────
+const BRAND_ASSET_FORMATS = ['.png', '.jpg', '.jpeg', '.webp'];
+const BRAND_ASSET_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
+function getBrandAssetsDir() { return path.join(getWorkspace(), 'brand-assets'); }
+
+function isPathSafe(baseDir, filename) {
+  if (!filename || typeof filename !== 'string') return false;
+  if (filename.includes('\0')) return false;
+  const resolved = path.resolve(baseDir, filename);
+  return resolved.startsWith(baseDir + path.sep) || resolved === baseDir;
+}
+
+// ─── Facebook Config ────────────────────────────────────────────
+function getFbConfigPath() { return path.join(getWorkspace(), 'fb-config.json'); }
+
+function readFbConfig() {
+  try {
+    const raw = fs.readFileSync(getFbConfigPath(), 'utf-8');
+    const cfg = JSON.parse(raw);
+    if (cfg.accessToken) {
+      try {
+        const { safeStorage } = require('electron');
+        if (safeStorage.isEncryptionAvailable()) {
+          cfg.accessToken = safeStorage.decryptString(Buffer.from(cfg.accessToken, 'base64'));
+        }
+      } catch {}
+    }
+    return cfg;
+  } catch { return null; }
+}
+
+function writeFbConfig(cfg) {
+  const toWrite = { ...cfg };
+  if (toWrite.accessToken) {
+    try {
+      const { safeStorage } = require('electron');
+      if (safeStorage.isEncryptionAvailable()) {
+        toWrite.accessToken = safeStorage.encryptString(toWrite.accessToken).toString('base64');
+      } else {
+        console.warn('[fb-config] safeStorage unavailable — storing token in plaintext');
+      }
+    } catch {}
+  }
+  fs.writeFileSync(getFbConfigPath(), JSON.stringify(toWrite, null, 2), 'utf-8');
 }
 
 // Default schedules (also used as template when seeding fresh install)
@@ -624,7 +671,7 @@ function augmentPathWithBundledNode() {
   if (!v) return;
   // Prepend TWO dirs: (1) the directory containing the bundled `node` binary,
   // (2) vendor/node_modules/.bin for the shims of bundled npm packages
-  // (openclaw, openzca, 9router). Without the second dir, the openzalo
+  // (openclaw, openzca, 9router). Without the second dir, the modoro-zalo
   // plugin running inside the gateway calls `spawn('openzca', ...)` and gets
   // ENOENT because the bundled openzca shim is not on PATH.
   // Layout differs: darwin has vendor/node/bin/, win32 has vendor/node/ flat.
@@ -920,20 +967,6 @@ function seedWorkspace() {
   if (!fs.existsSync(schedulesFile)) {
     try { writeJsonAtomic(schedulesFile, DEFAULT_SCHEDULES_JSON); } catch {}
   }
-  // Strip entries with owner:"facebook" — FB features are v2.3.48+, not this version.
-  // Prevents stale dev/test data from showing up in Tổng quan timeline.
-  try {
-    if (fs.existsSync(schedulesFile)) {
-      const sched = JSON.parse(fs.readFileSync(schedulesFile, 'utf-8'));
-      if (Array.isArray(sched)) {
-        const cleaned = sched.filter(s => s?.owner !== 'facebook' && !/^fb-/.test(s?.id || ''));
-        if (cleaned.length < sched.length) {
-          writeJsonAtomic(schedulesFile, cleaned);
-          console.log(`[seedWorkspace] removed ${sched.length - cleaned.length} FB schedule(s) from schedules.json (not supported in this version)`);
-        }
-      }
-    }
-  } catch (e) { console.warn('[seedWorkspace] FB schedule cleanup error:', e?.message); }
   // INTENTIONAL: custom-crons.json is NOT in `templateFiles` above. It is user
   // data, never a template. Packaged fresh installs always get an empty list
   // here because their workspace=userData/ doesn't have the file. Devs cloning
@@ -955,6 +988,8 @@ function seedWorkspace() {
   // bot will actually use after wizard).
   try { fs.mkdirSync(path.join(ws, 'memory', 'zalo-users'), { recursive: true }); } catch {}
   try { fs.mkdirSync(path.join(ws, 'memory', 'zalo-groups'), { recursive: true }); } catch {}
+  try { fs.mkdirSync(path.join(ws, 'brand-assets'), { recursive: true }); } catch {}
+  try { fs.mkdirSync(path.join(ws, 'brand-assets', 'generated'), { recursive: true }); } catch {}
   try {
     const agentWs = (typeof getOpenclawAgentWorkspace === 'function') ? getOpenclawAgentWorkspace() : null;
     if (agentWs && agentWs !== ws) {
@@ -1806,11 +1841,11 @@ function isFatalErr(stderr, exitCode) {
 //        "channels.telegram.foo: Unrecognized key: \"bar\""
 //
 //   2. AJV / JSON-Schema-draft-07 "additional properties" format:
-//        "channels.openzalo: invalid config: must NOT have additional properties"
-//        "- channels.openzalo/streaming: must match ..."
+//        "channels.modoro-zalo: invalid config: must NOT have additional properties"
+//        "- channels.modoro-zalo/streaming: must match ..."
 //
 //   3. Plain list format (sometimes wraps around):
-//        "channels.openzalo: must NOT have additional properties"
+//        "channels.modoro-zalo: must NOT have additional properties"
 //        followed by: "Additional property: streaming"
 //
 // For format #1 we can extract both the path AND the specific key.
@@ -1847,10 +1882,10 @@ function parseUnrecognizedKeyErrors(stderr) {
   return out;
 }
 
-// Whitelist of fields we might mistakenly have added to openzalo config that
+// Whitelist of fields we might mistakenly have added to modoro-zalo config that
 // are NOT in its schema. When we see "additional properties" error at the
-// openzalo path, we strip these known-offenders. Expand this list as we learn.
-const KNOWN_BAD_OPENZALO_KEYS = ['streaming', 'streamMode', 'nativeStreaming', 'blockStreamingDefault'];
+// modoro-zalo path, we strip these known-offenders. Expand this list as we learn.
+const KNOWN_BAD_ZALO_KEYS = ['streaming', 'streamMode', 'nativeStreaming', 'blockStreamingDefault'];
 
 // Defense-in-depth: synchronously remove deprecated keys from openclaw.json so
 // `openclaw <subcommand>` stops exiting with "Config invalid". Cheap, idempotent.
@@ -1883,12 +1918,12 @@ function healOpenClawConfigInline(errStderr) {
       removed.push('agents.defaults.blockStreaming');
       changed = true;
     }
-    // Static: strip any KNOWN_BAD_OPENZALO_KEYS from openzalo root + all accounts.
+    // Static: strip any KNOWN_BAD_ZALO_KEYS from modoro-zalo root + all accounts.
     // These are fields that LOOK like they should work (streaming, streamMode)
-    // but openzalo schema doesn't define them, so the validator hard-rejects.
-    const stripBadOpenzaloKeys = (block, pathPrefix) => {
+    // but modoro-zalo schema doesn't define them, so the validator hard-rejects.
+    const stripBadZaloKeys = (block, pathPrefix) => {
       if (!block || typeof block !== 'object') return;
-      for (const k of KNOWN_BAD_OPENZALO_KEYS) {
+      for (const k of KNOWN_BAD_ZALO_KEYS) {
         if (k in block) {
           delete block[k];
           removed.push(`${pathPrefix}.${k}`);
@@ -1896,13 +1931,13 @@ function healOpenClawConfigInline(errStderr) {
         }
       }
     };
-    if (config?.channels?.openzalo) {
-      stripBadOpenzaloKeys(config.channels.openzalo, 'channels.openzalo');
-      if (config.channels.openzalo.accounts) {
-        for (const accId of Object.keys(config.channels.openzalo.accounts || {})) {
-          stripBadOpenzaloKeys(
-            config.channels.openzalo.accounts[accId],
-            `channels.openzalo.accounts.${accId}`
+    if (config?.channels?.['modoro-zalo']) {
+      stripBadZaloKeys(config.channels['modoro-zalo'], 'channels.modoro-zalo');
+      if (config.channels['modoro-zalo'].accounts) {
+        for (const accId of Object.keys(config.channels['modoro-zalo'].accounts || {})) {
+          stripBadZaloKeys(
+            config.channels['modoro-zalo'].accounts[accId],
+            `channels.modoro-zalo.accounts.${accId}`
           );
         }
       }
@@ -1928,17 +1963,17 @@ function healOpenClawConfigInline(errStderr) {
           }
         } else if (keyPath && !key) {
           // Format #2: "additional properties" at parent path — we don't know
-          // WHICH field is the offender. Strategy: if path is channels.openzalo
-          // (or its accounts), strip all KNOWN_BAD_OPENZALO_KEYS. This catches
+          // WHICH field is the offender. Strategy: if path is channels.modoro-zalo
+          // (or its accounts), strip all KNOWN_BAD_ZALO_KEYS. This catches
           // the case where we ourselves added a bad field.
-          if (keyPath[0] === 'channels' && keyPath[1] === 'openzalo') {
+          if (keyPath[0] === 'channels' && (keyPath[1] === 'modoro-zalo' || keyPath[1] === 'openzalo')) {
             let parent = config;
             for (const segment of keyPath) {
               if (parent && typeof parent === 'object' && segment in parent) parent = parent[segment];
               else { parent = null; break; }
             }
             if (parent && typeof parent === 'object') {
-              stripBadOpenzaloKeys(parent, keyPath.join('.'));
+              stripBadZaloKeys(parent, keyPath.join('.'));
             }
           }
         } else if (!keyPath && key) {
@@ -1990,7 +2025,7 @@ function healOpenClawConfigInline(errStderr) {
 // cron prompt as a structured context block. Bot doesn't need to discover
 // or guess where data lives — it sees actual messages right in the prompt.
 // Returns raw structured array of messages. Used by appendPerCustomerSummaries.
-function extractConversationHistoryRaw({ sinceMs, maxMessages = 40, channels = ['openzalo', 'telegram'], maxPerSender = 0 } = {}) {
+function extractConversationHistoryRaw({ sinceMs, maxMessages = 40, channels = ['modoro-zalo', 'openzalo', 'telegram'], maxPerSender = 0 } = {}) {
   try {
     const result = _extractConversationHistoryImpl({ sinceMs, maxMessages, channels, maxPerSender });
     return result.collected;
@@ -2001,7 +2036,7 @@ function extractConversationHistoryRaw({ sinceMs, maxMessages = 40, channels = [
 }
 
 // Returns formatted string. Used by prompt builders.
-function extractConversationHistory({ sinceMs, maxMessages = 40, channels = ['openzalo', 'telegram'], maxPerSender = 0 } = {}) {
+function extractConversationHistory({ sinceMs, maxMessages = 40, channels = ['modoro-zalo', 'openzalo', 'telegram'], maxPerSender = 0 } = {}) {
   try {
     const result = _extractConversationHistoryImpl({ sinceMs, maxMessages, channels, maxPerSender });
     return result.formatted;
@@ -2012,7 +2047,7 @@ function extractConversationHistory({ sinceMs, maxMessages = 40, channels = ['op
 }
 
 // Shared implementation — returns { collected: [...], formatted: 'string' }.
-function _extractConversationHistoryImpl({ sinceMs, maxMessages = 40, channels = ['openzalo', 'telegram'], maxPerSender = 0 } = {}) {
+function _extractConversationHistoryImpl({ sinceMs, maxMessages = 40, channels = ['modoro-zalo', 'openzalo', 'telegram'], maxPerSender = 0 } = {}) {
   const _t0 = Date.now();
   const sessionsDir = path.join(HOME, '.openclaw', 'agents', 'main', 'sessions');
   if (!fs.existsSync(sessionsDir)) return { collected: [], formatted: '' };
@@ -2158,7 +2193,7 @@ function _extractConversationHistoryImpl({ sinceMs, maxMessages = 40, channels =
       formatted.push(`\n--- ${dateStr} ---`);
       lastDate = dateStr;
     }
-    const channelLabel = m.channel === 'openzalo' ? 'Zalo' : m.channel === 'telegram' ? 'Telegram' : m.channel;
+    const channelLabel = (m.channel === 'modoro-zalo' || m.channel === 'openzalo') ? 'Zalo' : m.channel === 'telegram' ? 'Telegram' : m.channel;
     const roleLabel = m.role === 'user'
       ? (m.sender ? m.sender.split(' id:')[0] : 'Khách')
       : 'Em (bot)';
@@ -2232,7 +2267,7 @@ async function writeDailyMemoryJournal({ date = new Date() } = {}) {
 }
 
 // Group messages by Zalo customer, summarize each, append to their profile.
-// Only processes openzalo messages (Telegram is CEO-only, no customer profiles).
+// Only processes Zalo (modoro-zalo) messages (Telegram is CEO-only, no customer profiles).
 // Extract the last N dated sections from a profile file for LLM prior-context.
 // Returns a compact string or '' if no dated history exists.
 function _recentProfileHistory(profileContent, maxSections = 3, maxChars = 1200) {
@@ -2257,7 +2292,7 @@ async function appendPerCustomerSummaries(ws, dateStr, sinceMs) {
   // Pull BOTH user and assistant messages so summary can reflect what actually
   // happened (was: role='user' only → prompt asked "Bot trả lời gì" but LLM
   // had no bot data → hallucinated or left blank → useless summaries).
-  const collected = extractConversationHistoryRaw({ sinceMs, maxMessages: 1000, channels: ['openzalo'], maxPerSender: 0 });
+  const collected = extractConversationHistoryRaw({ sinceMs, maxMessages: 1000, channels: ['modoro-zalo', 'openzalo'], maxPerSender: 0 });
   if (!collected || collected.length === 0) return;
 
   const bySender = new Map();
@@ -2943,7 +2978,7 @@ function createWindow() {
       // ORDER MATTERS — same 3-step chain as wizard-complete:
       //   1. ensureZaloPlugin() — copy bundled plugin / heal missing plugin
       //      BEFORE gateway boots. Without this, the gateway config-reload
-      //      watcher races with the bundled-copy and can miss the openzalo
+      //      watcher races with the bundled-copy and can miss the modoro-zalo
       //      channel registration on cold boot.
       //   2. startOpenClaw() — ensureDefaultConfig + gateway spawn.
       //   3. startCronJobs() — AFTER both above so first cron fire sees a
@@ -3158,21 +3193,21 @@ function sanitizeOpenClawConfigInPlace(config) {
   if (config.agents?.defaults && 'blockStreaming' in config.agents.defaults) {
     delete config.agents.defaults.blockStreaming;
   }
-  // openzalo schema does NOT include 'streaming', 'streamMode',
+  // modoro-zalo schema does NOT include 'streaming', 'streamMode',
   // 'nativeStreaming', or 'blockStreamingDefault' — writing them causes
-  // `channels.openzalo: must NOT have additional properties` which kills
+  // `channels.modoro-zalo: must NOT have additional properties` which kills
   // every `openclaw <subcommand>` call and blocks gateway reloads.
   const stripKeys = (block) => {
     if (!block || typeof block !== 'object') return;
-    for (const k of KNOWN_BAD_OPENZALO_KEYS) {
+    for (const k of KNOWN_BAD_ZALO_KEYS) {
       if (k in block) delete block[k];
     }
   };
-  if (config.channels?.openzalo) {
-    stripKeys(config.channels.openzalo);
-    if (config.channels.openzalo.accounts && typeof config.channels.openzalo.accounts === 'object') {
-      for (const accId of Object.keys(config.channels.openzalo.accounts)) {
-        stripKeys(config.channels.openzalo.accounts[accId]);
+  if (config.channels?.['modoro-zalo']) {
+    stripKeys(config.channels['modoro-zalo']);
+    if (config.channels['modoro-zalo'].accounts && typeof config.channels['modoro-zalo'].accounts === 'object') {
+      for (const accId of Object.keys(config.channels['modoro-zalo'].accounts)) {
+        stripKeys(config.channels['modoro-zalo'].accounts[accId]);
       }
     }
   }
@@ -3557,49 +3592,66 @@ async function ensureDefaultConfig() {
     if (config.channels?.telegram?.botToken && !config.channels.telegram.enabled) {
       config.channels.telegram.enabled = true; changed = true;
     }
-    // Ensure OpenZalo has all policy fields set. CRITICAL: create block if missing
-    // entirely — previously we only healed when `config.channels?.openzalo` was truthy,
+    // Ensure modoro-zalo has all policy fields set. CRITICAL: create block if missing
+    // entirely — previously we only healed when `config.channels?.['modoro-zalo']` was truthy,
     // but openclaw 2026.4.x gateway normalization can strip fields and leave `{}`, or
-    // even remove the openzalo key altogether. Always create + heal so the block is
+    // even remove the key altogether. Always create + heal so the block is
     // never undefined/empty after this function.
     if (!config.channels) config.channels = {};
-    if (!config.channels.openzalo || typeof config.channels.openzalo !== 'object') {
-      config.channels.openzalo = {};
+    // --- modoro-zalo migration from v2.3.49 ---
+    if (config.channels && config.channels.openzalo && !config.channels['modoro-zalo']) {
+      config.channels['modoro-zalo'] = JSON.parse(JSON.stringify(config.channels.openzalo));
+      delete config.channels.openzalo;
+      changed = true;
+      console.log('[config] migrated channels.openzalo → channels["modoro-zalo"]');
+    }
+    if (config.plugins && config.plugins.entries && config.plugins.entries.openzalo && !config.plugins.entries['modoro-zalo']) {
+      config.plugins.entries['modoro-zalo'] = config.plugins.entries.openzalo;
+      delete config.plugins.entries.openzalo;
       changed = true;
     }
-    // ALSO: if the openzalo plugin files exist at ~/.openclaw/extensions/openzalo/
-    // (either because bundled vendor copy placed them there, or `openclaw plugins
-    // install` did), make sure the plugin entry EXISTS. We sync its enabled
-    // state later from channels.openzalo.enabled so "Tắt Zalo" is a real
-    // hard-off, not merely a soft gate after the plugin already loaded.
+    if (Array.isArray(config.plugins && config.plugins.allow)) {
+      const idx = config.plugins.allow.indexOf('openzalo');
+      if (idx !== -1) { config.plugins.allow[idx] = 'modoro-zalo'; changed = true; }
+    }
+    // --- end migration ---
+    if (!config.channels['modoro-zalo'] || typeof config.channels['modoro-zalo'] !== 'object') {
+      config.channels['modoro-zalo'] = {};
+      changed = true;
+    }
+    // ALSO: if the modoro-zalo plugin files exist at ~/.openclaw/extensions/modoro-zalo/
+    // (either because bundled copy placed them there, or local install did),
+    // make sure the plugin entry EXISTS. We sync its enabled state later from
+    // channels['modoro-zalo'].enabled so "Tắt Zalo" is a real hard-off, not
+    // merely a soft gate after the plugin already loaded.
     try {
-      const openzaloPluginManifest = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'openclaw.plugin.json');
-      if (fs.existsSync(openzaloPluginManifest)) {
+      const modoroZaloPluginManifest = path.join(HOME, '.openclaw', 'extensions', 'modoro-zalo', 'openclaw.plugin.json');
+      if (fs.existsSync(modoroZaloPluginManifest)) {
         if (!config.plugins) config.plugins = {};
         if (!config.plugins.entries) config.plugins.entries = {};
-        if (!config.plugins.entries.openzalo) {
-          config.plugins.entries.openzalo = { enabled: false };
+        if (!config.plugins.entries['modoro-zalo']) {
+          config.plugins.entries['modoro-zalo'] = { enabled: false };
           changed = true;
         }
         // plugins.allow tells gateway which non-bundled plugins are trusted.
         // Without this, gateway warns "plugins.allow is empty" on every boot.
         if (!Array.isArray(config.plugins.allow)) {
-          config.plugins.allow = ['openzalo'];
+          config.plugins.allow = ['modoro-zalo'];
           changed = true;
-        } else if (!config.plugins.allow.includes('openzalo')) {
-          config.plugins.allow.push('openzalo');
+        } else if (!config.plugins.allow.includes('modoro-zalo')) {
+          config.plugins.allow.push('modoro-zalo');
           changed = true;
         }
       }
     } catch (e) { console.warn('[config] plugin entry heal failed:', e?.message); }
     {
-      const oz = config.channels.openzalo;
+      const oz = config.channels['modoro-zalo'];
       // Default OFF on fresh install — CEO must enable from Settings > Zalo.
       // If field already exists (any value), preserve it so disabling from
       // dashboard survives restarts. Previously this forced true every boot,
       // which overrode the CEO's explicit disable.
       if (oz.enabled === undefined) { oz.enabled = false; changed = true; }
-      // U2: purge legacy channels.openzalo.groups on upgrade. v2.58 stored
+      // U2: purge legacy channels['modoro-zalo'].groups on upgrade. v2.58 stored
       // per-group requireMention/enabled here, creating a dual source of
       // truth with zalo-group-settings.json (CRIT #5). We're now
       // single-sourcing via the JSON file + GROUP-SETTINGS v3 patch.
@@ -3623,14 +3675,14 @@ async function ensureDefaultConfig() {
       // DEFENSIVE CLEANUP: remove `streaming` if it crept in from a prior buggy
       // version of this function (2026-04-08 regression). Schema rejects it.
       if ('streaming' in oz) { delete oz.streaming; changed = true; }
-      // Whitelist-based strip: openzalo schema is strict
+      // Whitelist-based strip: modoro-zalo schema is strict
       // (additionalProperties:false). CEOs upgrading from older openclaw CLI
       // installs may have fields like `messages` (seen in real customer
       // workspace 2026-04-15) or other legacy keys that make the gateway
-      // reject config with "channels.openzalo: must NOT have additional
+      // reject config with "channels['modoro-zalo']: must NOT have additional
       // properties" → gateway never binds WS → bot dead silently.
-      // Fields valid per openzalo/src/config-schema-core.ts OpenzaloConfigSchema:
-      const OPENZALO_VALID_FIELDS = new Set([
+      // Fields valid per modoro-zalo/src/config-schema-core.ts config schema:
+      const MODORO_ZALO_VALID_FIELDS = new Set([
         'name', 'enabled', 'profile', 'zcaBinary', 'acpx', 'markdown',
         'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom', 'groups',
         'historyLimit', 'dmHistoryLimit', 'textChunkLimit', 'chunkMode',
@@ -3638,13 +3690,13 @@ async function ensureDefaultConfig() {
         'threadBindings', 'actions', 'accounts', 'defaultAccount',
       ]);
       for (const k of Object.keys(oz)) {
-        if (!OPENZALO_VALID_FIELDS.has(k)) {
-          console.log('[config] stripped unknown openzalo field: ' + k);
+        if (!MODORO_ZALO_VALID_FIELDS.has(k)) {
+          console.log('[config] stripped unknown modoro-zalo field: ' + k);
           delete oz[k];
           changed = true;
         }
       }
-      // DO NOT set `zcaBinary` here: the openzalo plugin's
+      // DO NOT set `zcaBinary` here: the modoro-zalo plugin's
       // resolveOpenzcaCliJs() on Windows only searches hardcoded npm global
       // paths and ignores the config value during resolve, then falls back to
       // `spawn(binary, ..., {shell: true})`. On Mac it always falls back to
@@ -3662,18 +3714,18 @@ async function ensureDefaultConfig() {
       changed = true;
     }
     // Sync plugin hard-off with the master Zalo enabled flag. If Zalo is off,
-    // the gateway should not load openzalo at all.
+    // the gateway should not load modoro-zalo at all.
     try {
-      const openzaloPluginManifest = path.join(HOME, '.openclaw', 'extensions', 'openzalo', 'openclaw.plugin.json');
-      if (fs.existsSync(openzaloPluginManifest)) {
+      const modoroZaloPluginManifest2 = path.join(HOME, '.openclaw', 'extensions', 'modoro-zalo', 'openclaw.plugin.json');
+      if (fs.existsSync(modoroZaloPluginManifest2)) {
         if (!config.plugins) config.plugins = {};
         if (!config.plugins.entries) config.plugins.entries = {};
-        const wantOpenzaloEnabled = config.channels.openzalo.enabled !== false;
-        if (!config.plugins.entries.openzalo) {
-          config.plugins.entries.openzalo = { enabled: wantOpenzaloEnabled };
+        const wantZaloEnabled = config.channels['modoro-zalo'].enabled !== false;
+        if (!config.plugins.entries['modoro-zalo']) {
+          config.plugins.entries['modoro-zalo'] = { enabled: wantZaloEnabled };
           changed = true;
-        } else if (config.plugins.entries.openzalo.enabled !== wantOpenzaloEnabled) {
-          config.plugins.entries.openzalo.enabled = wantOpenzaloEnabled;
+        } else if (config.plugins.entries['modoro-zalo'].enabled !== wantZaloEnabled) {
+          config.plugins.entries['modoro-zalo'].enabled = wantZaloEnabled;
           changed = true;
         }
       }
@@ -3977,7 +4029,7 @@ function cleanupOrphanZaloListener() {
 // ========================================================================
 // Vendor patches — delegated to electron/lib/vendor-patches.js
 // ========================================================================
-// All ensure*Fix functions + applyOpenzaloFork live in the shared module.
+// All ensure*Fix functions + applyModoroZaloFork live in the shared module.
 // This lets prebuild-vendor.js apply the SAME patches at build time.
 // Runtime calls here are defense-in-depth (idempotent via markers).
 const vendorPatches = require('./lib/vendor-patches');
@@ -3993,8 +4045,7 @@ function ensureWebFetchLocalhostFix() { vendorPatches.ensureWebFetchLocalhostFix
 function ensureOpenzcaFriendEventFix() { vendorPatches.ensureOpenzcaFriendEventFix(getBundledVendorDir(), getWorkspace() || resourceDir); }
 function ensureOpenclawPricingFix() { vendorPatches.ensureOpenclawPricingFix(getBundledVendorDir()); }
 function ensureOpenclawPrewarmFix() { vendorPatches.ensureOpenclawPrewarmFix(getBundledVendorDir()); }
-const OPENZALO_FORK_VERSION = vendorPatches.OPENZALO_FORK_VERSION;
-function applyOpenzaloFork() { return vendorPatches.applyOpenzaloFork(HOME, path.join(__dirname, 'patches', 'openzalo-fork'), getBundledVendorDir()); }
+const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.0';
 
 // ========================================================================
 // Security Layer 5 — Log rotation + memory retention
@@ -4398,13 +4449,11 @@ async function _startOpenClawImpl(opts = {}) {
   // Ensure config is valid before anything (patches run in parallel with 9router warmup)
   await ensureDefaultConfig();
 
-  // Heal missing node_modules link (plugin copied out of vendor → ESM deps
-  // unreachable → "Cannot find module 'zod'"). Must run BEFORE gateway spawn.
+  // Apply non-zalo vendor patches. ensureOpenzaloNodeModulesLink + fork apply
+  // are now handled inside _ensureZaloPluginImpl (called earlier in boot).
   const _patchFns = [
-    ensureOpenzaloNodeModulesLink,
     ensureOpenclawPricingFix,
     ensureOpenclawPrewarmFix,
-    applyOpenzaloFork,
     cleanBlocklist,
     ensureOpenzcaFriendEventFix,
     ensureVisionFix,
@@ -4514,7 +4563,7 @@ async function _startOpenClawImpl(opts = {}) {
 
   // Wait for 9Router /v1/models — bumped from 10 to 60 iterations because Node
   // module loading on Windows can take 15-20s. If we spawn the gateway before
-  // 9router responds, the openzalo plugin's first call to 9router fails with
+  // 9router responds, the modoro-zalo plugin's first call to 9router fails with
   // ECONNREFUSED → triggers a 30-60s retry-with-backoff stack inside the plugin
   // → CEO sees "2-3 phút before bot replies".
   let nineRouterReady = false;
@@ -4601,9 +4650,9 @@ async function _startOpenClawImpl(opts = {}) {
     console.warn('[gateway] direct node spawn unavailable (nodeBin=' + !!gwNodeBin + ' cliJs=' + !!gwCliJs + '), falling back to bin shim:', bin);
   }
   // CRITICAL: enrich PATH so child subprocesses spawned by gateway (especially
-  // openzca via openzalo plugin) can find npm-installed shims. Electron inherits
+  // openzca via modoro-zalo plugin) can find npm-installed shims. Electron inherits
   // PATH from explorer.exe / Start Menu launch, which on Windows often does NOT
-  // include ~/AppData/Roaming/npm/. Without this, openzalo's `spawn("openzca", ...)`
+  // include ~/AppData/Roaming/npm/. Without this, modoro-zalo's `spawn("openzca", ...)`
   // via cmd.exe fails with "openzca is not recognized" → listener never starts →
   // CEO sees "Chưa sẵn sàng" forever.
   // Defense in depth: even when ensureOpenzaloShellFix() patches openzca.ts to use
@@ -4635,7 +4684,7 @@ async function _startOpenClawImpl(opts = {}) {
     // augmentPathWithBundledNode() is called at module load (before vendor is
     // extracted from tar on first boot) so process.env.PATH does NOT yet have
     // the vendor node dir. We must add it explicitly here so the gateway
-    // process and its children (openzalo plugin → spawn('node', [openzca cli.js]))
+    // process and its children (modoro-zalo plugin → spawn('node', [openzca cli.js]))
     // can find the bundled node.exe even on machines with no system Node.
     try {
       const vd = getBundledVendorDir();
@@ -4666,7 +4715,7 @@ async function _startOpenClawImpl(opts = {}) {
       enrichedEnv.PATH = toAdd.join(sep) + sep + currentPath;
       console.log('[gateway] enriched PATH with:', toAdd.join(' | '));
     }
-    // Also expose absolute openzca cli.js path so openzalo plugin (patched version)
+    // Also expose absolute openzca cli.js path so modoro-zalo plugin (patched version)
     // can use it directly without having to search. Search ALL platform-specific
     // locations: Windows AppData, Mac Homebrew (both Intel + Apple Silicon),
     // /usr/local, ~/.npm-global, nvm/volta/asdf shims. First match wins.
@@ -4856,7 +4905,7 @@ async function _startOpenClawImpl(opts = {}) {
   // a channel is ACTUALLY able to receive + process messages:
   //   - Telegram ready: `[telegram] [default] starting provider (@<bot>)`
   //     (emitted after getMe success + polling active + channel registered)
-  //   - Zalo ready: `[openzalo] [default] openzca connected`
+  //   - Zalo ready: `[modoro-zalo] [default] openzca connected` (or legacy `[openzalo]`)
   //     (emitted when openzca listener websocket is live + reading inbound)
   //
   // On first occurrence per boot, fire a single Telegram notification so
@@ -4977,7 +5026,7 @@ async function _startOpenClawImpl(opts = {}) {
       }
       // Zalo marker — "openzca connected" means WebSocket connected but
       // inbound pipeline may still be initializing. Delay before confirming.
-      if (!notifyState.zalo.markerSeen && /\[openzalo\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
+      if (!notifyState.zalo.markerSeen && /\[(?:openzalo|modoro-zalo)\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
         notifyState.zaloReady = true;
         notifyState.zalo.markerSeen = true;
         notifyState.zalo.markerSeenAt = Date.now();
@@ -5984,8 +6033,8 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
   }
 });
 
-// Setup Zalo via OpenZalo (openzca CLI for QR login)
-// Pre-install openzalo plugin + patch (runs once in background at startup)
+// Setup Zalo via modoro-zalo (openzca CLI for QR login)
+// Pre-install modoro-zalo plugin + patch (runs once in background at startup)
 let _zaloReady = false;
 // In-flight promise guard: ensureZaloPlugin can be invoked concurrently
 // (boot path awaits it, but a fire-and-forget call also exists at app.whenReady
@@ -5999,9 +6048,9 @@ let _zaloPluginInFlight = null;
 // was freshly copied or already present. Without this, users who installed
 // a previous build (where we copied the plugin but NOT the deps link) are
 // permanently broken on "Cannot find module 'zod'" even after upgrading.
-function ensureOpenzaloNodeModulesLink() {
+function ensureModoroZaloNodeModulesLink() {
   try {
-    const extensionsDir = path.join(HOME, '.openclaw', 'extensions', 'openzalo');
+    const extensionsDir = path.join(HOME, '.openclaw', 'extensions', 'modoro-zalo');
     if (!fs.existsSync(path.join(extensionsDir, 'openclaw.plugin.json'))) return;
     const pluginNodeModules = path.join(extensionsDir, 'node_modules');
     // Already linked/present? Verify it has zod (the critical dep) to be sure
@@ -6026,9 +6075,9 @@ function ensureOpenzaloNodeModulesLink() {
     const linkType = process.platform === 'win32' ? 'junction' : 'dir';
     try {
       fs.symlinkSync(vendorNodeModules, pluginNodeModules, linkType);
-      console.log('[ensureOpenzaloNodeModulesLink] linked →', vendorNodeModules, `(${linkType})`);
+      console.log('[ensureModoroZaloNodeModulesLink] linked →', vendorNodeModules, `(${linkType})`);
     } catch (linkErr) {
-      console.warn('[ensureOpenzaloNodeModulesLink] symlink failed, copying deps:', linkErr?.message);
+      console.warn('[ensureModoroZaloNodeModulesLink] symlink failed, copying deps:', linkErr?.message);
       fs.mkdirSync(pluginNodeModules, { recursive: true });
       try {
         const pkg = JSON.parse(fs.readFileSync(path.join(extensionsDir, 'package.json'), 'utf-8'));
@@ -6037,15 +6086,15 @@ function ensureOpenzaloNodeModulesLink() {
           const dst = path.join(pluginNodeModules, dep);
           if (fs.existsSync(src) && !fs.existsSync(dst)) {
             fs.cpSync(src, dst, { recursive: true, force: false, errorOnExist: false });
-            console.log('[ensureOpenzaloNodeModulesLink] copied', dep);
+            console.log('[ensureModoroZaloNodeModulesLink] copied', dep);
           }
         }
       } catch (copyErr) {
-        console.error('[ensureOpenzaloNodeModulesLink] CRITICAL fallback copy failed:', copyErr?.message);
+        console.error('[ensureModoroZaloNodeModulesLink] CRITICAL fallback copy failed:', copyErr?.message);
       }
     }
   } catch (e) {
-    console.error('[ensureOpenzaloNodeModulesLink] error:', e?.message || e);
+    console.error('[ensureModoroZaloNodeModulesLink] error:', e?.message || e);
   }
 }
 
@@ -6475,59 +6524,67 @@ function checkZaloCookieAge() {}
 async function _ensureZaloPluginImpl() {
   if (_zaloReady) return;
   try {
-    // FRESH-INSTALL FAST PATH: copy bundled openzalo plugin from vendor into
-    // ~/.openclaw/extensions/openzalo. This skips network-dependent
-    // `openclaw plugins install` and `npm install -g openzca`, so it works
-    // on a fresh Mac with ZERO Node.js installed.
-    const extensionsDir = path.join(HOME, '.openclaw', 'extensions', 'openzalo');
+    // FRESH-INSTALL: copy modoro-zalo plugin from packages/ into
+    // ~/.openclaw/extensions/modoro-zalo. Our own fork — no network needed.
+    const extensionsDir = path.join(HOME, '.openclaw', 'extensions', 'modoro-zalo');
     const vendorDir = getBundledVendorDir();
     // Heal missing node_modules link even when plugin is already present
     // (upgrade path from prior build that copied plugin without linking deps).
-    ensureOpenzaloNodeModulesLink();
-    // FAST PATH: plugin already installed (common on subsequent boots).
-    // Skip both bundled-copy AND network-install. Without this early return,
-    // the code falls through to `npm install -g openzca` (60s timeout) on
-    // EVERY boot — the root cause of the 50s startup delay.
-    if (fs.existsSync(path.join(extensionsDir, 'openclaw.plugin.json'))) {
-      console.log('[ensureZaloPlugin] plugin already present — skipping install');
+    ensureModoroZaloNodeModulesLink();
+
+    // Version marker — used to detect when the fork needs re-copy on upgrade.
+    const FORK_VERSION = 'modoro-zalo-v1.0.0';
+    const forkVersionFile = path.join(extensionsDir, 'src', '.fork-version');
+    const currentForkVersion = (() => {
+      try { return fs.readFileSync(forkVersionFile, 'utf-8').trim(); } catch { return ''; }
+    })();
+
+    // FAST PATH: plugin already installed AND version matches (common on subsequent boots).
+    if (fs.existsSync(path.join(extensionsDir, 'openclaw.plugin.json')) && currentForkVersion === FORK_VERSION) {
+      console.log('[ensureZaloPlugin] modoro-zalo plugin already present (v=' + FORK_VERSION + ') — skipping install');
       _zaloReady = true;
       return;
     }
-    if (vendorDir) {
-      const bundledPlugin = path.join(vendorDir, 'node_modules', '@tuyenhx', 'openzalo');
-      if (fs.existsSync(path.join(bundledPlugin, 'openclaw.plugin.json'))) {
-        try {
-          fs.mkdirSync(extensionsDir, { recursive: true });
-          // Recursive copy — use fs.cpSync (Node 16.7+). Safe on Electron 28 (Node 18).
-          fs.cpSync(bundledPlugin, extensionsDir, { recursive: true, force: true, errorOnExist: false });
-          console.log('[ensureZaloPlugin] copied bundled openzalo plugin from vendor →', extensionsDir);
-          // Also ensure the plugin entry exists in openclaw.json, but mirror
-          // the actual master Zalo enabled flag so copied plugin files do not
-          // silently turn Zalo back on.
-          await withOpenClawConfigLock(async () => {
-            try {
-              console.log('[config-lock] ensureZaloPlugin acquired');
-              const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
-              if (fs.existsSync(configPath)) {
-                const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-                if (!cfg.plugins) cfg.plugins = {};
-                if (!cfg.plugins.entries) cfg.plugins.entries = {};
-                const wantOpenzaloEnabled = cfg?.channels?.openzalo?.enabled !== false;
-                if (!cfg.plugins.entries.openzalo) cfg.plugins.entries.openzalo = { enabled: wantOpenzaloEnabled };
-                else cfg.plugins.entries.openzalo.enabled = wantOpenzaloEnabled;
-                writeOpenClawConfigIfChanged(configPath, cfg);
-              }
-            } catch (e) { console.warn('[ensureZaloPlugin] config update failed:', e?.message); }
-          });
-          // CRITICAL: after copying the plugin OUT of vendor/node_modules, its
-          // hoisted dependencies (zod etc) are no longer reachable via Node's
-          // normal module resolution. The plugin is "type": "module" (ESM) so
-          // NODE_PATH fallback doesn't apply either. Without this, the gateway
-          // logs "Cannot find module 'zod'" forever and the openzalo plugin
-          // never loads → Zalo is completely dead even though openzca session
-          // is fine. Fix: create a directory junction (Windows) / symlink
-          // (Mac/Linux) from <plugin>/node_modules → vendor/node_modules. One
-          // link, zero file copies, plugin sees all hoisted deps.
+
+    // PRIMARY SOURCE: packages/modoro-zalo/ (our fork, shipped in-tree)
+    const packagesSource = path.join(__dirname, 'packages', 'modoro-zalo');
+    // FALLBACK: vendor/node_modules/modoro-zalo/ (bundled in vendor)
+    const vendorSource = vendorDir ? path.join(vendorDir, 'node_modules', 'modoro-zalo') : null;
+
+    const sourceDir = fs.existsSync(path.join(packagesSource, 'openclaw.plugin.json'))
+      ? packagesSource
+      : (vendorSource && fs.existsSync(path.join(vendorSource, 'openclaw.plugin.json')) ? vendorSource : null);
+
+    if (sourceDir) {
+      try {
+        fs.mkdirSync(extensionsDir, { recursive: true });
+        // Recursive copy — use fs.cpSync (Node 16.7+). Safe on Electron 28 (Node 18).
+        fs.cpSync(sourceDir, extensionsDir, { recursive: true, force: true, errorOnExist: false });
+        console.log('[ensureZaloPlugin] copied modoro-zalo plugin from', sourceDir, '→', extensionsDir);
+        // Also ensure the plugin entry exists in openclaw.json, but mirror
+        // the actual master Zalo enabled flag so copied plugin files do not
+        // silently turn Zalo back on.
+        await withOpenClawConfigLock(async () => {
+          try {
+            console.log('[config-lock] ensureZaloPlugin acquired');
+            const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+            if (fs.existsSync(configPath)) {
+              const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+              if (!cfg.plugins) cfg.plugins = {};
+              if (!cfg.plugins.entries) cfg.plugins.entries = {};
+              const wantZaloEnabled = cfg?.channels?.['modoro-zalo']?.enabled !== false;
+              if (!cfg.plugins.entries['modoro-zalo']) cfg.plugins.entries['modoro-zalo'] = { enabled: wantZaloEnabled };
+              else cfg.plugins.entries['modoro-zalo'].enabled = wantZaloEnabled;
+              writeOpenClawConfigIfChanged(configPath, cfg);
+            }
+          } catch (e) { console.warn('[ensureZaloPlugin] config update failed:', e?.message); }
+        });
+        // CRITICAL: after copying the plugin, its hoisted dependencies (zod etc)
+        // are no longer reachable via Node's normal module resolution. The plugin
+        // is "type": "module" (ESM) so NODE_PATH fallback doesn't apply either.
+        // Fix: create a directory junction (Windows) / symlink (Mac/Linux) from
+        // <plugin>/node_modules → vendor/node_modules.
+        if (vendorDir) {
           try {
             const pluginNodeModules = path.join(extensionsDir, 'node_modules');
             const vendorNodeModules = path.join(vendorDir, 'node_modules');
@@ -6538,8 +6595,7 @@ async function _ensureZaloPluginImpl() {
                 console.log('[ensureZaloPlugin] linked node_modules →', vendorNodeModules, `(${linkType})`);
               } catch (linkErr) {
                 // Junction can fail on rare Windows setups (non-NTFS, permission
-                // edge cases). Fall back to copying ONLY the declared deps from
-                // the plugin's package.json. Zero-dep libs like zod are tiny.
+                // edge cases). Fall back to copying ONLY the declared deps.
                 console.warn('[ensureZaloPlugin] junction failed, copying deps explicitly:', linkErr?.message);
                 try {
                   fs.mkdirSync(pluginNodeModules, { recursive: true });
@@ -6561,46 +6617,26 @@ async function _ensureZaloPluginImpl() {
               }
             }
           } catch (e) { console.warn('[ensureZaloPlugin] node_modules link setup failed:', e?.message); }
-          // Apply openzalo fork: copy pre-patched source files over upstream.
-          // Replaces the old 12+ individual ensure* patch calls.
-          try { applyOpenzaloFork(); } catch (e) { console.warn('[ensureZaloPlugin] fork apply failed:', e?.message); }
-          _zaloReady = true;
-          return;
-        } catch (e) {
-          console.error('[ensureZaloPlugin] bundled copy failed — falling back to network install:', e?.message || e);
         }
+        // Cleanup old extensions/openzalo/ directory if it exists (upgrade from v2.3.x)
+        try {
+          const oldExtDir = path.join(HOME, '.openclaw', 'extensions', 'openzalo');
+          if (fs.existsSync(oldExtDir)) {
+            fs.rmSync(oldExtDir, { recursive: true, force: true });
+            console.log('[ensureZaloPlugin] cleaned up old extensions/openzalo/ directory');
+          }
+        } catch (e) { console.warn('[ensureZaloPlugin] old openzalo cleanup failed:', e?.message); }
+        _zaloReady = true;
+        return;
+      } catch (e) {
+        console.error('[ensureZaloPlugin] copy failed:', e?.message || e);
       }
-    }
-    // NETWORK FALLBACK: dev mode OR bundled copy unavailable.
-    const bin = await findOpenClawBin();
-    const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    try { await execFilePromise(npmBin, ['install', '-g', 'openzca'], { timeout: 60000, stdio: 'pipe', shell: process.platform === 'win32', windowsHide: true }); } catch {}
-    if (bin) {
-      try { await runOpenClaw(['plugins', 'install', '@tuyenhx/openzalo', '--dangerously-force-unsafe-install'], 60000); } catch {}
-      // REMOVED: `openclaw config set channels.openzalo.enabled true` and
-      //          `openclaw config set channels.openzalo.dmPolicy open`
-      //
-      // Why: each `openclaw config set ...` runs as a CLI subprocess which
-      // rewrites openclaw.json via atomic rename. That bypasses our in-process
-      // writeOpenClawConfigIfChanged byte-equal guard, changes the file inode,
-      // wakes the gateway's config-reload watcher, and triggers a reload plan.
-      // For `channels.openzalo.*` paths the plan resolves to a restart action
-      // → in-flight reply runs aborted with `aborted_for_restart` → CEO sees
-      // "⚠️ Gateway is restarting. Please wait a few seconds and try again."
-      // exactly when sending a real message — even though Telegram getMe still
-      // works (the bot itself is fine, only the gateway's reply pipeline got
-      // killed mid-completion).
-      //
-      // ensureDefaultConfig() now heals `channels.openzalo.enabled = true` and
-      // `channels.openzalo.dmPolicy = 'open'` in-process, so no CLI hop needed.
-
-      // Apply openzalo fork after network install (same as bundled path)
-      try { applyOpenzaloFork(); } catch (e) { console.warn('[ensureZaloPlugin] fork apply after network install failed:', e?.message); }
+    } else {
+      console.warn('[ensureZaloPlugin] no modoro-zalo source found (checked packages/ and vendor/)');
     }
     _zaloReady = true;
   } catch {}
 }
-
 // Setup Zalo — only runs QR login (fast), plugin already installed
 ipcMain.handle('setup-zalo', async () => {
   try {
@@ -6867,7 +6903,7 @@ function readZaloChannelState() {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
       const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      const oz = cfg?.channels?.openzalo || {};
+      const oz = cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo || {};
       state.enabled = oz.enabled !== false;
       state.groupPolicy = oz.groupPolicy || 'open';
       state.groupAllowFrom = Array.isArray(oz.groupAllowFrom)
@@ -7463,7 +7499,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
     let zalo = {};
     if (fs.existsSync(configPath)) {
       const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      zalo = cfg?.channels?.openzalo || {};
+      zalo = cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo || {};
     }
     let blocklist = [];
     const bp = getZaloBlocklistPath();
@@ -7511,9 +7547,9 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
   return withOpenClawConfigLock(async () => {
   try {
     console.log('[config-lock] save-zalo-manager-config acquired');
-    // Detect whether `channels.openzalo.enabled` actually changes. Only this
+    // Detect whether `channels['modoro-zalo'].enabled` actually changes. Only this
     // field needs a hard gateway restart (stop+wait+start) because it
-    // controls whether openclaw loads the openzalo plugin + spawns the
+    // controls whether openclaw loads the modoro-zalo plugin + spawns the
     // openzca listener subprocess at all. All other fields (blocklist,
     // groupSettings, strangerPolicy) are read realtime by inbound.ts patches
     // so zero restart is needed for them.
@@ -7522,7 +7558,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
       if (fs.existsSync(configPath)) {
         const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        prevEnabled = cfg?.channels?.openzalo?.enabled !== false;
+        prevEnabled = (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled !== false;
       }
     } catch {}
     const newEnabled = enabled !== false;
@@ -7533,33 +7569,33 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     if (fs.existsSync(configPath)) {
       const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (!cfg.channels) cfg.channels = {};
-      if (!cfg.channels.openzalo) cfg.channels.openzalo = {};
-      cfg.channels.openzalo.enabled = enabled !== false;
+      if (!cfg.channels['modoro-zalo']) cfg.channels['modoro-zalo'] = {};
+      cfg.channels['modoro-zalo'].enabled = enabled !== false;
       // ALWAYS keep native gate open — let code-level patch in inbound.ts
       // handle group filtering via zalo-group-settings.json (realtime, no restart).
       // Setting allowlist here blocks groups at the native gate BEFORE our
       // patches run, making Dashboard group toggle useless.
-      cfg.channels.openzalo.groupPolicy = 'open';
-      cfg.channels.openzalo.groupAllowFrom = ['*'];
-      // CRITICAL: openzalo plugin defaults dmPolicy to "pairing" → unknown DM
+      cfg.channels['modoro-zalo'].groupPolicy = 'open';
+      cfg.channels['modoro-zalo'].groupAllowFrom = ['*'];
+      // CRITICAL: modoro-zalo plugin defaults dmPolicy to "pairing" → unknown DM
       // sender → "OpenClaw: access not configured." pairing reply. We always
       // want CEO + their contacts to DM the bot directly without pairing dance.
       // Force dmPolicy="open" + allowFrom=["*"] every save so wizard/manager
       // never leaves these unset (which would re-trigger pairing on next boot).
-      cfg.channels.openzalo.dmPolicy = 'open';
-      if (!Array.isArray(cfg.channels.openzalo.allowFrom)) {
-        cfg.channels.openzalo.allowFrom = ['*'];
+      cfg.channels['modoro-zalo'].dmPolicy = 'open';
+      if (!Array.isArray(cfg.channels['modoro-zalo'].allowFrom)) {
+        cfg.channels['modoro-zalo'].allowFrom = ['*'];
       }
       // CRIT #5: zalo-group-settings.json is single source of truth —
       // inbound.ts GROUP-SETTINGS PATCH v3 handles off/mention/all modes
       // realtime. Purge any legacy groups[gid] entries from openclaw.json.
-      if (cfg.channels.openzalo.groups) delete cfg.channels.openzalo.groups;
-      // Also sync plugins.entries.openzalo.enabled with channels.openzalo.enabled
+      if (cfg.channels['modoro-zalo'].groups) delete cfg.channels['modoro-zalo'].groups;
+      // Also sync plugins.entries['modoro-zalo'].enabled with channels['modoro-zalo'].enabled
       // so "Tắt Zalo" is a real hard-off (gateway won't even load plugin
       // on next boot). ensureDefaultConfig syncs this too but doing it here
       // ensures the in-memory flip propagates immediately.
-      if (cfg.plugins?.entries?.openzalo) {
-        cfg.plugins.entries.openzalo.enabled = newEnabled;
+      if (cfg.plugins?.entries?.['modoro-zalo']) {
+        cfg.plugins.entries['modoro-zalo'].enabled = newEnabled;
       }
       writeOpenClawConfigIfChanged(configPath, cfg);
     }
@@ -7575,7 +7611,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     // 3. CRIT #5: Persist ALL explicit modes (off/mention/all) — zalo-group-settings.json
     // is the single source of truth used by GROUP-SETTINGS PATCH v2. If user
     // sets 'mention' in Dashboard we must persist it so the patch enforces
-    // @mention gating (not openzalo native which we bypassed above).
+    // @mention gating (not modoro-zalo native which we bypassed above).
     //
     // CRITICAL FIX (user report 2026-04-17): Previously this REPLACED the
     // whole file on every save, and DELETED it if incoming groupSettings was
@@ -7629,9 +7665,9 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         try { fs.unlinkSync(spPath); } catch {}
       }
     }
-    // 5. Hard gateway restart ONLY when openzalo enabled flag actually flipped.
+    // 5. Hard gateway restart ONLY when modoro-zalo enabled flag actually flipped.
     // This is the only field that requires full gateway reload — the plugin
-    // loader decides at boot whether to register openzalo + spawn openzca
+    // loader decides at boot whether to register modoro-zalo + spawn openzca
     // listener subprocess. Toggling it without a restart means:
     //   disable → plugin still loaded, listener still running (memory leak)
     //   enable  → plugin NOT loaded (it was disabled at boot), no listener
@@ -7652,12 +7688,12 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       global._zaloListenerMissStreak = 0;
       console.log('[zalo-watchdog] reset gave-up / streak by CEO action');
       if (_startOpenClawInFlight) {
-        console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — gateway spawn in progress, skip restart (will read new config)`);
+        console.log(`[save-zalo-manager] channels.modoro-zalo.enabled ${prevEnabled}→${newEnabled} — gateway spawn in progress, skip restart (will read new config)`);
       } else if (_gatewayRestartInFlight) {
         console.log('[restart-guard] save-zalo-manager: restart already in-flight — skipping duplicate');
       } else {
         _gatewayRestartInFlight = true;
-        console.log(`[save-zalo-manager] channels.openzalo.enabled ${prevEnabled}→${newEnabled} — hard-restart gateway (bg)`);
+        console.log(`[save-zalo-manager] channels.modoro-zalo.enabled ${prevEnabled}→${newEnabled} — hard-restart gateway (bg)`);
         // Fire-and-forget so IPC returns fast — UI sidebar dots will flip
         // to checking→ready via channel-status broadcast as gateway boots.
         (async () => {
@@ -8422,15 +8458,15 @@ ipcMain.handle('save-wizard-config', async (_event, configs) => {
       if (config.channels?.telegram?.botToken && !config.channels.telegram.enabled) {
         config.channels.telegram.enabled = true;
       }
-      // If wizard enabled openzalo, ensure dmPolicy="open" + allowFrom=["*"] so
+      // If wizard enabled modoro-zalo, ensure dmPolicy="open" + allowFrom=["*"] so
       // unknown DM senders don't get the "access not configured" pairing reply.
-      // (openzalo plugin defaults dmPolicy to "pairing" if missing.)
-      if (config.channels?.openzalo?.enabled) {
-        if (config.channels.openzalo.dmPolicy !== 'open') {
-          config.channels.openzalo.dmPolicy = 'open';
+      // (modoro-zalo plugin defaults dmPolicy to "pairing" if missing.)
+      if (config.channels?.['modoro-zalo']?.enabled) {
+        if (config.channels['modoro-zalo'].dmPolicy !== 'open') {
+          config.channels['modoro-zalo'].dmPolicy = 'open';
         }
-        if (!Array.isArray(config.channels.openzalo.allowFrom)) {
-          config.channels.openzalo.allowFrom = ['*'];
+        if (!Array.isArray(config.channels['modoro-zalo'].allowFrom)) {
+          config.channels['modoro-zalo'].allowFrom = ['*'];
         }
       }
       // Create required dirs
@@ -9382,7 +9418,7 @@ async function runCronViaSessionOrFallback(prompt, opts = {}) {
 // ============================================
 //  SHARED OUTPUT FILTER — same patterns for Telegram + Zalo
 // ============================================
-// Mirrors the 47 block patterns from the openzalo fork send.ts so BOTH
+// Mirrors the 47 block patterns from the modoro-zalo fork send.ts so BOTH
 // channels get the same defense-in-depth. Zalo's transport-layer filter in
 // send.ts is the primary defense for Zalo; this function covers Telegram
 // sends from main.js (cron delivery, alerts) and sendZalo() direct sends.
@@ -9582,7 +9618,7 @@ function isZaloChannelEnabled() {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(configPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    return cfg?.channels?.openzalo?.enabled !== false;
+    return (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled !== false;
   } catch (e) {
     console.error('[zalo] read enabled state error:', e.message);
     return false;
@@ -9595,12 +9631,12 @@ function setZaloChannelEnabled(enabled) {
     if (!fs.existsSync(configPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     if (!cfg.channels) cfg.channels = {};
-    if (!cfg.channels.openzalo || typeof cfg.channels.openzalo !== 'object') {
-      cfg.channels.openzalo = {};
+    if (!cfg.channels['modoro-zalo'] || typeof cfg.channels['modoro-zalo'] !== 'object') {
+      cfg.channels['modoro-zalo'] = {};
     }
     const next = enabled !== false;
-    if (cfg.channels.openzalo.enabled === next) return true;
-    cfg.channels.openzalo.enabled = next;
+    if (cfg.channels['modoro-zalo'].enabled === next) return true;
+    cfg.channels['modoro-zalo'].enabled = next;
     return writeOpenClawConfigIfChanged(configPath, cfg);
   } catch (e) {
     console.error('[zalo] set enabled state error:', e.message);
@@ -9773,6 +9809,56 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
     req.end();
   });
   return doRequest(true);
+}
+
+async function sendTelegramPhoto(imagePath, caption, _retryCount = 0) {
+  const { token, chatId } = getTelegramConfig();
+  if (!token || !chatId) return false;
+  if (!fs.existsSync(imagePath)) return false;
+
+  const crypto = require('crypto');
+  const https = require('https');
+  const boundary = '----FormBoundary' + crypto.randomBytes(16).toString('hex');
+  const imgBuf = fs.readFileSync(imagePath);
+  const filename = path.basename(imagePath);
+  const ext = path.extname(imagePath).toLowerCase();
+  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
+
+  let body = '';
+  body += `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`;
+  if (caption) body += `--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`;
+  body += `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`;
+  const tail = `\r\n--${boundary}--\r\n`;
+
+  const prefix = Buffer.from(body, 'utf-8');
+  const suffix = Buffer.from(tail, 'utf-8');
+  const payload = Buffer.concat([prefix, imgBuf, suffix]);
+
+  return new Promise(resolve => {
+    const req = https.request(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': payload.length }
+    }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(d);
+          if (parsed.ok) return resolve(true);
+          if (parsed.error_code === 429 && _retryCount < 3) {
+            const wait = ((parsed.parameters && parsed.parameters.retry_after) || 5) * 1000;
+            setTimeout(() => sendTelegramPhoto(imagePath, caption, _retryCount + 1).then(resolve), wait);
+            return;
+          }
+          resolve(false);
+        } catch { resolve(false); }
+      });
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(30000, () => { req.destroy(); resolve(false); });
+    req.write(payload);
+    req.end();
+  });
 }
 
 // Send a direct Zalo message to the CEO's personal Zalo account via openzca CLI.
@@ -10684,7 +10770,7 @@ async function probeZaloReady() {
       // credentials.json is misleading (openzca refreshes internally).
       return {
         ready: false,
-        error: 'Listener chưa chạy. Đợi gateway khởi động openzalo channel (~10-15 giây sau khi mở app).',
+        error: 'Listener chưa chạy. Đợi gateway khởi động Zalo channel (~10-15 giây sau khi mở app).',
         cacheAgeMin,
       };
     }
@@ -10915,14 +11001,14 @@ ipcMain.handle('resume-zalo', async () => {
       global._zaloListenerMissStreak = 0;
       console.log('[zalo-watchdog] reset gave-up / streak by CEO action');
       // Detect if enabled was previously false — transitioning false→true needs
-      // a hard gateway restart so openclaw loads the openzalo plugin + spawns
+      // a hard gateway restart so openclaw loads the modoro-zalo plugin + spawns
       // openzca listener (both skipped at boot when enabled=false).
       let wasDisabled = false;
       try {
         const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
         if (fs.existsSync(cfgPath)) {
           const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-          wasDisabled = cfg?.channels?.openzalo?.enabled === false;
+          wasDisabled = (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled === false;
         }
       } catch {}
       const resumed = resumeChannel('zalo');
@@ -10978,7 +11064,7 @@ ipcMain.handle('get-inbound-debounce', async () => {
     if (!fs.existsSync(cfgPath)) return { telegram: 3000, zalo: 3000 };
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const tgMs = cfg?.channels?.telegram?.messages?.inbound?.debounceMs;
-    const zlMs = cfg?.channels?.openzalo?.messages?.inbound?.debounceMs;
+    const zlMs = (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.messages?.inbound?.debounceMs;
     const globalMs = cfg?.messages?.inbound?.debounceMs ?? 3000;
     return {
       telegram: typeof tgMs === 'number' ? tgMs : globalMs,
@@ -10998,12 +11084,12 @@ ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
       if (!fs.existsSync(cfgPath)) return { success: false, error: 'config not found' };
       const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
       if (!cfg.channels) cfg.channels = {};
-      const chanKey = channel === 'zalo' ? 'openzalo' : 'telegram';
+      const chanKey = channel === 'zalo' ? 'modoro-zalo' : 'telegram';
       if (!cfg.channels[chanKey]) cfg.channels[chanKey] = {};
       if (!cfg.channels[chanKey].messages) cfg.channels[chanKey].messages = {};
       if (!cfg.channels[chanKey].messages.inbound) cfg.channels[chanKey].messages.inbound = {};
       cfg.channels[chanKey].messages.inbound.debounceMs = clampedMs;
-      const otherKey = chanKey === 'telegram' ? 'openzalo' : 'telegram';
+      const otherKey = chanKey === 'telegram' ? 'modoro-zalo' : 'telegram';
       const otherMs = cfg.channels?.[otherKey]?.messages?.inbound?.debounceMs;
       if (!cfg.messages) cfg.messages = {};
       if (!cfg.messages.inbound) cfg.messages.inbound = {};
@@ -11050,10 +11136,98 @@ ipcMain.handle('set-app-prefs', async (_e, partial) => {
   return next || loadAppPrefs();
 });
 
+// ─── Brand Assets IPC ────────────────────────────────────────────
+ipcMain.handle('list-brand-assets', async () => {
+  try {
+    const dir = getBrandAssetsDir();
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter(f => {
+      const ext = path.extname(f).toLowerCase();
+      return BRAND_ASSET_FORMATS.includes(ext) && fs.statSync(path.join(dir, f)).isFile();
+    }).map(f => ({ name: f, size: fs.statSync(path.join(dir, f)).size }));
+  } catch { return []; }
+});
+
+ipcMain.handle('upload-brand-asset', async (_event, filePath, name) => {
+  try {
+    const dir = getBrandAssetsDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const safeName = String(name || path.basename(filePath)).replace(/[\\/:*?"<>|]/g, '_');
+    if (!isPathSafe(dir, safeName)) return { success: false, error: 'invalid filename' };
+    const ext = path.extname(safeName).toLowerCase();
+    if (!BRAND_ASSET_FORMATS.includes(ext)) return { success: false, error: 'only png/jpg/webp allowed' };
+    const buf = fs.readFileSync(filePath);
+    if (buf.length > BRAND_ASSET_MAX_SIZE) return { success: false, error: 'file too large (max 10MB)' };
+    fs.writeFileSync(path.join(dir, safeName), buf);
+    return { success: true, name: safeName };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('delete-brand-asset', async (_event, name) => {
+  try {
+    const dir = getBrandAssetsDir();
+    if (!isPathSafe(dir, name)) return { success: false };
+    const fp = path.resolve(dir, name);
+    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    return { success: true };
+  } catch { return { success: false }; }
+});
+
+ipcMain.handle('pick-brand-asset-file', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog({
+    title: 'Chọn ảnh tài sản thương hiệu',
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    properties: ['openFile', 'multiSelections']
+  });
+  return result.canceled ? [] : result.filePaths;
+});
+
+// ─── Facebook IPC ────────────────────────────────────────────────
+ipcMain.handle('get-fb-config', async () => {
+  const cfg = readFbConfig();
+  if (!cfg) return null;
+  return { pageId: cfg.pageId, pageName: cfg.pageName, connectedAt: cfg.connectedAt };
+});
+
+ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
+  try {
+    const fbPub = require('./lib/fb-publisher');
+    const result = await fbPub.verifyToken(accessToken);
+    if (!result.valid) return { success: false, error: result.error };
+    const cfg = {
+      pageId: result.pageId,
+      pageName: result.pageName,
+      accessToken: result.pageToken || accessToken,
+      connectedAt: new Date().toISOString()
+    };
+    writeFbConfig(cfg);
+    return { success: true, pageId: cfg.pageId, pageName: cfg.pageName };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('verify-fb-token', async () => {
+  const cfg = readFbConfig();
+  if (!cfg || !cfg.accessToken) return { valid: false, error: 'Chưa kết nối Facebook' };
+  const fbPub = require('./lib/fb-publisher');
+  const result = await fbPub.verifyToken(cfg.accessToken);
+  const { pageToken, ...safe } = result;
+  return safe;
+});
+
+ipcMain.handle('get-fb-recent-posts', async () => {
+  const cfg = readFbConfig();
+  if (!cfg || !cfg.accessToken) return [];
+  try {
+    const fbPub = require('./lib/fb-publisher');
+    return await fbPub.getRecentPosts(cfg.pageId, cfg.accessToken, 5);
+  } catch { return []; }
+});
+
 // Periodic broadcast of channel readiness to the renderer so the sidebar dots
 // stay fresh. Boot phase polls fast (every 3s for 30s) so the CEO sees the
 // state flip from "checking" → "ready" as soon as the gateway brings the
-// openzalo channel up (typically 10-15s after gateway start). After the boot
+// modoro-zalo channel up (typically 10-15s after gateway start). After the boot
 // window, fall back to 45s steady-state polling.
 let _channelStatusInterval = null;
 let _channelStatusBootTimers = [];
@@ -11372,14 +11546,14 @@ async function fastWatchdogTick() {
     } else {
       _fwGatewayFailCount = 0;
       // --- Zalo listener sub-check: LOG ONLY, never restart gateway ---
-      // Zalo listener is a subprocess managed by the gateway's openzalo plugin.
+      // Zalo listener is a subprocess managed by the gateway's modoro-zalo plugin.
       // If it crashes or session expires, the plugin handles reconnect internally.
       // NEVER restart the entire gateway for a Zalo issue — that kills Telegram
       // and creates the "restart cascade" loop that made connection feel broken.
       try {
         const _fwZaloEnabled = (() => { try {
           const _cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
-          return _cfg?.plugins?.entries?.openzalo?.enabled === true || _cfg?.channels?.openzalo?.enabled === true;
+          return _cfg?.plugins?.entries?.['modoro-zalo']?.enabled === true || _cfg?.channels?.['modoro-zalo']?.enabled === true;
         } catch { return false; } })();
         if (_fwZaloEnabled) {
           const zlPid = findOpenzcaListenerPid();
@@ -12935,8 +13109,115 @@ function startCronApi() {
         });
       });
 
+    // ─── Brand Assets API ──────────────────────────────────────────
+    } else if (urlPath === '/api/brand-assets/list') {
+      try {
+        const dir = getBrandAssetsDir();
+        if (!fs.existsSync(dir)) return jsonResp(res, 200, { files: [] });
+        const files = fs.readdirSync(dir).filter(f => {
+          const ext = path.extname(f).toLowerCase();
+          return BRAND_ASSET_FORMATS.includes(ext) && fs.statSync(path.join(dir, f)).isFile();
+        });
+        return jsonResp(res, 200, { files });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/brand-assets/save') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST only' });
+      const { name, base64: b64Data } = params;
+      if (!name || !b64Data) return jsonResp(res, 400, { error: 'name and base64 required' });
+      const dir = getBrandAssetsDir();
+      fs.mkdirSync(dir, { recursive: true });
+      const safeName = String(name).replace(/[\\/:*?"<>|]/g, '_');
+      if (!isPathSafe(dir, safeName)) return jsonResp(res, 400, { error: 'invalid filename' });
+      const ext = path.extname(safeName).toLowerCase();
+      if (!BRAND_ASSET_FORMATS.includes(ext)) return jsonResp(res, 400, { error: 'only png/jpg/webp allowed' });
+      try {
+        const buf = Buffer.from(b64Data, 'base64');
+        if (buf.length > BRAND_ASSET_MAX_SIZE) return jsonResp(res, 400, { error: 'file too large (max 10MB)' });
+        fs.writeFileSync(path.join(dir, safeName), buf);
+        return jsonResp(res, 200, { ok: true, name: safeName, sizeBytes: buf.length });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    // ─── Image Generation API ────────────────────────────────────
+    } else if (urlPath === '/api/image/generate') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST only' });
+      const { prompt, assets, size } = params;
+      if (!prompt) return jsonResp(res, 400, { error: 'prompt required' });
+      if (String(prompt).length > 5000) return jsonResp(res, 400, { error: 'prompt too long (max 5000)' });
+      const imageGen = require('./lib/image-gen');
+      const jobId = imageGen.generateJobId();
+      const brandDir = getBrandAssetsDir();
+      const assetList = Array.isArray(assets) ? assets : (assets ? [assets] : []);
+      imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', (err, imgPath) => {
+        if (err) {
+          sendTelegram('[Tạo ảnh] Thất bại: ' + err.message, { skipFilter: true });
+        } else if (imgPath) {
+          sendTelegramPhoto(imgPath, 'Ảnh đã tạo xong').then(() => {}).catch(e =>
+            console.error('[image-gen] proactive photo send failed:', e.message));
+        }
+      });
+      return jsonResp(res, 200, { jobId });
+
+    } else if (urlPath === '/api/image/status') {
+      const { jobId } = params;
+      if (!jobId) return jsonResp(res, 400, { error: 'jobId required' });
+      const imageGen = require('./lib/image-gen');
+      return jsonResp(res, 200, imageGen.getJobStatus(String(jobId)));
+
+    // ─── Telegram Photo API ──────────────────────────────────────
+    } else if (urlPath === '/api/telegram/send-photo') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST only' });
+      const { imagePath: relPath, caption } = params;
+      if (!relPath) return jsonResp(res, 400, { error: 'imagePath required' });
+      const ws = getWorkspace();
+      const absPath = path.resolve(ws, relPath);
+      if (!absPath.startsWith(ws + path.sep)) return jsonResp(res, 400, { error: 'invalid path' });
+      if (!fs.existsSync(absPath)) return jsonResp(res, 400, { error: 'file not found' });
+      try {
+        const ok = await sendTelegramPhoto(absPath, caption || '');
+        return jsonResp(res, ok ? 200 : 500, { success: ok });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    // ─── Facebook API ────────────────────────────────────────────
+    } else if (urlPath === '/api/fb/post') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST only' });
+      const { message: fbMessage, imagePath: relImgPath } = params;
+      if (!fbMessage) return jsonResp(res, 400, { error: 'message required' });
+      if (String(fbMessage).length > 63206) return jsonResp(res, 400, { error: 'message too long (max 63206 chars)' });
+      const cfg = readFbConfig();
+      if (!cfg || !cfg.accessToken) return jsonResp(res, 400, { error: 'Facebook chưa kết nối. Paste token vào Dashboard.' });
+      const fbPub = require('./lib/fb-publisher');
+      try {
+        let result;
+        if (relImgPath) {
+          const ws = getWorkspace();
+          const absImg = path.resolve(ws, relImgPath);
+          if (!absImg.startsWith(ws + path.sep)) return jsonResp(res, 400, { error: 'invalid imagePath' });
+          if (!fs.existsSync(absImg)) return jsonResp(res, 400, { error: 'image not found' });
+          const imgBuf = fs.readFileSync(absImg);
+          result = await fbPub.postPhoto(cfg.pageId, cfg.accessToken, String(fbMessage), imgBuf, absImg);
+        } else {
+          result = await fbPub.postText(cfg.pageId, cfg.accessToken, String(fbMessage));
+        }
+        return jsonResp(res, 200, result);
+      } catch (e) {
+        if (/OAuthException|Invalid OAuth|expired/i.test(e.message)) {
+          return jsonResp(res, 401, { error: 'Token Facebook hết hạn. Paste token mới vào Dashboard.' });
+        }
+        return jsonResp(res, 500, { error: e.message });
+      }
+
+    } else if (urlPath === '/api/fb/recent') {
+      const cfg = readFbConfig();
+      if (!cfg || !cfg.accessToken) return jsonResp(res, 200, { posts: [] });
+      try {
+        const fbPub = require('./lib/fb-publisher');
+        const posts = await fbPub.getRecentPosts(cfg.pageId, cfg.accessToken, 5);
+        return jsonResp(res, 200, { posts });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/image/generate', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent'] });
     }
   });
 
@@ -13100,7 +13381,7 @@ function _startCronJobsInner() {
               try {
                 const cfgPath = path.join(HOME, '.openclaw', 'openclaw.json');
                 const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-                if (cfg?.channels?.openzalo?.enabled === true && !isChannelPaused('zalo')) {
+                if ((cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled === true && !isChannelPaused('zalo')) {
                   const lpid = findOpenzcaListenerPid();
                   if (lpid) {
                     // Listener healthy — reset streak, stay calm.
@@ -15594,7 +15875,7 @@ ipcMain.handle('set-rag-config', async (_event, cfg) => {
 });
 
 // === KNOWLEDGE SEARCH HTTP SERVER (for gateway → inbound.ts RAG) ===
-// Gateway openzalo plugin (different process) queries our SQLite/vector index
+// Gateway modoro-zalo plugin (different process) queries our SQLite/vector index
 // to RAG-enrich messages before dispatch to AI. Exposed on 127.0.0.1 only.
 //
 // C4 FIX: previous version had no auth → any local process (malicious browser
@@ -16633,23 +16914,26 @@ ipcMain.handle('install-openclaw', async (event) => {
   // skip npm install entirely. The wizard's "Đang khởi tạo npm..." step is a no-op
   // for full-bundled builds (Mac DMG + Win EXE 436MB) — everything is already
   // pre-extracted to resources/vendor/ by prebuild-vendor.js. Verifying the bundled
-  // openclaw + 9router + openzca + @tuyenhx/openzalo all exist is enough.
+  // openclaw + 9router + openzca + modoro-zalo all exist is enough.
   try {
     const vendorDir = getBundledVendorDir();
     if (vendorDir) {
       const openclawCli = path.join(vendorDir, 'node_modules', 'openclaw', 'openclaw.mjs');
       const ninerouterPkg = path.join(vendorDir, 'node_modules', '9router', 'package.json');
       const openzcaCli = path.join(vendorDir, 'node_modules', 'openzca', 'dist', 'cli.js');
-      const openzaloPlugin = path.join(vendorDir, 'node_modules', '@tuyenhx', 'openzalo', 'openclaw.plugin.json');
-      const all = [openclawCli, ninerouterPkg, openzcaCli, openzaloPlugin];
-      const allPresent = all.every(p => { try { return fs.existsSync(p); } catch { return false; } });
+      // Check both new (modoro-zalo) and legacy (@tuyenhx/openzalo) paths
+      const modoroZaloPlugin = path.join(vendorDir, 'node_modules', 'modoro-zalo', 'openclaw.plugin.json');
+      const legacyZaloPlugin = path.join(vendorDir, 'node_modules', '@tuyenhx', 'openzalo', 'openclaw.plugin.json');
+      const zaloPluginExists = fs.existsSync(modoroZaloPlugin) || fs.existsSync(legacyZaloPlugin);
+      const all = [openclawCli, ninerouterPkg, openzcaCli];
+      const allPresent = all.every(p => { try { return fs.existsSync(p); } catch { return false; } }) && zaloPluginExists;
       if (allPresent) {
         send('App đã có sẵn OpenClaw bundled — bỏ qua npm install.');
         send('Bundled vendor: ' + vendorDir);
         send('  openclaw: OK');
         send('  9router: OK');
         send('  openzca: OK');
-        send('  @tuyenhx/openzalo: OK');
+        send('  modoro-zalo: OK');
         send('Hoàn tất.');
         return { success: true, bundled: true };
       } else {
@@ -16756,13 +17040,14 @@ ipcMain.handle('install-openclaw', async (event) => {
     // electron/scripts/prebuild-vendor.js — keep both in sync (and PINNING.md).
     // CRIT #11: All 4 vendor packages must be pinned. Previously @tuyenhx/openzalo
     // was missing — dev-mode fresh installs pulled `latest` via openclaw's
-    // plugin auto-install path, so an upstream breaking change in openzalo
+    // plugin auto-install path, so an upstream breaking change in the zalo plugin
     // would silently break Zalo for every new VIP installing that day.
+    // NOTE: modoro-zalo is the renamed fork; @tuyenhx/openzalo kept as fallback
+    // for dev-mode network installs until modoro-zalo is published to npm.
     const PINNED_VERSIONS = [
       'openclaw@2026.4.14',
       '9router@0.3.82',
       'openzca@0.1.57',
-      '@tuyenhx/openzalo@2026.3.31',
     ];
     let cmd, args;
     if (isWin) {
