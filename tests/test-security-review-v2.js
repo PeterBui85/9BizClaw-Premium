@@ -299,7 +299,7 @@ assert(mainSrc.includes('_withMemoryFileLock(profilePath'), 'append uses memory 
 console.log('\n[Fork version]');
 
 const vendorPatchesSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'lib', 'vendor-patches.js'), 'utf-8');
-assert(vendorPatchesSrc.includes("fork-v14-escalation-fix"), 'fork version is v14-escalation-fix (in vendor-patches module)');
+assert(vendorPatchesSrc.includes("fork-v17-mention-fix"), 'fork version is v17-mention-fix (in vendor-patches module)');
 
 // ============================================================
 // TEST 13: AGENTS.md — token bootstrap via workspace read
@@ -309,7 +309,7 @@ console.log('\n[AGENTS.md token bootstrap]');
 const agentsContent = fs.readFileSync(path.join(__dirname, '..', 'AGENTS.md'), 'utf-8');
 assert(agentsContent.includes('api/workspace/read?path=cron-api-token.txt'), 'AGENTS.md: token via workspace read');
 assert(!agentsContent.includes('JSON chứa `groups` (tra groupId theo tên), `crons` hiện có, và `token`'), 'AGENTS.md: no token-from-list instruction');
-assert(agentsContent.includes('version: 67'), 'AGENTS.md: version 67');
+assert(agentsContent.includes('version: 73'), 'AGENTS.md: version 73');
 
 // ============================================================
 // TEST 14: Workspace read is unauthenticated

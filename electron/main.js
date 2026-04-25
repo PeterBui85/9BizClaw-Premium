@@ -8798,7 +8798,7 @@ ipcMain.handle('save-custom-crons', async (_event, crons) => {
         return { success: false, error: `Cron expression invalid: "${c.cronExpr}" (label: ${c.label || c.id || '?'})` };
       }
     }
-    writeJsonAtomic(getCustomCronsPath(), mine);
+    await _withCustomCronLock(async () => { writeJsonAtomic(getCustomCronsPath(), mine); });
     // CRITICAL: do NOT rely on the file watcher alone — fs.watch is unreliable
     // on Windows + atomic-replace editors. Explicitly reload cron jobs after
     // every write so the new schedule takes effect immediately, even if the
@@ -12471,7 +12471,7 @@ function startCronApi() {
     const urlPath = (new URL(req.url, 'http://127.0.0.1')).pathname;
     const params = await parseBody(req);
 
-    const readOnlyEndpoints = ['/api/cron/list', '/api/workspace/read', '/api/workspace/list'];
+    const readOnlyEndpoints = ['/api/cron/list', '/api/workspace/read', '/api/workspace/list', '/api/file/read', '/api/file/list', '/api/file/search', '/api/system/info'];
     const isMutation = !readOnlyEndpoints.includes(urlPath);
     if (isMutation && params.token !== _cronApiToken) {
       return jsonResp(res, 403, { error: 'invalid or missing token. Read cron-api-token.txt via /api/workspace/read?path=cron-api-token.txt first.' });
@@ -12796,7 +12796,38 @@ function startCronApi() {
               sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
             }
             return jsonResp(res, 200, { success: true, path: abs, type: 'excel', sheets, sheetNames: wb.SheetNames });
-          } catch (xe) { return jsonResp(res, 500, { error: 'Excel parse failed: ' + xe.message + '. Install xlsx: npm i xlsx in electron/' }); }
+          } catch (xe) { return jsonResp(res, 500, { error: 'Excel parse failed: ' + xe.message }); }
+        }
+        if (ext === '.pdf') {
+          try {
+            const pdfParse = require('pdf-parse');
+            const buf = fs.readFileSync(abs);
+            const data = await pdfParse(buf);
+            return jsonResp(res, 200, { success: true, path: abs, type: 'pdf', pages: data.numpages, content: data.text.slice(0, 80000) });
+          } catch (pe) { return jsonResp(res, 500, { error: 'PDF parse failed: ' + pe.message }); }
+        }
+        if (ext === '.docx') {
+          try {
+            const mammoth = require('mammoth');
+            const result = await mammoth.extractRawText({ path: abs });
+            return jsonResp(res, 200, { success: true, path: abs, type: 'docx', content: result.value.slice(0, 80000) });
+          } catch (de) { return jsonResp(res, 500, { error: 'DOCX parse failed: ' + de.message }); }
+        }
+        if (ext === '.csv') {
+          const text = fs.readFileSync(abs, 'utf-8');
+          const lines = text.split(/\r?\n/).filter(l => l.trim());
+          if (lines.length > 0) {
+            const sep = (lines[0].match(/\t/) ? '\t' : ',');
+            const headers = lines[0].split(sep).map(h => h.replace(/^"|"$/g, '').trim());
+            const rows = lines.slice(1, 501).map(line => {
+              const vals = line.split(sep).map(v => v.replace(/^"|"$/g, '').trim());
+              const row = {};
+              headers.forEach((h, i) => { row[h] = vals[i] || ''; });
+              return row;
+            });
+            return jsonResp(res, 200, { success: true, path: abs, type: 'csv', headers, rowCount: lines.length - 1, rows });
+          }
+          return jsonResp(res, 200, { success: true, path: abs, type: 'csv', headers: [], rowCount: 0, rows: [] });
         }
         const buf = fs.readFileSync(abs);
         const isBinary = buf.slice(0, 8000).some(b => b === 0);
@@ -12837,6 +12868,147 @@ function startCronApi() {
         return jsonResp(res, 500, { error: e.message });
       }
 
+    } else if (urlPath === '/api/file/search') {
+      const dir = String(params.path || params.dir || '');
+      const query = String(params.query || params.name || '');
+      if (!dir) return jsonResp(res, 400, { error: 'path required (directory to search in)' });
+      if (!query) return jsonResp(res, 400, { error: 'query required (filename pattern, case-insensitive)' });
+      const abs = path.resolve(dir);
+      const maxDepth = Math.min(parseInt(params.depth) || 5, 10);
+      const maxResults = Math.min(parseInt(params.limit) || 50, 200);
+      const pattern = query.toLowerCase();
+      const results = [];
+      const walk = (dirPath, depth) => {
+        if (depth > maxDepth || results.length >= maxResults) return;
+        try {
+          const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+          for (const e of entries) {
+            if (results.length >= maxResults) break;
+            if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+            const full = path.join(dirPath, e.name);
+            if (e.name.toLowerCase().includes(pattern)) {
+              const st = (() => { try { return fs.statSync(full); } catch { return null; } })();
+              results.push({ name: e.name, path: full, type: e.isDirectory() ? 'dir' : 'file', size: st ? st.size : 0, modified: st ? st.mtime.toISOString() : null });
+            }
+            if (e.isDirectory()) walk(full, depth + 1);
+          }
+        } catch {}
+      };
+      walk(abs, 0);
+      return jsonResp(res, 200, { success: true, searchDir: abs, query, resultCount: results.length, results });
+
+    } else if (urlPath === '/api/file/open') {
+      const filePath = String(params.path || '');
+      if (!filePath) return jsonResp(res, 400, { error: 'path required' });
+      const abs = path.resolve(filePath);
+      if (!fs.existsSync(abs)) return jsonResp(res, 404, { error: 'file not found: ' + abs });
+      auditLog('file_open', { path: abs });
+      const { shell } = require('electron');
+      const errMsg = await shell.openPath(abs);
+      if (errMsg) return jsonResp(res, 500, { error: errMsg });
+      return jsonResp(res, 200, { success: true, path: abs, message: 'File opened in default app' });
+
+    } else if (urlPath === '/api/file/rename') {
+      const src = String(params.path || params.from || '');
+      const dst = String(params.newPath || params.to || '');
+      if (!src || !dst) return jsonResp(res, 400, { error: 'path (source) and newPath (destination) required' });
+      const absSrc = path.resolve(src);
+      const absDst = path.resolve(dst);
+      if (!fs.existsSync(absSrc)) return jsonResp(res, 404, { error: 'source not found: ' + absSrc });
+      if (fs.existsSync(absDst)) return jsonResp(res, 409, { error: 'destination already exists: ' + absDst, warning: 'SECURITY: will not overwrite existing file. Delete destination first if intentional.' });
+      auditLog('file_rename', { from: absSrc, to: absDst });
+      try {
+        fs.mkdirSync(path.dirname(absDst), { recursive: true });
+        fs.renameSync(absSrc, absDst);
+        return jsonResp(res, 200, { success: true, from: absSrc, to: absDst });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/file/copy') {
+      const src = String(params.path || params.from || '');
+      const dst = String(params.to || params.dest || '');
+      if (!src || !dst) return jsonResp(res, 400, { error: 'path (source) and to (destination) required' });
+      const absSrc = path.resolve(src);
+      const absDst = path.resolve(dst);
+      if (!fs.existsSync(absSrc)) return jsonResp(res, 404, { error: 'source not found: ' + absSrc });
+      if (fs.existsSync(absDst)) return jsonResp(res, 409, { error: 'destination already exists: ' + absDst, warning: 'SECURITY: will not overwrite. Delete destination first if intentional.' });
+      auditLog('file_copy', { from: absSrc, to: absDst });
+      try {
+        fs.mkdirSync(path.dirname(absDst), { recursive: true });
+        fs.copyFileSync(absSrc, absDst);
+        const st = fs.statSync(absDst);
+        return jsonResp(res, 200, { success: true, from: absSrc, to: absDst, size: st.size });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/file/delete') {
+      const filePath = String(params.path || '');
+      if (!filePath) return jsonResp(res, 400, { error: 'path required' });
+      const abs = path.resolve(filePath);
+      if (!fs.existsSync(abs)) return jsonResp(res, 404, { error: 'not found: ' + abs });
+      const st = fs.statSync(abs);
+      if (st.isDirectory()) return jsonResp(res, 400, { error: 'SECURITY: directory deletion not allowed via API. Only single files.', warning: 'Recursive delete is too dangerous for remote API.' });
+      if (st.size > 100 * 1024 * 1024) return jsonResp(res, 400, { error: 'SECURITY: file too large to delete via API (>100MB). Use file manager.', warning: 'Large file deletion requires manual confirmation.' });
+      auditLog('file_delete', { path: abs, size: st.size });
+      try {
+        fs.unlinkSync(abs);
+        return jsonResp(res, 200, { success: true, path: abs, warning: 'File permanently deleted. This cannot be undone.' });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/file/download') {
+      const url = String(params.url || '');
+      const saveTo = String(params.path || params.saveTo || '');
+      if (!url) return jsonResp(res, 400, { error: 'url required' });
+      if (!saveTo) return jsonResp(res, 400, { error: 'path required (where to save the file)' });
+      if (!/^https?:\/\//i.test(url)) return jsonResp(res, 400, { error: 'SECURITY: only http/https URLs allowed' });
+      const abs = path.resolve(saveTo);
+      if (fs.existsSync(abs)) return jsonResp(res, 409, { error: 'destination already exists: ' + abs, warning: 'SECURITY: will not overwrite. Delete first if intentional.' });
+      auditLog('file_download', { url, saveTo: abs });
+      try {
+        const proto = url.startsWith('https') ? require('https') : require('http');
+        const fileData = await new Promise((resolve, reject) => {
+          const chunks = [];
+          let size = 0;
+          const MAX = 50 * 1024 * 1024;
+          proto.get(url, { timeout: 30000 }, (resp) => {
+            if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+              return reject(new Error('Redirect to: ' + resp.headers.location + ' — fetch that URL instead'));
+            }
+            if (resp.statusCode !== 200) return reject(new Error('HTTP ' + resp.statusCode));
+            resp.on('data', (c) => { size += c.length; if (size > MAX) { resp.destroy(); reject(new Error('SECURITY: file too large (>50MB)')); } chunks.push(c); });
+            resp.on('end', () => resolve(Buffer.concat(chunks)));
+          }).on('error', reject).on('timeout', function() { this.destroy(); reject(new Error('Download timeout (30s)')); });
+        });
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, fileData);
+        return jsonResp(res, 200, { success: true, url, path: abs, size: fileData.length, warning: 'SECURITY: file downloaded from external URL. Verify contents before opening.' });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/system/info') {
+      const os = require('os');
+      const { exec: execAsync } = require('child_process');
+      let diskInfo = null;
+      try {
+        const diskCmd = process.platform === 'win32'
+          ? 'wmic logicaldisk get size,freespace,caption /format:csv'
+          : "df -h / | tail -1 | awk '{print $2,$4,$5}'";
+        diskInfo = require('child_process').execSync(diskCmd, { encoding: 'utf-8', timeout: 5000 }).trim();
+      } catch {}
+      return jsonResp(res, 200, {
+        success: true,
+        platform: process.platform,
+        arch: process.arch,
+        hostname: os.hostname(),
+        username: os.userInfo().username,
+        homedir: os.homedir(),
+        tmpdir: os.tmpdir(),
+        totalMemoryGB: Math.round(os.totalmem() / 1073741824 * 10) / 10,
+        freeMemoryGB: Math.round(os.freemem() / 1073741824 * 10) / 10,
+        cpus: os.cpus().length,
+        cpuModel: os.cpus()[0]?.model || 'unknown',
+        uptime: Math.round(os.uptime() / 3600) + ' hours',
+        nodeVersion: process.version,
+        disk: diskInfo,
+      });
+
     } else if (urlPath === '/api/exec') {
       const cmd = String(params.command || '');
       if (!cmd) return jsonResp(res, 400, { error: 'command required' });
@@ -12869,7 +13041,7 @@ function startCronApi() {
       });
 
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/exec'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec'] });
     }
   });
 
@@ -13328,10 +13500,12 @@ function _startCronJobsInner() {
       delete c.cronExpr;
       // Write healed version back to file so it doesn't re-trigger
       try {
-        const customCronsPath = getCustomCronsPath();
-        const all = loadCustomCrons();
-        const idx = all.findIndex(x => x && x.id === c.id);
-        if (idx >= 0) { all[idx] = c; writeJsonAtomic(customCronsPath, all); }
+        await _withCustomCronLock(async () => {
+          const customCronsPath = getCustomCronsPath();
+          const all = loadCustomCrons();
+          const idx = all.findIndex(x => x && x.id === c.id);
+          if (idx >= 0) { all[idx] = c; writeJsonAtomic(customCronsPath, all); }
+        });
       } catch {}
       // Fall through to oneTimeAt scheduling below — need to re-enter the loop
       // by checking oneTimeAt condition. Simplest: just goto the oneTimeAt handler.

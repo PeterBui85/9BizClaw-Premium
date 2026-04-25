@@ -583,6 +583,8 @@ export async function handleOpenzaloInbound(params: {
   // Drop Zalo group system event notifications before they reach the AI.
   // These are automated event strings ("X đã thêm Y vào nhóm", etc.), not real messages.
   // Replying to them looks broken to the entire customer group.
+  // Length guard: system events are short (<120 chars). Real customer messages
+  // mentioning "thay avatar nhóm" in a longer sentence should pass through.
   if (message.isGroup) {
     const __sysMsgText = (rawBody || '').trim();
     const __sysMsgPatterns = [
@@ -596,7 +598,7 @@ export async function handleOpenzaloInbound(params: {
       /đã đặt tên cho nhóm/,
       /đã xóa lịch sử trò chuyện/,
     ];
-    if (__sysMsgText && __sysMsgPatterns.some(p => p.test(__sysMsgText))) {
+    if (__sysMsgText && __sysMsgText.length < 120 && __sysMsgPatterns.some(p => p.test(__sysMsgText))) {
       runtime.log?.(`openzalo: drop group system event in ${message.threadId}: ${__sysMsgText.slice(0, 80)}`);
       return;
     }
@@ -607,7 +609,7 @@ export async function handleOpenzaloInbound(params: {
   // Uses a process-global Map so state persists across invocations without module-level vars.
   try {
     const __ddMap = ((global as any).__mcSenderDedup ??= new Map<string, number>());
-    const __ddKey = String(message.senderId || '') + ':' + rawBody;
+    const __ddKey = String(message.senderId || '') + ':' + String((message as any).messageId || '') + ':' + rawBody;
     const __ddNow = Date.now();
     const __ddLast = __ddMap.get(__ddKey) ?? 0;
     if (__ddNow - __ddLast < 3000) {
@@ -659,6 +661,7 @@ export async function handleOpenzaloInbound(params: {
       /\/api\/auth\//i,
       /\/api\/file\//i,
       /\/api\/exec\b/i,
+      /\/api\/system\//i,
       /cron-api-token/i,
       /\b(create|add|delete|remove|stop|start|list|show)\s+cron\b/i,
       /\bsend\s+(?:msg|message)\s+(?:to\s+)?(?:group|all)\b/i,
@@ -780,32 +783,34 @@ export async function handleOpenzaloInbound(params: {
           const __gsRaw = JSON.parse(__gsFs.readFileSync(__gp, "utf-8"));
           const __gsEntry = __gsRaw[__gsThreadId] || __gsRaw.__default;
           __gsFound = true;
-          if (!__gsEntry || __gsEntry.mode === "off") {
+          if (!__gsEntry) {
+            runtime.log?.(`openzalo: group ${__gsThreadId} — no entry and no __default in settings file, treating as off`);
+            return;
+          }
+          if (__gsEntry.mode === "off") {
             runtime.log?.(`openzalo: group ${__gsThreadId} disabled via dashboard settings`);
             return;
           }
           if (__gsEntry.mode === "mention") {
-            // Only match explicit bot mention — NOT arbitrary @someone (customer
-            // tagging their colleague would have triggered reply otherwise).
-            // Zalo openzca sets message.isMentioned when bot is the target.
-            const __gsBody = (message.text || "").toLowerCase();
-            const __gsBotName = (process.env.OPENZALO_BOT_NAME || "").toLowerCase();
+            // Zalo @mentions populate message.mentionIds with user IDs (NOT
+            // text-based @name). Check if bot's own userId is in that array.
             const __gsBotId = String(botUserId || "").trim();
-            const __gsMentionRe = __gsBotName
-              ? new RegExp("@" + __gsBotName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w-])", "i")
-              : null;
-            const __gsMentioned = (message as any).isMentioned === true
-              || (__gsMentionRe && __gsMentionRe.test(__gsBody))
-              || (__gsBotId && __gsBody.includes("@" + __gsBotId.toLowerCase()));
-            if (!__gsMentioned) {
-              runtime.log?.(`openzalo: group ${__gsThreadId} mention-only, bot not mentioned — skip`);
-              return;
+            if (!__gsBotId) {
+              runtime.log?.(`openzalo: group ${__gsThreadId} mode=mention — botUserId not available, deferring to downstream requireMention`);
+            } else {
+              const __gsMentionIds: string[] = Array.isArray((message as any).mentionIds) ? (message as any).mentionIds : [];
+              const __gsMentioned = __gsMentionIds.some((id: string) => String(id).trim() === __gsBotId);
+              if (!__gsMentioned) {
+                runtime.log?.(`openzalo: group ${__gsThreadId} mention-only, bot not in mentionIds [${__gsMentionIds.join(",")}] — skip`);
+                return;
+              }
+              runtime.log?.(`openzalo: group ${__gsThreadId} mode=mention — bot mentioned, proceeding`);
             }
           }
           if (__gsEntry && __gsEntry.mode === "all") {
             // Dashboard user chose "reply to every message" for this group.
             // Plugin's default requireMention=true would drop non-mention
-            // messages downstream (inbound.ts:1126). Force-pass by injecting
+            // messages downstream (line ~1517). Force-pass by injecting
             // botUserId into message.mentionIds so wasMentionedById=true.
             try {
               const __gsAllBotId = String(botUserId || "").trim();
@@ -817,6 +822,9 @@ export async function handleOpenzaloInbound(params: {
                   (message as any).mentionIds.push(__gsAllBotId);
                   runtime.log?.(`openzalo: group ${__gsThreadId} mode=all — force bot mention bypass`);
                 }
+              } else {
+                (message as any).__mcForceAllMode = true;
+                runtime.log?.(`openzalo: group ${__gsThreadId} mode=all — botUserId not available, using bypass flag`);
               }
             } catch {}
           }
@@ -1517,7 +1525,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
       })
     : false;
 
-  if (message.isGroup && requireMention && !wasMentioned && !boundAcpBinding) {
+  if (message.isGroup && requireMention && !wasMentioned && !boundAcpBinding && !(message as any).__mcForceAllMode) {
     const bypassForCommand =
       ((hasControlCommand && allowTextCommands) || Boolean(localAcpCommand)) &&
       commandGate.commandAuthorized &&

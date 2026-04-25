@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const OPENZALO_FORK_VERSION = 'fork-v16-emoji-strip';
+const OPENZALO_FORK_VERSION = 'fork-v17-mention-fix';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
