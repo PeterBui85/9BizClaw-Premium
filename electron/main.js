@@ -10950,7 +10950,7 @@ async function probeZaloReady() {
 
 ipcMain.handle('get-telegram-config', async () => {
   try {
-    const configPath = getOpenClawConfigPath();
+    const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     const tg = config.channels?.telegram || {};
     return {
@@ -10963,7 +10963,7 @@ ipcMain.handle('get-telegram-config', async () => {
 ipcMain.handle('save-telegram-config', async (_e, { botToken, userId }) => {
   return withOpenClawConfigLock(async () => {
     try {
-      const configPath = getOpenClawConfigPath();
+      const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       if (!config.channels) config.channels = {};
       if (!config.channels.telegram) config.channels.telegram = {};
