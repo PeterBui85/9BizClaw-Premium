@@ -17,7 +17,7 @@
   ${IfNot} ${Silent}
     ; Offer to remove extracted vendor (~1.8 GB) — disk space only, no user data
     MessageBox MB_YESNO|MB_ICONQUESTION \
-      "Xoa Node.js va plugin da giai nen? (~1.8 GB)$\n$\nGom: vendor/node, openclaw, 9router, openzca, openzalo$\nNeu cai lai, file nay se duoc giai nen tu dau.$\n$\nLUU Y: Du lieu bot (Zalo, Telegram, knowledge) KHONG bi xoa." \
+      "Xoa Node.js va plugin da giai nen? (~1.8 GB)$\n$\nGom: vendor/node, openclaw, 9router, openzca, modoro-zalo$\nNeu cai lai, file nay se duoc giai nen tu dau.$\n$\nLUU Y: Du lieu bot (Zalo, Telegram, knowledge) KHONG bi xoa." \
       /SD IDNO \
       IDYES removeVendor IDNO skipVendor
     removeVendor:

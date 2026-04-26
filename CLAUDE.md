@@ -26,7 +26,7 @@
 
 **2. Patch openclaw config defaults:**
 - Thêm logic vào `ensureDefaultConfig()` trong `main.js`
-- Đảm bảo field mặc định (VD: `channels.openzalo.groupPolicy: "open"`) được set nếu thiếu
+- Đảm bảo field mặc định (VD: `channels["modoro-zalo"].groupPolicy: "open"`) được set nếu thiếu
 - Chạy mỗi lần `startOpenClaw()`
 
 **3. Patch workspace files (AGENTS.md, schedules.json, v.v.):**
@@ -64,7 +64,7 @@ Mọi fix lớn → cập nhật `docs/superpowers/sessions/` với:
 
 ## RULE #4: Pin third-party versions — BẮT BUỘC
 
-MODOROClaw bundles 4 npm packages we don't control: `openclaw`, `openzca`, `9router`, `@tuyenhx/openzalo`.
+MODOROClaw bundles 3 npm packages we don't control (`openclaw`, `openzca`, `9router`) plus our own `modoro-zalo` channel plugin (fork of `@tuyenhx/openzalo@2026.3.31`, source at `electron/packages/modoro-zalo/`).
 
 **Versions are pinned in 4 places** — see [PINNING.md](PINNING.md) for the table + upgrade procedure. Single source of truth: PINNING.md.
 
@@ -82,6 +82,16 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 ---
 
 ## Current patches (cần auto-restore trên fresh install)
+
+### modoro-zalo fork (v2.3.49) — permanent fork of @tuyenhx/openzalo
+**Before:** @tuyenhx/openzalo npm package installed as vendor dependency, then 4 files (inbound.ts, send.ts, channel.ts, openzca.ts) runtime-patched by `applyOpenzaloFork()` every boot. 17+ inline patches injected by ensure*Fix functions. Fragile: any upstream update could break patch anchors.
+**After:** Self-owned `electron/packages/modoro-zalo/` package. All ~1,300 openzalo refs renamed to modoro-zalo variants. All 17 patches baked in at source level. No runtime injection. No upstream sync ever.
+**Channel ID migration:** `channels.openzalo` → `channels["modoro-zalo"]` in openclaw.json. `ensureDefaultConfig()` auto-migrates on first boot after upgrade. Backward-compat fallback reads: `cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo`.
+**Plugin installer:** `_ensureZaloPluginImpl()` copies from `packages/modoro-zalo/` (dev) or `vendor/node_modules/modoro-zalo/` (packaged) to `~/.openclaw/extensions/modoro-zalo/`. Cleans up old `extensions/openzalo/` directory.
+**Deleted:** `electron/patches/openzalo-fork/` (4 files), `electron/patches/openzalo-openzca.ts`, `applyOpenzaloFork()` function, all ensure*Fix injection functions (blocklist, dedup, system-msg, command-block, output-filter, etc. — now built into package source).
+**Build:** `prebuild-vendor.js` copies from packages/ instead of npm-installing @tuyenhx/openzalo. Smoke test validates package source markers.
+**Naming convention:** string literals → `"modoro-zalo"`, camelCase → `modoroZalo`, PascalCase → `ModoroZalo`, display → `"Modoro Zalo"`. Config access MUST use bracket notation: `config.channels['modoro-zalo']`.
+**Files:** `electron/packages/modoro-zalo/` (76 files), `electron/main.js`, `electron/lib/vendor-patches.js`, `electron/scripts/prebuild-vendor.js`, `electron/scripts/smoke-test.js`, `electron/scripts/test-core.js`, `tools/zalo-manage.js`, `tools/send-zalo-safe.js`, `PINNING.md`.
 
 ### Dashboard Tổng quan redesign (v2.2.9) — actually useful for CEO
 **Trước:** 2 cards tĩnh — channel status (đã có ở sidebar) + lệnh nhanh tĩnh (đã có ở tab Telegram). CEO mở vào không học được gì.
@@ -170,7 +180,7 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 - `electron/scripts/prebuild-vendor.js` extended cho `win32` (trước chỉ darwin):
   - Download `node-v22.11.0-win-x64.zip` (hoặc arm64) từ nodejs.org, SHA256 verify, extract via Windows native `C:\Windows\System32\tar.exe` (BSD tar handle drive letters đúng — Git Bash MSYS tar interpret `C:\` như URL scheme và fail)
   - Layout: `vendor/node/node.exe` flat (no `bin/` subdir như Mac), `vendor/npm.cmd` etc cùng cấp
-  - npm install 4 pinned packages (openclaw, openzca, 9router, @tuyenhx/openzalo) vào `vendor/node_modules/`
+  - npm install 3 pinned packages (openclaw, openzca, 9router) + copy `modoro-zalo` from `electron/packages/modoro-zalo/` vào `vendor/node_modules/`
 - `electron/main.js` `getBundledNodeBin()` + `augmentPathWithBundledNode()` cập nhật để pick `vendor/node/node.exe` trên Windows (đã có sẵn cho Mac path `vendor/node/bin/node`)
 - `electron/scripts/smoke-test.js` đổi `isMacBuild` → `isBundledBuild` (fail nếu vendor dir tồn tại nhưng version drift, bất kể platform)
 - `package.json` `build:win` chain: `prebuild:vendor → smoke-test → electron-builder --win`
@@ -208,11 +218,10 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 **Verify:** `node -e "require('pdf-parse')(require('fs').readFileSync('any.pdf')).then(d => console.log(d.numpages))"` trả về số trang. Knowledge tab upload PDF → hiện text extracted, KHÔNG có dòng `[PDF extract failed]`.
 
 
-### `electron/patches/openzalo-openzca.ts`
+### [LEGACY — baked into modoro-zalo package since v2.3.49] `electron/patches/openzalo-openzca.ts`
 **Bug:** OpenZalo plugin dùng `shell: true` trên Windows + arg có newline → `cmd.exe` silently truncate → group replies không bao giờ đến
 **Fix:** Dùng `spawn('node', [cliPath, ...args], { shell: false })` để bypass cmd.exe
-**Auto-apply:** `ensureOpenzaloShellFix()` trong `main.js` — gọi trong `startOpenClaw()`
-**Verify:** Group Zalo @mention → bot reply đến được group
+**Status:** Baked into `electron/packages/modoro-zalo/src/openzca.ts`. No runtime injection needed.
 
 ### DELIVER-COALESCE patch v4 — reliable split fix + group error surfacing
 **Bug (v3 fragility):** v3 dùng exact string match cho `deliver` callback trong `inbound.ts`. Nếu openzalo update dù chỉ 1 space/biến, `content.includes(oldDeliver)` = false → callback NOT replaced → split tái xuất. Tệ hơn: v3 marker vẫn được ghi vào file dù callback không được replace → `ensureOpenzaloForceOneMessageFix()` bỏ qua mọi lần startup sau → broken state persist vĩnh viễn.

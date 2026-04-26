@@ -248,7 +248,8 @@ if (!fs.existsSync(safeScript)) {
   // T3.3: Disabled gate
   (() => {
     if (!ocConfig) return skip('T3.3 disabled gate', 'no openclaw.json');
-    const wasEnabled = ocConfig.channels?.['modoro-zalo']?.enabled;
+    if (!ocConfig.channels?.['modoro-zalo']) return skip('T3.3 disabled gate', 'no modoro-zalo config section');
+    const wasEnabled = ocConfig.channels['modoro-zalo'].enabled;
     try {
       ocConfig.channels['modoro-zalo'].enabled = false;
       fs.writeFileSync(OC_CONFIG, JSON.stringify(ocConfig, null, 2));

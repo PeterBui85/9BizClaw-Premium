@@ -16,7 +16,7 @@
 | **E. Cron handler** | Thêm case trong `startCronJobs()` | Cao |
 | **F. Preload bridge** | Thêm API vào `preload.js` | Trung bình |
 | **G. Dashboard UI** | Thêm page/section trong `dashboard.html` | Thấp |
-| **H. Openzalo fork** | Sửa `patches/openzalo-fork/*.ts` | Cao |
+| **H. modoro-zalo plugin** | Sửa `electron/packages/modoro-zalo/src/*.ts` | Cao |
 
 ---
 
@@ -43,10 +43,9 @@
 
 - [ ] Function có marker idempotent (VD: `// === MODOROClaw XXX PATCH ===`)
 - [ ] Được gọi trong `_startOpenClawImpl()` — chạy mỗi lần boot
-- [ ] Nếu patch file plugin: kiểm tra anchor string còn tồn tại (openzalo có thể update)
 - [ ] Nếu patch openclaw dist: thêm anchor check vào `smoke-test.js`
 - [ ] Fresh-install safe: KHÔNG giả định file đã tồn tại trước
-- [ ] **Nếu là openzalo patch**: KHÔNG thêm ensure function mới. Sửa trực tiếp trong `patches/openzalo-fork/inbound.ts` (hoặc send.ts/channel.ts/openzca.ts). Update `OPENZALO_FORK_VERSION` trong main.js.
+- [ ] **Nếu là modoro-zalo change**: Sửa trực tiếp trong `electron/packages/modoro-zalo/src/`. KHÔNG thêm runtime ensure function. Plugin source IS the truth.
 
 ### D. Bootstrap rule (AGENTS.md, SOUL.md, etc.)
 
@@ -89,12 +88,12 @@
 - [ ] Tab mới: thêm sidebar menu item + page div + switchPage handler
 - [ ] Auto-refresh: dùng `setInterval` với guard `isActiveTab` (tránh poll khi user ở tab khác)
 
-### H. Openzalo fork
+### H. modoro-zalo plugin
 
-- [ ] Sửa file trong `electron/patches/openzalo-fork/` (KHÔNG sửa trực tiếp trong `~/.openclaw/extensions/`)
-- [ ] Kiểm tra marker comments vẫn còn trong file fork (smoke-test.js verify)
-- [ ] Tăng `OPENZALO_FORK_VERSION` trong main.js
-- [ ] Test: restart Electron → console log `[openzalo-fork] applied fork-vX-...`
+- [ ] Sửa trực tiếp trong `electron/packages/modoro-zalo/src/` (package source IS the truth)
+- [ ] Kiểm tra marker comments vẫn còn (smoke-test.js verify 9+2+1+1 markers)
+- [ ] Tăng version trong `electron/packages/modoro-zalo/package.json` nếu thay đổi đáng kể
+- [ ] Test: restart Electron → `_ensureZaloPluginImpl` copies latest source to extensions/modoro-zalo/
 
 ---
 
@@ -126,9 +125,8 @@ echo "preload.js bridges:" && grep -c "ipcRenderer.invoke(" preload.js
 grep "CURRENT_AGENTS_MD_VERSION" main.js | head -1
 head -1 ../AGENTS.md
 
-# 5. Kiểm tra openzalo fork version match
-grep "OPENZALO_FORK_VERSION" main.js | head -1
-cat patches/openzalo-fork/../../../.openclaw/extensions/openzalo/src/.fork-version 2>/dev/null || echo "(not applied yet — ok for build)"
+# 5. Kiểm tra modoro-zalo package exists
+ls electron/packages/modoro-zalo/package.json && echo "OK" || echo "MISSING"
 ```
 
 ---

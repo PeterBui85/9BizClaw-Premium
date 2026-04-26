@@ -305,7 +305,7 @@ if (!openzcaCli) {
 }
 
 // =========================================================================
-// TEST 4: Patch anchors in openzalo plugin source still match expected format
+// TEST 4: Patch anchors in modoro-zalo plugin source still match expected format
 // =========================================================================
 section('Plugin patch anchors');
 // Patch anchors: pass if EITHER the original anchor matches (unpatched plugin)
@@ -360,7 +360,7 @@ if (modoroZaloSrc) {
     path.join(modoroZaloSrc, 'openzca.ts'),
     /spawn\s*\(\s*binary\s*,/,
     '9BizClaw PATCH',
-    'modoro-zalo fork openzca.ts missing shell-fix patch — check electron/patches/openzalo-fork/openzca.ts'
+    'modoro-zalo openzca.ts missing shell-fix patch — check electron/packages/modoro-zalo/src/openzca.ts'
   );
 
   // Anchor 2: inbound.ts blockStreaming (fork file)
@@ -369,7 +369,7 @@ if (modoroZaloSrc) {
     path.join(modoroZaloSrc, 'inbound.ts'),
     /disableBlockStreaming:\s*\n?\s*typeof account\.config\.blockStreaming === ["']boolean["']/,
     '9BizClaw FORCE-ONE-MESSAGE PATCH',
-    'modoro-zalo fork inbound.ts missing force-one-message patch — check electron/patches/openzalo-fork/inbound.ts'
+    'modoro-zalo inbound.ts missing force-one-message patch — check electron/packages/modoro-zalo/src/inbound.ts'
   );
 
   // Anchor 3: inbound.ts blocklist (fork file)
@@ -378,18 +378,18 @@ if (modoroZaloSrc) {
     path.join(modoroZaloSrc, 'inbound.ts'),
     /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
     '9BizClaw BLOCKLIST PATCH',
-    'modoro-zalo fork inbound.ts missing blocklist patch — check electron/patches/openzalo-fork/inbound.ts'
+    'modoro-zalo inbound.ts missing blocklist patch — check electron/packages/modoro-zalo/src/inbound.ts'
   );
 } else {
   warn('modoro-zalo plugin source', 'not found in vendor or ~/.openclaw/extensions — patch anchors skipped');
 }
 
 // =========================================================================
-// TEST 5: Openzalo fork files exist with expected patch markers
+// TEST 5: modoro-zalo package source files contain expected patch markers
 // =========================================================================
-section('Openzalo fork files');
-const forkDir = path.join(__dirname, '..', 'patches', 'openzalo-fork');
-const forkChecks = [
+section('modoro-zalo package source');
+const modoroZaloPkgSrc = path.join(__dirname, '..', 'packages', 'modoro-zalo', 'src');
+const pkgChecks = [
   {
     file: 'inbound.ts',
     markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH', 'COMMAND-BLOCK PATCH', 'RATE-LIMIT', 'BOT-LOOP-BREAKER'],
@@ -407,18 +407,18 @@ const forkChecks = [
     markers: ['9BizClaw PATCH'],
   },
 ];
-for (const check of forkChecks) {
-  const filePath = path.join(forkDir, check.file);
+for (const check of pkgChecks) {
+  const filePath = path.join(modoroZaloPkgSrc, check.file);
   if (!fs.existsSync(filePath)) {
-    fail(`fork ${check.file}`, `MISSING at ${filePath} — openzalo fork will ship without this patched file. Restore from git history.`);
+    fail(`pkg ${check.file}`, `MISSING at ${filePath} — modoro-zalo package incomplete. Restore from git history.`);
     continue;
   }
   const content = fs.readFileSync(filePath, 'utf-8');
   const missingMarkers = check.markers.filter(marker => !content.includes(marker));
   if (missingMarkers.length > 0) {
-    fail(`fork ${check.file} markers`, `file present but missing markers: [${missingMarkers.join(', ')}] — fork file may be stale or incomplete`);
+    fail(`pkg ${check.file} markers`, `file present but missing markers: [${missingMarkers.join(', ')}] — package source may be stale or incomplete`);
   } else {
-    pass(`fork ${check.file} (${check.markers.length} markers verified)`);
+    pass(`pkg ${check.file} (${check.markers.length} markers verified)`);
   }
 }
 

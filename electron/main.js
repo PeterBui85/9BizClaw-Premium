@@ -3601,18 +3601,27 @@ async function ensureDefaultConfig() {
     // --- modoro-zalo migration from v2.3.49 ---
     if (config.channels && config.channels.openzalo && !config.channels['modoro-zalo']) {
       config.channels['modoro-zalo'] = JSON.parse(JSON.stringify(config.channels.openzalo));
-      delete config.channels.openzalo;
       changed = true;
       console.log('[config] migrated channels.openzalo → channels["modoro-zalo"]');
     }
-    if (config.plugins && config.plugins.entries && config.plugins.entries.openzalo && !config.plugins.entries['modoro-zalo']) {
-      config.plugins.entries['modoro-zalo'] = config.plugins.entries.openzalo;
-      delete config.plugins.entries.openzalo;
+    if (config.channels && config.channels.openzalo) {
+      delete config.channels.openzalo;
       changed = true;
+    }
+    if (config.plugins && config.plugins.entries) {
+      if (config.plugins.entries.openzalo && !config.plugins.entries['modoro-zalo']) {
+        config.plugins.entries['modoro-zalo'] = config.plugins.entries.openzalo;
+        changed = true;
+      }
+      if (config.plugins.entries.openzalo) {
+        delete config.plugins.entries.openzalo;
+        changed = true;
+      }
     }
     if (Array.isArray(config.plugins && config.plugins.allow)) {
       const idx = config.plugins.allow.indexOf('openzalo');
       if (idx !== -1) { config.plugins.allow[idx] = 'modoro-zalo'; changed = true; }
+      config.plugins.allow = [...new Set(config.plugins.allow)];
     }
     // --- end migration ---
     if (!config.channels['modoro-zalo'] || typeof config.channels['modoro-zalo'] !== 'object') {
@@ -3661,9 +3670,9 @@ async function ensureDefaultConfig() {
       if (!oz.groupPolicy) { oz.groupPolicy = 'open'; changed = true; }
       if (!oz.groupAllowFrom) { oz.groupAllowFrom = ['*']; changed = true; }
       // DELETE legacy streaming keys — openclaw 2026.4.14 rejects them.
-      // Openzalo one-message guarantee comes from ensureOpenzaloForceOneMessageFix
-      // (hardcoded disableBlockStreaming:true in inbound.ts), not config.
-      for (const legacyKey of ['blockStreaming', 'streamMode', 'draftChunk', 'blockStreamingCoalesce']) {
+      // Modoro-Zalo one-message guarantee comes from blockStreaming:false capability
+      // baked into channel.ts. blockStreaming itself is a valid schema field.
+      for (const legacyKey of ['streamMode', 'draftChunk', 'blockStreamingCoalesce']) {
         if (legacyKey in oz) { delete oz[legacyKey]; changed = true; }
       }
       // History limits: prevent context window bloat over weeks of chat.
@@ -3686,7 +3695,7 @@ async function ensureDefaultConfig() {
         'name', 'enabled', 'profile', 'zcaBinary', 'acpx', 'markdown',
         'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom', 'groups',
         'historyLimit', 'dmHistoryLimit', 'textChunkLimit', 'chunkMode',
-        'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
+        'blockStreaming', 'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
         'threadBindings', 'actions', 'accounts', 'defaultAccount',
       ]);
       for (const k of Object.keys(oz)) {
@@ -3858,7 +3867,7 @@ async function ensureDefaultConfig() {
       delete config.tools.deny;
       changed = true;
     }
-    // openzalo.tools already stripped by OPENZALO_VALID_FIELDS whitelist above.
+    // modoro-zalo.tools already stripped by MODORO_ZALO_VALID_FIELDS whitelist above.
     // LOOP SAFETY: enable tools.loopDetection — openclaw ships it disabled.
     // Without this, a truly stuck model can grind through unlimited tool calls.
     // Thresholds chosen wide enough to NEVER fire on normal 3-5 turn Zalo reply
@@ -4449,8 +4458,8 @@ async function _startOpenClawImpl(opts = {}) {
   // Ensure config is valid before anything (patches run in parallel with 9router warmup)
   await ensureDefaultConfig();
 
-  // Apply non-zalo vendor patches. ensureOpenzaloNodeModulesLink + fork apply
-  // are now handled inside _ensureZaloPluginImpl (called earlier in boot).
+  // Apply non-zalo vendor patches. ensureModoroZaloNodeModulesLink + plugin copy
+  // are handled inside _ensureZaloPluginImpl (called earlier in boot).
   const _patchFns = [
     ensureOpenclawPricingFix,
     ensureOpenclawPrewarmFix,
@@ -4655,7 +4664,7 @@ async function _startOpenClawImpl(opts = {}) {
   // include ~/AppData/Roaming/npm/. Without this, modoro-zalo's `spawn("openzca", ...)`
   // via cmd.exe fails with "openzca is not recognized" → listener never starts →
   // CEO sees "Chưa sẵn sàng" forever.
-  // Defense in depth: even when ensureOpenzaloShellFix() patches openzca.ts to use
+  // Defense in depth: even though the modoro-zalo package's openzca.ts resolves
   // direct `node <cli.js>` path, this PATH enrichment is still useful for any other
   // npm-installed bin the gateway or its plugins may need to spawn.
   const enrichedEnv = { ...process.env };
