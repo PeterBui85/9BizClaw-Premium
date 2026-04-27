@@ -201,6 +201,8 @@
             "!**/{appveyor.yml,.travis.yml,circle.yml}",
             "!**/node/lib/node_modules/npm/node_modules/**",
             "!**/node/lib/node_modules/corepack/**",
+            "!**/node/bin/corepack",
+            "!**/node/bin/npx",
             "!**/node/share/**",
             "!**/node/include/**"
           ]
