@@ -3594,11 +3594,30 @@ async function ensureDefaultConfig() {
     } catch (e) { console.warn('[config] plugin entry heal failed:', e?.message); }
     {
       const oz = config.channels.openzalo;
-      // Default OFF on fresh install — CEO must enable from Settings > Zalo.
-      // If field already exists (any value), preserve it so disabling from
-      // dashboard survives restarts. Previously this forced true every boot,
-      // which overrode the CEO's explicit disable.
-      if (oz.enabled === undefined) { oz.enabled = false; changed = true; }
+      // Recover enabled state from sticky file when gateway normalization
+      // strips the field. Without this, every restart after a gateway strip
+      // forces enabled=false → CEO loses Zalo settings silently.
+      const zaloStickyPath = path.join(HOME, '.openclaw', 'modoroclaw-sticky-zalo-enabled.json');
+      if (oz.enabled === undefined) {
+        let recovered = false;
+        try {
+          if (fs.existsSync(zaloStickyPath)) {
+            const sticky = JSON.parse(fs.readFileSync(zaloStickyPath, 'utf-8'));
+            if (typeof sticky.enabled === 'boolean') {
+              oz.enabled = sticky.enabled;
+              recovered = true;
+              console.log(`[config] recovered channels.openzalo.enabled=${sticky.enabled} from sticky file`);
+            }
+          }
+        } catch (e) { console.warn('[config] zalo sticky read error:', e?.message); }
+        if (!recovered) { oz.enabled = false; }
+        changed = true;
+      }
+      // Persist current enabled state to sticky file for crash recovery
+      try {
+        const stickyData = JSON.stringify({ enabled: oz.enabled !== false, ts: Date.now() });
+        fs.writeFileSync(zaloStickyPath, stickyData, 'utf-8');
+      } catch (e) { console.warn('[config] zalo sticky write error:', e?.message); }
       // U2: purge legacy channels.openzalo.groups on upgrade. v2.58 stored
       // per-group requireMention/enabled here, creating a dual source of
       // truth with zalo-group-settings.json (CRIT #5). We're now
@@ -7735,6 +7754,11 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       if (!cfg.channels) cfg.channels = {};
       if (!cfg.channels.openzalo) cfg.channels.openzalo = {};
       cfg.channels.openzalo.enabled = enabled !== false;
+      // Persist to sticky file so gateway normalization can't wipe it
+      try {
+        const zaloStickyPath = path.join(HOME, '.openclaw', 'modoroclaw-sticky-zalo-enabled.json');
+        fs.writeFileSync(zaloStickyPath, JSON.stringify({ enabled: enabled !== false, ts: Date.now() }), 'utf-8');
+      } catch (e) { console.warn('[save-zalo-manager] sticky write error:', e?.message); }
       // ALWAYS keep native gate open — let code-level patch in inbound.ts
       // handle group filtering via zalo-group-settings.json (realtime, no restart).
       // Setting allowlist here blocks groups at the native gate BEFORE our
@@ -8632,6 +8656,13 @@ ipcMain.handle('save-wizard-config', async (_event, configs) => {
         if (!Array.isArray(config.channels.openzalo.allowFrom)) {
           config.channels.openzalo.allowFrom = ['*'];
         }
+      }
+      // Persist Zalo enabled state to sticky file for gateway-strip recovery
+      if (config.channels?.openzalo && typeof config.channels.openzalo.enabled === 'boolean') {
+        try {
+          const zaloStickyPath = path.join(HOME, '.openclaw', 'modoroclaw-sticky-zalo-enabled.json');
+          fs.writeFileSync(zaloStickyPath, JSON.stringify({ enabled: config.channels.openzalo.enabled, ts: Date.now() }), 'utf-8');
+        } catch {}
       }
       // Create required dirs
       const sessDir = path.join(HOME, '.openclaw', 'agents', 'main', 'sessions');
