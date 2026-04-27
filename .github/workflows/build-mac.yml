@@ -108,13 +108,18 @@ jobs:
               security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
               security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
               security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-              security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-              security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-              security list-keychains -d user -s "$KEYCHAIN_PATH" "$(security default-keychain -d user | xargs)"
-              security find-identity -v "$KEYCHAIN_PATH"
-              rm -f "$CERT_PATH"
-              echo "SIGN_AVAILABLE=true" >> $GITHUB_ENV
-              echo "✓ Signing cert imported"
+              if ! security import "$CERT_PATH" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH" 2>&1; then
+                echo "⚠ security import failed (wrong password?) — building unsigned"
+                echo "SIGN_AVAILABLE=false" >> $GITHUB_ENV
+                rm -f "$CERT_PATH"
+              else
+                security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+                security list-keychains -d user -s "$KEYCHAIN_PATH" "$(security default-keychain -d user | xargs)"
+                security find-identity -v "$KEYCHAIN_PATH"
+                rm -f "$CERT_PATH"
+                echo "SIGN_AVAILABLE=true" >> $GITHUB_ENV
+                echo "✓ Signing cert imported"
+              fi
             fi
           fi
 
