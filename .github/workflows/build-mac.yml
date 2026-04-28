@@ -217,6 +217,29 @@ jobs:
           fi
           echo "FIXED — ${{ matrix.arch }} binary in place"
 
+      - name: Notarize .dmg
+        if: env.SIGN_AVAILABLE == 'true'
+        working-directory: electron
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG=$(ls ../dist/*.dmg 2>/dev/null | head -1)
+          if [ -z "$DMG" ]; then
+            echo "No .dmg found — skipping notarization"
+            exit 0
+          fi
+          echo "Submitting $DMG for notarization..."
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 30m
+          echo "Stapling notarization ticket..."
+          xcrun stapler staple "$DMG"
+          echo "✓ Notarization complete"
+
       - name: List dist output
         run: ls -lh dist/ || true
 
