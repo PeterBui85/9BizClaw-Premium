@@ -570,9 +570,13 @@ export async function handleOpenzaloInbound(params: {
     // Blocklist applies ONLY to DMs — in groups, everyone should be answered
     // if the group is enabled. Otherwise one blocked user silences the whole group.
     const __sender = String(message.senderId || "").trim();
-    if (!message.isGroup && __sender && __mzBlocked.includes(__sender)) {
-      runtime.log?.(`openzalo: drop sender=${__sender} (9BizClaw blocklist, DM only)`);
-      return;
+    if (!message.isGroup && __sender) {
+      const __inBl = __mzBlocked.includes(__sender);
+      runtime.log?.(`openzalo: DM from=${__sender} blocklist=${__mzBlocked.length} entries, blocked=${__inBl}`);
+      if (__inBl) {
+        runtime.log?.(`openzalo: drop sender=${__sender} (9BizClaw blocklist, DM only)`);
+        return;
+      }
     }
   } catch (__e) {
     runtime.log?.(`openzalo: blocklist check error: ${String(__e)}`);
