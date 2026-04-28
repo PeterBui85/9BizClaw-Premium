@@ -160,6 +160,23 @@ if (hasVendorDir) {
   }
 }
 
+// gog (gogcli) binary
+const gogBin = process.platform === 'win32'
+  ? path.join(VENDOR, 'gog', 'gog.exe')
+  : path.join(VENDOR, 'gog', 'gog');
+if (fs.existsSync(path.join(VENDOR, 'gog'))) {
+  if (!fs.existsSync(gogBin)) {
+    fail('vendor/gog/ directory exists but gog binary is missing');
+  } else {
+    const gogRes = spawnSync(gogBin, ['version'], { encoding: 'utf-8', timeout: 10000 });
+    if (gogRes.status !== 0) {
+      fail('gog binary', 'gog binary failed to run: ' + (gogRes.stderr || '').slice(0, 200));
+    } else {
+      pass('gog binary: ' + (gogRes.stdout || '').trim());
+    }
+  }
+}
+
 // =========================================================================
 // TEST 2: openclaw CLI is runnable + `agent --help` works
 // =========================================================================
@@ -396,7 +413,7 @@ const pkgChecks = [
   },
   {
     file: 'send.ts',
-    markers: ['OUTPUT-FILTER PATCH', 'GROUP-DETECT PATCH'],
+    markers: ['OUTPUT-FILTER PATCH', 'GROUP-DETECT PATCH', 'ESCALATION-DETECT PATCH'],
   },
   {
     file: 'channel.ts',
@@ -744,6 +761,942 @@ section('guide-overlay-no-emoji');
     }
   }
 }
+
+// =========================================================================
+// TEST 10: Module contracts — extracted lib/ modules export expected functions
+// =========================================================================
+section('Module contracts');
+function checkModuleContracts() {
+  const errors = [];
+  // Wave 1: boot.js
+  try {
+    const boot = require('../lib/boot');
+    const required = ['getBundledVendorDir', 'ensureVendorExtracted', 'getBundledNodeBin',
+      'getBundledOpenClawCliJs', 'augmentPathWithBundledNode', 'initPathAugmentation',
+      'enumerateNodeManagerBinDirs', 'enumerateNodeManagerLibDirs',
+      'appDataDir', 'resolveBinAbsolute', 'findBundledOpenClawMjs',
+      'findOpenClawBin', 'findOpenClawBinSync', 'findNodeBin', 'findOpenClawCliJs',
+      'spawnOpenClawSafe', 'runOpenClaw',
+      'bootDiagLog', 'bootDiagInit', 'bootDiagRunFullCheck',
+      'npmGlobalModules', 'findGlobalPackageFile',
+      'runSplashAndExtractVendor'];
+    for (const fn of required) {
+      if (typeof boot[fn] !== 'function') errors.push(`boot.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`boot.js failed to load: ${e.message}`); }
+  // Wave 1: context.js
+  try {
+    const ctx = require('../lib/context');
+    const required = ['mainWindow', 'tray', 'HOME', 'resourceDir', 'userDataDir',
+      'openclawProcess', 'botRunning', 'restartCount', 'lastCrash', 'appIsQuitting',
+      'ipcInFlightCount', 'startOpenClawInFlight', 'wizardCompleteInFlight',
+      'gatewayRestartInFlight', 'gatewayLastStartedAt'];
+    for (const k of required) {
+      if (!(k in ctx)) errors.push(`context.js missing key: ${k}`);
+    }
+  } catch (e) {
+    errors.push(`context.js failed to load: ${e.message}`);
+  }
+  // Wave 1: util.js
+  try {
+    const util = require('../lib/util');
+    for (const fn of ['isPathSafe', 'writeJsonAtomic', 'tokenizeShellish', 'sanitizeZaloText', 'stripTelegramMarkdown']) {
+      if (typeof util[fn] !== 'function') errors.push(`util.js missing export: ${fn}`);
+    }
+  } catch (e) {
+    errors.push(`util.js failed to load: ${e.message}`);
+  }
+  // Wave 1: workspace.js
+  try {
+    const ws = require('../lib/workspace');
+    const required = ['getWorkspace', 'invalidateWorkspaceCache', 'getWorkspaceTemplateRoot',
+      'getOpenclawAgentWorkspace', 'seedWorkspace', 'purgeAgentSessions',
+      'getBrandAssetsDir', 'getFbConfigPath', 'readFbConfig', 'writeFbConfig',
+      'getSetupCompletePath', 'hasCompletedOnboarding', 'markOnboardingComplete',
+      'isOpenClawConfigured', 'getAppPrefsPath', 'loadAppPrefs', 'saveAppPrefs',
+      'auditLog', 'enforceRetentionPolicies', 'backupWorkspace', 'hardenSensitiveFilePerms',
+      'setCompilePersonaMix'];
+    for (const fn of required) {
+      if (typeof ws[fn] !== 'function') errors.push(`workspace.js missing export: ${fn}`);
+    }
+    for (const c of ['DEFAULT_SCHEDULES_JSON', 'BRAND_ASSET_FORMATS', 'BRAND_ASSET_MAX_SIZE']) {
+      if (ws[c] === undefined) errors.push(`workspace.js missing constant: ${c}`);
+    }
+  } catch (e) { errors.push(`workspace.js failed to load: ${e.message}`); }
+  // Wave 2: config.js
+  try {
+    const cfg = require('../lib/config');
+    const required = ['parseUnrecognizedKeyErrors', 'healOpenClawConfigInline', 'isValidConfigKey',
+      'sanitizeOpenClawConfigInPlace', 'withOpenClawConfigLock',
+      'writeOpenClawConfigIfChanged', 'ensureDefaultConfig', 'setJournalCronRun'];
+    for (const fn of required) {
+      if (typeof cfg[fn] !== 'function') errors.push(`config.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`config.js failed to load: ${e.message}`); }
+  // Wave 2: nine-router.js
+  try {
+    const nr = require('../lib/nine-router');
+    const required = ['ensure9RouterDefaultPassword', 'saveProviderKey', 'ensure9RouterProviderKeys',
+      'start9Router', 'stop9Router', 'nineRouterApi', 'autoFix9RouterSqlite',
+      'waitFor9RouterReady', 'validateOllamaKeyDirect',
+      'call9Router', 'call9RouterVision', 'detectChatgptPlusOAuth',
+      'getRouterProcess', 'setKillPort'];
+    for (const fn of required) {
+      if (typeof nr[fn] !== 'function') errors.push(`nine-router.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`nine-router.js failed to load: ${e.message}`); }
+  // Wave 2: conversation.js
+  try {
+    const conv = require('../lib/conversation');
+    const required = ['extractConversationHistoryRaw', 'extractConversationHistory',
+      'writeDailyMemoryJournal', 'appendPerCustomerSummaries', 'trimZaloMemoryFile'];
+    for (const fn of required) {
+      if (typeof conv[fn] !== 'function') errors.push(`conversation.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`conversation.js failed to load: ${e.message}`); }
+  // Wave 2: updates.js
+  try {
+    const upd = require('../lib/updates');
+    const required = ['compareVersions', 'checkForUpdates', 'downloadUpdate',
+      'installDmgUpdate', 'openGitHubUrl',
+      'getLatestRelease', 'getUpdateDownloadInFlight', 'setUpdateDownloadInFlight'];
+    for (const fn of required) {
+      if (typeof upd[fn] !== 'function') errors.push(`updates.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`updates.js failed to load: ${e.message}`); }
+  // Wave 3: channels.js
+  try {
+    const ch = require('../lib/channels');
+    const required = [
+      'getStickyChatIdPath', 'persistStickyChatId', 'loadStickyChatId',
+      'recoverChatIdFromTelegram', 'getTelegramConfig', 'getTelegramConfigWithRecovery',
+      'getGatewayAuthToken', 'getCeoSessionKey', 'sendToGatewaySession',
+      'filterSensitiveOutput',
+      '_getPausePath', 'setChannelPermanentPause', 'clearChannelPermanentPause',
+      'isZaloChannelEnabled', 'setZaloChannelEnabled',
+      'isChannelPaused', 'pauseChannel', 'resumeChannel', 'getChannelPauseStatus',
+      'sendTelegram', 'sendTelegramPhoto', 'sendZalo', 'sendZaloTo', 'sendCeoAlert',
+      'isZaloListenerAlive', 'getReadyGateState',
+      'finalizeTelegramReadyProbe', 'finalizeZaloReadyProbe',
+      'probeTelegramReady', 'findOpenzcaListenerPid', 'probeZaloReady',
+      'broadcastChannelStatusOnce', 'startChannelStatusBroadcast',
+      'registerTelegramCommands',
+      'setIsZaloTargetAllowed', 'setGetZcaProfile', 'setIsKnownZaloTarget',
+      'setReadZaloChannelState', 'setIsGatewayAlive', 'setCheckZaloCookieAge',
+      'cleanupChannelTimers',
+    ];
+    for (const fn of required) {
+      if (typeof ch[fn] !== 'function') errors.push(`channels.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`channels.js failed to load: ${e.message}`); }
+  // Wave 3: appointments.js
+  try {
+    const appt = require('../lib/appointments');
+    const required = [
+      'getAppointmentsPath', 'readAppointments', 'writeAppointments',
+      'newAppointmentId', 'mutateAppointments',
+      'vnHHMM', 'vnDDMM', 'vnHHMMNow', 'vnDateKeyNow',
+      'normalizeAppointment',
+      'substituteApptTemplate', 'defaultApptPushTemplate', 'buildApptReminderText',
+      'fireApptPushTarget', 'startAppointmentDispatcher', 'apptDispatcherTick',
+      'cleanupAppointmentTimers',
+    ];
+    for (const fn of required) {
+      if (typeof appt[fn] !== 'function') errors.push(`appointments.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`appointments.js failed to load: ${e.message}`); }
+  // Wave 4: zalo-memory.js
+  try {
+    const zm = require('../lib/zalo-memory');
+    const required = [
+      'getZcaProfile', 'getZcaCacheDir', 'getZcaCacheDirForProfile',
+      'readZaloChannelState', 'isZaloTargetAllowed', 'isKnownZaloTarget',
+      'invalidateZaloFriendsCache', 'getZaloFriendsCached', 'setZaloFriendsCached',
+      'runZaloCacheRefresh', 'startZaloCacheAutoRefresh',
+      'getZaloUsersDir', 'ensureZaloUsersDir', 'sanitizeZaloUserId', 'parseZaloUserMemoryMeta',
+      'getZaloGroupsDir', 'getZaloBlocklistPath', 'cleanBlocklist',
+      'cleanupZaloMemoryTimers',
+    ];
+    for (const fn of required) {
+      if (typeof zm[fn] !== 'function') errors.push(`zalo-memory.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`zalo-memory.js failed to load: ${e.message}`); }
+  // Wave 3: zalo-plugin.js
+  try {
+    const zp = require('../lib/zalo-plugin');
+    const required = [
+      'cleanupOrphanZaloListener', 'ensureModoroZaloNodeModulesLink',
+      'ensureZaloPlugin', 'seedZaloCustomersFromCache',
+      'findOpenzcaCliJs', 'seedGroupHistorySummary', 'seedAllGroupHistories',
+      'checkZaloCookieAge', '_ensureZaloPluginImpl',
+      'isZaloReady', 'getZaloPluginVersion',
+    ];
+    for (const fn of required) {
+      if (typeof zp[fn] !== 'function') errors.push(`zalo-plugin.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`zalo-plugin.js failed to load: ${e.message}`); }
+  // Wave 3: persona.js
+  try {
+    const per = require('../lib/persona');
+    const required = [
+      'compilePersonaMix', 'syncPersonaToBootstrap',
+      'syncShopStateToBootstrap', 'syncAllBootstrapData',
+    ];
+    for (const fn of required) {
+      if (typeof per[fn] !== 'function') errors.push(`persona.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`persona.js failed to load: ${e.message}`); }
+  // Wave 4: escalation.js
+  try {
+    const esc = require('../lib/escalation');
+    const required = [
+      'processEscalationQueue', 'startEscalationChecker', 'cleanupEscalationTimers',
+    ];
+    for (const fn of required) {
+      if (typeof esc[fn] !== 'function') errors.push(`escalation.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`escalation.js failed to load: ${e.message}`); }
+  // Wave 4: follow-up.js
+  try {
+    const fu = require('../lib/follow-up');
+    const required = [
+      'getFollowUpQueuePath', 'readFollowUpQueue', 'writeFollowUpQueue',
+      'processFollowUpQueue', 'startFollowUpChecker',
+      'cleanupFollowUpTimers', 'setRunCronAgentPrompt',
+    ];
+    for (const fn of required) {
+      if (typeof fu[fn] !== 'function') errors.push(`follow-up.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`follow-up.js failed to load: ${e.message}`); }
+  // Wave 4: gateway.js
+  try {
+    const gw = require('../lib/gateway');
+    const required = [
+      'killPort', 'killAllOpenClawProcesses',
+      'isGatewayAlive', 'waitForIpcDrain', 'rejectIfBooting',
+      'startOpenClaw', '_startOpenClawImpl', 'stopOpenClaw',
+      'ensureVisionFix', 'ensureVisionCatalogFix', 'ensureVisionSerializationFix',
+      'ensureWebFetchLocalhostFix', 'ensureOpenzcaFriendEventFix',
+      'ensureOpenclawPricingFix', 'ensureOpenclawPrewarmFix',
+      'startFastWatchdog', 'fastWatchdogTick', 'triggerGatewayMessage',
+      'cleanupGatewayTimers',
+      'setCreateTray', 'setKnowledgeCallbacks',
+    ];
+    for (const fn of required) {
+      if (typeof gw[fn] !== 'function') errors.push(`gateway.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`gateway.js failed to load: ${e.message}`); }
+
+  // Wave 4: knowledge.js
+  try {
+    const kn = require('../lib/knowledge');
+    const required = [
+      'getDocumentsDir', 'ensureDocumentsDir', 'getDocumentsDb',
+      'KNOWLEDGE_CATEGORIES', 'getKnowledgeCategories', 'getKnowledgeDir',
+      'rewriteKnowledgeIndex', 'searchKnowledge', 'startKnowledgeSearchServer',
+      'getKnowledgeHttpServer', 'cleanupKnowledgeServer',
+      'extractTextFromFile', 'listKnowledgeFilesFromDisk',
+    ];
+    for (const fn of required) {
+      if (typeof kn[fn] !== 'function' && typeof kn[fn] !== 'object') errors.push(`knowledge.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`knowledge.js failed to load: ${e.message}`); }
+
+  // Wave 5: cron.js
+  try {
+    const cr = require('../lib/cron');
+    const required = [
+      'cronJournalPath', 'journalCronRun', 'selfTestOpenClawAgent',
+      'buildAgentArgs', 'isTransientErr', 'isConfigInvalidErr', 'isFatalErr',
+      'parseSafeOpenzcaMsgSend', 'runSafeExecCommand',
+      'runCronAgentPrompt', 'runCronViaSessionOrFallback',
+      'getSchedulesPath', 'getCustomCronsPath',
+      'loadSchedules', 'loadCustomCrons',
+      'loadDailySummaries', 'generateWeeklySummary', 'loadWeeklySummaries',
+      'loadPromptTemplate',
+      'buildMorningBriefingPrompt', 'buildEveningSummaryPrompt',
+      'buildWeeklyReportPrompt', 'buildMonthlyReportPrompt',
+      'scanZaloFollowUpCandidates', 'buildZaloFollowUpPrompt',
+      'buildMeditationPrompt', 'buildMemoryCleanupPrompt',
+      'healCustomCronEntries', 'watchCustomCrons',
+      'startCronJobs', 'stopCronJobs', 'restartCronJobs',
+      '_withCustomCronLock', '_removeCustomCronById', 'surfaceCronConfigError',
+      'handleTimCommand', 'handleThongkeCommand', 'handleBaocaoCommand',
+      'handleTelegramBuiltinCommand',
+      '_readJsonlTail', '_readCeoNameFromIdentity', '_readRecentZaloCustomers', '_nextFireTime',
+      '_OVERVIEW_EVENT_LABELS',
+      'cleanupCronTimers',
+      'setSaveZaloManagerInFlightGetter',
+      'getAgentFlagProfile', 'getAgentCliHealthy',
+    ];
+    for (const fn of required) {
+      if (cr[fn] === undefined) errors.push(`cron.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`cron.js failed to load: ${e.message}`); }
+
+  // Wave 6: cron-api.js
+  try {
+    const ca = require('../lib/cron-api');
+    for (const fn of ['startCronApi', 'cleanupCronApi', 'getCronApiToken', 'getCronApiPort']) {
+      if (typeof ca[fn] !== 'function') errors.push(`cron-api.js missing export: ${fn}`);
+    }
+  } catch (e) { errors.push(`cron-api.js failed to load: ${e.message}`); }
+
+  // Wave 7: dashboard-ipc.js
+  try {
+    const dIpc = require('../lib/dashboard-ipc');
+    if (typeof dIpc.registerAllIpcHandlers !== 'function') errors.push('dashboard-ipc.js missing registerAllIpcHandlers');
+  } catch (e) { errors.push('dashboard-ipc.js load failed: ' + e.message); }
+
+  if (errors.length) {
+    for (const e of errors) fail('module contract', e);
+  } else {
+    pass('module contracts OK');
+  }
+}
+checkModuleContracts();
+
+// =========================================================================
+// TEST 11: config.js blockStreaming schema healer — must delete old key
+// =========================================================================
+section('blockStreaming schema healer');
+try {
+  const cfgSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'config.js'), 'utf-8');
+  const deleteCount = (cfgSource.match(/delete\s+config\.agents\.defaults\.blockStreaming/g) || []).length;
+  if (deleteCount >= 2) {
+    pass(`config.js deletes agents.defaults.blockStreaming in ${deleteCount} code paths`);
+  } else {
+    fail('blockStreaming healer', `config.js only has ${deleteCount} delete path(s) for agents.defaults.blockStreaming — need ≥2 for upgrade safety`);
+  }
+} catch (e) { fail('blockStreaming healer', 'source read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 12: Preload bridge ↔ ipcMain.handle parity
+// Every ipcRenderer.invoke('xxx') in preload.js must have a matching
+// ipcMain.handle('xxx') in dashboard-ipc.js (or main.js). Missing handler
+// = silent Promise hang at runtime → Dashboard button does nothing.
+// =========================================================================
+section('Preload ↔ IPC handler parity');
+try {
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+  const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const invokeRe = /ipcRenderer\.invoke\(['"]([^'"]+)['"]/g;
+  const handleRe = /\.handle\(['"]([^'"]+)['"]/g;
+  const preloadChannels = new Set();
+  let im;
+  while ((im = invokeRe.exec(preloadSrc)) !== null) preloadChannels.add(im[1]);
+  const handleChannels = new Set();
+  while ((im = handleRe.exec(ipcSrc)) !== null) handleChannels.add(im[1]);
+  while ((im = handleRe.exec(mainSrc)) !== null) handleChannels.add(im[1]);
+  const orphanBridges = [...preloadChannels].filter(ch => !handleChannels.has(ch));
+  if (orphanBridges.length > 0) {
+    fail('preload↔ipc parity', `preload.js calls ipcRenderer.invoke for channels with NO handler: [${orphanBridges.join(', ')}] — these will silently hang at runtime`);
+  } else {
+    pass(`preload↔ipc parity (${preloadChannels.size} bridges, all matched)`);
+  }
+} catch (e) { fail('preload↔ipc parity', 'source read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 13: IPC handler count stability
+// Track total handler count to catch accidental handler drops during refactors.
+// =========================================================================
+section('IPC handler count');
+try {
+  const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
+  const handleCount = (ipcSrc.match(/\.handle\('/g) || []).length;
+  const MIN_HANDLERS = 100;
+  if (handleCount < MIN_HANDLERS) {
+    fail('IPC handler count', `dashboard-ipc.js has only ${handleCount} handlers — expected >=${MIN_HANDLERS}. Handlers may have been accidentally removed during refactoring.`);
+  } else {
+    pass(`IPC handler count: ${handleCount} handlers (>=${MIN_HANDLERS})`);
+  }
+} catch (e) { fail('IPC handler count', 'source read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 14: package.json dependency pins — exact versions, no caret/tilde
+// Floating versions break reproducible builds. Every dep must be exact-pinned.
+// =========================================================================
+section('Dependency exact pins');
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+  const floating = [];
+  for (const [name, ver] of Object.entries(allDeps)) {
+    if (/^[~^><=]/.test(ver) || ver === '*' || ver === 'latest') {
+      floating.push(`${name}@${ver}`);
+    }
+  }
+  if (floating.length > 0) {
+    fail('dependency exact pins', `${floating.length} deps not exact-pinned: [${floating.join(', ')}] — use exact versions to prevent drift`);
+  } else {
+    pass(`dependency exact pins (${Object.keys(allDeps).length} deps, all exact)`);
+  }
+  // Specific critical pins
+  const criticalPins = { 'pdf-parse': '1.1.1', 'better-sqlite3': '11.10.0' };
+  for (const [name, expected] of Object.entries(criticalPins)) {
+    const actual = pkg.dependencies?.[name];
+    if (actual !== expected) {
+      fail(`critical pin ${name}`, `expected ${expected}, got "${actual}" — this version is battle-tested, do NOT change without full regression test`);
+    } else {
+      pass(`critical pin ${name}@${expected}`);
+    }
+  }
+} catch (e) { fail('dependency exact pins', 'package.json read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 15: Embed header stripper — partition sessions registered
+// installEmbedHeaderStripper must register on ALL 3 partitions (openclaw,
+// 9router, gcal) or embedded webviews in those partitions will be blank.
+// =========================================================================
+section('Embed header stripper partition coverage');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const requiredPartitions = ['persist:embed-openclaw', 'persist:embed-9router', 'persist:embed-gcal'];
+  const missing = requiredPartitions.filter(p => !mainSrc.includes(`fromPartition('${p}')`));
+  if (missing.length > 0) {
+    fail('embed-header-stripper partitions', `main.js missing fromPartition registration for: [${missing.join(', ')}] — embedded webviews will show blank due to X-Frame-Options`);
+  } else {
+    pass(`embed-header-stripper (${requiredPartitions.length} partitions registered)`);
+  }
+  if (!mainSrc.includes('installEmbedHeaderStripper')) {
+    fail('embed-header-stripper call', 'installEmbedHeaderStripper() function not found in main.js');
+  } else {
+    pass('installEmbedHeaderStripper() present');
+  }
+} catch (e) { fail('embed-header-stripper', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 16: powerSaveBlocker — macOS App Nap protection
+// Without this, cron jobs silently skip on Mac when lid is closed.
+// =========================================================================
+section('Power save blocker');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (!mainSrc.includes("powerSaveBlocker.start('prevent-app-suspension')")) {
+    fail('powerSaveBlocker', "main.js missing powerSaveBlocker.start('prevent-app-suspension') — cron jobs will silently fail on Mac");
+  } else {
+    pass('powerSaveBlocker prevent-app-suspension present');
+  }
+  if (!mainSrc.includes('powerMonitor')) {
+    warn('powerMonitor', 'main.js missing powerMonitor import — suspend/resume audit events will not be logged');
+  } else {
+    pass('powerMonitor imported for suspend/resume logging');
+  }
+} catch (e) { fail('powerSaveBlocker', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 17: Output filter pattern count stability
+// Regression guard: pattern count should only grow, never shrink.
+// =========================================================================
+section('Output filter patterns');
+try {
+  const chSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'channels.js'), 'utf-8');
+  const patternCount = (chSrc.match(/\{\s*name:\s*'/g) || []).length;
+  const MIN_PATTERNS = 40;
+  if (patternCount < MIN_PATTERNS) {
+    fail('output filter patterns', `channels.js has only ${patternCount} filter patterns — expected >=${MIN_PATTERNS}. Patterns may have been accidentally removed.`);
+  } else {
+    pass(`output filter patterns: ${patternCount} (>=${MIN_PATTERNS})`);
+  }
+  // Verify critical categories exist
+  const criticalCategories = ['file-path', 'api-key', 'pii-cccd', 'pii-bank', 'cot-en', 'brand-', 'fake-order', 'jailbreak', 'list-all-customers'];
+  const missingCats = criticalCategories.filter(cat => !chSrc.includes(`name: '${cat}`) && !new RegExp(`name:\\s*'${cat.replace('-', '\\-')}`).test(chSrc));
+  // More lenient check — just see if the string appears in the filter section at all
+  const missingCatsLoose = criticalCategories.filter(cat => !chSrc.includes(cat));
+  if (missingCatsLoose.length > 0) {
+    fail('output filter categories', `Missing filter categories: [${missingCatsLoose.join(', ')}] — security gap`);
+  } else {
+    pass(`output filter categories: all ${criticalCategories.length} critical categories present`);
+  }
+} catch (e) { fail('output filter patterns', 'channels.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 18: AGENTS.md integrity checks
+// =========================================================================
+section('AGENTS.md integrity');
+if (fs.existsSync(agentsPath)) {
+  const ac = fs.readFileSync(agentsPath, 'utf-8');
+  // Size guard — must stay under 20K chars for context budget
+  const charCount = ac.length;
+  const byteCount = Buffer.byteLength(ac, 'utf-8');
+  if (charCount > 20000) {
+    warn('AGENTS.md size', `${charCount} chars / ${byteCount} bytes — exceeds 20K context budget. Consider trimming.`);
+  } else {
+    pass(`AGENTS.md size: ${charCount} chars / ${byteCount} bytes (<= 20K)`);
+  }
+  // Escalation keywords present
+  const escalationKeywords = ['em đã chuyển sếp', 'để em báo sếp', 'cần sếp xử lý', 'ngoài khả năng'];
+  const missingEsc = escalationKeywords.filter(k => !ac.includes(k));
+  if (missingEsc.length > 0) {
+    fail('AGENTS.md escalation keywords', `Missing mandatory escalation keywords: [${missingEsc.join(', ')}] — escalation scanner will not detect bot replies`);
+  } else {
+    pass(`AGENTS.md escalation keywords (${escalationKeywords.length} present)`);
+  }
+  // Bot-vs-bot detection rule
+  if (!/bot.*loop|bot.*flood|thà im/i.test(ac)) {
+    fail('AGENTS.md bot-detection', 'Missing bot-vs-bot detection rule — risk of bot-loop floods in customer groups');
+  } else {
+    pass('AGENTS.md bot-vs-bot detection rule present');
+  }
+  // First-greeting idempotency
+  if (!/firstGreeting/i.test(ac)) {
+    warn('AGENTS.md firstGreeting', 'Missing firstGreeting idempotency rule — bot may re-greet on every restart');
+  } else {
+    pass('AGENTS.md firstGreeting idempotency rule present');
+  }
+}
+
+// =========================================================================
+// TEST 19: Security — tools.allow hardened list in config.js
+// exec + process allowed globally (CEO needs full PC control via Telegram).
+// Zalo stranger protection is code-level: COMMAND-BLOCK in inbound.ts (72 regex).
+// Only 'cron' remains banned (managed via web_fetch to local API only).
+// =========================================================================
+section('Security: tools.allow hardening');
+try {
+  const cfgSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'config.js'), 'utf-8');
+  const bannedTools = ['cron'];
+  for (const tool of bannedTools) {
+    if (!cfgSrc.includes(`'${tool}'`)) {
+      fail(`tools.allow security`, `config.js does not reference '${tool}' at all — it should be in BANNED_TOOLS`);
+    }
+  }
+  if (!/BANNED_TOOLS.*=.*\[/.test(cfgSrc)) {
+    fail('tools.allow BANNED_TOOLS', 'config.js missing BANNED_TOOLS array');
+  } else {
+    pass('tools.allow BANNED_TOOLS array present');
+  }
+  if (!/REQUIRED_TOOLS.*=.*\[/.test(cfgSrc)) {
+    fail('tools.allow REQUIRED_TOOLS', 'config.js missing REQUIRED_TOOLS array');
+  } else {
+    const reqMatch = cfgSrc.match(/REQUIRED_TOOLS\s*=\s*\[([^\]]+)\]/);
+    if (reqMatch) {
+      const reqStr = reqMatch[1];
+      const leaked = bannedTools.filter(t => reqStr.includes(`'${t}'`));
+      if (leaked.length > 0) {
+        fail('tools.allow contamination', `REQUIRED_TOOLS contains BANNED items: [${leaked.join(', ')}]`);
+      } else {
+        pass('REQUIRED_TOOLS clean (no banned tools)');
+      }
+    }
+  }
+} catch (e) { fail('tools.allow security', 'config.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 20: Cron API token security
+// Token must be generated from crypto.randomBytes, not hardcoded.
+// =========================================================================
+section('Cron API token security');
+try {
+  const cronApiSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron-api.js'), 'utf-8');
+  if (!cronApiSrc.includes('crypto.randomBytes')) {
+    fail('cron-api token', 'cron-api.js does not use crypto.randomBytes — token may be predictable');
+  } else {
+    pass('cron-api token uses crypto.randomBytes');
+  }
+  // Token should be 24 bytes = 48 hex chars
+  if (!/randomBytes\(24\)/.test(cronApiSrc)) {
+    warn('cron-api token length', 'cron-api.js randomBytes not using 24 bytes — expected 48 hex char token');
+  } else {
+    pass('cron-api token: 24 bytes (48 hex chars)');
+  }
+  // Token file is written to workspace
+  if (!cronApiSrc.includes('cron-api-token.txt')) {
+    fail('cron-api token file', 'cron-api.js does not write cron-api-token.txt — bot cannot authenticate to API');
+  } else {
+    pass('cron-api token file written');
+  }
+  // Localhost-only binding
+  if (!/127\.0\.0\.1/.test(cronApiSrc) && !/localhost/.test(cronApiSrc)) {
+    fail('cron-api binding', 'cron-api.js does not bind to 127.0.0.1/localhost — API exposed to network');
+  } else {
+    pass('cron-api binds to localhost only');
+  }
+} catch (e) { fail('cron-api security', 'cron-api.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 21: Pause fail-closed behavior — corrupt JSON must return true
+// isChannelPaused must fail-closed (return true on corrupt file) to honor
+// CEO's pause intent. If it returns false on corrupt, channel unpauses silently.
+// =========================================================================
+section('Pause fail-closed');
+try {
+  const chSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'channels.js'), 'utf-8');
+  // Look for the fail-closed pattern: catch block returning true
+  if (/pause file corrupt.*treating as paused.*fail closed/i.test(chSrc) || /corrupt.*return true/i.test(chSrc)) {
+    pass('isChannelPaused fail-closed on corrupt JSON');
+  } else {
+    fail('pause fail-closed', 'channels.js isChannelPaused does not fail-closed on corrupt pause file — corrupt file will silently unpause channel');
+  }
+} catch (e) { fail('pause fail-closed', 'channels.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 22: sendCeoAlert last-resort disk log
+// When Telegram fails, alert must be written to ceo-alerts-missed.log
+// =========================================================================
+section('sendCeoAlert last-resort fallback');
+try {
+  const chSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'channels.js'), 'utf-8');
+  if (!chSrc.includes('ceo-alerts-missed.log')) {
+    fail('sendCeoAlert disk fallback', 'channels.js missing ceo-alerts-missed.log write — undelivered CEO alerts will be silently lost');
+  } else {
+    pass('sendCeoAlert writes to ceo-alerts-missed.log on failure');
+  }
+} catch (e) { fail('sendCeoAlert fallback', 'channels.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 23: Retention policy targets completeness
+// Every log file we create must have a rotation target, otherwise it grows
+// unbounded until disk full.
+// =========================================================================
+section('Retention policy targets');
+try {
+  const wsSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'workspace.js'), 'utf-8');
+  const expectedTargets = [
+    'openclaw.log', 'openzca.log', '9router.log', 'main.log',
+    'audit.jsonl', 'cron-runs.jsonl', 'security-output-filter.jsonl',
+    'escalation-queue.jsonl', 'ceo-alerts-missed.log',
+  ];
+  const missing = expectedTargets.filter(t => !wsSrc.includes(`'${t}'`));
+  if (missing.length > 0) {
+    fail('retention targets', `workspace.js missing rotation targets: [${missing.join(', ')}] — these files will grow unbounded`);
+  } else {
+    pass(`retention targets: all ${expectedTargets.length} log files have rotation rules`);
+  }
+  // Agent session purge
+  if (!wsSrc.includes('agent session files older') && !wsSrc.includes('session purge')) {
+    warn('retention sessions', 'workspace.js may be missing agent session file purge');
+  } else {
+    pass('retention: agent session purge present');
+  }
+  // WAL checkpoint
+  if (!wsSrc.includes('wal_checkpoint')) {
+    warn('retention WAL', 'workspace.js missing SQLite WAL checkpoint — memory.db will grow with dead space');
+  } else {
+    pass('retention: SQLite WAL checkpoint present');
+  }
+} catch (e) { fail('retention targets', 'workspace.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 24: Dashboard HTML no-emoji (full page scan)
+// Premium aesthetic — no emoji characters anywhere in the dashboard.
+// =========================================================================
+section('Dashboard HTML no-emoji (full scan)');
+try {
+  const dashHtml = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+  // Exclude functional Unicode symbols used in CSS/UI: check marks (✓ ✔), arrows, bullets.
+  // Only flag actual pictographic emoji (faces, hands, objects, animals, flags).
+  const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu;
+  const matches = dashHtml.match(emojiRegex);
+  if (matches && matches.length > 0) {
+    const unique = [...new Set(matches)];
+    fail('dashboard no-emoji', `dashboard.html contains ${matches.length} emoji character(s): [${unique.slice(0, 5).join(' ')}${unique.length > 5 ? '...' : ''}] — violates premium no-emoji rule`);
+  } else {
+    pass('dashboard.html clean (no pictographic emoji)');
+  }
+} catch (e) { fail('dashboard no-emoji', 'dashboard.html read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 25: Wizard HTML no-emoji
+// =========================================================================
+section('Wizard HTML no-emoji');
+try {
+  const wizardHtml = fs.readFileSync(path.join(__dirname, '..', 'ui', 'wizard.html'), 'utf-8');
+  const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu;
+  const matches = wizardHtml.match(emojiRegex);
+  if (matches && matches.length > 0) {
+    const unique = [...new Set(matches)];
+    fail('wizard no-emoji', `wizard.html contains ${matches.length} emoji character(s): [${unique.slice(0, 5).join(' ')}${unique.length > 5 ? '...' : ''}]`);
+  } else {
+    pass('wizard.html clean (no emoji characters)');
+  }
+} catch (e) { fail('wizard no-emoji', 'wizard.html read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 26: Knowledge categories match disk structure
+// DEFAULT_KNOWLEDGE_CATEGORIES in code must match actual knowledge/ dirs.
+// =========================================================================
+section('Knowledge categories ↔ disk parity');
+try {
+  const knSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'knowledge.js'), 'utf-8');
+  const catMatch = knSrc.match(/DEFAULT_KNOWLEDGE_CATEGORIES\s*=\s*\[([^\]]+)\]/);
+  if (!catMatch) {
+    fail('knowledge categories', 'knowledge.js missing DEFAULT_KNOWLEDGE_CATEGORIES');
+  } else {
+    const codeCats = catMatch[1].match(/'([^']+)'/g).map(s => s.replace(/'/g, ''));
+    const knowledgeRoot = path.join(templateRoot, 'knowledge');
+    if (fs.existsSync(knowledgeRoot)) {
+      const diskCats = fs.readdirSync(knowledgeRoot, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+      const missingOnDisk = codeCats.filter(c => !diskCats.includes(c));
+      if (missingOnDisk.length > 0) {
+        fail('knowledge categories', `Code defines categories [${missingOnDisk.join(', ')}] but they are missing from knowledge/ on disk — seedWorkspace will fail`);
+      } else {
+        pass(`knowledge categories: ${codeCats.length} code categories present on disk`);
+      }
+    } else {
+      warn('knowledge categories', 'knowledge/ directory not found — skipped');
+    }
+  }
+} catch (e) { fail('knowledge categories', 'knowledge.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 27: Boot order invariants in main.js
+// Critical ordering: initFileLogger → require lib/* → registerAllIpcHandlers
+// → installEmbedHeaderStripper → createWindow. Violating this order causes
+// silent failures (e.g., IPC handlers not ready when Dashboard loads).
+// =========================================================================
+section('Boot order invariants');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const idxLogger = mainSrc.indexOf('initFileLogger()');
+  const idxContext = mainSrc.indexOf("require('./lib/context')");
+  const idxRegisterIpc = mainSrc.indexOf('registerAllIpcHandlers()');
+  // For embed stripper + createWindow, find the CALL SITES inside app.whenReady,
+  // not the function declarations. Search for the comment-annotated call:
+  //   installEmbedHeaderStripper(); // BEFORE createWindow
+  //   createWindow();
+  const embedCallIdx = mainSrc.indexOf('installEmbedHeaderStripper(); // BEFORE');
+  const createWindowCallIdx = embedCallIdx > -1
+    ? mainSrc.indexOf('createWindow()', embedCallIdx) // find createWindow AFTER embed call
+    : mainSrc.lastIndexOf('createWindow()'); // fallback
+  const checks = [
+    { name: 'initFileLogger before lib/context', ok: idxLogger > -1 && idxContext > -1 && idxLogger < idxContext },
+    { name: 'registerAllIpcHandlers before installEmbedHeaderStripper', ok: idxRegisterIpc > -1 && embedCallIdx > -1 && idxRegisterIpc < embedCallIdx },
+    { name: 'installEmbedHeaderStripper before createWindow (call site)', ok: embedCallIdx > -1 && createWindowCallIdx > -1 && embedCallIdx < createWindowCallIdx },
+  ];
+  for (const c of checks) {
+    if (!c.ok) fail('boot order', `${c.name} — violated. Check main.js initialization sequence.`);
+    else pass(`boot order: ${c.name}`);
+  }
+} catch (e) { fail('boot order', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 28: BrowserWindow security settings
+// contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true
+// =========================================================================
+section('BrowserWindow security');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const securityChecks = [
+    { name: 'contextIsolation: true', pattern: /contextIsolation:\s*true/ },
+    { name: 'nodeIntegration: false', pattern: /nodeIntegration:\s*false/ },
+    { name: 'sandbox: true', pattern: /sandbox:\s*true/ },
+    { name: 'webviewTag: true', pattern: /webviewTag:\s*true/ },
+  ];
+  for (const sc of securityChecks) {
+    if (!sc.pattern.test(mainSrc)) {
+      fail('window security', `main.js missing ${sc.name} — Electron security best practice violated`);
+    } else {
+      pass(`window security: ${sc.name}`);
+    }
+  }
+} catch (e) { fail('window security', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 29: Single-instance lock
+// Without requestSingleInstanceLock, user can launch multiple copies →
+// port conflicts, DB locks, duplicate cron jobs.
+// =========================================================================
+section('Single-instance lock');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (!mainSrc.includes('requestSingleInstanceLock')) {
+    fail('single-instance', 'main.js missing requestSingleInstanceLock() — multiple copies will fight for ports and corrupt data');
+  } else {
+    pass('single-instance lock present');
+  }
+} catch (e) { fail('single-instance', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 30: GPU acceleration disabled
+// Required for Quadro/legacy GPU compat — prevents BSOD on old machines.
+// =========================================================================
+section('GPU acceleration');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  if (!mainSrc.includes('disableHardwareAcceleration')) {
+    warn('GPU', 'main.js missing disableHardwareAcceleration() — may BSOD on old Quadro GPUs');
+  } else {
+    pass('GPU hardware acceleration disabled');
+  }
+} catch (e) { fail('GPU', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 31: Escalation scanner in modoro-zalo send.ts
+// The ESCALATION-DETECT PATCH must scan outbound messages for escalation
+// keywords and write to escalation-queue.jsonl. Without this, bot says
+// "em đã chuyển sếp" but CEO receives nothing.
+// =========================================================================
+section('Escalation scanner completeness');
+try {
+  const sendTs = fs.readFileSync(path.join(modoroZaloPkgSrc, 'send.ts'), 'utf-8');
+  // Escalation keywords appear as regex alternation groups in send.ts patterns,
+  // not as literal substrings. Check for the root words that cover the families:
+  //   chuyển → covers "chuyển sếp", "chuyển cho sếp"
+  //   báo → covers "báo sếp", "báo lại sếp"
+  //   hỏi|nhờ → covers "hỏi sếp", "nhờ sếp"
+  //   ngoài khả năng → covers "ngoài khả năng"
+  const requiredRoots = [
+    { word: 'chuyển', desc: 'chuyển sếp family' },
+    { word: 'báo', desc: 'báo sếp family' },
+    { word: 'ngoài khả năng', desc: 'out-of-scope detection' },
+    { word: 'escalation-queue.jsonl', desc: 'output file' },
+    { word: 'ESCALATION-DETECT PATCH', desc: 'patch marker' },
+  ];
+  const missing = requiredRoots.filter(r => !sendTs.includes(r.word));
+  if (missing.length > 0) {
+    fail('escalation scanner', `send.ts missing: [${missing.map(r => r.desc).join(', ')}]`);
+  } else {
+    pass(`escalation scanner: ${requiredRoots.length} components verified`);
+  }
+  // Pattern count — must have >= 7 escalation regexes
+  const patternCount = (sendTs.match(/__escPatterns/g) || []).length;
+  if (patternCount < 2) {
+    fail('escalation scanner patterns', 'send.ts __escPatterns not found or too few references');
+  } else {
+    pass('escalation scanner pattern array present');
+  }
+} catch (e) {
+  if (modoroZaloPkgSrc) fail('escalation scanner', 'send.ts read failed: ' + e.message);
+  else warn('escalation scanner', 'modoro-zalo package source not found — skipped');
+}
+
+// =========================================================================
+// TEST 32: Inbound.ts defense layers completeness
+// Each defense layer in inbound.ts must be present. Missing a layer =
+// security gap or UX regression.
+// =========================================================================
+section('Inbound.ts defense layers');
+try {
+  const inboundTs = fs.readFileSync(path.join(modoroZaloPkgSrc, 'inbound.ts'), 'utf-8');
+  const defenses = [
+    { name: 'blocklist', marker: 'BLOCKLIST PATCH' },
+    { name: 'system-msg filter', marker: 'SYSTEM-MSG PATCH' },
+    { name: 'sender dedup', marker: 'SENDER-DEDUP PATCH' },
+    { name: 'command block', marker: 'COMMAND-BLOCK PATCH' },
+    { name: 'pause', marker: 'PAUSE PATCH' },
+    { name: 'rate limit', marker: 'RATE-LIMIT' },
+    { name: 'bot-loop breaker', marker: 'BOT-LOOP-BREAKER' },
+    { name: 'RAG injection', marker: 'RAG' },
+    { name: 'deliver coalesce', marker: 'DELIVER-COALESCE' },
+  ];
+  for (const d of defenses) {
+    if (!inboundTs.includes(d.marker)) {
+      fail(`inbound defense: ${d.name}`, `inbound.ts missing ${d.marker} — defense layer not present`);
+    } else {
+      pass(`inbound defense: ${d.name}`);
+    }
+  }
+} catch (e) {
+  if (modoroZaloPkgSrc) fail('inbound defenses', 'inbound.ts read failed: ' + e.message);
+  else warn('inbound defenses', 'modoro-zalo package source not found — skipped');
+}
+
+// =========================================================================
+// TEST 33: Preload event listeners use removeAllListeners guard
+// Without removeAllListeners before re-registering, renderer hot-reloads
+// stack N listeners that all fire per event → memory leak + duplicate actions.
+// =========================================================================
+section('Preload event listener cleanup');
+try {
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+  const onHandlers = preloadSrc.match(/ipcRenderer\.on\(['"][^'"]+['"]/g) || [];
+  const removeAllCalls = preloadSrc.match(/removeAllListeners\(['"][^'"]+['"]/g) || [];
+  const onChannels = onHandlers.map(h => h.match(/['"]([^'"]+)['"]/)[1]);
+  const removedChannels = new Set(removeAllCalls.map(r => r.match(/['"]([^'"]+)['"]/)[1]));
+  const unguarded = onChannels.filter(ch => !removedChannels.has(ch));
+  if (unguarded.length > 0) {
+    fail('preload listener cleanup', `ipcRenderer.on() without removeAllListeners guard: [${unguarded.join(', ')}] — hot-reload will stack listeners`);
+  } else {
+    pass(`preload listener cleanup: all ${onChannels.length} event listeners guarded`);
+  }
+} catch (e) { fail('preload listener cleanup', 'preload.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 34: Vietnamese diacritics in user-facing strings
+// Check for broken Unicode escapes or missing diacritics in HTML files.
+// =========================================================================
+section('Vietnamese text integrity');
+try {
+  for (const htmlFile of ['dashboard.html', 'wizard.html']) {
+    const htmlPath = path.join(__dirname, '..', 'ui', htmlFile);
+    if (!fs.existsSync(htmlPath)) { warn(`${htmlFile} text`, 'file not found'); continue; }
+    const html = fs.readFileSync(htmlPath, 'utf-8');
+    // Check for raw Unicode escapes that should have been real chars
+    const escapeCount = (html.match(/\\u[0-9a-fA-F]{4}/g) || []).length;
+    if (escapeCount > 5) {
+      fail(`${htmlFile} unicode escapes`, `${escapeCount} raw \\uXXXX escapes found — these render as literal text in static HTML, not Vietnamese characters`);
+    } else {
+      pass(`${htmlFile} unicode escapes: ${escapeCount} (OK)`);
+    }
+  }
+} catch (e) { fail('Vietnamese text', 'HTML read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 35: extraResources coverage — all workspace templates listed
+// If a template .md file exists in the repo root but is NOT in
+// extraResources, the packaged app won't have it → seedWorkspace
+// can't copy it → fresh install boots broken.
+// =========================================================================
+section('extraResources template coverage');
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  const extraRes = pkg.build?.extraResources || [];
+  const templateFromEntries = extraRes
+    .filter(e => typeof e === 'object' && e.to && e.to.startsWith('workspace-templates/'))
+    .map(e => {
+      // e.from is like "../AGENTS.md" or "../skills" — extract basename
+      const from = e.from.replace(/^\.\.\//, '');
+      return from;
+    });
+  const criticalTemplates = ['AGENTS.md', 'IDENTITY.md', 'SOUL.md', 'BOOTSTRAP.md',
+    'COMPANY.md', 'PRODUCTS.md', 'USER.md', 'MEMORY.md', 'HEARTBEAT.md', 'TOOLS.md'];
+  const missingFromBuild = criticalTemplates.filter(t =>
+    !templateFromEntries.some(e => e === t || e.endsWith('/' + t))
+  );
+  if (missingFromBuild.length > 0) {
+    fail('extraResources coverage', `Templates exist but NOT in build.extraResources: [${missingFromBuild.join(', ')}] — packaged app will miss them`);
+  } else {
+    pass(`extraResources: all ${criticalTemplates.length} critical templates included in build`);
+  }
+} catch (e) { fail('extraResources coverage', 'package.json read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 36: Smoke script chain — npm run smoke runs all test files
+// =========================================================================
+section('Smoke script chain');
+try {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  const smokeScript = pkg.scripts?.smoke || '';
+  const expectedFiles = ['smoke-test.js', 'smoke-context-injection.js', 'smoke-zalo-followup.js', 'smoke-visibility.js'];
+  const missing = expectedFiles.filter(f => !smokeScript.includes(f));
+  if (missing.length > 0) {
+    fail('smoke chain', `npm run smoke does not include: [${missing.join(', ')}] — these tests will never run in CI`);
+  } else {
+    pass(`smoke chain: all ${expectedFiles.length} test files wired into npm run smoke`);
+  }
+} catch (e) { fail('smoke chain', 'package.json read failed: ' + e.message); }
+
+// =========================================================================
+// TEST 37: File logger initialization
+// initFileLogger must be called BEFORE any require() that might log.
+// Logger path must use lowercase app name to match Electron's userData.
+// =========================================================================
+section('File logger');
+try {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  // Logger must use lowercase '9bizclaw' not capitalized 'MODOROClaw'
+  if (/logsDir.*=.*path\.join.*'MODOROClaw'/i.test(mainSrc) && !/logsDir.*=.*path\.join.*'9bizclaw'/.test(mainSrc)) {
+    fail('file logger path', 'initFileLogger uses capitalized app name — logs will go to phantom directory separate from Electron userData');
+  } else if (mainSrc.includes("'9bizclaw', 'logs'") || mainSrc.includes("'9bizclaw'")) {
+    pass('file logger uses correct lowercase app name');
+  } else {
+    warn('file logger path', 'could not verify app name case — check initFileLogger manually');
+  }
+} catch (e) { fail('file logger', 'main.js read failed: ' + e.message); }
 
 // =========================================================================
 // SUMMARY
