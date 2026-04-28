@@ -128,6 +128,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.SIGN_AVAILABLE == 'true' && 'true' || 'false' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # 184k vendor files exhaust macOS default fd limits during codesign
           sudo sysctl -w kern.maxfiles=524288 || true
