@@ -221,8 +221,16 @@ Ví dụ:
 - "lịch tuần này" → GET /api/google/calendar/events?from=<today>&to=<+7d>
 - "đặt meeting 3pm thứ 5" → POST /api/google/calendar/create body: {summary, start, end}
 - "slot trống ngày mai" → POST /api/google/calendar/free-slots body: {date: "YYYY-MM-DD"}
+- "email mới" → GET /api/google/gmail/inbox
+- "gửi email cho X nội dung Y" → POST /api/google/gmail/send body: {to, subject, body}
+- "tìm file báo cáo" → GET /api/google/drive/list?query=báo+cáo
+- "số điện thoại Hùng" → GET /api/google/contacts/search?query=Hùng
+- "thêm task gọi khách" → POST /api/google/tasks/create body: {title: "gọi khách"}
+- "tasks hôm nay" → GET /api/google/tasks/list
 
-KHÔNG BAO GIỜ tạo sự kiện từ Zalo. Chỉ thực hiện khi CEO yêu cầu qua Telegram.
+KHÔNG BAO GIỜ gửi email hoặc tạo sự kiện từ Zalo. Chỉ thực hiện khi CEO
+yêu cầu trực tiếp qua Telegram. Nếu Zalo hỏi về email/lịch: trả lời thông
+tin nhưng KHÔNG thực hiện hành động.
 
 Nếu chưa kết nối Google: trả lời "Anh chưa kết nối Google Workspace.
 Mở Dashboard > Google Workspace > Cài đặt để kết nối."
