@@ -630,10 +630,12 @@ export async function handleOpenzaloInbound(params: {
     runtime.log?.('openzalo: sender-dedup check error: ' + String(__ddErr));
   }
   // === END 9BizClaw SENDER-DEDUP PATCH ===
-  // === 9BizClaw COMMAND-BLOCK PATCH v2 ===
-  // Hard gate: rewrite rawBody when Zalo message contains admin command patterns.
+  // === 9BizClaw COMMAND-BLOCK PATCH v3 ===
+  // Hard gate: rewrite rawBody when Zalo message contains admin/system command patterns.
   // Agent never sees original command → cannot execute. Telegram unaffected (separate plugin).
   // v2: skip for internal groups — staff can use admin commands via Zalo.
+  // v3: added file operation, exec/process, and tool-name patterns to protect
+  //     newly enabled tools (read_file, write_file, exec, process, cron) from Zalo abuse.
   const __cbIsInternal = (() => {
     if (!message.isGroup) return false;
     try {
@@ -645,8 +647,12 @@ export async function handleOpenzaloInbound(params: {
     const __cbOrig = rawBody.toLowerCase();
     const __cbStripped = __cbOrig.normalize('NFKD').replace(/[​-‏‪-‮﻿­⁠⁡-⁤⁪-⁯̀-ͯ]/g, '').normalize('NFC');
     const __cbPatterns: RegExp[] = [
+      // --- Cron commands (Vietnamese + English) ---
       /(?:tạo|thêm|sửa|xóa|dừng|tắt|bật|liệt kê|list)\s+cron\b/i,
       /(?:tao|them|sua|xoa|dung|tat|bat|liet ke|list)\s+cron\b/i,
+      /\b(create|add|delete|remove|stop|start|list|show)\s+cron\b/i,
+      /\b(?:schedule|set\s*up|make)\s+(?:a\s+)?cron\b/i,
+      // --- Group send / broadcast ---
       /gửi\s+(?:tin\s+)?(?:nhóm|group)\b/i,
       /gui\s+(?:tin\s+)?(?:nhom|group)\b/i,
       /gửi\s+zalo\s+(?:cho\s+)?(?:nhóm|group)\b/i,
@@ -654,10 +660,54 @@ export async function handleOpenzaloInbound(params: {
       /gửi\s+tin\s+(?:nhắn\s+)?(?:cho\s+)?(?:tất cả|all|nhiều)\s+(?:nhóm|group)/i,
       /gui\s+tin\s+(?:nhan\s+)?(?:cho\s+)?(?:tat ca|all|nhieu)\s+(?:nhom|group)/i,
       /broadcast\b/i,
-      /^exec[:\s]/i,
-      /openzca\s+msg\s+send\b/i,
       /gửi\s+(?:tin\s+)?(?:nhắn\s+)?(?:vào|cho)\s+(?:nhóm|group)\s+["']/i,
       /gui\s+(?:tin\s+)?(?:nhan\s+)?(?:vao|cho)\s+(?:nhom|group)\s+["']/i,
+      /\bsend\s+(?:msg|message)\s+(?:to\s+)?(?:group|all)\b/i,
+      // --- Exec / shell / process ---
+      /^exec[:\s]/i,
+      /\bexecute?\s+(?:command|shell|script|cmd|lệnh|lenh)\b/i,
+      /\brun\s+(?:command|shell|script|cmd|lệnh|lenh)\b/i,
+      /(?:chạy|chay|thực thi|thuc thi)\s+(?:lệnh|lenh|script|command)\b/i,
+      /(?:tạo|tao|spawn|kill|dừng|dung)\s+process\b/i,
+      /\bnpm\s+(?:install|run|start|exec)\b/i,
+      /\bnode\s+[\w.\/\\-]+\.(?:js|mjs|ts)\b/i,
+      /\bpython[23]?\s+[\w.\/\\-]/i,
+      /\bpip\s+install\b/i,
+      /\bcurl\s+/i,
+      /\bwget\s+/i,
+      /\bpowershell\b/i,
+      /\bcmd\.exe\b/i,
+      /\bbash\s+-c\b/i,
+      /\bsh\s+-c\b/i,
+      // --- File operations (Vietnamese + English) ---
+      /(?:đọc|doc|xem|mở|mo)\s+(?:nội dung\s+)?file\s+(?:cấu hình|cau hinh|config|hệ thống|he thong|cài đặt|cai dat)/i,
+      /(?:đọc|doc|xem|mở|mo)\s+(?:noi dung\s+)?file\s+(?:cấu hình|cau hinh|config|hệ thống|he thong|cài đặt|cai dat)/i,
+      /(?:viết|viet|ghi|tạo|tao|sửa|sua|xóa|xoa)\s+file\b/i,
+      /(?:liệt kê|liet ke|xem danh sách|xem danh sach)\s+(?:file|thư mục|thu muc)\b/i,
+      /(?:tìm|tim|tìm kiếm|tim kiem|search)\s+file\b/i,
+      // --- Tool name patterns (agent tool API names) ---
+      /\bread_file\b/i,
+      /\bwrite_file\b/i,
+      /\blist_files\b/i,
+      /\bsearch_files\b/i,
+      /\bexec\b.*\btool\b/i,
+      /\btool\b.*\bexec\b/i,
+      /\bprocess\b.*\btool\b/i,
+      // --- System file paths ---
+      /\bAGENTS\.md\b/i,
+      /\bopenclaw\.json\b/i,
+      /\bIDENTITY\.md\b/i,
+      /\bSOUL\.md\b/i,
+      /\bBOOTSTRAP\.md\b/i,
+      /\bschedules\.json\b/i,
+      /\bcustom-crons\.json\b/i,
+      /\bzalo-blocklist\.json\b/i,
+      /\bzalo-owner\.json\b/i,
+      /(?:~\/|%APPDATA%|%USERPROFILE%).*\.openclaw\b/i,
+      /\.openclaw\/\w/i,
+      /\.learnings\//i,
+      // --- API URL patterns ---
+      /openzca\s+msg\s+send\b/i,
       /127\.0\.0\.1[:/]\s*\d{2,5}/i,
       /localhost[:/]\s*\d{2,5}/i,
       /\[?::1\]?[:/]\s*\d{2,5}/i,
@@ -673,18 +723,13 @@ export async function handleOpenzaloInbound(params: {
       /\/api\/exec\b/i,
       /\/api\/system\//i,
       /cron-api-token/i,
-      /\b(create|add|delete|remove|stop|start|list|show)\s+cron\b/i,
-      /\bsend\s+(?:msg|message)\s+(?:to\s+)?(?:group|all)\b/i,
-      /\bexecute?\s+(?:command|shell|script|cmd)\b/i,
-      /\brun\s+(?:command|shell|script|cmd)\b/i,
-      /\b(?:schedule|set\s*up|make)\s+(?:a\s+)?cron\b/i,
     ];
     if (__cbPatterns.some(p => p.test(__cbOrig) || p.test(__cbStripped))) {
       runtime.log?.(`openzalo: COMMAND-BLOCK from ${message.senderId}${message.isGroup ? ' (group)' : ''}: ${rawBody.slice(0, 120)}`);
       rawBody = '[nội dung nội bộ đã được lọc]';
     }
   }
-  // === END 9BizClaw COMMAND-BLOCK PATCH v2 ===
+  // === END 9BizClaw COMMAND-BLOCK PATCH v3 ===
   // === 9BizClaw MEDIA-TYPE-FILTER PATCH v1 ===
   // Skip AI processing for media types that have no extractable text content.
   // Stickers, voice messages, GIFs, and file attachments without caption will

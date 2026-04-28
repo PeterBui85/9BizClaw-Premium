@@ -3805,15 +3805,21 @@ async function ensureDefaultConfig() {
     //
     // tools.allow verified in openclaw 2026.4.x runtime-schema at "tools.allow".
     if (!config.tools) config.tools = {};
-    // tools.allow = absolute allowlist. Only these tools are available to the agent.
-    // SECURITY: exec, process, cron ALL REMOVED — gateway agent serves both
-    // Telegram (trusted CEO) AND Zalo (untrusted strangers) with ONE config.
-    // exec/process = RCE via strangers. cron = strangers create scheduled jobs.
+    // tools.allow = absolute allowlist. Tools available to the agent.
+    // Zalo strangers are protected by inbound.ts COMMAND-BLOCK patch which
+    // rewrites admin commands before the agent sees them.
     const ALLOW_TOOLS = [
-      'message',      // reply to customers (Zalo) + CEO (Telegram)
-      'web_search',   // look up info for customer questions
-      'web_fetch',    // read URLs shared by customers/CEO + API calls
-      'update_plan',  // agent planning for multi-step answers
+      'message',
+      'web_search',
+      'web_fetch',
+      'update_plan',
+      'read_file',
+      'write_file',
+      'list_files',
+      'search_files',
+      'exec',
+      'process',
+      'cron',
     ];
     const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
     if (JSON.stringify(existingAllow.slice().sort()) !== JSON.stringify(ALLOW_TOOLS.slice().sort())) {
@@ -7418,7 +7424,6 @@ ipcMain.handle('seed-group-history-all', async () => {
 //
 // Files protected:
 // - ~/.openclaw/openclaw.json (Telegram bot token, Zalo session ref)
-// - ~/.openclaw/dashboard-pin.json (PIN scrypt hash)
 // - ~/.openzca/profiles/default/credentials.json (Zalo cookies/tokens)
 // - ~/.openzca/profiles/default/listener-owner.json (PID lock + meta)
 //
@@ -7434,7 +7439,6 @@ function hardenSensitiveFilePerms() {
   const targets = [
     path.join(HOME, '.openclaw', 'openclaw.json'),
     path.join(HOME, '.openclaw', 'openclaw.json.bak'),
-    path.join(HOME, '.openclaw', 'dashboard-pin.json'),
     path.join(HOME, '.openzca', 'profiles', 'default', 'credentials.json'),
     path.join(HOME, '.openzca', 'profiles', 'default', 'listener-owner.json'),
   ];
@@ -7464,205 +7468,6 @@ function hardenSensitiveFilePerms() {
   return { hardened };
 }
 
-// === Security Layer 4 — Dashboard PIN ===
-// 6-digit PIN protects Dashboard. First Dashboard open after wizard prompts
-// for PIN setup. Subsequent opens require PIN. After 5 failed attempts,
-// 15-min lockout. Auto-lock after 15-min idle. Reset by re-entering Telegram
-// User ID (proof CEO has access to bot's allowFrom, harder to brute-force
-// than just resetting from disk).
-//
-// Storage: ~/.openclaw/dashboard-pin.json
-//   { hash, salt, createdAt, failedAttempts, lockedUntil }
-// Hash: crypto.scryptSync(pin, salt, 64) — built-in, no native deps.
-
-function getDashboardPinPath() {
-  return path.join(HOME, '.openclaw', 'dashboard-pin.json');
-}
-
-function readDashboardPin() {
-  try {
-    const p = getDashboardPinPath();
-    if (!fs.existsSync(p)) return null;
-    const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    if (!data || !data.hash || !data.salt) return null;
-    return data;
-  } catch { return null; }
-}
-
-function writeDashboardPin(data) {
-  try {
-    const p = getDashboardPinPath();
-    writeJsonAtomic(p, data);
-    // Restrict perms (defense in depth — Layer 1 scoped)
-    try {
-      if (process.platform !== 'win32') {
-        fs.chmodSync(p, 0o600);
-      }
-    } catch {}
-    return true;
-  } catch (e) {
-    console.error('[dashboard-pin] write error:', e.message);
-    return false;
-  }
-}
-
-function hashPin(pin, salt) {
-  const crypto = require('crypto');
-  // scrypt with N=2^15 cost — slow enough to discourage brute force but
-  // fast enough that PIN unlock feels instant (~50ms on modern CPUs).
-  //
-  // CRITICAL: maxmem MUST be passed explicitly. Node's default maxmem is
-  // 32 MB. Memory required = 128 * N * r = 128 * 32768 * 8 = 32 MB EXACTLY,
-  // which trips Node's "memory limit exceeded" check (the comparison is
-  // strict >). Without maxmem, this throws on EVERY PIN check:
-  //   "Invalid scrypt params: memory limit exceeded".
-  // 64 MB headroom = safe for these params.
-  return crypto.scryptSync(String(pin), salt, 64, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString('hex');
-}
-
-function constantTimeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  if (a.length !== b.length) return false;
-  const crypto = require('crypto');
-  return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
-}
-
-ipcMain.handle('get-pin-status', async () => {
-  const data = readDashboardPin();
-  if (!data) return { hasPin: false, locked: false };
-  const now = Date.now();
-  const lockedUntil = data.lockedUntil || 0;
-  const locked = lockedUntil > now;
-  return {
-    hasPin: true,
-    locked,
-    lockedUntilMs: locked ? lockedUntil : 0,
-    failedAttempts: data.failedAttempts || 0,
-  };
-});
-
-ipcMain.handle('setup-pin', async (_event, { pin }) => {
-  try {
-    const cleaned = String(pin || '').replace(/[^0-9]/g, '');
-    if (cleaned.length !== 6) return { success: false, error: 'PIN phải đúng 6 chữ số.' };
-    if (readDashboardPin()) return { success: false, error: 'PIN đã được đặt. Dùng đổi PIN nếu muốn thay.' };
-    const crypto = require('crypto');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = hashPin(cleaned, salt);
-    const ok = writeDashboardPin({
-      hash, salt,
-      createdAt: new Date().toISOString(),
-      failedAttempts: 0,
-      lockedUntil: 0,
-    });
-    if (!ok) return { success: false, error: 'Lưu PIN thất bại.' };
-    try { auditLog('dashboard_pin_setup', {}); } catch {}
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('verify-pin', async (_event, { pin }) => {
-  try {
-    const data = readDashboardPin();
-    if (!data) return { success: false, error: 'PIN chưa được đặt.' };
-    const now = Date.now();
-    const lockedUntil = data.lockedUntil || 0;
-    if (lockedUntil > now) {
-      return { success: false, locked: true, lockedUntilMs: lockedUntil, error: 'Đã khoá. Đợi hết thời gian rồi thử lại.' };
-    }
-    const cleaned = String(pin || '').replace(/[^0-9]/g, '');
-    if (cleaned.length !== 6) return { success: false, error: 'PIN phải 6 chữ số.' };
-    const candidate = hashPin(cleaned, data.salt);
-    const match = constantTimeEqual(candidate, data.hash);
-    if (match) {
-      // Reset failed counter on success
-      writeDashboardPin({ ...data, failedAttempts: 0, lockedUntil: 0 });
-      try { auditLog('dashboard_pin_unlock', {}); } catch {}
-      return { success: true };
-    }
-    // Wrong PIN
-    const failed = (data.failedAttempts || 0) + 1;
-    let lockedUntilNew = 0;
-    if (failed >= 5) {
-      lockedUntilNew = now + 15 * 60 * 1000; // 15 min
-      try { auditLog('dashboard_pin_lockout', { failedAttempts: failed }); } catch {}
-    }
-    writeDashboardPin({ ...data, failedAttempts: failed, lockedUntil: lockedUntilNew });
-    return {
-      success: false,
-      error: lockedUntilNew ? 'Sai PIN 5 lần. Đã khoá 15 phút.' : `Sai PIN. Còn ${5 - failed} lần thử.`,
-      locked: !!lockedUntilNew,
-      lockedUntilMs: lockedUntilNew,
-    };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('reset-pin', async (_event, { telegramUserId, newPin }) => {
-  // Reset PIN by proving access to Telegram allowFrom.
-  try {
-    const cleanedTgId = String(telegramUserId || '').replace(/[^0-9]/g, '');
-    if (!cleanedTgId) return { success: false, error: 'User ID Telegram rỗng.' };
-    const cleanedPin = String(newPin || '').replace(/[^0-9]/g, '');
-    if (cleanedPin.length !== 6) return { success: false, error: 'PIN mới phải 6 chữ số.' };
-    // Verify telegramUserId matches openclaw.json channels.telegram.allowFrom
-    const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
-    if (!fs.existsSync(configPath)) return { success: false, error: 'Chưa cài Telegram qua wizard.' };
-    let config;
-    try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); }
-    catch { return { success: false, error: 'Config openclaw không đọc được.' }; }
-    const allowFrom = config?.channels?.telegram?.allowFrom || [];
-    if (!Array.isArray(allowFrom) || !allowFrom.map(String).includes(cleanedTgId)) {
-      try { auditLog('dashboard_pin_reset_failed', { reason: 'telegram_id_mismatch' }); } catch {}
-      return { success: false, error: 'User ID Telegram không khớp tài khoản chủ.' };
-    }
-    // Verified — overwrite PIN
-    const crypto = require('crypto');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = hashPin(cleanedPin, salt);
-    writeDashboardPin({
-      hash, salt,
-      createdAt: new Date().toISOString(),
-      failedAttempts: 0,
-      lockedUntil: 0,
-    });
-    try { auditLog('dashboard_pin_reset_success', {}); } catch {}
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('change-pin', async (_event, { oldPin, newPin }) => {
-  try {
-    const data = readDashboardPin();
-    if (!data) return { success: false, error: 'Chưa có PIN. Dùng setup-pin thay.' };
-    const cleanedOld = String(oldPin || '').replace(/[^0-9]/g, '');
-    const cleanedNew = String(newPin || '').replace(/[^0-9]/g, '');
-    if (cleanedOld.length !== 6 || cleanedNew.length !== 6) return { success: false, error: 'PIN phải 6 chữ số.' };
-    const candidate = hashPin(cleanedOld, data.salt);
-    if (!constantTimeEqual(candidate, data.hash)) {
-      return { success: false, error: 'PIN cũ không đúng.' };
-    }
-    const crypto = require('crypto');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = hashPin(cleanedNew, salt);
-    writeDashboardPin({
-      hash, salt,
-      createdAt: new Date().toISOString(),
-      failedAttempts: 0,
-      lockedUntil: 0,
-    });
-    try { auditLog('dashboard_pin_changed', {}); } catch {}
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
 function getZaloBlocklistPath() { return path.join(getWorkspace(), 'zalo-blocklist.json'); }
 
 function cleanBlocklist() {
@@ -7686,6 +7491,20 @@ ipcMain.handle('get-zalo-manager-config', async () => {
       const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       zalo = cfg?.channels?.openzalo || {};
     }
+    // When openclaw gateway normalizes config it may strip `enabled` field
+    // (undefined). Fall back to sticky file — the persistent source of truth
+    // written by save-zalo-manager-config. Without this, `undefined !== false`
+    // evaluates to `true` and the Dashboard re-enables Zalo silently.
+    let resolvedEnabled = zalo.enabled;
+    if (resolvedEnabled === undefined) {
+      try {
+        const stickyPath = path.join(HOME, '.openclaw', 'modoroclaw-sticky-zalo-enabled.json');
+        if (fs.existsSync(stickyPath)) {
+          const sticky = JSON.parse(fs.readFileSync(stickyPath, 'utf-8'));
+          if (typeof sticky.enabled === 'boolean') resolvedEnabled = sticky.enabled;
+        }
+      } catch {}
+    }
     let blocklist = [];
     const bp = getZaloBlocklistPath();
     if (fs.existsSync(bp)) {
@@ -7703,7 +7522,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
       if (fs.existsSync(spPath)) strangerPolicy = JSON.parse(fs.readFileSync(spPath, 'utf-8')).mode || 'ignore';
     } catch {}
     return {
-      enabled: zalo.enabled !== false,
+      enabled: resolvedEnabled !== false,
       groupPolicy: zalo.groupPolicy || 'open',
       groupAllowFrom: Array.isArray(zalo.groupAllowFrom) ? zalo.groupAllowFrom.filter(x => x !== '*') : [],
       dmPolicy: zalo.dmPolicy || 'open',
@@ -9826,7 +9645,17 @@ function isZaloChannelEnabled() {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(configPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    return cfg?.channels?.openzalo?.enabled !== false;
+    let val = cfg?.channels?.openzalo?.enabled;
+    if (val === undefined) {
+      try {
+        const stickyPath = path.join(HOME, '.openclaw', 'modoroclaw-sticky-zalo-enabled.json');
+        if (fs.existsSync(stickyPath)) {
+          const sticky = JSON.parse(fs.readFileSync(stickyPath, 'utf-8'));
+          if (typeof sticky.enabled === 'boolean') val = sticky.enabled;
+        }
+      } catch {}
+    }
+    return val !== false;
   } catch (e) {
     console.error('[zalo] read enabled state error:', e.message);
     return false;
@@ -12483,8 +12312,8 @@ function startEscalationChecker() {
 
 // ─── Local Cron API (port 20200) ─────────────────────────────────────
 // CEO Telegram → bot uses web_fetch → POST/GET to this API → main.js writes custom-crons.json.
-// Zalo customers cannot trigger this: inbound.ts command-block rewrites rawBody before agent sees it,
-// and cron/exec/process tools are removed from tools.allow. Defense-in-depth.
+// Zalo customers cannot trigger this: inbound.ts COMMAND-BLOCK v3 rewrites rawBody before agent sees it,
+// and AGENTS.md explicitly forbids dangerous tools (exec/process/cron/read_file/write_file) for Zalo. Defense-in-depth.
 let _cronApiServer = null;
 let _cronApiPort = 20200;
 let _cronApiToken = '';

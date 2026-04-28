@@ -995,6 +995,12 @@
             </div>
 
             <div class="wz-field">
+              <label class="wz-label">Trợ lý gọi anh/chị là</label>
+              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
+              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram và Zalo.</p>
+            </div>
+
+            <div class="wz-field">
               <label class="wz-label">Tính cách nhân viên của bot</label>
               <p class="wz-help" style="margin-top:-2px;margin-bottom:12px">Chọn các đặc điểm phù hợp. Bot sẽ kết hợp thành một phong cách giao tiếp riêng — không bị khóa vào khuôn mẫu cứng.</p>
 
@@ -1027,15 +1033,6 @@
                   <button type="button" class="wz-mix-chip" data-mix="trait" data-value="chuyen-nghiep" title="Formal, đúng mực">Chuyên nghiệp</button>
                   <button type="button" class="wz-mix-chip" data-mix="trait" data-value="than-thien" title="Balance formal và casual, universal">Thân thiện</button>
                   <button type="button" class="wz-mix-chip" data-mix="trait" data-value="tinh-te" title="Xử lý khéo tình huống nhạy cảm">Tinh tế</button>
-                </div>
-              </div>
-
-              <div class="wz-mix-section">
-                <div class="wz-mix-label">Độ trang trọng</div>
-                <div class="wz-mix-slider-row">
-                  <span class="wz-mix-slider-label">Rất thân mật</span>
-                  <input type="range" id="mix-formality" min="1" max="10" value="5" class="wz-mix-slider">
-                  <span class="wz-mix-slider-label">Rất trang trọng</span>
                 </div>
               </div>
 
@@ -1087,11 +1084,6 @@
               </div>
             </div>
 
-            <div class="wz-field">
-              <label class="wz-label">Trợ lý gọi anh/chị là</label>
-              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
-              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram và Zalo.</p>
-            </div>
           </section>
 
           <!-- ============ STEP 2: AI router (Ollama) ============ -->
@@ -1455,15 +1447,6 @@
       if (currentStep === 1) {
         const name = document.getElementById('ceo-name').value.trim();
         if (!name) { markFieldError('ceo-name'); return showError('Vui lòng nhập họ tên của anh/chị.'); }
-        const hasViDiacritics = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]/.test(name);
-        if (!hasViDiacritics && /^[a-zA-Z\s]+$/.test(name)) {
-          if (!confirm('Tên "' + name + '" chưa có dấu tiếng Việt.\n\nBot sẽ dùng tên này để xưng hô với khách hàng. Anh/chị có muốn sửa lại cho đúng dấu không?\n\nBấm OK để quay lại sửa, Cancel để giữ nguyên.')) {
-            // user chose to keep as-is
-          } else {
-            markFieldError('ceo-name');
-            return;
-          }
-        }
       }
       if (currentStep === '1b') {
         if (!document.getElementById('industry').value) { markFieldError('industry'); return showError('Vui lòng chọn lĩnh vực kinh doanh.'); }
@@ -1582,7 +1565,6 @@
       voice: 'em-nu-tre',
       customer: 'anh-chi',
       traits: ['am-ap', 'chu-dao', 'chuyen-nghiep'],
-      formality: 5,
       greeting: '',
       closing: '',
       phrases: '',
@@ -1599,9 +1581,6 @@
       document.querySelectorAll('.wz-mix-chip[data-mix="trait"]').forEach(chip => {
         chip.classList.toggle('is-selected', personaMix.traits.includes(chip.getAttribute('data-value')));
       });
-      // Slider
-      const slider = document.getElementById('mix-formality');
-      if (slider) slider.value = personaMix.formality;
     }
 
     function updateGreetingPlaceholder() {
@@ -1638,11 +1617,6 @@
           updateMixPreview();
         });
       });
-      const slider = document.getElementById('mix-formality');
-      if (slider) slider.addEventListener('input', () => {
-        personaMix.formality = parseInt(slider.value, 10);
-        updateMixPreview();
-      });
       ['mix-greeting', 'mix-closing', 'mix-phrases'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', () => {
@@ -1666,14 +1640,8 @@
         'mình': 'mình',
       };
       const address = addressMap[personaMix.customer] || 'anh/chị';
-      const isFormal = personaMix.formality >= 7;
-      const isCasual = personaMix.formality <= 4;
       let preview;
-      if (isFormal) {
-        preview = `Dạ em kính chào ${address} ạ. ${address[0].toUpperCase() + address.slice(1)} cần em hỗ trợ về sản phẩm nào ạ?`;
-      } else if (isCasual) {
-        preview = `Dạ em chào ${address} ạ, ${address} cần gì em tư vấn giúp ạ?`;
-      } else {
+      {
         preview = `Dạ em chào ${address} ạ. ${address[0].toUpperCase() + address.slice(1)} cần em tư vấn gì không ạ?`;
       }
       bubble.textContent = preview;
