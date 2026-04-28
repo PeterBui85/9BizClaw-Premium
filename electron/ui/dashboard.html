@@ -574,8 +574,8 @@
     .sidebar-logo img {
       width: 38px !important;
       height: 38px !important;
-      border-radius: 10px;
       flex-shrink: 0;
+      object-fit: contain;
     }
     .sidebar-logo h1 {
       font-size: 16px !important;
@@ -1871,7 +1871,7 @@
     <!-- SIDEBAR -->
     <div class="sidebar">
       <div class="sidebar-logo">
-        <img src="modoro-mascot.jpg" alt="" onerror="this.style.display='none'">
+        <img src="mascot-removebg.png" alt="" onerror="this.style.display='none'">
         <div class="sidebar-brand-text">
           <h1>9BizClaw</h1>
           <div class="sidebar-brand-tagline">Trợ lý AI doanh nghiệp</div>
@@ -1917,11 +1917,9 @@
         </div>
         <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
           <span class="icon" data-icon="globe"></span><span class="label">Facebook</span>
-          <span class="badge">Soon</span>
         </div>
-        <div class="sidebar-menu-item" data-page="gcal" onclick="switchPage('gcal')">
-          <span class="icon" data-icon="calendar"></span><span class="label">Google Calendar</span>
-          <span class="badge">Soon</span>
+        <div class="sidebar-menu-item" data-page="google" onclick="switchPage('google')">
+          <span class="icon" data-icon="calendar"></span><span class="label">Google Workspace</span>
         </div>
 
         <div class="sidebar-menu-header">Cài đặt</div>
@@ -2021,6 +2019,12 @@
           <div id="ov-schedule">
             <div class="ov-list-empty">Không có lịch nào</div>
           </div>
+        </div>
+
+        <!-- Action items / alerts -->
+        <div class="ov-card" id="ov-actions-card" style="display:none">
+          <div class="ov-card-head"><h3>Cần anh để ý</h3></div>
+          <div class="ov-actions" id="ov-actions"></div>
         </div>
 
         <div id="error-display" style="display:none;font-size:11px;font-family:monospace;color:var(--danger);background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:8px;white-space:pre-wrap;max-height:80px;overflow-y:auto;margin-top:12px"></div>
@@ -2358,8 +2362,8 @@
         </div>
 
         <!-- Zalo master toggle bar -->
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-shrink:0">
-          <div class="switch-row" style="padding:0;margin:0;flex:1">
+        <div style="padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;flex-shrink:0">
+          <div class="switch-row" style="padding:0;margin:0">
             <div style="display:flex;align-items:center;gap:10px">
               <div style="font-weight:600;font-size:14px">Bật Zalo</div>
             </div>
@@ -2367,6 +2371,7 @@
               <label class="toggle-switch"><input type="checkbox" id="zalo-mgr-enabled" onchange="onZaloEnabledToggle()"><span class="toggle-slider"></span></label>
             </div>
           </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Thay đổi sẽ khởi động lại gateway. Telegram sẽ gián đoạn 10-15 giây.</div>
         </div>
 
         <div class="zalo-layout">
@@ -2864,31 +2869,179 @@
         </div>
       </div>
 
-      <!-- PAGE: Facebook (Premium) -->
+      <!-- PAGE: Facebook + Brand Assets -->
       <div class="page" id="page-facebook">
         <div class="page-header">
           <span class="page-icon" data-icon="globe" data-icon-size="26"></span>
-          <div><h2>Facebook</h2><div class="page-sub">Kết nối Fanpage Facebook để bot tự động trả lời comment và inbox</div></div>
+          <div><h2>Facebook</h2><div class="page-sub">Đăng bài lên Fanpage + quản lý tài sản thương hiệu</div></div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;text-align:center">
-          <div style="width:80px;height:80px;border-radius:20px;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:24px"><span data-icon="globe" data-icon-size="36" style="color:var(--text-muted)"></span></div>
-          <h3 style="margin:0 0 8px;font-size:20px;color:var(--text)">Premium</h3>
-          <p style="margin:0 0 24px;font-size:14px;color:var(--text-muted);max-width:400px;line-height:1.6">Tính năng kết nối Facebook Fanpage dành cho gói Premium. Bot sẽ tự động trả lời comment, inbox và quản lý khách hàng từ Facebook.</p>
-          <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="message-circle" data-icon-size="14"></span>Liên hệ nâng cấp</button>
+        <div style="padding:0 24px 24px">
+          <!-- Section: Connect Page -->
+          <div class="card" style="margin-bottom:20px">
+            <h3 style="margin:0 0 16px;font-size:15px;font-weight:600;color:var(--text)">Kết nối Fanpage</h3>
+            <div id="fb-status"></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+              <input type="password" id="fb-token-input" placeholder="Paste Page Access Token từ Meta Business Suite" style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
+              <button id="fb-connect-btn" class="btn btn-primary btn-small" onclick="connectFbPage()">Kết nối</button>
+            </div>
+            <details style="margin-top:14px">
+              <summary style="font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;user-select:none">Hướng dẫn chi tiết lấy Page Access Token</summary>
+              <div style="margin-top:12px;font-size:12.5px;color:var(--text-secondary);line-height:1.8;border-left:2px solid var(--border);padding-left:16px">
+
+                <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 0: Tạo Fanpage (nếu chưa có)</div>
+                <div style="padding-left:8px;margin-bottom:14px">
+                  Mở <a href="#" onclick="window.claw.openExternal('https://www.facebook.com/pages/create');return false" style="color:var(--accent)">facebook.com/pages/create</a><br>
+                  Điền tên trang + chọn danh mục &rarr; nhấn <b>"Tạo Trang"</b><br>
+                  <span style="font-size:11px;color:var(--text-muted)">Nếu đã có Fanpage rồi, bỏ qua bước này.</span>
+                </div>
+
+                <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 1: Tạo Facebook App</div>
+                <div style="padding-left:8px;margin-bottom:14px">
+                  Mở <a href="#" onclick="window.claw.openExternal('https://developers.facebook.com/apps/creation/');return false" style="color:var(--accent)">developers.facebook.com/apps/creation</a><br>
+                  Chọn use case: <b>"Quản lý mọi thứ trên Trang"</b> (icon tòa nhà)<br>
+                  Đặt tên app (VD: "MODOROClaw") &rarr; nhấn <b>"Tạo ứng dụng"</b><br>
+                  <span style="font-size:11px;color:var(--text-muted)">Nếu đã có app rồi, bỏ qua bước này.</span>
+                </div>
+
+                <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 2: Lấy User Token + thêm quyền</div>
+                <div style="padding-left:8px;margin-bottom:14px">
+                  Mở <a href="#" onclick="window.claw.openExternal('https://developers.facebook.com/tools/explorer/');return false" style="color:var(--accent)">Graph API Explorer</a><br>
+                  Cột phải, mục <b>"Ứng dụng trên Meta"</b>: chọn app vừa tạo<br>
+                  Mục <b>"Người dùng hoặc Trang"</b>: chọn <b>"Lấy mã truy cập người dùng"</b><br>
+                  Cuộn xuống mục <b>"Quyền"</b> &rarr; nhấn <b>"Thêm quyền"</b><br>
+                  <b>Gõ tìm</b> từng quyền (không browse theo nhóm):<br>
+                  <code style="font-size:11px;background:var(--surface);padding:2px 6px;border-radius:3px">pages_show_list</code>
+                  <code style="font-size:11px;background:var(--surface);padding:2px 6px;border-radius:3px">pages_manage_posts</code>
+                  <code style="font-size:11px;background:var(--surface);padding:2px 6px;border-radius:3px">pages_read_engagement</code><br>
+                  Nhấn <b>"Generate Access Token"</b> &rarr; popup đăng nhập &rarr; cấp tất cả quyền &rarr; <b>chọn Fanpage</b> trong popup
+                </div>
+
+                <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 3: Lấy Page Access Token</div>
+                <div style="padding-left:8px;margin-bottom:14px">
+                  Quay lại Explorer, đổi URL thành <b>me/accounts</b> &rarr; nhấn <b>"Gửi"</b><br>
+                  Kết quả trả về danh sách Fanpage kèm <code style="font-size:11px;background:var(--surface);padding:2px 6px;border-radius:3px">access_token</code> cho mỗi trang<br>
+                  Copy token của Fanpage cần kết nối
+                </div>
+
+                <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 4: Kết nối</div>
+                <div style="padding-left:8px;margin-bottom:14px">
+                  Paste token vào ô <b>"Paste Page Access Token..."</b> ở trên &rarr; nhấn <b>"Kết nối"</b><br>
+                  Hệ thống tự kiểm tra token + hiện tên Fanpage nếu hợp lệ
+                </div>
+
+                <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 5 (khuyến nghị): Gia hạn token</div>
+                <div style="padding-left:8px;margin-bottom:6px">
+                  Token mặc định hết hạn sau <b>1 giờ</b>. Để gia hạn:<br>
+                  Mở <a href="#" onclick="window.claw.openExternal('https://developers.facebook.com/tools/debug/accesstoken/');return false" style="color:var(--accent)">Access Token Debugger</a><br>
+                  Paste token vừa copy &rarr; nhấn <b>"Debug"</b><br>
+                  Nhấn nút <b>"Extend Access Token"</b> ở cuối trang &rarr; copy token mới (dài hạn 60 ngày)<br>
+                  Quay lại Explorer, paste token dài hạn vào ô Access Token &rarr; đổi URL thành <b>me/accounts</b> &rarr; nhấn <b>"Gửi"</b><br>
+                  Copy <code style="font-size:11px;background:var(--surface);padding:2px 6px;border-radius:3px">access_token</code> của Fanpage trong kết quả &rarr; paste vào ô trên và nhấn Kết nối<br>
+                  <span style="font-size:11px;color:var(--text-muted)">Page Token lấy từ User Token dài hạn sẽ không hết hạn, trừ khi anh/chị đổi mật khẩu Facebook hoặc thu hồi quyền app.</span>
+                </div>
+
+                <div style="padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-top:10px">
+                  <div style="font-size:11px;color:var(--text-muted);line-height:1.6">
+                    <b>Lưu ý:</b> Nếu <code>pages_manage_posts</code> không hiện khi tìm, vào
+                    <a href="#" onclick="window.claw.openExternal('https://developers.facebook.com/apps/');return false" style="color:var(--accent)">App Dashboard</a>
+                    &rarr; app &rarr; <b>App Review &gt; Permissions and Features</b> &rarr; tìm <code>pages_manage_posts</code> &rarr; nhấn "Request".
+                    Ở chế độ Development, quyền này tự dùng được cho Page bạn admin, không cần chờ review.
+                  </div>
+                </div>
+
+              </div>
+            </details>
+          </div>
+
+          <!-- Section: Recent Posts -->
+          <div class="card" style="margin-bottom:20px">
+            <h3 style="margin:0 0 12px;font-size:15px;font-weight:600;color:var(--text)">Bài đăng gần đây</h3>
+            <div id="fb-recent-posts"><div style="color:var(--text-muted);padding:20px;text-align:center">Chưa kết nối</div></div>
+          </div>
+
+          <!-- Section: Brand Assets -->
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Tài sản thương hiệu</h3>
+              <button class="btn btn-secondary btn-small" onclick="uploadBrandAssets()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
+            </div>
+            <div id="brand-assets-grid" style="display:flex;flex-wrap:wrap;gap:12px">
+              <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có tài sản nào. Upload logo, ảnh sản phẩm để bot dùng khi tạo ảnh.</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- PAGE: Google Calendar (Premium) -->
-      <div class="page" id="page-gcal">
+      <!-- PAGE: Google Workspace -->
+      <div class="page" id="page-google">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
-          <div><h2>Google Calendar</h2><div class="page-sub">Đồng bộ lịch Google để bot tự động nhắc và quản lý lịch hẹn</div></div>
+          <div><h2>Google Workspace</h2><div class="page-sub">Calendar, Gmail, Drive, Contacts, Tasks</div></div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;text-align:center">
-          <div style="width:80px;height:80px;border-radius:20px;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:24px"><span data-icon="calendar" data-icon-size="36" style="color:var(--text-muted)"></span></div>
-          <h3 style="margin:0 0 8px;font-size:20px;color:var(--text)">Premium</h3>
-          <p style="margin:0 0 24px;font-size:14px;color:var(--text-muted);max-width:400px;line-height:1.6">Tính năng kết nối Google Calendar dành cho gói Premium. Bot sẽ tự động đồng bộ lịch, nhắc hẹn và kiểm tra lịch trống khi khách đặt lịch.</p>
-          <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="message-circle" data-icon-size="14"></span>Liên hệ nâng cấp</button>
+        <!-- Internal tab bar -->
+        <div class="gw-tabs" style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin:0 0 24px">
+          <button class="gw-tab active" data-gw="calendar" onclick="switchGwTab('calendar')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Calendar</button>
+          <button class="gw-tab" data-gw="gmail" onclick="switchGwTab('gmail')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Gmail</button>
+          <button class="gw-tab" data-gw="drive" onclick="switchGwTab('drive')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Drive</button>
+          <button class="gw-tab" data-gw="contacts" onclick="switchGwTab('contacts')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Contacts</button>
+          <button class="gw-tab" data-gw="tasks" onclick="switchGwTab('tasks')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Tasks</button>
+          <button class="gw-tab" data-gw="settings" onclick="switchGwTab('settings')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Cài đặt</button>
+        </div>
+        <!-- Tab contents -->
+        <div class="gw-panel" id="gw-calendar" style="display:none">
+          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          </div>
+        </div>
+        <div class="gw-panel" id="gw-gmail" style="display:none">
+          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          </div>
+        </div>
+        <div class="gw-panel" id="gw-drive" style="display:none">
+          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          </div>
+        </div>
+        <div class="gw-panel" id="gw-contacts" style="display:none">
+          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          </div>
+        </div>
+        <div class="gw-panel" id="gw-tasks" style="display:none">
+          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          </div>
+        </div>
+        <div class="gw-panel" id="gw-settings">
+          <div style="max-width:520px">
+            <div id="gw-status-box" style="padding:16px;border-radius:10px;background:var(--surface);border:1.5px solid var(--border);margin-bottom:24px">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <div id="gw-status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-muted)"></div>
+                <span id="gw-status-text" style="font-size:14px;font-weight:500;color:var(--text)">Đang kiểm tra...</span>
+              </div>
+              <span id="gw-status-email" style="font-size:13px;color:var(--text-muted)"></span>
+            </div>
+            <div id="gw-setup-section">
+              <h3 style="font-size:15px;font-weight:600;color:var(--text);margin:0 0 6px">Kết nối Google Workspace</h3>
+              <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px;line-height:1.5">Tải client_secret.json từ Google Cloud Console, sau đó nhập email Google để kết nối.</p>
+              <div style="margin-bottom:16px">
+                <label style="font-size:13px;font-weight:500;color:var(--text);display:block;margin-bottom:6px">1. Upload credentials</label>
+                <button class="btn btn-secondary btn-small" onclick="uploadGoogleCredentials()" id="gw-upload-btn">Chọn file client_secret.json</button>
+                <span id="gw-upload-status" style="font-size:12px;color:var(--text-muted);margin-left:8px"></span>
+              </div>
+              <div style="margin-bottom:16px">
+                <label style="font-size:13px;font-weight:500;color:var(--text);display:block;margin-bottom:6px">2. Email Google</label>
+                <div style="display:flex;gap:8px">
+                  <input type="email" id="gw-email" placeholder="ceo@company.com" style="flex:1;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" />
+                  <button class="btn btn-primary btn-small" onclick="connectGoogle()">Kết nối</button>
+                </div>
+              </div>
+            </div>
+            <div id="gw-connected-section" style="display:none">
+              <button class="btn btn-secondary btn-small" onclick="disconnectGoogle()" style="color:var(--danger)">Ngắt kết nối</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3086,7 +3239,7 @@
 
   <script>
     function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-    function escAttr(s) { return esc(s).replace(/'/g, '&#39;'); }
+    function escAttr(s) { return esc(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;'); }
 
     // ============================================
     //  ICONS — Lucide (SVG inline, premium look)
@@ -3613,6 +3766,9 @@
       if (page === 'persona-mix') {
         loadPersonaMix();
       }
+      if (page === 'facebook') {
+        loadFacebookTab();
+      }
     }
     // Alias used by overview card buttons (matches what onclick handlers call)
     function setActivePage(page) { switchPage(page); }
@@ -3631,6 +3787,107 @@
       phrases: '',
     };
     let _personaMixBound = false;
+
+    // ─── Facebook + Brand Assets ─────────────────────────────────
+    async function loadFacebookTab() {
+      loadFbConfig();
+      loadFbRecentPosts();
+      loadBrandAssets();
+    }
+
+    async function loadFbConfig() {
+      const el = document.getElementById('fb-status');
+      try {
+        const cfg = await window.claw.getFbConfig();
+        if (cfg && cfg.pageName) {
+          el.innerHTML = '<div class="card" style="border-color:var(--success);margin-bottom:0">' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="color:var(--success);font-size:20px">●</span>' +
+            '<div><strong>' + esc(cfg.pageName) + '</strong><div style="font-size:12px;color:var(--text-muted)">Kết nối lúc ' + new Date(cfg.connectedAt).toLocaleString('vi-VN') + '</div></div>' +
+            '</div></div>';
+        } else {
+          el.innerHTML = '';
+        }
+      } catch { el.innerHTML = ''; }
+    }
+
+    async function connectFbPage() {
+      const tokenInput = document.getElementById('fb-token-input');
+      const token = tokenInput.value.trim();
+      if (!token) { tokenInput.style.borderColor = 'var(--danger)'; return; }
+      const btn = document.getElementById('fb-connect-btn');
+      btn.disabled = true; btn.textContent = 'Đang xác nhận...';
+      try {
+        const res = await window.claw.saveFbConfig(token);
+        if (res.success) {
+          tokenInput.value = '';
+          loadFbConfig();
+          loadFbRecentPosts();
+        } else {
+          alert('Lỗi: ' + res.error);
+        }
+      } catch (e) { alert('Lỗi: ' + e.message); }
+      btn.disabled = false; btn.textContent = 'Kết nối';
+    }
+
+    async function loadFbRecentPosts() {
+      const el = document.getElementById('fb-recent-posts');
+      try {
+        const posts = await window.claw.getFbRecentPosts();
+        if (!posts || !posts.length) { el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">Chưa có bài đăng nào</div>'; return; }
+        el.innerHTML = posts.map(function(p) {
+          return '<div class="card" style="margin-bottom:8px">' +
+            '<div style="font-size:13px">' + esc((p.message || '').slice(0, 200)) + '</div>' +
+            (p.full_picture ? '<img src="' + escAttr(p.full_picture) + '" style="max-width:200px;border-radius:8px;margin-top:8px">' : '') +
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">' + new Date(p.created_time).toLocaleString('vi-VN') + '</div>' +
+          '</div>';
+        }).join('');
+      } catch (ex) { el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">Không tải được bài đăng</div>'; }
+    }
+
+    async function loadBrandAssets() {
+      const el = document.getElementById('brand-assets-grid');
+      try {
+        const assets = await window.claw.listBrandAssets();
+        if (!assets || !assets.length) {
+          el.innerHTML = '<div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có tài sản nào. Upload logo, ảnh sản phẩm để bot dùng khi tạo ảnh.</div>';
+          return;
+        }
+        el.innerHTML = assets.map(function(a) {
+          var thumbHtml = a.thumbDataUrl
+            ? '<img src="' + a.thumbDataUrl + '" style="width:100%;height:100%;object-fit:cover" />'
+            : '<span data-icon="image" data-icon-size="32" style="color:var(--text-muted)"></span>';
+          return '<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px;padding:12px;border:1px solid var(--border);border-radius:8px">' +
+            '<div style="width:80px;height:80px;background:var(--bg);border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden">' +
+            thumbHtml +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--text);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escAttr(a.name) + '">' + esc(a.name) + '</div>' +
+            '<div style="font-size:10px;color:var(--text-muted)">' + (a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round(a.size/1024)+'KB') + '</div>' +
+            '<button class="btn-sm" data-delete-asset="' + escAttr(a.name) + '" style="font-size:10px;padding:2px 8px;color:var(--danger);background:transparent;border:1px solid var(--danger);border-radius:4px;cursor:pointer">Xoá</button>' +
+          '</div>';
+        }).join('');
+      } catch (ex) { el.innerHTML = '<div style="color:var(--text-muted)">Lỗi tải tài sản</div>'; }
+    }
+
+    async function uploadBrandAssets() {
+      var paths = await window.claw.pickBrandAssetFile();
+      if (!paths || !paths.length) return;
+      for (var i = 0; i < paths.length; i++) {
+        var fp = paths[i];
+        var name = fp.split(/[\\\/]/).pop();
+        var res = await window.claw.uploadBrandAsset(fp, name);
+        if (!res.success) alert('Lỗi upload ' + name + ': ' + res.error);
+      }
+      loadBrandAssets();
+    }
+
+    document.addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-delete-asset]');
+      if (!btn) return;
+      var name = btn.dataset.deleteAsset;
+      if (!confirm('Xoá ' + name + '?')) return;
+      window.claw.deleteBrandAsset(name).then(function() { loadBrandAssets(); });
+    });
 
     async function loadPersonaMix() {
       if (!window.claw || !window.claw.getPersonaMix) return;
@@ -3941,6 +4198,22 @@
           schedEl.innerHTML = '<div class="ov-schedule-timeline">' + rows + '</div>';
         }
 
+        // === ACTIONS / ALERTS ===
+        const actCard = document.getElementById('ov-actions-card');
+        const actEl = document.getElementById('ov-actions');
+        const acts = data.actions || [];
+        if (acts.length === 0) {
+          actCard.style.display = 'none';
+        } else {
+          actCard.style.display = '';
+          const sevColors = { high: 'var(--danger, #ef4444)', medium: '#f59e0b', low: 'var(--text-secondary)' };
+          actEl.innerHTML = acts.map(a => {
+            const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (sevColors[a.severity] || sevColors.low) + ';margin-right:8px;flex-shrink:0"></span>';
+            const cta = a.cta && a.ctaPage ? ' <a href="#" onclick="switchPage(\'' + _esc(a.ctaPage) + '\');return false" style="color:var(--accent);font-weight:500;margin-left:8px;white-space:nowrap">' + _esc(a.cta) + '</a>' : '';
+            return '<div class="ov-action-row" style="display:flex;align-items:center;padding:6px 0">' + dot + '<span class="ov-action-text">' + _esc(a.text) + '</span>' + cta + '</div>';
+          }).join('');
+        }
+
         // Re-render lucide icons in dynamically inserted markup
         if (typeof mountIcons === 'function') mountIcons();
       } catch (e) {
@@ -4105,7 +4378,7 @@
     }
 
     // Generic toast notification (top-right, auto-dismiss)
-    function showToast(text, type = 'success') {
+    function showToast(text, type = 'success', durationMs = 2800) {
       let host = document.getElementById('toast-host');
       if (!host) {
         host = document.createElement('div');
@@ -4123,7 +4396,7 @@
         t.style.opacity = '0';
         t.style.transform = 'translateX(20px)';
         setTimeout(() => t.remove(), 300);
-      }, 2800);
+      }, durationMs);
     }
 
     // ============================================
@@ -4441,6 +4714,7 @@
     let zaloGroups = [];
     let zaloGroupSummaries = {};
     let zaloMgrConfig = { enabled: true, groupPolicy: 'open', groupAllowFrom: [], userBlocklist: [] };
+    let _zaloConfigLoadOk = false;
 
     let _zaloRefreshTimer = null;
     function startZaloAutoRefresh() {
@@ -4524,26 +4798,29 @@
     async function loadZaloManagerData(opts = {}) {
       const preserveDraft = !!opts.preserveDraft;
       try {
-        const draft = preserveDraft && zaloDataLoaded ? getCurrentZaloManagerDraft() : null;
         const _zTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
         const [friends, groups, config, groupSums] = await Promise.all([
           _zTimeout(window.claw.listZaloFriends(), 3000).catch(() => []),
           _zTimeout(window.claw.listZaloGroups(), 3000).catch(() => []),
-          _zTimeout(window.claw.getZaloManagerConfig(), 3000).catch(() => null),
+          _zTimeout(window.claw.getZaloManagerConfig(), 10000).catch(() => null),
           _zTimeout(window.claw.getZaloGroupSummaries(), 3000).catch(() => ({})),
         ]);
+        // Capture draft AFTER IPC returns — minimizes window where user changes
+        // between draft snapshot and merge (was before IPC, up to 10s stale)
+        const draft = (preserveDraft && zaloDataLoaded && _zaloConfigLoadOk) ? getCurrentZaloManagerDraft() : null;
         zaloFriends = friends || [];
         zaloGroups = groups || [];
         zaloGroupSummaries = groupSums || {};
-        if (draft) {
+        if (config) _zaloConfigLoadOk = true;
+        if (draft && _zaloConfigLoadOk) {
           zaloMgrConfig = {
             ...(config || {}),
             ...draft,
             groupAllowFrom: Array.isArray(draft.groupAllowFrom) ? draft.groupAllowFrom : [],
             userBlocklist: Array.isArray(draft.userBlocklist) ? draft.userBlocklist : [],
           };
-        } else {
-          zaloMgrConfig = config || zaloMgrConfig;
+        } else if (config) {
+          zaloMgrConfig = config;
         }
         // Seed autoSave freshness cache with the just-fetched enabled flag so
         // autoSaveZaloManager can use it without an extra round-trip.
@@ -4551,7 +4828,7 @@
             && typeof markZmFresh === 'function') {
           markZmFresh(config.enabled);
         }
-        zaloDataLoaded = true;
+        if (config) zaloDataLoaded = true;
         syncZaloManagerUi();
       } catch (e) {
         console.error('loadZaloManagerData error:', e);
@@ -4685,8 +4962,14 @@
     // gateway immediately — no explicit save button needed.
     let _zaloEnabledSaved = null;
     function onZaloEnabledToggle() {
-      const cur = document.getElementById('zalo-mgr-enabled').checked;
+      const el = document.getElementById('zalo-mgr-enabled');
+      const cur = el.checked;
       if (_zaloEnabledSaved !== null && cur !== _zaloEnabledSaved) {
+        var action = cur ? 'BẬT' : 'TẮT';
+        if (!confirm(action + ' Zalo sẽ khởi động lại gateway.\nTelegram sẽ bị gián đoạn khoảng 10-15 giây.\n\nTiếp tục?')) {
+          el.checked = _zaloEnabledSaved;
+          return;
+        }
         _zaloEnabledSaved = cur;
         saveZaloManager();
       }
@@ -4709,6 +4992,11 @@
       if (_zaloAutoSaveTimer) clearTimeout(_zaloAutoSaveTimer);
       _zaloAutoSaveTimer = setTimeout(async () => {
         _zaloAutoSaveTimer = null;
+        if (!_zaloConfigLoadOk) {
+          console.warn('[autoSaveZaloManager] config never loaded from file — refusing to save stale defaults');
+          showToast('Cấu hình chưa tải xong — thử lại sau vài giây', 'info');
+          return;
+        }
         try {
           // Preserve currently-saved enabled state. If read fails, SKIP the
           // save — never risk flipping Zalo enable/disable unexpectedly
@@ -4926,6 +5214,10 @@
     }
 
     async function saveZaloManager() {
+      if (!_zaloConfigLoadOk) {
+        showToast('Cấu hình chưa tải xong — thử lại sau vài giây', 'info');
+        return;
+      }
       zaloMgrConfig.enabled = document.getElementById('zalo-mgr-enabled').checked;
       zaloMgrConfig.groupPolicy = 'open';
       zaloMgrConfig.groupAllowFrom = ['*'];
@@ -7027,6 +7319,93 @@
       localStorage.removeItem(channel + '-guide-step');
       _guideCurrentStep[channel] = 0;
       guideInit(channel);
+    }
+
+    // --- Google Workspace ---
+    function switchGwTab(tab) {
+      document.querySelectorAll('.gw-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.gw === tab);
+        t.style.color = t.dataset.gw === tab ? 'var(--text)' : 'var(--text-muted)';
+        t.style.borderBottomColor = t.dataset.gw === tab ? 'var(--primary)' : 'transparent';
+      });
+      document.querySelectorAll('.gw-panel').forEach(p => p.style.display = 'none');
+      const panel = document.getElementById('gw-' + tab);
+      if (panel) panel.style.display = '';
+    }
+    switchGwTab('settings');
+
+    async function loadGoogleStatus() {
+      try {
+        const s = await window.claw.googleAuthStatus();
+        const dot = document.getElementById('gw-status-dot');
+        const txt = document.getElementById('gw-status-text');
+        const email = document.getElementById('gw-status-email');
+        if (s.connected) {
+          dot.style.background = 'var(--success, #22c55e)';
+          txt.textContent = 'Đã kết nối';
+          email.textContent = s.email || '';
+          document.getElementById('gw-setup-section').style.display = 'none';
+          document.getElementById('gw-connected-section').style.display = '';
+        } else {
+          dot.style.background = 'var(--text-muted)';
+          txt.textContent = 'Chưa kết nối';
+          email.textContent = '';
+          document.getElementById('gw-setup-section').style.display = '';
+          document.getElementById('gw-connected-section').style.display = 'none';
+        }
+      } catch (e) {
+        console.error('loadGoogleStatus error:', e);
+      }
+    }
+
+    async function uploadGoogleCredentials() {
+      try {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async () => {
+          if (!input.files.length) return;
+          const st = document.getElementById('gw-upload-status');
+          st.textContent = 'Đang upload...';
+          const result = await window.claw.googleUploadCredentials(input.files[0].path);
+          st.textContent = result.error ? result.error : 'Đã upload';
+          st.style.color = result.error ? 'var(--danger)' : 'var(--success, #22c55e)';
+        };
+        input.click();
+      } catch (e) {
+        document.getElementById('gw-upload-status').textContent = e.message;
+      }
+    }
+
+    async function connectGoogle() {
+      const email = document.getElementById('gw-email').value.trim();
+      if (!email) return;
+      try {
+        const result = await window.claw.googleConnect(email);
+        if (result.error) throw new Error(result.error);
+        loadGoogleStatus();
+      } catch (e) {
+        alert('Lỗi kết nối: ' + e.message);
+      }
+    }
+
+    async function disconnectGoogle() {
+      if (!confirm('Ngắt kết nối Google Workspace?')) return;
+      try {
+        await window.claw.googleDisconnect();
+        loadGoogleStatus();
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
+    }
+
+    // Load status when switching to Google page
+    const origSwitchPage = window.switchPage;
+    if (origSwitchPage) {
+      window.switchPage = function(page) {
+        origSwitchPage(page);
+        if (page === 'google') loadGoogleStatus();
+      };
     }
   </script>
 <!-- FIRST-TIME GUIDE (spotlight + tooltip) -->

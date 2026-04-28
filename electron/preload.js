@@ -136,16 +136,11 @@ contextBridge.exposeInMainWorld('claw', {
   deleteAppointment: (id) => ipcRenderer.invoke('delete-appointment', { id }),
   resolveZaloTarget: (query, type) => ipcRenderer.invoke('resolve-zalo-target', { query, type }),
 
-  // Google Calendar
-  gcalConnect: () => ipcRenderer.invoke('gcal-connect'),
-  gcalDisconnect: () => ipcRenderer.invoke('gcal-disconnect'),
-  gcalGetStatus: () => ipcRenderer.invoke('gcal-get-status'),
-  gcalListEvents: (opts) => ipcRenderer.invoke('gcal-list-events', opts || {}),
-  gcalGetFreeSlots: (opts) => ipcRenderer.invoke('gcal-get-free-slots', opts),
-  gcalCreateEvent: (opts) => ipcRenderer.invoke('gcal-create-event', opts),
-  gcalGetFreeBusy: (opts) => ipcRenderer.invoke('gcal-get-freebusy', opts),
-  gcalGetConfig: () => ipcRenderer.invoke('gcal-get-config'),
-  gcalSaveConfig: (cfg) => ipcRenderer.invoke('gcal-save-config', cfg),
+  // Google Workspace
+  googleAuthStatus: () => ipcRenderer.invoke('google-auth-status'),
+  googleUploadCredentials: (path) => ipcRenderer.invoke('google-upload-credentials', path),
+  googleConnect: (email) => ipcRenderer.invoke('google-connect', email),
+  googleDisconnect: () => ipcRenderer.invoke('google-disconnect'),
 
   // First-time channel guide
   checkGuideNeeded: (channel) => ipcRenderer.invoke('check-guide-needed', { channel }),
@@ -181,6 +176,18 @@ contextBridge.exposeInMainWorld('claw', {
   // Persona mix — Dashboard re-edit after wizard
   getPersonaMix: () => ipcRenderer.invoke('get-persona-mix'),
   savePersonaMix: (mix) => ipcRenderer.invoke('save-persona-mix', mix),
+
+  // Brand Assets
+  listBrandAssets: () => ipcRenderer.invoke('list-brand-assets'),
+  uploadBrandAsset: (filePath, name) => ipcRenderer.invoke('upload-brand-asset', filePath, name),
+  deleteBrandAsset: (name) => ipcRenderer.invoke('delete-brand-asset', name),
+  pickBrandAssetFile: () => ipcRenderer.invoke('pick-brand-asset-file'),
+
+  // Facebook
+  getFbConfig: () => ipcRenderer.invoke('get-fb-config'),
+  saveFbConfig: (accessToken) => ipcRenderer.invoke('save-fb-config', { accessToken }),
+  verifyFbToken: () => ipcRenderer.invoke('verify-fb-token'),
+  getFbRecentPosts: () => ipcRenderer.invoke('get-fb-recent-posts'),
 
   // License (membership builds only)
   activateLicense: (key) => ipcRenderer.invoke('activate-license', { key }),
