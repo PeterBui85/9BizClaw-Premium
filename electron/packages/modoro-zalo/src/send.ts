@@ -707,26 +707,32 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
     }
     } // end if (!__ofIsInternal)
   } catch (__ofE) {
-    try { logOutbound("error", "output filter error", { err: String(__ofE) }); } catch {}
-    return { messageId: "transport-gated", kind: "text" as const };
+    try { logOutbound("error", "output filter error — falling through to normal send", { err: String(__ofE) }); } catch {}
   }
   // === END 9BizClaw OUTPUT-FILTER PATCH ===
-  // === 9BizClaw ESCALATION-DETECT PATCH v1 ===
+  // === 9BizClaw ESCALATION-DETECT PATCH v2 ===
   try {
     const __escPatterns: RegExp[] = [
-      /(?<![a-zA-Z0-9_])(chuyển (cho )?(sếp|quản lý|bộ phận|nhân viên|người phụ trách))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(chuyển (cho )?(sếp|quản lý|bộ phận|nhân viên|người phụ trách|người có thẩm quyền))(?![a-zA-Z0-9_])/i,
       /(?<![a-zA-Z0-9_])(ghi nhận (khiếu nại|phản ánh|yêu cầu|vấn đề))(?![a-zA-Z0-9_])/i,
-      /(?<![a-zA-Z0-9_])(đã báo (lại )?(sếp|quản lý|CEO|ban giám đốc))(?![a-zA-Z0-9_])/i,
-      /(?<![a-zA-Z0-9_])(sếp sẽ liên hệ|sếp sẽ gọi|sếp sẽ phản hồi|sếp sẽ trả lời)(?![a-zA-Z0-9_])/i,
-      /(?<![a-zA-Z0-9_])(em sẽ chuyển|em đã chuyển|em xin chuyển)(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])((đã |sẽ |để em |em xin |xin phép |cho em )?báo (lại )?(sếp|quản lý|CEO|ban giám đốc))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(sếp sẽ (liên hệ|gọi|phản hồi|trả lời|xử lý|hỗ trợ))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(em (sẽ|đã|xin) (chuyển|báo|hỏi|nhờ|liên hệ) (lại )?(sếp|quản lý|CEO|bộ phận|người phụ trách))(?![a-zA-Z0-9_])/i,
       /(?<![a-zA-Z0-9_])(ngoài khả năng|không thuộc phạm vi|vượt (ngoài )?thẩm quyền)(?![a-zA-Z0-9_])/i,
-      /(?<![a-zA-Z0-9_])(cần (sếp|quản lý|người) (hỗ trợ|xử lý|can thiệp))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(cần (sếp|quản lý|người|bộ phận) (hỗ trợ|xử lý|can thiệp|xem xét|quyết định))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(để em (hỏi|chuyển|báo|nhờ|liên hệ) (lại )?(sếp|quản lý|CEO|bên|người|phòng))(?![a-zA-Z0-9_])/i,
+      /(?<![a-zA-Z0-9_])(em đã chuyển sếp|em đã chuyển cho sếp)(?![a-zA-Z0-9_])/i,
     ];
     let __escMatch: string | null = null;
     for (const __escRe of __escPatterns) {
       const __escM = body.match(__escRe);
       if (__escM) { __escMatch = __escM[0]; break; }
     }
+    logOutbound("info", "escalation-scanner-check", {
+      bodyLen: body.length,
+      bodyPreview: body.slice(0, 120),
+      matched: __escMatch || "none",
+    });
     if (__escMatch) {
       try {
         const __escFs = require("node:fs");
@@ -758,10 +764,15 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
           }) + "\n",
           "utf-8",
         );
-      } catch {}
+        logOutbound("info", "escalation-queue-written", { trigger: __escMatch, to: target.threadId });
+      } catch (__escWriteErr) {
+        logOutbound("error", "escalation-queue-write-failed", { err: String(__escWriteErr), trigger: __escMatch });
+      }
     }
-  } catch {}
-  // === END 9BizClaw ESCALATION-DETECT PATCH v1 ===
+  } catch (__escOuterErr) {
+    logOutbound("error", "escalation-scanner-error", { err: String(__escOuterErr) });
+  }
+  // === END 9BizClaw ESCALATION-DETECT PATCH v2 ===
 
   const args = ["msg", "send", target.threadId, body];
   if (target.isGroup) {
