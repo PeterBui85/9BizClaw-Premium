@@ -54,6 +54,51 @@ module.exports = async function handleGoogleRoute(urlPath, params, req, res, jso
       const r = await googleApi.replyEmail(params.id, params.body);
       return jsonResp(res, 200, r);
     }
+    // Drive
+    if (urlPath === '/drive/list') {
+      const r = await googleApi.listFiles(params.query, params.max);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/drive/upload') {
+      if (!params.filePath) return jsonResp(res, 400, { error: 'filePath required' });
+      const r = await googleApi.uploadFile(params.filePath, params.folderId);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/drive/download') {
+      if (!params.fileId || !params.destPath) return jsonResp(res, 400, { error: 'fileId and destPath required' });
+      const r = await googleApi.downloadFile(params.fileId, params.destPath);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/drive/share') {
+      if (!params.fileId || !params.email) return jsonResp(res, 400, { error: 'fileId and email required' });
+      const r = await googleApi.shareFile(params.fileId, params.email, params.role);
+      return jsonResp(res, 200, r);
+    }
+    // Contacts
+    if (urlPath === '/contacts/list' || urlPath === '/contacts/search') {
+      const r = await googleApi.listContacts(params.query);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/contacts/create') {
+      if (!params.name) return jsonResp(res, 400, { error: 'name required' });
+      const r = await googleApi.createContact(params.name, params.phone, params.email);
+      return jsonResp(res, 200, r);
+    }
+    // Tasks
+    if (urlPath === '/tasks/list') {
+      const r = await googleApi.listTasks(params.listId);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/tasks/create') {
+      if (!params.title) return jsonResp(res, 400, { error: 'title required' });
+      const r = await googleApi.createTask(params.title, params.due, params.listId);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/tasks/complete') {
+      if (!params.taskId) return jsonResp(res, 400, { error: 'taskId required' });
+      const r = await googleApi.completeTask(params.taskId);
+      return jsonResp(res, 200, r);
+    }
     return jsonResp(res, 404, { error: 'unknown google route: ' + urlPath });
   } catch (e) {
     return jsonResp(res, 500, { error: e.message });

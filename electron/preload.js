@@ -150,6 +150,10 @@ contextBridge.exposeInMainWorld('claw', {
   googleGmailRead: (opts) => ipcRenderer.invoke('google-gmail-read', opts),
   googleGmailSend: (opts) => ipcRenderer.invoke('google-gmail-send', opts),
   googleGmailReply: (opts) => ipcRenderer.invoke('google-gmail-reply', opts),
+  googleDriveList: (opts) => ipcRenderer.invoke('google-drive-list', opts || {}),
+  googleDriveUpload: (opts) => ipcRenderer.invoke('google-drive-upload', opts),
+  googleDriveDownload: (opts) => ipcRenderer.invoke('google-drive-download', opts),
+  googleDriveShare: (opts) => ipcRenderer.invoke('google-drive-share', opts),
 
   // First-time channel guide
   checkGuideNeeded: (channel) => ipcRenderer.invoke('check-guide-needed', { channel }),

@@ -3085,8 +3085,16 @@
           </div>
         </div>
         <div class="gw-panel" id="gw-drive" style="display:none">
-          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
-            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+            <div style="display:flex;align-items:center;gap:8px;flex:1">
+              <input type="text" id="drive-search" placeholder="Tìm kiếm file..." style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')searchDriveFiles()" />
+              <button class="btn btn-secondary btn-small" onclick="searchDriveFiles()">Tìm</button>
+            </div>
+            <button class="btn btn-secondary btn-small" onclick="loadDriveFiles()">Làm mới</button>
+          </div>
+          <div id="drive-list" style="display:flex;flex-direction:column;gap:4px"></div>
+          <div id="drive-empty" style="display:none;padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Không có file nào</p>
           </div>
         </div>
         <div class="gw-panel" id="gw-contacts" style="display:none">
@@ -7419,6 +7427,7 @@
       if (panel) panel.style.display = '';
       if (tab === 'calendar') loadCalendarEvents();
       if (tab === 'gmail') loadGmailInbox();
+      if (tab === 'drive') loadDriveFiles();
       if (tab === 'settings') loadGoogleStatus();
     }
     switchGwTab('settings');
@@ -7600,6 +7609,36 @@
         alert('Đã gửi email');
         loadGmailInbox();
       } catch (e) { alert('Lỗi gửi email: ' + e.message); }
+    }
+
+    // --- Drive tab ---
+    async function loadDriveFiles(query) {
+      const list = document.getElementById('drive-list');
+      const empty = document.getElementById('drive-empty');
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Đang tải...</div>';
+      empty.style.display = 'none';
+      try {
+        const data = await window.claw.googleDriveList({ query });
+        const files = data.files || data.items || data.data || [];
+        if (!files.length) { list.innerHTML = ''; empty.style.display = ''; return; }
+        list.innerHTML = files.map(f => {
+          const name = f.name || f.title || 'Không có tên';
+          const size = f.size ? (parseInt(f.size) / 1024).toFixed(0) + ' KB' : '';
+          const modified = f.modifiedTime || f.modifiedDate || '';
+          const modStr = modified ? new Date(modified).toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' }) : '';
+          return '<div style="padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:space-between">' +
+            '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + name + '</div>' +
+            '<div style="font-size:11px;color:var(--text-muted)">' + [size, modStr].filter(Boolean).join(' · ') + '</div></div>' +
+            '</div>';
+        }).join('');
+      } catch (e) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger);font-size:13px">' + (e.message || 'Lỗi tải file') + '</div>';
+      }
+    }
+
+    function searchDriveFiles() {
+      const q = document.getElementById('drive-search').value.trim();
+      loadDriveFiles(q || undefined);
     }
 
     async function loadGoogleStatus() {

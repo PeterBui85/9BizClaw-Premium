@@ -204,10 +204,65 @@ async function replyEmail(id, body) {
   return gogExec(['gmail', 'reply', id, '--body', body], 30000);
 }
 
+// --- Drive ---
+
+async function listFiles(query, max) {
+  const args = query ? ['drive', 'search', query, '--max', String(max || 20)] : ['drive', 'ls', '--max', String(max || 20)];
+  return gogExec(args);
+}
+
+async function uploadFile(filePath, folderId) {
+  const args = ['drive', 'upload', filePath];
+  if (folderId) args.push('--parent', folderId);
+  return gogExec(args, 60000);
+}
+
+async function downloadFile(fileId, destPath) {
+  return gogExec(['drive', 'download', fileId, destPath], 60000);
+}
+
+async function shareFile(fileId, email, role) {
+  return gogExec(['drive', 'share', fileId, '--email', email, '--role', role || 'reader']);
+}
+
+// --- Contacts ---
+
+async function listContacts(query) {
+  return query ? gogExec(['contacts', 'search', query]) : gogExec(['contacts', 'list']);
+}
+
+async function createContact(name, phone, email) {
+  const args = ['contacts', 'create', '--name', name];
+  if (phone) args.push('--phone', phone);
+  if (email) args.push('--email', email);
+  return gogExec(args);
+}
+
+// --- Tasks ---
+
+async function listTasks(listId) {
+  const args = ['tasks', 'list'];
+  if (listId) args.push('--list', listId);
+  return gogExec(args);
+}
+
+async function createTask(title, due, listId) {
+  const args = ['tasks', 'add', title];
+  if (due) args.push('--due', due);
+  if (listId) args.push('--list', listId);
+  return gogExec(args);
+}
+
+async function completeTask(taskId) {
+  return gogExec(['tasks', 'done', taskId]);
+}
+
 module.exports = {
   getGogBinaryPath, getGogConfigDir, getGogAccount,
   gogExec, gogExecSync, gogSpawnAsync, gogEnv,
   authStatus, registerCredentials, connectAccount, disconnectAccount,
   listEvents, createEvent, deleteEvent, getFreeBusy, getFreeSlots,
   listInbox, readEmail, sendEmail, replyEmail,
+  listFiles, uploadFile, downloadFile, shareFile,
+  listContacts, createContact, listTasks, createTask, completeTask,
 };

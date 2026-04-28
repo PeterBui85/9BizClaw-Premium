@@ -4442,6 +4442,44 @@ ipcMain.handle('download-and-install-update', async () => {
     catch (e) { return { error: e.message }; }
   });
 
+  ipcMain.handle('google-drive-list', async (_ev, opts) => {
+    try { return await googleApi.listFiles(opts?.query, opts?.max); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-drive-upload', async (_ev, opts) => {
+    try { return await googleApi.uploadFile(opts.filePath, opts.folderId); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-drive-download', async (_ev, opts) => {
+    try { return await googleApi.downloadFile(opts.fileId, opts.destPath); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-drive-share', async (_ev, opts) => {
+    try { return await googleApi.shareFile(opts.fileId, opts.email, opts.role); }
+    catch (e) { return { error: e.message }; }
+  });
+
+  ipcMain.handle('google-contacts-list', async (_ev, opts) => {
+    try { return await googleApi.listContacts(opts?.query); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-contacts-create', async (_ev, opts) => {
+    try { return await googleApi.createContact(opts.name, opts.phone, opts.email); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-tasks-list', async (_ev, opts) => {
+    try { return await googleApi.listTasks(opts?.listId); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-tasks-create', async (_ev, opts) => {
+    try { return await googleApi.createTask(opts.title, opts.due, opts.listId); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-tasks-complete', async (_ev, opts) => {
+    try { return await googleApi.completeTask(opts.taskId); }
+    catch (e) { return { error: e.message }; }
+  });
+
 } // end registerAllIpcHandlers
 
 module.exports = { registerAllIpcHandlers };
