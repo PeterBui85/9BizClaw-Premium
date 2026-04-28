@@ -3033,8 +3033,55 @@
           </div>
         </div>
         <div class="gw-panel" id="gw-gmail" style="display:none">
-          <div style="padding:60px 20px;text-align:center;color:var(--text-muted)">
-            <p style="margin:0;font-size:14px">Đang phát triển</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+            <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Hộp thư đến</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-small" onclick="loadGmailInbox()">Làm mới</button>
+              <button class="btn btn-primary btn-small" onclick="showGmailComposeModal()">Soạn email</button>
+            </div>
+          </div>
+          <div id="gmail-list" style="display:flex;flex-direction:column;gap:4px"></div>
+          <div id="gmail-empty" style="display:none;padding:60px 20px;text-align:center;color:var(--text-muted)">
+            <p style="margin:0;font-size:14px">Không có email nào</p>
+          </div>
+          <!-- Email detail -->
+          <div id="gmail-detail" style="display:none;margin-top:16px;padding:20px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+              <div>
+                <div id="gmail-detail-subject" style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px"></div>
+                <div id="gmail-detail-from" style="font-size:13px;color:var(--text-muted)"></div>
+              </div>
+              <button class="btn btn-secondary btn-small" onclick="closeGmailDetail()">Đóng</button>
+            </div>
+            <div id="gmail-detail-body" style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
+            <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+              <textarea id="gmail-reply-body" rows="3" placeholder="Trả lời..." style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none;resize:vertical;box-sizing:border-box"></textarea>
+              <button class="btn btn-primary btn-small" onclick="submitGmailReply()" style="margin-top:8px">Gửi trả lời</button>
+            </div>
+          </div>
+          <!-- Compose modal -->
+          <div id="gmail-compose-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
+            <div style="background:var(--bg);border:1.5px solid var(--border);border-radius:14px;padding:28px;width:460px;max-width:90vw">
+              <h3 style="margin:0 0 20px;font-size:16px;font-weight:600;color:var(--text)">Soạn email</h3>
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div>
+                  <label style="font-size:13px;font-weight:500;color:var(--text);display:block;margin-bottom:4px">Đến</label>
+                  <input type="email" id="gmail-compose-to" placeholder="nguoi-nhan@email.com" style="width:100%;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none;box-sizing:border-box" />
+                </div>
+                <div>
+                  <label style="font-size:13px;font-weight:500;color:var(--text);display:block;margin-bottom:4px">Tiêu đề</label>
+                  <input type="text" id="gmail-compose-subject" placeholder="Chủ đề email" style="width:100%;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none;box-sizing:border-box" />
+                </div>
+                <div>
+                  <label style="font-size:13px;font-weight:500;color:var(--text);display:block;margin-bottom:4px">Nội dung</label>
+                  <textarea id="gmail-compose-body" rows="6" placeholder="Nội dung email..." style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none;resize:vertical;box-sizing:border-box"></textarea>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+                <button class="btn btn-secondary btn-small" onclick="hideGmailComposeModal()">Hủy</button>
+                <button class="btn btn-primary btn-small" onclick="submitGmailCompose()">Gửi</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="gw-panel" id="gw-drive" style="display:none">
@@ -7371,6 +7418,7 @@
       const panel = document.getElementById('gw-' + tab);
       if (panel) panel.style.display = '';
       if (tab === 'calendar') loadCalendarEvents();
+      if (tab === 'gmail') loadGmailInbox();
       if (tab === 'settings') loadGoogleStatus();
     }
     switchGwTab('settings');
@@ -7471,6 +7519,87 @@
         hideCalCreateModal();
         loadCalendarEvents();
       } catch (e) { alert('Lỗi tạo sự kiện: ' + e.message); }
+    }
+
+    // --- Gmail tab ---
+    let _gmailCurrentId = null;
+
+    async function loadGmailInbox() {
+      const list = document.getElementById('gmail-list');
+      const empty = document.getElementById('gmail-empty');
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Đang tải...</div>';
+      empty.style.display = 'none';
+      document.getElementById('gmail-detail').style.display = 'none';
+      try {
+        const data = await window.claw.googleGmailInbox({});
+        const emails = data.messages || data.items || data.data || [];
+        if (!emails.length) { list.innerHTML = ''; empty.style.display = ''; return; }
+        list.innerHTML = emails.map(e => {
+          const from = e.from || e.sender || '';
+          const subject = e.subject || 'Không có tiêu đề';
+          const date = e.date || e.receivedAt || '';
+          const dateStr = date ? new Date(date).toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : '';
+          return '<div onclick="openGmailDetail(\'' + (e.id || '') + '\')" style="padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:background .1s" onmouseover="this.style.background=\'var(--border)\'" onmouseout="this.style.background=\'var(--surface)\'">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">' +
+            '<span style="font-size:13px;font-weight:500;color:var(--text)">' + from + '</span>' +
+            '<span style="font-size:11px;color:var(--text-muted)">' + dateStr + '</span></div>' +
+            '<div style="font-size:13px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + subject + '</div></div>';
+        }).join('');
+      } catch (e) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger);font-size:13px">' + (e.message || 'Lỗi tải email') + '</div>';
+      }
+    }
+
+    async function openGmailDetail(id) {
+      if (!id) return;
+      _gmailCurrentId = id;
+      const detail = document.getElementById('gmail-detail');
+      detail.style.display = '';
+      document.getElementById('gmail-detail-subject').textContent = 'Đang tải...';
+      document.getElementById('gmail-detail-from').textContent = '';
+      document.getElementById('gmail-detail-body').textContent = '';
+      try {
+        const data = await window.claw.googleGmailRead({ id });
+        document.getElementById('gmail-detail-subject').textContent = data.subject || 'Không có tiêu đề';
+        document.getElementById('gmail-detail-from').textContent = data.from || data.sender || '';
+        document.getElementById('gmail-detail-body').textContent = data.body || data.text || data.snippet || '';
+      } catch (e) {
+        document.getElementById('gmail-detail-body').textContent = 'Lỗi: ' + e.message;
+      }
+    }
+
+    function closeGmailDetail() {
+      document.getElementById('gmail-detail').style.display = 'none';
+      _gmailCurrentId = null;
+    }
+
+    async function submitGmailReply() {
+      if (!_gmailCurrentId) return;
+      const body = document.getElementById('gmail-reply-body').value.trim();
+      if (!body) return;
+      try {
+        const r = await window.claw.googleGmailReply({ id: _gmailCurrentId, body });
+        if (r.error) throw new Error(r.error);
+        document.getElementById('gmail-reply-body').value = '';
+        alert('Đã gửi trả lời');
+      } catch (e) { alert('Lỗi: ' + e.message); }
+    }
+
+    function showGmailComposeModal() { document.getElementById('gmail-compose-modal').style.display = 'flex'; }
+    function hideGmailComposeModal() { document.getElementById('gmail-compose-modal').style.display = 'none'; }
+
+    async function submitGmailCompose() {
+      const to = document.getElementById('gmail-compose-to').value.trim();
+      const subject = document.getElementById('gmail-compose-subject').value.trim();
+      const body = document.getElementById('gmail-compose-body').value.trim();
+      if (!to || !subject || !body) { alert('Vui lòng điền đầy đủ thông tin'); return; }
+      try {
+        const r = await window.claw.googleGmailSend({ to, subject, body });
+        if (r.error) throw new Error(r.error);
+        hideGmailComposeModal();
+        alert('Đã gửi email');
+        loadGmailInbox();
+      } catch (e) { alert('Lỗi gửi email: ' + e.message); }
     }
 
     async function loadGoogleStatus() {

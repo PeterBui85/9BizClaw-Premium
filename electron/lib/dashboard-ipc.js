@@ -4425,6 +4425,23 @@ ipcMain.handle('download-and-install-update', async () => {
     catch (e) { return { error: e.message }; }
   });
 
+  ipcMain.handle('google-gmail-inbox', async (_ev, opts) => {
+    try { return await googleApi.listInbox(opts?.max); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-gmail-read', async (_ev, opts) => {
+    try { return await googleApi.readEmail(opts.id); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-gmail-send', async (_ev, opts) => {
+    try { return await googleApi.sendEmail(opts.to, opts.subject, opts.body); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-gmail-reply', async (_ev, opts) => {
+    try { return await googleApi.replyEmail(opts.id, opts.body); }
+    catch (e) { return { error: e.message }; }
+  });
+
 } // end registerAllIpcHandlers
 
 module.exports = { registerAllIpcHandlers };

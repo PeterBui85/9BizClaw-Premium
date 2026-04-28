@@ -186,9 +186,28 @@ async function getFreeSlots(date, workStart, workEnd, slotMinutes) {
   return { slots };
 }
 
+// --- Gmail ---
+
+async function listInbox(max) {
+  return gogExec(['gmail', 'search', '--query', 'in:inbox', '--max', String(max || 20)]);
+}
+
+async function readEmail(id) {
+  return gogExec(['gmail', 'get', id]);
+}
+
+async function sendEmail(to, subject, body) {
+  return gogExec(['gmail', 'send', '--to', to, '--subject', subject, '--body', body], 30000);
+}
+
+async function replyEmail(id, body) {
+  return gogExec(['gmail', 'reply', id, '--body', body], 30000);
+}
+
 module.exports = {
   getGogBinaryPath, getGogConfigDir, getGogAccount,
   gogExec, gogExecSync, gogSpawnAsync, gogEnv,
   authStatus, registerCredentials, connectAccount, disconnectAccount,
   listEvents, createEvent, deleteEvent, getFreeBusy, getFreeSlots,
+  listInbox, readEmail, sendEmail, replyEmail,
 };

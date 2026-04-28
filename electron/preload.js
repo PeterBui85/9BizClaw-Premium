@@ -146,6 +146,10 @@ contextBridge.exposeInMainWorld('claw', {
   googleCalendarDelete: (opts) => ipcRenderer.invoke('google-calendar-delete', opts),
   googleCalendarFreebusy: (opts) => ipcRenderer.invoke('google-calendar-freebusy', opts || {}),
   googleCalendarFreeSlots: (opts) => ipcRenderer.invoke('google-calendar-free-slots', opts),
+  googleGmailInbox: (opts) => ipcRenderer.invoke('google-gmail-inbox', opts || {}),
+  googleGmailRead: (opts) => ipcRenderer.invoke('google-gmail-read', opts),
+  googleGmailSend: (opts) => ipcRenderer.invoke('google-gmail-send', opts),
+  googleGmailReply: (opts) => ipcRenderer.invoke('google-gmail-reply', opts),
 
   // First-time channel guide
   checkGuideNeeded: (channel) => ipcRenderer.invoke('check-guide-needed', { channel }),

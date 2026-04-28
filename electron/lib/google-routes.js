@@ -28,6 +28,32 @@ module.exports = async function handleGoogleRoute(urlPath, params, req, res, jso
       const r = await googleApi.getFreeSlots(params.date, params.workStart, params.workEnd, params.slotMinutes);
       return jsonResp(res, 200, r);
     }
+    // Gmail
+    if (urlPath === '/gmail/inbox') {
+      const r = await googleApi.listInbox(params.max);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/gmail/read') {
+      if (!params.id) return jsonResp(res, 400, { error: 'id required' });
+      const r = await googleApi.readEmail(params.id);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/gmail/send' || urlPath === '/gmail/reply') {
+      const sourceChannel = req.headers['x-source-channel'] || '';
+      if (sourceChannel.toLowerCase() === 'zalo') {
+        return jsonResp(res, 403, { error: 'Gmail send not allowed from Zalo channel' });
+      }
+    }
+    if (urlPath === '/gmail/send') {
+      if (!params.to || !params.subject || !params.body) return jsonResp(res, 400, { error: 'to, subject, body required' });
+      const r = await googleApi.sendEmail(params.to, params.subject, params.body);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/gmail/reply') {
+      if (!params.id || !params.body) return jsonResp(res, 400, { error: 'id, body required' });
+      const r = await googleApi.replyEmail(params.id, params.body);
+      return jsonResp(res, 200, r);
+    }
     return jsonResp(res, 404, { error: 'unknown google route: ' + urlPath });
   } catch (e) {
     return jsonResp(res, 500, { error: e.message });
