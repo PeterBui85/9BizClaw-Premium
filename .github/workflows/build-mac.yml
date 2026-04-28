@@ -227,15 +227,26 @@ jobs:
             echo "No .dmg found — skipping notarization"
             exit 0
           fi
-          echo "Submitting $DMG for notarization..."
-          xcrun notarytool submit "$DMG" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 30m
-          echo "Stapling notarization ticket..."
-          xcrun stapler staple "$DMG"
-          echo "✓ Notarization complete"
+          for attempt in 1 2 3; do
+            echo "Notarization attempt $attempt/3..."
+            if xcrun notarytool submit "$DMG" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait --timeout 45m; then
+              echo "Stapling notarization ticket..."
+              xcrun stapler staple "$DMG"
+              echo "✓ Notarization complete"
+              exit 0
+            fi
+            echo "Attempt $attempt failed"
+            if [ "$attempt" -lt 3 ]; then
+              echo "Waiting 30s before retry..."
+              sleep 30
+            fi
+          done
+          echo "All 3 notarization attempts failed"
+          exit 1
 
       - name: List dist output
         run: ls -lh dist/ || true
