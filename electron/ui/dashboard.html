@@ -4401,6 +4401,7 @@
     let zaloGroups = [];
     let zaloGroupSummaries = {};
     let zaloMgrConfig = { enabled: true, groupPolicy: 'open', groupAllowFrom: [], userBlocklist: [] };
+    let zaloUserBlocklistTouched = false;
 
     let _zaloRefreshTimer = null;
     function startZaloAutoRefresh() {
@@ -4462,6 +4463,7 @@
         enabled: enabledEl ? enabledEl.checked : (zaloMgrConfig.enabled !== false),
         groupAllowFrom: Array.isArray(zaloMgrConfig.groupAllowFrom) ? [...zaloMgrConfig.groupAllowFrom] : [],
         userBlocklist: Array.isArray(zaloMgrConfig.userBlocklist) ? [...zaloMgrConfig.userBlocklist] : [],
+        userBlocklistTouched: zaloUserBlocklistTouched === true,
         groupSettings: zaloMgrConfig.groupSettings || {},
         strangerPolicy: spEl ? spEl.value : (zaloMgrConfig.strangerPolicy || 'ignore'),
       };
@@ -4502,8 +4504,10 @@
             groupAllowFrom: Array.isArray(draft.groupAllowFrom) ? draft.groupAllowFrom : [],
             userBlocklist: Array.isArray(draft.userBlocklist) ? draft.userBlocklist : [],
           };
+          zaloUserBlocklistTouched = draft.userBlocklistTouched === true;
         } else {
           zaloMgrConfig = config || zaloMgrConfig;
+          zaloUserBlocklistTouched = false;
         }
         // Seed autoSave freshness cache with the just-fetched enabled flag so
         // autoSaveZaloManager can use it without an extra round-trip.
@@ -4701,10 +4705,12 @@
           const payload = { ...zaloMgrConfig, enabled: enabledToUse };
           payload.groupPolicy = 'open';
           payload.groupAllowFrom = ['*'];
+          payload.userBlocklistTouched = zaloUserBlocklistTouched === true;
           const r = await window.claw.saveZaloManagerConfig(payload);
           if (r?.success) {
             showToast('Đã áp dụng ngay', 'info');
             markZmFresh(enabledToUse);
+            if (payload.userBlocklistTouched) zaloUserBlocklistTouched = false;
           } else if (r?.error === 'BOOT_IN_PROGRESS') {
             showToast(r.message || 'Bot đang khởi động, vui lòng đợi vài giây rồi thử lại', 'info');
           } else {
@@ -4879,11 +4885,13 @@
         if (!arr.includes(userId)) arr.push(userId);
       }
       zaloMgrConfig.userBlocklist = arr;
+      zaloUserBlocklistTouched = true;
       updateBlockedCount();
       autoSaveZaloManager();
     }
 
     function toggleAllFriends(checked) {
+      zaloUserBlocklistTouched = true;
       if (checked) {
         zaloMgrConfig.userBlocklist = []; // Empty blocklist = reply to all
       } else {
@@ -4904,12 +4912,14 @@
       zaloMgrConfig.groupPolicy = 'open';
       zaloMgrConfig.groupAllowFrom = ['*'];
       try {
-        const result = await window.claw.saveZaloManagerConfig(zaloMgrConfig);
+        const payload = { ...zaloMgrConfig, userBlocklistTouched: zaloUserBlocklistTouched === true };
+        const result = await window.claw.saveZaloManagerConfig(payload);
         if (result?.success) {
           addActivity('Đã lưu cấu hình Zalo');
           showToast('Đã lưu cấu hình Zalo');
           markZmFresh(zaloMgrConfig.enabled);
           _zaloEnabledSaved = zaloMgrConfig.enabled;
+          if (payload.userBlocklistTouched) zaloUserBlocklistTouched = false;
           try { await loadZaloManagerData(); } catch (e) { console.warn('reload zalo data failed', e); }
         } else if (result?.error === 'BOOT_IN_PROGRESS') {
           addActivity('Bot đang khởi động — chưa lưu được');

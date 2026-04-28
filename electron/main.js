@@ -4,6 +4,7 @@ const fs = require('fs');
 const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
+const { normalizeZaloBlocklist, resolveZaloBlocklistSave } = require('./lib/zalo-settings');
 
 // ============================================
 //  GPU ACCELERATION — disable for Quadro/legacy GPU compatibility
@@ -6917,7 +6918,7 @@ function readZaloChannelState() {
     const bp = getZaloBlocklistPath();
     if (fs.existsSync(bp)) {
       const raw = JSON.parse(fs.readFileSync(bp, 'utf-8'));
-      state.userBlocklist = Array.isArray(raw) ? raw.map(e => String(e?.id || e)) : [];
+      state.userBlocklist = normalizeZaloBlocklist(raw);
     }
   } catch (e) {
     state.blocklistError = e?.message || String(e);
@@ -7536,7 +7537,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
       groupPolicy: zalo.groupPolicy || 'open',
       groupAllowFrom: Array.isArray(zalo.groupAllowFrom) ? zalo.groupAllowFrom.filter(x => x !== '*') : [],
       dmPolicy: zalo.dmPolicy || 'open',
-      userBlocklist: Array.isArray(blocklist) ? blocklist : [],
+      userBlocklist: normalizeZaloBlocklist(blocklist),
       groupSettings,
       strangerPolicy,
     };
@@ -7546,7 +7547,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
 });
 
 let _saveZaloManagerInFlight = false;
-ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, groupSettings, strangerPolicy }) => {
+ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy }) => {
   invalidateZaloFriendsCache(); // PERF: bust friends cache on config save
   const booting = rejectIfBooting('save-zalo-manager-config');
   if (booting) return booting;
@@ -7627,17 +7628,21 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     }
     // 2. Write user blocklist to workspace (bot reads this per AGENTS.md rule)
     const bp = getZaloBlocklistPath();
-    const incomingBl = userBlocklist || [];
-    if (incomingBl.length === 0 && fs.existsSync(bp)) {
-      try {
-        const existing = JSON.parse(fs.readFileSync(bp, 'utf-8'));
-        if (Array.isArray(existing) && existing.length > 0) {
-          console.warn(`[save-zalo-manager] incoming blocklist empty but file has ${existing.length} entries — preserving (backup .bak)`);
-          try { fs.copyFileSync(bp, bp + '.bak'); } catch {}
-        }
-      } catch {}
+    let existingBl = [];
+    try {
+      if (fs.existsSync(bp)) existingBl = JSON.parse(fs.readFileSync(bp, 'utf-8'));
+    } catch {}
+    const blocklistSave = resolveZaloBlocklistSave({
+      existingBlocklist: existingBl,
+      incomingBlocklist: userBlocklist,
+      userBlocklistTouched: userBlocklistTouched === true,
+    });
+    if (blocklistSave.preservedExisting) {
+      console.warn(`[save-zalo-manager] incoming blocklist empty while file has ${blocklistSave.blocklist.length} entries; preserving existing friend settings`);
+      try { fs.copyFileSync(bp, bp + '.bak'); } catch {}
+    } else if (blocklistSave.shouldWrite || !fs.existsSync(bp)) {
+      writeJsonAtomic(bp, blocklistSave.blocklist);
     }
-    writeJsonAtomic(bp, incomingBl);
     // 3. CRIT #5: Persist ALL explicit modes (off/mention/all) — zalo-group-settings.json
     // is the single source of truth used by GROUP-SETTINGS PATCH v2. If user
     // sets 'mention' in Dashboard we must persist it so the patch enforces
