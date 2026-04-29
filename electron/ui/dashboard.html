@@ -2426,7 +2426,7 @@
                   <button class="btn btn-secondary btn-small" style="padding:4px 10px;font-size:11px" onclick="toggleAllFriends(false)">Tắt tất cả</button>
                 </div>
               </div>
-              <input type="text" class="zalo-mgr-search" id="zalo-mgr-friend-search" placeholder="Tìm theo tên..." oninput="renderZaloFriends()" style="flex-shrink:0">
+              <input type="text" class="zalo-mgr-search" id="zalo-mgr-friend-search" placeholder="Tìm theo tên hoặc SĐT..." oninput="renderZaloFriends()" style="flex-shrink:0">
               <div class="zalo-list-container">
                 <div id="zalo-mgr-friends-list"></div>
               </div>
@@ -4856,7 +4856,8 @@
       const list = document.getElementById('zalo-mgr-friends-list');
       const q = (document.getElementById('zalo-mgr-friend-search').value || '').toLowerCase();
       const filtered = zaloFriends.filter(f => !q ||
-        (f.displayName || '').toLowerCase().includes(q)
+        (f.displayName || '').toLowerCase().includes(q) ||
+        String(f.phoneNumber || '').toLowerCase().includes(q)
       );
       if (filtered.length === 0) {
         list.innerHTML = '<div class="zalo-mgr-empty">Không tìm thấy user.</div>';
@@ -4899,7 +4900,9 @@
       }
       updateBlockedCount();
       renderZaloFriends();
-      autoSaveZaloManager();
+      // Bulk friend toggles can represent thousands of IDs. Save immediately
+      // so a fast quit/restart on Mac cannot drop the pending debounce.
+      saveZaloManager();
     }
 
     async function saveZaloManager() {

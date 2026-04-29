@@ -3891,17 +3891,27 @@ async function ensureDefaultConfig() {
     // Seed writable workspace (first run) — copies templates from read-only bundle if packaged
     const ws = seedWorkspace();
 
-    // CAP blocklist at 200 entries — unbounded list = memory/perf risk + abuse vector
+    // Preserve per-friend disable settings even for large Zalo accounts.
+    // A real customer can have 2,800+ friends and "Tat tat ca" legitimately
+    // writes thousands of IDs here. Older builds capped this at 200 on boot,
+    // which made most disabled friends silently turn back on after restart.
+    // Normalize/dedupe only; never truncate user intent.
     const blPath = path.join(ws, 'zalo-blocklist.json');
     if (fs.existsSync(blPath)) {
       try {
         const bl = JSON.parse(fs.readFileSync(blPath, 'utf-8'));
-        if (Array.isArray(bl) && bl.length > 200) {
-          console.warn(`[config] zalo-blocklist.json has ${bl.length} entries — trimming to 200`);
-          fs.writeFileSync(blPath, JSON.stringify(bl.slice(0, 200), null, 2) + '\n');
-          try { auditLog('blocklist_trimmed', { was: bl.length, now: 200 }); } catch {}
+        if (Array.isArray(bl)) {
+          const normalized = normalizeZaloBlocklist(bl);
+          const changedLen = normalized.length !== bl.length;
+          const changedValue = !changedLen && normalized.some((id, idx) => id !== String(bl[idx] ?? '').trim());
+          if (changedLen || changedValue) {
+            writeJsonAtomic(blPath, normalized);
+            console.log(`[config] normalized zalo-blocklist.json entries ${bl.length} -> ${normalized.length}`);
+          }
+        } else {
+          console.warn('[config] zalo-blocklist.json is not an array — preserving file for manual review');
         }
-      } catch (blErr) { console.warn('[config] blocklist cap check failed:', blErr?.message); }
+      } catch (blErr) { console.warn('[config] blocklist normalize check failed:', blErr?.message); }
     }
 
     // Set workspace to the writable dir so gateway reads our AGENTS.md, SOUL.md etc
@@ -4213,6 +4223,7 @@ function rejectIfBooting(handlerName) {
 // Cleared inside the IIFE's finally, NOT by any individual startOpenClaw /
 // stopOpenClaw caller.
 let _gatewayRestartInFlight = false;
+let _gatewayIntentionalStopDepth = 0;
 // [restart-guard A1] Timestamp (ms since epoch) of the last _startOpenClawImpl
 // completion. Heartbeat requires >= 60s since last start before attempting its
 // own restart — otherwise a slow boot looks dead.
@@ -4233,12 +4244,20 @@ async function startOpenClaw(opts = {}) {
   const bonjourUntil = global._bonjourCooldownUntil || 0;
   const networkUntil = global._networkCooldownUntil || 0;
   const cooldownUntil = Math.max(bonjourUntil, networkUntil);
-  if (cooldownUntil > now) {
+  if (cooldownUntil > now && !opts.ignoreCooldown) {
     const remaining = Math.ceil((cooldownUntil - now) / 1000);
     const reason = bonjourUntil >= networkUntil ? 'bonjour' : 'network';
     console.log(`[startOpenClaw] ${reason} cooldown active — skipping (${remaining}s remaining)`);
     return;
   }
+  if (cooldownUntil > now && opts.ignoreCooldown) {
+    console.log('[startOpenClaw] cooldown ignored for explicit gateway restart');
+  }
+  // OpenClaw snapshots bootstrap files per sessionKey. The Telegram confirm
+  // turn can reuse that cached AGENTS.md, so the local API token must be
+  // generated and injected before the gateway can process its first message.
+  try { seedWorkspace(); } catch (e) { console.error('[startOpenClaw] seedWorkspace preflight error:', e?.message || e); }
+  try { startCronApi(); } catch (e) { console.error('[startOpenClaw] startCronApi preflight error:', e?.message || e); }
   _startOpenClawInFlight = true;
   try {
     const r = await _startOpenClawImpl(opts);
@@ -5063,6 +5082,10 @@ async function _startOpenClawImpl(opts = {}) {
 
     // Don't auto-restart if app is quitting
     if (app.isQuitting) return;
+    if (_gatewayIntentionalStopDepth > 0 || _gatewayRestartInFlight) {
+      console.log('[restart-guard] gateway exit is intentional — caller owns restart');
+      return;
+    }
 
     const isRestart = lastError?.includes('restart') || lastError?.includes('SIGUSR1');
     const isBonjourConflict = lastError?.includes('bonjour') && lastError?.includes('non-announced');
@@ -5195,30 +5218,37 @@ async function stopOpenClaw() {
   const proc = openclawProcess;
   openclawProcess = null;
   const startedAt = Date.now();
+  _gatewayIntentionalStopDepth++;
   if (proc) {
     try {
-      if (process.platform === 'win32') {
-        try { spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' }); } catch {}
-      } else {
-        try { proc.kill('SIGINT'); } catch {}
-      }
-    } catch {}
-    // Await actual exit — or give up after 5s and force-kill again.
-    await new Promise((resolve) => {
-      let done = false;
-      const finish = () => { if (done) return; done = true; resolve(); };
-      try { proc.once('exit', finish); } catch { return finish(); }
-      setTimeout(() => {
-        if (done) return;
+      try {
         if (process.platform === 'win32') {
           try { spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' }); } catch {}
         } else {
-          try { proc.kill('SIGKILL'); } catch {}
+          try { proc.kill('SIGINT'); } catch {}
         }
-        // Wait one more tick, then resolve regardless.
-        setTimeout(finish, 500);
-      }, 5000);
-    });
+      } catch {}
+      // Await actual exit — or give up after 5s and force-kill again.
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; resolve(); };
+        try { proc.once('exit', finish); } catch { return finish(); }
+        setTimeout(() => {
+          if (done) return;
+          if (process.platform === 'win32') {
+            try { spawn('taskkill', ['/pid', proc.pid.toString(), '/f', '/t'], { stdio: 'ignore' }); } catch {}
+          } else {
+            try { proc.kill('SIGKILL'); } catch {}
+          }
+          // Wait one more tick, then resolve regardless.
+          setTimeout(finish, 500);
+        }, 5000);
+      });
+    } finally {
+      _gatewayIntentionalStopDepth = Math.max(0, _gatewayIntentionalStopDepth - 1);
+    }
+  } else {
+    _gatewayIntentionalStopDepth = Math.max(0, _gatewayIntentionalStopDepth - 1);
   }
   // Kill adopted/orphan gateway on the port + any lingering openclaw/openzca processes
   try { killPort(18789); } catch {}
@@ -6960,8 +6990,8 @@ function isKnownZaloTarget(targetId, { isGroup = false, profile } = {}) {
       const known = arr.some(g => String(g.groupId || g.id || '') === String(targetId));
       return { known, reason: known ? null : 'group-not-in-cache' };
     }
-    const arr = Array.isArray(data) ? data : [];
-    const known = arr.some(f => String(f.userId || f.userKey || '') === String(targetId));
+    const arr = Array.isArray(data) ? data : (Array.isArray(data?.friends) ? data.friends : []);
+    const known = arr.some(f => String(f.userId || f.uid || f.id || f.userKey || '') === String(targetId));
     return { known, reason: known ? null : 'user-not-in-cache' };
   } catch (e) {
     return { known: false, reason: 'cache-error', error: e?.message || String(e) };
@@ -6983,9 +7013,10 @@ ipcMain.handle('list-zalo-friends', async () => {
     const p = path.join(getZcaCacheDir(), 'friends.json');
     if (!fs.existsSync(p)) return [];
     const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const friends = Array.isArray(data) ? data : (Array.isArray(data?.friends) ? data.friends : []);
     // Normalize — only return fields the UI needs
-    const result = (Array.isArray(data) ? data : []).map(f => ({
-      userId: String(f.userId || f.userKey || ''),
+    const result = friends.map(f => ({
+      userId: String(f.userId || f.uid || f.id || f.userKey || ''),
       displayName: f.displayName || f.zaloName || f.username || '(không tên)',
       avatar: f.avatar || '',
       phoneNumber: f.phoneNumber || '',
@@ -7482,17 +7513,64 @@ function hardenSensitiveFilePerms() {
 
 function getZaloBlocklistPath() { return path.join(getWorkspace(), 'zalo-blocklist.json'); }
 
-function cleanBlocklist() {
+function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy }) {
+  const bp = getZaloBlocklistPath();
+  let existingBl = [];
   try {
-    const blPath = getZaloBlocklistPath();
-    if (!fs.existsSync(blPath)) return;
-    const bl = JSON.parse(fs.readFileSync(blPath, 'utf-8'));
-    if (!Array.isArray(bl) || bl.length === 0) return;
-    fs.writeFileSync(blPath, '[]', 'utf-8');
-    console.log(`[blocklist] cleared ${bl.length} entries (legacy seed — settings control deny now)`);
-  } catch (e) {
-    console.warn('[blocklist] cleanup error:', e?.message);
+    if (fs.existsSync(bp)) existingBl = JSON.parse(fs.readFileSync(bp, 'utf-8'));
+  } catch {}
+  const blocklistSave = resolveZaloBlocklistSave({
+    existingBlocklist: existingBl,
+    incomingBlocklist: userBlocklist,
+    userBlocklistTouched: userBlocklistTouched === true,
+  });
+  if (blocklistSave.preservedExisting) {
+    console.warn(`[save-zalo-manager] incoming blocklist empty while file has ${blocklistSave.blocklist.length} entries; preserving existing friend settings`);
+    try { fs.copyFileSync(bp, bp + '.bak'); } catch {}
+  } else if (blocklistSave.shouldWrite || !fs.existsSync(bp)) {
+    writeJsonAtomic(bp, blocklistSave.blocklist);
   }
+
+  if (groupSettings && typeof groupSettings === 'object') {
+    const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
+    let existing = {};
+    try {
+      if (fs.existsSync(gsPath)) existing = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {};
+      if (typeof existing !== 'object' || Array.isArray(existing)) existing = {};
+    } catch {}
+    let oldExisting = {};
+    try { oldExisting = JSON.parse(JSON.stringify(existing)); } catch {}
+    for (const [gid, gs] of Object.entries(groupSettings)) {
+      if (!gs || !gs.mode) continue;
+      if (!['off', 'mention', 'all'].includes(gs.mode)) continue;
+      const sanitized = { mode: gs.mode };
+      if (gs.internal === true) sanitized.internal = true;
+      existing[gid] = sanitized;
+    }
+    try {
+      for (const gid of Object.keys(existing)) {
+        const wasInternal = oldExisting[gid]?.internal === true;
+        const isInternal = existing[gid]?.internal === true;
+        if (wasInternal !== isInternal) {
+          auditLog('group-internal-change', { groupId: gid, internal: isInternal, ts: Date.now() });
+        }
+      }
+    } catch {}
+    if (Object.keys(existing).length > 0) {
+      writeJsonAtomic(gsPath, existing);
+    }
+  }
+
+  if (strangerPolicy !== undefined) {
+    const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
+    if (strangerPolicy) {
+      writeJsonAtomic(spPath, { mode: strangerPolicy });
+    } else if (fs.existsSync(spPath)) {
+      try { fs.unlinkSync(spPath); } catch {}
+    }
+  }
+
+  return { blocklistLength: blocklistSave.blocklist.length };
 }
 
 ipcMain.handle('get-zalo-manager-config', async () => {
@@ -7551,7 +7629,44 @@ let _saveZaloManagerInFlight = false;
 ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy }) => {
   invalidateZaloFriendsCache(); // PERF: bust friends cache on config save
   const booting = rejectIfBooting('save-zalo-manager-config');
-  if (booting) return booting;
+  if (booting) {
+    // Disabling Zalo must fail closed even during gateway boot. Logs from Mac
+    // customers showed this handler returning BOOT_IN_PROGRESS, leaving the
+    // currently loading OpenZalo listener able to answer until the next save.
+    if (enabled === false) {
+      _ipcInFlightCount++;
+      try {
+        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy });
+        const off = await forceDisableZaloFailClosed('manager-disabled-while-booting');
+        return {
+          success: off.pauseOk || off.configOk || off.stickyOk,
+          booting: true,
+          pendingRestart: true,
+          blocklistLength: realtime.blocklistLength,
+          message: 'Đã tắt Zalo ngay. App đang khởi động nên gateway sẽ áp dụng đầy đủ sau khi xong.',
+        };
+      } finally {
+        _ipcInFlightCount--;
+      }
+    }
+    if (userBlocklistTouched === true || groupSettings || strangerPolicy !== undefined) {
+      if (enabled !== false && isZaloChannelEnabled() === false) return booting;
+      _ipcInFlightCount++;
+      try {
+        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy });
+        return {
+          success: true,
+          booting: true,
+          realtimeOnly: true,
+          blocklistLength: realtime.blocklistLength,
+          message: 'Đã lưu danh sách Zalo. Bot đang khởi động nên phần bật/tắt kênh sẽ áp dụng sau.',
+        };
+      } finally {
+        _ipcInFlightCount--;
+      }
+    }
+    return booting;
+  }
   // Double-click guard: a rapid 2nd save before the 1st completes would
   // read the same prev snapshot, both compute identical diffs, both try
   // to restart gateway → two concurrent stopOpenClaw calls racing.
@@ -7616,9 +7731,12 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       // so "Tắt Zalo" is a real hard-off (gateway won't even load plugin
       // on next boot). ensureDefaultConfig syncs this too but doing it here
       // ensures the in-memory flip propagates immediately.
-      if (cfg.plugins?.entries?.openzalo) {
-        cfg.plugins.entries.openzalo.enabled = newEnabled;
+      if (!cfg.plugins) cfg.plugins = {};
+      if (!cfg.plugins.entries) cfg.plugins.entries = {};
+      if (!cfg.plugins.entries.openzalo || typeof cfg.plugins.entries.openzalo !== 'object') {
+        cfg.plugins.entries.openzalo = {};
       }
+      cfg.plugins.entries.openzalo.enabled = newEnabled;
       writeOpenClawConfigIfChanged(configPath, cfg);
     }
     let gateOk = true;
@@ -7627,80 +7745,9 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       gateOk = clearChannelPermanentPause('zalo');
       markOnboardingComplete('zalo-manager-enable');
     }
-    // 2. Write user blocklist to workspace (bot reads this per AGENTS.md rule)
-    const bp = getZaloBlocklistPath();
-    let existingBl = [];
-    try {
-      if (fs.existsSync(bp)) existingBl = JSON.parse(fs.readFileSync(bp, 'utf-8'));
-    } catch {}
-    const blocklistSave = resolveZaloBlocklistSave({
-      existingBlocklist: existingBl,
-      incomingBlocklist: userBlocklist,
-      userBlocklistTouched: userBlocklistTouched === true,
-    });
-    if (blocklistSave.preservedExisting) {
-      console.warn(`[save-zalo-manager] incoming blocklist empty while file has ${blocklistSave.blocklist.length} entries; preserving existing friend settings`);
-      try { fs.copyFileSync(bp, bp + '.bak'); } catch {}
-    } else if (blocklistSave.shouldWrite || !fs.existsSync(bp)) {
-      writeJsonAtomic(bp, blocklistSave.blocklist);
-    }
-    // 3. CRIT #5: Persist ALL explicit modes (off/mention/all) — zalo-group-settings.json
-    // is the single source of truth used by GROUP-SETTINGS PATCH v2. If user
-    // sets 'mention' in Dashboard we must persist it so the patch enforces
-    // @mention gating (not openzalo native which we bypassed above).
-    //
-    // CRITICAL FIX (user report 2026-04-17): Previously this REPLACED the
-    // whole file on every save, and DELETED it if incoming groupSettings was
-    // empty. That caused settings to be wiped whenever Dashboard sent partial
-    // or empty state (e.g., user saves with only stranger policy changed →
-    // groupSettings unchanged in UI but sent as-is → wiped other modes).
-    //
-    // New behavior: MERGE incoming into existing. Never delete file on empty
-    // input. User's only way to reset a mode is to change it explicitly via
-    // the dropdown.
-    if (groupSettings && typeof groupSettings === 'object') {
-      const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
-      let existing = {};
-      try {
-        if (fs.existsSync(gsPath)) existing = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {};
-        if (typeof existing !== 'object' || Array.isArray(existing)) existing = {};
-      } catch {}
-      // Read old file for audit diff before mutating
-      let oldExisting = {};
-      try { oldExisting = JSON.parse(JSON.stringify(existing)); } catch {}
-      for (const [gid, gs] of Object.entries(groupSettings)) {
-        if (!gs || !gs.mode) continue;
-        if (!['off', 'mention', 'all'].includes(gs.mode)) continue;
-        const sanitized = { mode: gs.mode };
-        if (gs.internal === true) sanitized.internal = true;
-        existing[gid] = sanitized;
-      }
-      // Audit log internal flag changes
-      try {
-        for (const gid of Object.keys(existing)) {
-          const wasInternal = oldExisting[gid]?.internal === true;
-          const isInternal = existing[gid]?.internal === true;
-          if (wasInternal !== isInternal) {
-            auditLog('group-internal-change', { groupId: gid, internal: isInternal, ts: Date.now() });
-          }
-        }
-      } catch {}
-      if (Object.keys(existing).length > 0) {
-        writeJsonAtomic(gsPath, existing);
-      }
-    }
-    // 4. Write stranger policy to workspace — mirror groupSettings pattern:
-    // if no explicit strangerPolicy provided, REMOVE file so patch falls back
-    // to plugin default (prevents stale policy file leaking after CEO clears
-    // the field in Dashboard).
-    {
-      const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
-      if (strangerPolicy) {
-        writeJsonAtomic(spPath, { mode: strangerPolicy });
-      } else if (fs.existsSync(spPath)) {
-        try { fs.unlinkSync(spPath); } catch {}
-      }
-    }
+    // 2-4. Workspace files are read realtime by inbound.ts patches, so save
+    // them independently from gateway restart mechanics.
+    saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy });
     // 5. Hard gateway restart ONLY when openzalo enabled flag actually flipped.
     // This is the only field that requires full gateway reload — the plugin
     // loader decides at boot whether to register openzalo + spawn openzca
@@ -7737,7 +7784,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
             console.log('[restart-guard] save-zalo-manager: hard-restart begin');
             try { await stopOpenClaw(); } catch (e1) { console.warn('[save-zalo-manager] stop failed:', e1?.message); }
             await new Promise(r => setTimeout(r, 2000));
-            try { await startOpenClaw(); } catch (e2) { console.warn('[save-zalo-manager] start failed:', e2?.message); }
+            try { await startOpenClaw({ ignoreCooldown: true }); } catch (e2) { console.warn('[save-zalo-manager] start failed:', e2?.message); }
             global._zaloListenerMissStreak = 0;
             console.log('[restart-guard] save-zalo-manager: hard-restart end');
           } finally {
@@ -9649,6 +9696,51 @@ function clearChannelPermanentPause(channel) {
   }
 }
 
+async function forceDisableZaloFailClosed(source = 'manager-disabled') {
+  const pauseOk = setChannelPermanentPause('zalo', source);
+  let configOk = false;
+  let stickyOk = false;
+
+  try {
+    await withOpenClawConfigLock(async () => {
+      const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
+      const openclawDir = path.dirname(configPath);
+      try { fs.mkdirSync(openclawDir, { recursive: true }); } catch {}
+
+      try {
+        const stickyPath = path.join(openclawDir, 'modoroclaw-sticky-zalo-enabled.json');
+        writeJsonAtomic(stickyPath, { enabled: false, ts: Date.now(), source });
+        stickyOk = true;
+      } catch (e) {
+        console.warn('[zalo] fail-closed sticky write error:', e?.message);
+      }
+
+      if (!fs.existsSync(configPath)) return;
+      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (!cfg.channels) cfg.channels = {};
+      if (!cfg.channels.openzalo || typeof cfg.channels.openzalo !== 'object') {
+        cfg.channels.openzalo = {};
+      }
+      cfg.channels.openzalo.enabled = false;
+
+      if (!cfg.plugins) cfg.plugins = {};
+      if (!cfg.plugins.entries) cfg.plugins.entries = {};
+      if (!cfg.plugins.entries.openzalo || typeof cfg.plugins.entries.openzalo !== 'object') {
+        cfg.plugins.entries.openzalo = {};
+      }
+      cfg.plugins.entries.openzalo.enabled = false;
+
+      writeOpenClawConfigIfChanged(configPath, cfg);
+      configOk = true;
+    });
+  } catch (e) {
+    console.error('[zalo] fail-closed disable error:', e?.message || e);
+  }
+
+  auditLog('zalo_fail_closed_disabled', { source, pauseOk, configOk, stickyOk });
+  return { pauseOk, configOk, stickyOk };
+}
+
 function isZaloChannelEnabled() {
   try {
     const configPath = path.join(HOME, '.openclaw', 'openclaw.json');
@@ -9682,11 +9774,17 @@ function setZaloChannelEnabled(enabled) {
         cfg.channels.openzalo = {};
       }
       const next = enabled !== false;
-      if (cfg.channels.openzalo.enabled === next) return true;
+      if (!cfg.plugins) cfg.plugins = {};
+      if (!cfg.plugins.entries) cfg.plugins.entries = {};
+      if (!cfg.plugins.entries.openzalo || typeof cfg.plugins.entries.openzalo !== 'object') {
+        cfg.plugins.entries.openzalo = {};
+      }
+      if (cfg.channels.openzalo.enabled === next && cfg.plugins.entries.openzalo.enabled === next) return true;
       cfg.channels.openzalo.enabled = next;
+      cfg.plugins.entries.openzalo.enabled = next;
       try {
         const stickyPath = path.join(HOME, '.openclaw', 'modoroclaw-sticky-zalo-enabled.json');
-        fs.writeFileSync(stickyPath, JSON.stringify({ enabled: next, ts: Date.now() }), 'utf-8');
+        writeJsonAtomic(stickyPath, { enabled: next, ts: Date.now() });
       } catch (e) { console.warn('[zalo] sticky write error:', e?.message); }
       return writeOpenClawConfigIfChanged(configPath, cfg);
     } catch (e) {
@@ -11039,7 +11137,7 @@ ipcMain.handle('resume-zalo', async () => {
               console.log('[restart-guard] resume-zalo: hard-restart begin');
               try { await stopOpenClaw(); } catch (e1) { console.warn('[resume-zalo] stop failed:', e1?.message); }
               await new Promise(r => setTimeout(r, 5000));
-              try { await startOpenClaw(); } catch (e2) { console.warn('[resume-zalo] start failed:', e2?.message); }
+              try { await startOpenClaw({ ignoreCooldown: true }); } catch (e2) { console.warn('[resume-zalo] start failed:', e2?.message); }
               // [zalo-watchdog rearm] Post-restart: wipe any pre-restart miss
               // streak so next heartbeat miss doesn't immediately re-trip cap.
               global._zaloListenerMissStreak = 0;
@@ -12445,6 +12543,11 @@ function startCronApi() {
     const publicEndpoints = ['/api/cron/list', '/api/workspace/read', '/api/workspace/list'];
     const needsToken = !publicEndpoints.includes(urlPath);
     if (needsToken && params.token !== _cronApiToken) {
+      console.warn('[cron-api] auth failed:', {
+        path: urlPath,
+        tokenPresent: !!params.token,
+        tokenLength: params.token ? String(params.token).length : 0,
+      });
       return jsonResp(res, 403, { error: 'invalid or missing token' });
     }
 

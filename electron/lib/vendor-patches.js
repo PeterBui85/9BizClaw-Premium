@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const OPENZALO_FORK_VERSION = 'fork-v24-partial-hex-filter';
+const OPENZALO_FORK_VERSION = 'fork-v25-large-friend-settings';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -347,9 +347,10 @@ function ensureOpenzcaFriendEventFix(vendorDir, workspaceDir) {
                     const __welOs = require("os");
                     const cachePath = __welPath.join(__welOs.homedir(), ".openzca", "profiles", "default", "cache", "friends.json");
                     if (__welFs.existsSync(cachePath)) {
-                      const friends = JSON.parse(__welFs.readFileSync(cachePath, "utf-8"));
+                      const parsedFriends = JSON.parse(__welFs.readFileSync(cachePath, "utf-8"));
+                      const friends = Array.isArray(parsedFriends) ? parsedFriends : (Array.isArray(parsedFriends && parsedFriends.friends) ? parsedFriends.friends : []);
                       if (Array.isArray(friends)) {
-                        const match = friends.find(f => String(f.userId || f.uid || f.id || "").trim() === String(newFriendUid).trim());
+                        const match = friends.find(f => String(f.userId || f.uid || f.id || f.userKey || "").trim() === String(newFriendUid).trim());
                         if (match) friendName = String(match.displayName || match.name || match.zaloName || "").trim();
                       }
                     }

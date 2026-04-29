@@ -1073,11 +1073,12 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
           if (__fcFs.existsSync(__fcCachePath)) {
             __fcCacheExists = true;
             const __fcRaw = __fcFs.readFileSync(__fcCachePath, "utf-8");
-            const __fcFriends = JSON.parse(__fcRaw);
+            const __fcParsed = JSON.parse(__fcRaw);
+            const __fcFriends = Array.isArray(__fcParsed) ? __fcParsed : (Array.isArray(__fcParsed?.friends) ? __fcParsed.friends : []);
             if (Array.isArray(__fcFriends)) {
               __fcFriendsCount = __fcFriends.length;
               __fcIsFriend = __fcFriends.some((__f: any) =>
-                String(__f?.userId || __f?.uid || __f?.id || "").trim() === __fcSender,
+                String(__f?.userId || __f?.uid || __f?.id || __f?.userKey || "").trim() === __fcSender,
               );
             }
           }
