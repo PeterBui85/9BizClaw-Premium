@@ -867,6 +867,9 @@ section('Google Workspace setup guide');
     'https://console.cloud.google.com/apis/api/drive.googleapis.com',
     'https://console.cloud.google.com/apis/api/people.googleapis.com',
     'https://console.cloud.google.com/apis/api/tasks.googleapis.com',
+    'https://console.cloud.google.com/apis/api/sheets.googleapis.com',
+    'https://console.cloud.google.com/apis/api/docs.googleapis.com',
+    'https://console.cloud.google.com/apis/api/script.googleapis.com',
     'https://console.cloud.google.com/auth/branding',
     'https://console.cloud.google.com/auth/audience',
     'https://console.cloud.google.com/auth/clients',
@@ -889,6 +892,30 @@ section('Google Workspace setup guide');
     pass('Google Workspace setup guide: copy, links, and openExternal allowlist verified');
   }
 }
+
+section('Google Workspace API coverage');
+try {
+  const googleApiSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'google-api.js'), 'utf-8');
+  const googleRoutesSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'google-routes.js'), 'utf-8');
+  const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+  const agentsSrc = fs.readFileSync(path.join(templateRoot, 'AGENTS.md'), 'utf-8');
+  const requiredGoogleBits = [
+    [googleApiSrc, 'serviceHealth', 'google-api serviceHealth export'],
+    [googleApiSrc, 'readDoc', 'google-api readDoc wrapper'],
+    [googleRoutesSrc, '/health', 'google health route'],
+    [googleRoutesSrc, '/docs/read', 'google docs read route'],
+    [googleRoutesSrc, '/docs/write', 'google docs write route'],
+    [preloadSrc, 'googleDocsRead', 'preload Google Docs bridge'],
+    [agentsSrc, '/api/google/health', 'AGENTS Google health instruction'],
+    [agentsSrc, '/api/google/docs/read', 'AGENTS Google Docs instruction'],
+  ];
+  const missing = requiredGoogleBits.filter(([src, needle]) => !src.includes(needle));
+  if (missing.length) {
+    for (const [, , label] of missing) fail('Google Workspace API coverage', `${label} missing`);
+  } else {
+    pass('Google Workspace API coverage: health + Docs routes + bot instructions verified');
+  }
+} catch (e) { fail('Google Workspace API coverage', 'source read failed: ' + e.message); }
 
 section('Module contracts');
 function checkModuleContracts() {

@@ -21,8 +21,14 @@ module.exports.isHomedirPathSafe = isHomedirPathSafe;
 
 async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
   try {
+    const sourceChannel = (req.headers['x-source-channel'] || '').toLowerCase();
+    const isZalo = sourceChannel === 'zalo';
+
     if (urlPath === '/status') {
       return jsonResp(res, 200, await googleApi.authStatus());
+    }
+    if (urlPath === '/health') {
+      return jsonResp(res, 200, await googleApi.serviceHealth());
     }
     if (urlPath === '/calendar/events') {
       const r = await googleApi.listEvents(params.from, params.to, params.calendarId);
@@ -90,6 +96,57 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
     if (urlPath === '/drive/share') {
       if (!params.fileId || !params.email) return jsonResp(res, 400, { error: 'fileId and email required' });
       const r = await googleApi.shareFile(params.fileId, params.email, params.role);
+      return jsonResp(res, 200, r);
+    }
+    // Docs
+    if (urlPath === '/docs/list') {
+      const r = await googleApi.listDocs(params.max);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/info') {
+      if (!params.docId) return jsonResp(res, 400, { error: 'docId required' });
+      const r = await googleApi.getDocInfo(params.docId);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/read') {
+      if (!params.docId) return jsonResp(res, 400, { error: 'docId required' });
+      const r = await googleApi.readDoc(params.docId, params);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/create') {
+      if (isZalo) return jsonResp(res, 403, { error: 'Google Docs create not allowed from Zalo channel' });
+      if (!params.title) return jsonResp(res, 400, { error: 'title required' });
+      if (params.file && !isHomedirPathSafe(params.file)) return jsonResp(res, 403, { error: 'file blocked by path validation' });
+      const r = await googleApi.createDoc(params.title, params);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/write') {
+      if (isZalo) return jsonResp(res, 403, { error: 'Google Docs write not allowed from Zalo channel' });
+      if (!params.docId) return jsonResp(res, 400, { error: 'docId required' });
+      if (params.text === undefined && !params.file) return jsonResp(res, 400, { error: 'text or file required' });
+      if (params.file && !isHomedirPathSafe(params.file)) return jsonResp(res, 403, { error: 'file blocked by path validation' });
+      const r = await googleApi.writeDoc(params.docId, params);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/insert') {
+      if (isZalo) return jsonResp(res, 403, { error: 'Google Docs insert not allowed from Zalo channel' });
+      if (!params.docId) return jsonResp(res, 400, { error: 'docId required' });
+      if (params.content === undefined && !params.file) return jsonResp(res, 400, { error: 'content or file required' });
+      if (params.file && !isHomedirPathSafe(params.file)) return jsonResp(res, 403, { error: 'file blocked by path validation' });
+      const r = await googleApi.insertDoc(params.docId, params.content, params);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/find-replace') {
+      if (isZalo) return jsonResp(res, 403, { error: 'Google Docs find-replace not allowed from Zalo channel' });
+      if (!params.docId || !params.find) return jsonResp(res, 400, { error: 'docId and find required' });
+      if (params.contentFile && !isHomedirPathSafe(params.contentFile)) return jsonResp(res, 403, { error: 'contentFile blocked by path validation' });
+      const r = await googleApi.findReplaceDoc(params.docId, params.find, params.replace, params);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/docs/export') {
+      if (!params.docId) return jsonResp(res, 400, { error: 'docId required' });
+      if (params.out && !isHomedirPathSafe(params.out)) return jsonResp(res, 403, { error: 'out blocked by path validation' });
+      const r = await googleApi.exportDoc(params.docId, params);
       return jsonResp(res, 200, r);
     }
     // Contacts

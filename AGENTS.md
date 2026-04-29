@@ -212,7 +212,7 @@ Quy trình: đọc INDEX → match keyword → đọc file skill → output theo
 
 ## Google Workspace
 
-Bot có thể truy cập Google Calendar, Gmail, Drive, Contacts, Tasks, Sheets và Apps Script của CEO qua local API.
+Bot có thể truy cập Google Calendar, Gmail, Drive, Docs, Contacts, Tasks, Sheets và Apps Script của CEO qua local API.
 Dùng web_fetch gọi http://127.0.0.1:20200/api/google/*.
 
 Xác thực: thêm query param `token=<token>`.
@@ -220,6 +220,7 @@ Xác thực: thêm query param `token=<token>`.
 
 Routes (thêm `?token=<token>` vào mọi URL):
 - GET /api/google/status — kiểm tra trạng thái kết nối
+- GET /api/google/health — kiểm tra từng dịch vụ Calendar/Gmail/Drive/Docs/Contacts/Tasks/Sheets. Nếu service báo `accessNotConfigured` hoặc "has not been used in project" thì báo CEO bật đúng Google API trong Google Cloud, KHÔNG nói đã sẵn sàng.
 - GET /api/google/calendar/events?from=ISO&to=ISO — lịch theo khoảng thời gian
 - POST /api/google/calendar/create body: {summary, start, end, attendees?} — tạo sự kiện
 - POST /api/google/calendar/delete body: {eventId} — xóa sự kiện
@@ -234,6 +235,14 @@ Routes (thêm `?token=<token>` vào mọi URL):
 - POST /api/google/drive/upload body: {filePath, folderId?} — upload file
 - POST /api/google/drive/download body: {fileId, destPath, format?} — download/export file
 - POST /api/google/drive/share body: {fileId, email, role?} — chia sẻ file
+- GET /api/google/docs/list?max=20 — liệt kê Google Docs gần đây trong Drive
+- GET /api/google/docs/info?docId=<id> — xem thông tin Google Doc
+- GET /api/google/docs/read?docId=<id>&maxBytes=200000 — đọc nội dung Google Doc
+- POST /api/google/docs/create body: {title, parent?, file?, pageless?} — tạo Google Doc
+- POST /api/google/docs/write body: {docId, text?, file?, append?, replace?, markdown?, tabId?} — ghi nội dung Google Doc
+- POST /api/google/docs/insert body: {docId, content?, file?, index?, tabId?} — chèn nội dung vào Google Doc
+- POST /api/google/docs/find-replace body: {docId, find, replace?, first?, matchCase?, tabId?} — tìm và thay thế trong Google Doc
+- POST /api/google/docs/export body: {docId, out?, format?} — export Google Doc
 - GET /api/google/contacts/search?query=<q> — tìm liên hệ
 - POST /api/google/contacts/create body: {name, phone?, email?} — tạo liên hệ
 - GET /api/google/tasks/lists — danh sách task lists
@@ -261,6 +270,8 @@ Ví dụ mapping:
 - "email mới" → GET /api/google/gmail/inbox?token=<token>
 - "gửi email cho X nội dung Y" → POST /api/google/gmail/send
 - "tìm file báo cáo" → GET /api/google/drive/list?token=<token>&query=báo+cáo
+- "tóm tắt Google Doc" → GET /api/google/docs/read?token=<token>&docId=<id>&maxBytes=200000 rồi tóm tắt
+- "tạo Google Doc" → POST /api/google/docs/create rồi POST /api/google/docs/write nếu cần ghi nội dung
 - "danh sách Google Sheet gần đây" → GET /api/google/sheets/list?token=<token>&max=20
 - "đọc sheet đơn hàng" → GET /api/google/sheets/get?token=<token>&spreadsheetId=<id>&range=Orders!A1:H50
 - "thêm dòng vào sheet" → POST /api/google/sheets/append
@@ -276,6 +287,13 @@ Google Sheet link flow — BẮT BUỘC:
 - Trước khi đọc dữ liệu, gọi `GET /api/google/sheets/metadata?token=<token>&spreadsheetId=<id>` để lấy tên tab thật.
 - Nếu CEO không nói tab/range, đọc tab đầu tiên bằng range `<Tên tab đầu tiên>!A1:Z50` (quote tên tab nếu có khoảng trắng/ký tự đặc biệt).
 - Nếu CEO hỏi “có danh sách các sheet không” hoặc chọn “danh sách gần đây”, gọi `GET /api/google/sheets/list?token=<token>&max=20`, không dùng query tự chế như `type:spreadsheet`.
+
+Google Docs link flow — BẮT BUỘC:
+- Nếu CEO gửi link `docs.google.com/document/d/<id>/...`, trích `<id>` rồi dùng local API `/api/google/docs/*` với `token=<token>`. KHÔNG web_fetch trực tiếp link Google Doc và KHÔNG yêu cầu CEO bật chia sẻ công khai khi Google Workspace đã kết nối.
+- Nếu CEO không nói phần cần đọc, gọi `GET /api/google/docs/read?token=<token>&docId=<id>&maxBytes=200000`.
+- Nếu đọc/sửa thất bại do `accessNotConfigured`, báo CEO bật Google Docs API hoặc Drive API trong Google Cloud project của OAuth client.
+
+Nếu thao tác Contacts lỗi `People API has not been used in project` hoặc `accessNotConfigured`, báo CEO bật People API. Nếu thao tác Tasks lỗi tương tự, báo CEO bật Google Tasks API. Không yêu cầu CEO kết nối lại nếu `/api/google/status` vẫn connected.
 
 KHÔNG BAO GIỜ gửi email hoặc tạo sự kiện từ Zalo. Chỉ thực hiện khi CEO
 yêu cầu trực tiếp qua Telegram. Nếu Zalo hỏi về email/lịch: trả lời thông

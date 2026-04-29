@@ -3116,13 +3116,14 @@
       <div class="page" id="page-google">
         <div class="page-header">
           <span class="page-icon" data-icon="calendar" data-icon-size="26"></span>
-          <div><h2>Google Workspace</h2><div class="page-sub">Calendar, Gmail, Drive, Contacts, Tasks</div></div>
+          <div><h2>Google Workspace</h2><div class="page-sub">Calendar, Gmail, Drive, Docs, Contacts, Tasks</div></div>
         </div>
         <!-- Internal tab bar -->
         <div class="gw-tabs" style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin:0 0 24px">
           <button class="gw-tab active" data-gw="calendar" onclick="switchGwTab('calendar')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Lịch</button>
           <button class="gw-tab" data-gw="gmail" onclick="switchGwTab('gmail')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Email</button>
           <button class="gw-tab" data-gw="drive" onclick="switchGwTab('drive')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Tài liệu</button>
+          <button class="gw-tab" data-gw="docs" onclick="switchGwTab('docs')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Docs</button>
           <button class="gw-tab" data-gw="sheets" onclick="switchGwTab('sheets')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Sheets</button>
           <button class="gw-tab" data-gw="contacts" onclick="switchGwTab('contacts')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Liên hệ</button>
           <button class="gw-tab" data-gw="tasks" onclick="switchGwTab('tasks')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Công việc</button>
@@ -3233,6 +3234,29 @@
           <div id="drive-list" style="display:flex;flex-direction:column;gap:4px"></div>
           <div id="drive-empty" style="display:none;padding:60px 20px;text-align:center;color:var(--text-muted)">
             <p style="margin:0;font-size:14px">Không có file nào</p>
+          </div>
+        </div>
+        <div class="gw-panel" id="gw-docs" style="display:none">
+          <div class="gw-grid">
+            <div class="gw-card">
+              <h3 style="margin:0 0 12px;font-size:15px;font-weight:600;color:var(--text)">Đọc và sửa Google Doc</h3>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+                <span style="font-size:12px;color:var(--text-muted)">Docs gần đây</span>
+                <button class="btn btn-secondary btn-small" onclick="loadRecentDocs()">Tải danh sách</button>
+              </div>
+              <div id="docs-recent-list" class="gw-sheet-list"></div>
+              <label style="font-size:12px;font-weight:500;color:var(--text);display:block;margin-bottom:4px">Link hoặc Document ID</label>
+              <input type="text" id="docs-id" placeholder="Dán link Google Doc hoặc ID" style="width:100%;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-bottom:10px" />
+              <label style="font-size:12px;font-weight:500;color:var(--text);display:block;margin-bottom:4px">Nội dung để ghi/chèn</label>
+              <textarea id="docs-text" rows="6" placeholder="Nhập nội dung nếu muốn ghi, nối thêm hoặc chèn vào Doc" style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none;resize:vertical;box-sizing:border-box;margin-bottom:12px"></textarea>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <button class="btn btn-secondary btn-small" onclick="loadDocInfo()">Thông tin</button>
+                <button class="btn btn-secondary btn-small" onclick="readDocContent()">Đọc Doc</button>
+                <button class="btn btn-secondary btn-small" onclick="appendDocContent()">Nối thêm</button>
+                <button class="btn btn-primary btn-small" onclick="createGoogleDoc()">Tạo Doc</button>
+              </div>
+            </div>
+            <pre id="docs-result" class="gw-result">Chưa có dữ liệu.</pre>
           </div>
         </div>
         <div class="gw-panel" id="gw-sheets" style="display:none">
@@ -7775,6 +7799,7 @@
       if (tab === 'calendar') loadCalendarEvents();
       if (tab === 'gmail') loadGmailInbox();
       if (tab === 'drive') loadDriveFiles();
+      if (tab === 'docs') loadRecentDocs(false);
       if (tab === 'sheets') {
         resetSheetResultIfEmpty();
         loadRecentSheets(false);
@@ -8118,6 +8143,109 @@
     function searchDriveFiles() {
       const q = document.getElementById('drive-search').value.trim();
       loadDriveFiles(q || undefined);
+    }
+
+    // --- Docs tab ---
+    function extractDocId(raw) {
+      const value = String(raw || '').trim();
+      const match = value.match(/\/document\/d\/([^/?#]+)/);
+      if (match) return decodeURIComponent(match[1]);
+      return value.replace(/[?#].*$/, '');
+    }
+    function showDocResult(data) {
+      const result = document.getElementById('docs-result');
+      if (result) result.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    }
+    function normalizeDocFiles(data) {
+      if (Array.isArray(data)) return data;
+      return data.files || data.items || data.data || data.documents || [];
+    }
+    function selectDoc(id, name) {
+      document.getElementById('docs-id').value = id;
+      showDocResult('Đã chọn: ' + (name || id));
+      readDocContent();
+    }
+    async function loadRecentDocs(showLoading = true) {
+      const box = document.getElementById('docs-recent-list');
+      if (!box || !window.claw.googleDocsList) return;
+      if (box.dataset.loaded === '1' && !showLoading) return;
+      if (showLoading) box.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:12px">Đang tải danh sách...</div>';
+      try {
+        const data = await window.claw.googleDocsList({ max: 20 });
+        if (data.error) throw new Error(data.error);
+        const files = normalizeDocFiles(data);
+        box.dataset.loaded = '1';
+        if (!files.length) {
+          box.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:12px">Chưa tìm thấy Google Doc gần đây.</div>';
+          return;
+        }
+        box.innerHTML = files.map(f => {
+          const id = f.id || f.fileId || '';
+          const name = f.name || f.title || id || 'Không có tên';
+          const modified = f.modifiedTime || f.modifiedDate || '';
+          const modStr = modified ? new Date(modified).toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' }) : '';
+          return '<button class="gw-sheet-row" onclick="selectDoc(' + escAttr(JSON.stringify(id)) + ',' + escAttr(JSON.stringify(name)) + ')">' +
+            '<div class="gw-sheet-row-title">' + esc(name) + '</div>' +
+            '<div class="gw-sheet-row-meta">' + esc([id, modStr].filter(Boolean).join(' · ')) + '</div>' +
+            '</button>';
+        }).join('');
+      } catch (e) {
+        box.innerHTML = '<div style="padding:10px;color:var(--danger);font-size:12px">' + esc(e.message || 'Lỗi tải Docs') + '</div>';
+      }
+    }
+    async function loadDocInfo() {
+      try {
+        const docId = extractDocId(document.getElementById('docs-id').value);
+        if (!docId) throw new Error('Cần nhập link hoặc Document ID');
+        document.getElementById('docs-id').value = docId;
+        showDocResult('Đang đọc thông tin...');
+        const data = await window.claw.googleDocsInfo({ docId });
+        if (data.error) throw new Error(data.error);
+        showDocResult(data);
+      } catch (e) { showDocResult('Lỗi: ' + (e.message || e)); }
+    }
+    async function readDocContent() {
+      try {
+        const docId = extractDocId(document.getElementById('docs-id').value);
+        if (!docId) throw new Error('Cần nhập link hoặc Document ID');
+        document.getElementById('docs-id').value = docId;
+        showDocResult('Đang đọc Doc...');
+        const data = await window.claw.googleDocsRead({ docId, maxBytes: 200000 });
+        if (data.error) throw new Error(data.error);
+        showDocResult(data.raw || data.text || data.content || data);
+      } catch (e) { showDocResult('Lỗi: ' + (e.message || e)); }
+    }
+    async function appendDocContent() {
+      try {
+        const docId = extractDocId(document.getElementById('docs-id').value);
+        const text = document.getElementById('docs-text').value;
+        if (!docId) throw new Error('Cần nhập link hoặc Document ID');
+        if (!text.trim()) throw new Error('Cần nhập nội dung');
+        showDocResult('Đang nối thêm nội dung...');
+        const data = await window.claw.googleDocsWrite({ docId, text, append: true });
+        if (data.error) throw new Error(data.error);
+        showDocResult(data);
+      } catch (e) { showDocResult('Lỗi: ' + (e.message || e)); }
+    }
+    async function createGoogleDoc() {
+      try {
+        const title = prompt('Tên Google Doc mới');
+        if (!title) return;
+        showDocResult('Đang tạo Doc...');
+        const created = await window.claw.googleDocsCreate({ title });
+        if (created.error) throw new Error(created.error);
+        const docId = created.id || created.documentId || created.fileId || created.data?.id;
+        if (docId) document.getElementById('docs-id').value = docId;
+        const text = document.getElementById('docs-text').value;
+        if (docId && text.trim()) {
+          const written = await window.claw.googleDocsWrite({ docId, text, replace: true });
+          if (written.error) throw new Error(written.error);
+          showDocResult({ created, written });
+        } else {
+          showDocResult(created);
+        }
+        loadRecentDocs(true);
+      } catch (e) { showDocResult('Lỗi: ' + (e.message || e)); }
     }
 
     // --- Sheets tab ---

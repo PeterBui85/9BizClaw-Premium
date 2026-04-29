@@ -4556,6 +4556,10 @@ ipcMain.handle('download-and-install-update', async () => {
     try { return await googleApi.authStatus(); }
     catch (e) { return { connected: false, error: e.message }; }
   });
+  ipcMain.handle('google-health', async () => {
+    try { return await googleApi.serviceHealth(); }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
 
   ipcMain.handle('google-upload-credentials', async (_ev, filePath) => {
     try {
@@ -4665,6 +4669,73 @@ ipcMain.handle('download-and-install-update', async () => {
       const r = await googleApi.shareFile(opts.fileId, opts.email, opts.role);
       try { auditLog('google_drive_share', { fileId: opts.fileId, email: opts.email }); } catch {}
       return r;
+    } catch (e) { return { error: e.message }; }
+  });
+
+  ipcMain.handle('google-docs-list', async (_ev, opts) => {
+    try { return await googleApi.listDocs(opts?.max); }
+    catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-info', async (_ev, opts) => {
+    try {
+      if (!opts?.docId) return { error: 'docId required' };
+      return await googleApi.getDocInfo(opts.docId);
+    } catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-read', async (_ev, opts) => {
+    try {
+      if (!opts?.docId) return { error: 'docId required' };
+      return await googleApi.readDoc(opts.docId, opts);
+    } catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-create', async (_ev, opts) => {
+    try {
+      if (!opts?.title) return { error: 'title required' };
+      const googleRoutes = require('./google-routes');
+      if (opts.file && googleRoutes.isHomedirPathSafe && !googleRoutes.isHomedirPathSafe(opts.file)) return { error: 'file blocked by path validation' };
+      const r = await googleApi.createDoc(opts.title, opts);
+      try { auditLog('google_docs_create', { title: opts.title }); } catch {}
+      return r;
+    } catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-write', async (_ev, opts) => {
+    try {
+      if (!opts?.docId) return { error: 'docId required' };
+      if (opts.text === undefined && !opts.file) return { error: 'text or file required' };
+      const googleRoutes = require('./google-routes');
+      if (opts.file && googleRoutes.isHomedirPathSafe && !googleRoutes.isHomedirPathSafe(opts.file)) return { error: 'file blocked by path validation' };
+      const r = await googleApi.writeDoc(opts.docId, opts);
+      try { auditLog('google_docs_write', { docId: opts.docId }); } catch {}
+      return r;
+    } catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-insert', async (_ev, opts) => {
+    try {
+      if (!opts?.docId) return { error: 'docId required' };
+      if (opts.content === undefined && !opts.file) return { error: 'content or file required' };
+      const googleRoutes = require('./google-routes');
+      if (opts.file && googleRoutes.isHomedirPathSafe && !googleRoutes.isHomedirPathSafe(opts.file)) return { error: 'file blocked by path validation' };
+      const r = await googleApi.insertDoc(opts.docId, opts.content, opts);
+      try { auditLog('google_docs_insert', { docId: opts.docId }); } catch {}
+      return r;
+    } catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-find-replace', async (_ev, opts) => {
+    try {
+      if (!opts?.docId || !opts?.find) return { error: 'docId and find required' };
+      const googleRoutes = require('./google-routes');
+      if (opts.contentFile && googleRoutes.isHomedirPathSafe && !googleRoutes.isHomedirPathSafe(opts.contentFile)) return { error: 'contentFile blocked by path validation' };
+      const r = await googleApi.findReplaceDoc(opts.docId, opts.find, opts.replace, opts);
+      try { auditLog('google_docs_find_replace', { docId: opts.docId }); } catch {}
+      return r;
+    } catch (e) { return { error: e.message }; }
+  });
+  ipcMain.handle('google-docs-export', async (_ev, opts) => {
+    try {
+      if (!opts?.docId) return { error: 'docId required' };
+      const googleRoutes = require('./google-routes');
+      if (opts.out && googleRoutes.isHomedirPathSafe && !googleRoutes.isHomedirPathSafe(opts.out)) return { error: 'out blocked by path validation' };
+      return await googleApi.exportDoc(opts.docId, opts);
     } catch (e) { return { error: e.message }; }
   });
 

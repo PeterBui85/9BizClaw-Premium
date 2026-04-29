@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('claw', {
 
   // Google Workspace
   googleAuthStatus: () => ipcRenderer.invoke('google-auth-status'),
+  googleHealth: () => ipcRenderer.invoke('google-health'),
   googleUploadCredentials: (path) => ipcRenderer.invoke('google-upload-credentials', path),
   googleConnect: (email) => ipcRenderer.invoke('google-connect', email),
   googleDisconnect: () => ipcRenderer.invoke('google-disconnect'),
@@ -152,6 +153,14 @@ contextBridge.exposeInMainWorld('claw', {
   googleDriveUpload: (opts) => ipcRenderer.invoke('google-drive-upload', opts),
   googleDriveDownload: (opts) => ipcRenderer.invoke('google-drive-download', opts),
   googleDriveShare: (opts) => ipcRenderer.invoke('google-drive-share', opts),
+  googleDocsList: (opts) => ipcRenderer.invoke('google-docs-list', opts || {}),
+  googleDocsInfo: (opts) => ipcRenderer.invoke('google-docs-info', opts),
+  googleDocsRead: (opts) => ipcRenderer.invoke('google-docs-read', opts),
+  googleDocsCreate: (opts) => ipcRenderer.invoke('google-docs-create', opts),
+  googleDocsWrite: (opts) => ipcRenderer.invoke('google-docs-write', opts),
+  googleDocsInsert: (opts) => ipcRenderer.invoke('google-docs-insert', opts),
+  googleDocsFindReplace: (opts) => ipcRenderer.invoke('google-docs-find-replace', opts),
+  googleDocsExport: (opts) => ipcRenderer.invoke('google-docs-export', opts),
   googleContactsList: (opts) => ipcRenderer.invoke('google-contacts-list', opts || {}),
   googleContactsCreate: (opts) => ipcRenderer.invoke('google-contacts-create', opts),
   googleTaskLists: (opts) => ipcRenderer.invoke('google-tasks-lists', opts || {}),

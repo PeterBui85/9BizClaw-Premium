@@ -293,6 +293,77 @@ async function shareFile(fileId, email, role) {
   return gogExec(['drive', 'share', fileId, '--to', 'user', '--email', email, '--role', role || 'reader']);
 }
 
+// --- Docs ---
+
+async function listDocs(max) {
+  return gogExec([
+    'drive', 'ls',
+    '--all',
+    '--query', "mimeType='application/vnd.google-apps.document' and trashed=false",
+    '--max', String(max || 20),
+  ]);
+}
+
+async function getDocInfo(docId) {
+  return gogExec(['docs', 'info', docId]);
+}
+
+async function readDoc(docId, opts) {
+  const args = ['docs', 'cat', docId];
+  if (opts?.maxBytes) args.push('--max-bytes', String(opts.maxBytes));
+  if (opts?.tab) args.push('--tab', opts.tab);
+  if (opts?.allTabs) args.push('--all-tabs');
+  if (opts?.numbered) args.push('--numbered');
+  return gogExec(args);
+}
+
+async function createDoc(title, opts) {
+  const args = ['docs', 'create', title];
+  if (opts?.parent) args.push('--parent', opts.parent);
+  if (opts?.file) args.push('--file', opts.file);
+  if (opts?.pageless) args.push('--pageless');
+  return gogExec(args, 30000);
+}
+
+async function writeDoc(docId, opts) {
+  const args = ['docs', 'write', docId];
+  if (opts?.text !== undefined) args.push('--text', String(opts.text));
+  if (opts?.file) args.push('--file', opts.file);
+  if (opts?.replace) args.push('--replace');
+  if (opts?.append) args.push('--append');
+  if (opts?.markdown) args.push('--markdown');
+  if (opts?.pageless) args.push('--pageless');
+  if (opts?.tabId) args.push('--tab-id', opts.tabId);
+  return gogExec(args, 30000);
+}
+
+async function insertDoc(docId, content, opts) {
+  const args = ['docs', 'insert', docId];
+  if (content !== undefined) args.push(String(content));
+  if (opts?.index) args.push('--index', String(opts.index));
+  if (opts?.file) args.push('--file', opts.file);
+  if (opts?.tabId) args.push('--tab-id', opts.tabId);
+  return gogExec(args, 30000);
+}
+
+async function findReplaceDoc(docId, find, replace, opts) {
+  const args = ['docs', 'find-replace', docId, find];
+  if (replace !== undefined) args.push(String(replace));
+  if (opts?.contentFile) args.push('--content-file', opts.contentFile);
+  if (opts?.matchCase) args.push('--match-case');
+  if (opts?.format) args.push('--format', opts.format);
+  if (opts?.first) args.push('--first');
+  if (opts?.tabId) args.push('--tab-id', opts.tabId);
+  return gogExec(args, 30000);
+}
+
+async function exportDoc(docId, opts) {
+  const args = ['docs', 'export', docId];
+  if (opts?.out) args.push('--out', opts.out);
+  if (opts?.format) args.push('--format', opts.format);
+  return gogExec(args, 60000);
+}
+
 // --- Contacts ---
 
 async function listContacts(query) {
@@ -392,6 +463,40 @@ async function runAppScript(scriptId, functionName, params, devMode) {
   return gogExec(args, 60000);
 }
 
+function serviceErrorMessage(e) {
+  return String(e?.message || e || '').replace(/\s+/g, ' ').slice(0, 500);
+}
+
+async function probeService(name, fn) {
+  try {
+    await fn();
+    return { service: name, ok: true };
+  } catch (e) {
+    const error = serviceErrorMessage(e);
+    const hint = /accessNotConfigured|has not been used in project/i.test(error)
+      ? 'API chưa được bật trong Google Cloud project của OAuth client.'
+      : undefined;
+    return { service: name, ok: false, error, hint };
+  }
+}
+
+async function serviceHealth() {
+  const now = new Date();
+  const later = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const iso = d => d.toISOString();
+  const checks = [
+    probeService('calendar', () => gogExec(['calendar', 'events', 'primary', '--from', iso(now), '--to', iso(later)], 15000)),
+    probeService('gmail', () => gogExec(['gmail', 'search', 'in:inbox', '--max', '1'], 15000)),
+    probeService('drive', () => gogExec(['drive', 'ls', '--max', '1'], 15000)),
+    probeService('contacts', () => gogExec(['contacts', 'list'], 15000)),
+    probeService('tasks', () => gogExec(['tasks', 'lists', 'list', '--max', '1'], 15000)),
+    probeService('sheets', () => listSheets(1)),
+    probeService('docs', () => listDocs(1)),
+  ];
+  const services = await Promise.all(checks);
+  return { ok: services.every(s => s.ok), services };
+}
+
 module.exports = {
   getGogBinaryPath, getGogConfigDir, getGogAccount,
   gogExec, gogSpawnAsync, gogEnv, cleanupGogProcesses,
@@ -399,7 +504,9 @@ module.exports = {
   listEvents, createEvent, deleteEvent, getFreeBusy, getFreeSlots,
   listInbox, readEmail, sendEmail, replyEmail,
   listFiles, listSheets, uploadFile, downloadFile, shareFile,
+  listDocs, getDocInfo, readDoc, createDoc, writeDoc, insertDoc, findReplaceDoc, exportDoc,
   listContacts, createContact,
   listTaskLists, listTasks, createTask, completeTask,
   getSheet, updateSheet, appendSheet, getSheetMetadata, runAppScript,
+  serviceHealth,
 };
