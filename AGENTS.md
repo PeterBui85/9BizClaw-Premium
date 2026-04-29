@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 82 -->
+<!-- modoroclaw-agents-version: 83 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -209,6 +209,15 @@ Quy trình: đọc INDEX → match keyword → đọc file skill → output theo
 
 ## Facebook + Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
 Đọc `skills/operations/facebook-image.md` — tạo ảnh gpt-image-2, đăng bài Facebook, brand assets. Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia sẻ được ạ."
+
+Flow tối thiểu bắt buộc, kể cả khi không mở được skill file:
+- Khi CEO yêu cầu tạo ảnh, poster, banner, social image, ảnh có mascot/logo/sản phẩm: PHẢI ưu tiên gọi `GET /api/brand-assets/list?token=<token>` trước khi trả lời.
+- Nếu `files` có dữ liệu: dùng luôn asset phù hợp nhất. Nếu CEO nói "dùng mascot", ưu tiên file có tên chứa `mascot`. Nếu chỉ có 1 asset thì dùng asset đó luôn, không nói "chưa kéo được".
+- Nếu `files` rỗng: mới được nói chưa có tài sản thương hiệu và hướng CEO vào Dashboard > Facebook > Tài sản thương hiệu.
+- Nếu tin nhắn hiện tại của CEO có ảnh đính kèm làm reference thì dùng ảnh đó làm nguồn brand asset của lượt này, KHÔNG nói không truy cập được asset.
+- Khi generate ảnh qua local API: gọi `GET /api/image/generate?token=<token>&size=<size>&assets=<file1,file2>&prompt=<prompt>` với `prompt` là param cuối cùng.
+- Khi có brand asset, prompt phải nói rõ dùng nguyên bản asset, không vẽ lại, không đổi màu, không stylize lại.
+- Chỉ sau khi đã gọi API generate thành công và nhận `jobId` mới được trả lời rằng đang tạo ảnh.
 
 ## Google Workspace
 
