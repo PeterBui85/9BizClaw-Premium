@@ -17760,13 +17760,14 @@ function waitForSplashReady(win, timeoutMs = 1500) {
       if (done) return;
       done = true;
       try { clearTimeout(timer); } catch {}
+      try { ipcMain.removeListener('splash-ready', onReady); } catch {}
       resolve();
     };
     const timer = setTimeout(finish, timeoutMs);
-    ipcMain.once('splash-ready', (event) => {
+    const onReady = (event) => {
       if (!win || win.isDestroyed() || event.sender === win.webContents) finish();
-      else finish();
-    });
+    };
+    ipcMain.on('splash-ready', onReady);
   });
 }
 
@@ -17839,10 +17840,11 @@ async function runSplashAndExtractVendor() {
     },
   });
   splashWindow.setMenuBarVisibility(false);
+  const splashReady = waitForSplashReady(splashWindow);
   await splashWindow.loadFile(path.join(__dirname, 'ui', 'splash.html'));
   splashWindow.show();
   splashWindow.focus();
-  await waitForSplashReady(splashWindow);
+  await splashReady;
 
   let lastRealProgress = 0;
   let lastDisplayedProgress = 0;

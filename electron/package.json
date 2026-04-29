@@ -33,6 +33,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "splash-preload.js",
       "lib/**/*",
       "ui/**/*",
       "scripts/**/*",
