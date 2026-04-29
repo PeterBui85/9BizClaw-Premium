@@ -1,0 +1,64 @@
+{
+  "id": "google-gmail",
+  "title": "Read and send Gmail through connected Workspace",
+  "ownerSource": [
+    "electron/lib/google-routes.js",
+    "electron/lib/google-api.js",
+    "AGENTS.md"
+  ],
+  "triggerExamples": [
+    "xem email mới",
+    "đọc email này",
+    "gửi email cho khách",
+    "trả lời email"
+  ],
+  "allowedChannels": [
+    "telegram-ceo",
+    "dashboard"
+  ],
+  "blockedChannels": [
+    "zalo-customer-send"
+  ],
+  "requiresConfirmation": true,
+  "sideEffects": [
+    "may-send-email"
+  ],
+  "tokenSource": "current internal token from AGENTS, or /api/auth/token?bot_token=<telegram_bot_token>",
+  "apiCalls": [
+    {
+      "method": "GET",
+      "path": "/api/google/gmail/inbox",
+      "purpose": "list recent email"
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/gmail/read",
+      "purpose": "read one email by id"
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/gmail/send",
+      "purpose": "send new email after CEO confirmation"
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/gmail/reply",
+      "purpose": "reply to existing thread after CEO confirmation"
+    }
+  ],
+  "externalPermissions": [
+    "Gmail API",
+    "Gmail read scope",
+    "Gmail send scope"
+  ],
+  "successProofs": [
+    "inbox response contains messages",
+    "read response contains subject/body fields",
+    "send/reply response contains id or success marker"
+  ],
+  "negativeTests": [
+    "must block Gmail send when x-source-channel is Zalo",
+    "must require to, subject, and body for new email",
+    "must require id and body for replies"
+  ]
+}

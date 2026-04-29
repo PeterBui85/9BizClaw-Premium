@@ -16,8 +16,68 @@ function isHomedirPathSafe(p) {
   return true;
 }
 
+function columnToNumber(col) {
+  let n = 0;
+  for (const ch of String(col || '').toUpperCase()) {
+    if (ch < 'A' || ch > 'Z') return 0;
+    n = n * 26 + (ch.charCodeAt(0) - 64);
+  }
+  return n;
+}
+
+function numberToColumn(n) {
+  let out = '';
+  let x = Number(n) || 0;
+  while (x > 0) {
+    const mod = (x - 1) % 26;
+    out = String.fromCharCode(65 + mod) + out;
+    x = Math.floor((x - mod) / 26);
+  }
+  return out || 'A';
+}
+
+function normalizeSheetValues(params) {
+  const raw = params.valuesJson !== undefined ? params.valuesJson : params.values;
+  if (raw === undefined || raw === null || raw === '') return raw;
+  if (Array.isArray(raw)) return { ok: true, values: raw };
+  if (typeof raw !== 'string') return { ok: true, values: raw };
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true, values: trimmed };
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!Array.isArray(parsed) || parsed.some(row => !Array.isArray(row))) {
+        return { ok: false, error: 'values must be a JSON 2D array' };
+      }
+      return { ok: true, values: parsed };
+    } catch (e) {
+      return { ok: false, error: 'values must be valid JSON: ' + e.message };
+    }
+  }
+  return { ok: true, values: raw };
+}
+
+function fitSheetRangeToValues(range, values) {
+  if (!Array.isArray(values) || !values.length) return range;
+  const rowCount = values.length;
+  const colCount = Math.max(1, ...values.map(row => Array.isArray(row) ? row.length : 1));
+  const text = String(range || '');
+  const match = text.match(/^(.*!|)(\$?)([A-Z]+)(\$?)(\d+)(?::(\$?)([A-Z]+)(\$?)(\d+))?$/i);
+  if (!match) return range;
+  const prefix = match[1] || '';
+  const startCol = match[3].toUpperCase();
+  const startRow = parseInt(match[5], 10);
+  const currentEndCol = (match[7] || startCol).toUpperCase();
+  const currentEndRow = parseInt(match[9] || match[5], 10);
+  const minEndColNumber = columnToNumber(startCol) + colCount - 1;
+  const endCol = numberToColumn(Math.max(columnToNumber(currentEndCol), minEndColNumber));
+  const endRow = Math.max(currentEndRow, startRow + rowCount - 1);
+  return `${prefix}${startCol}${startRow}:${endCol}${endRow}`;
+}
+
 module.exports = handleGoogleRoute;
 module.exports.isHomedirPathSafe = isHomedirPathSafe;
+module.exports._test = { normalizeSheetValues, fitSheetRangeToValues };
 
 async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
   try {
@@ -195,12 +255,19 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
     }
     if (urlPath === '/sheets/update') {
       if (!params.spreadsheetId || !params.range) return jsonResp(res, 400, { error: 'spreadsheetId and range required' });
-      const r = await googleApi.updateSheet(params.spreadsheetId, params.range, params.values, params);
+      const parsedValues = normalizeSheetValues(params);
+      if (parsedValues && !parsedValues.ok) return jsonResp(res, 400, { error: parsedValues.error });
+      const values = parsedValues ? parsedValues.values : params.values;
+      const range = fitSheetRangeToValues(params.range, values);
+      const r = await googleApi.updateSheet(params.spreadsheetId, range, values, params);
       return jsonResp(res, 200, r);
     }
     if (urlPath === '/sheets/append') {
       if (!params.spreadsheetId || !params.range) return jsonResp(res, 400, { error: 'spreadsheetId and range required' });
-      const r = await googleApi.appendSheet(params.spreadsheetId, params.range, params.values, params);
+      const parsedValues = normalizeSheetValues(params);
+      if (parsedValues && !parsedValues.ok) return jsonResp(res, 400, { error: parsedValues.error });
+      const values = parsedValues ? parsedValues.values : params.values;
+      const r = await googleApi.appendSheet(params.spreadsheetId, params.range, values, params);
       return jsonResp(res, 200, r);
     }
     // Apps Script, useful for automations around Google Sheets/AppSheet data.

@@ -32,7 +32,7 @@ CEO gửi voice — "Em chưa nghe được voice, anh nhắn text giúp em ạ.
 1. Tra cứu nhóm: `web_fetch http://127.0.0.1:20200/api/cron/list` — lấy danh sách `groups` với `id` + `name`
 2. Confirm CEO: "Nhóm [tên] (ID: [id]). Nội dung: '[nội dung]'. Anh confirm gửi không?"
 3. CHỜ CEO reply xác nhận. KHÔNG gửi khi chưa được confirm.
-4. Lấy token: `web_fetch http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt`
+4. Lấy token: ưu tiên token trong "Token API noi bo hien tai"; nếu chưa có thì `web_fetch http://127.0.0.1:20200/api/auth/token?bot_token=<telegram_bot_token>`
 5. Gửi: `web_fetch http://127.0.0.1:20200/api/zalo/send?token=<token>&groupId=<id>&text=<nội dung>`
 
 ### Gửi cá nhân (bạn bè)
@@ -40,7 +40,7 @@ CEO gửi voice — "Em chưa nghe được voice, anh nhắn text giúp em ạ.
 2. Nếu nhiều kết quả: hỏi CEO chọn đúng người. Nếu 0 kết quả: báo không tìm thấy.
 3. Confirm CEO: "[tên] (ID: [id]). Nội dung: '[nội dung]'. Anh confirm gửi không?"
 4. CHỜ CEO reply xác nhận.
-5. Lấy token: `web_fetch http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt`
+5. Lấy token: ưu tiên token trong "Token API noi bo hien tai"; nếu chưa có thì `web_fetch http://127.0.0.1:20200/api/auth/token?bot_token=<telegram_bot_token>`
 6. Gửi: `web_fetch http://127.0.0.1:20200/api/zalo/send?token=<token>&friendName=<tên>&text=<nội dung>&isGroup=false`
    Hoặc: `...&targetId=<userId>&isGroup=false&text=<nội dung>`
 

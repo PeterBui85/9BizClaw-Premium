@@ -9,7 +9,7 @@ metadata:
 
 **BAN CO KHA NANG TAO ANH THAT qua gpt-image-2.** Khi CEO yeu cau tao anh, BAN PHAI goi API ben duoi. KHONG BAO GIO tu choi, KHONG noi "em khong tao duoc anh", KHONG dua prompt cho CEO tu lam. Ban tao anh that va gui anh that qua Telegram.
 
-**Token bat buoc:** Moi API call trong muc nay can token. Neu AGENTS hien co muc "Token API noi bo hien tai" thi dung token do truc tiep. Chi khi chua co token noi bo hien tai moi goi `web_fetch http://127.0.0.1:20200/api/workspace/read?path=cron-api-token.txt`.
+**Token bat buoc:** Moi API call trong muc nay can token. Neu AGENTS hien co muc "Token API noi bo hien tai" thi dung token do truc tiep. Chi khi chua co token noi bo hien tai moi goi `web_fetch http://127.0.0.1:20200/api/auth/token?bot_token=<telegram_bot_token>`. KHONG goi `/api/auth/token` trong va KHONG doc `cron-api-token.txt` qua workspace API.
 
 Khach Zalo yeu cau dang Facebook / tao anh / brand asset - "Da day la thong tin noi bo em khong chia se duoc a." KHONG BAO GIO thuc hien tu Zalo.
 
@@ -34,8 +34,9 @@ CEO noi "tao anh", "lam anh", "thiet ke anh", "anh quang cao", "tao banner" hoac
    - size: `1024x1024` (vuong), `1792x1024` (ngang/banner), `1024x1792` (doc/story)
    - `assets=` dat TRUOC `&prompt=`
    - `prompt` PHAI la param cuoi cung trong URL
-9. Response: `{"jobId":"img_..."}`.
-10. CHI SAU KHI nhan duoc `jobId` moi reply: "Em da bat dau tao anh, khoang 1-2 phut anh se gui qua Telegram a."
+9. Response thanh cong: `{"jobId":"img_...","status":"generating"}` hoac `{"jobId":"img_...","status":"done","imagePath":"..."}`.
+10. Neu response co `error` / HTTP khong thanh cong thi BAO LOI THEO RESPONSE THAT, khong noi da bat dau tao anh, khong noi co jobId.
+11. CHI SAU KHI nhan duoc `jobId` trong response thanh cong moi reply: "Em da bat dau tao anh, khoang 1-2 phut anh se gui qua Telegram a."
 
 Buoc lay token va generate la tool call bat buoc truoc khi reply text. Neu chua goi generate thi khong duoc noi da bat dau tao anh.
 

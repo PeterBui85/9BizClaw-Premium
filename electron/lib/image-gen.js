@@ -57,7 +57,7 @@ function loadAssets(brandAssetsDir, assetNames) {
 
 const BRAND_ASSET_PREFIX = 'CRITICAL INSTRUCTION: The attached reference image(s) are brand assets. You MUST reproduce them EXACTLY as they appear — preserve every detail: exact colors, exact shapes, exact text/typography, exact proportions, exact art style. Do NOT redraw, reinterpret, reimagine, or stylize them. Composite the ORIGINAL image unchanged into the scene.\n\n';
 
-function buildCodexRequest(prompt, assets, size) {
+function buildCodexRequest(prompt, assets, size, options = {}) {
   const finalPrompt = assets.length > 0 ? BRAND_ASSET_PREFIX + prompt : prompt;
   const content = [{ type: 'input_text', text: finalPrompt }];
   for (const asset of assets) {
@@ -66,14 +66,15 @@ function buildCodexRequest(prompt, assets, size) {
       image_url: `data:${asset.mime};base64,${asset.base64}`
     });
   }
-  return {
+  const body = {
     model: 'cx/gpt-5.4',
     input: [{ role: 'user', content }],
     tools: [{ type: 'image_generation', model: 'gpt-image-2', size: size || '1024x1024' }],
-    tool_choice: { type: 'image_generation' },
     stream: true,
     store: false
   };
+  if (options.toolChoice !== false) body.tool_choice = { type: 'image_generation' };
+  return body;
 }
 
 // SSE parser: buffer across TCP chunks, extract image from output_item.done
@@ -123,6 +124,27 @@ function callCodexAPI(requestBody) {
   });
 }
 
+function isImageToolChoiceUnsupported(err) {
+  return /tool choice ['"]?image_generation['"]? not found|image_generation.*not found in ['"]?tools/i.test(err?.message || '');
+}
+
+async function callCodexAPIWithFallback(prompt, assets, size) {
+  const primary = buildCodexRequest(prompt, assets, size);
+  try {
+    return await callCodexAPI(primary);
+  } catch (err) {
+    if (!isImageToolChoiceUnsupported(err)) throw err;
+
+    const fallback = buildCodexRequest(prompt, assets, size, { toolChoice: false });
+    try {
+      return await callCodexAPI(fallback);
+    } catch (fallbackErr) {
+      fallbackErr.message = `${err.message}; fallback without tool_choice failed: ${fallbackErr.message}`;
+      throw fallbackErr;
+    }
+  }
+}
+
 function cleanupGenerated(generatedDir) {
   try {
     const files = fs.readdirSync(generatedDir)
@@ -146,7 +168,7 @@ function withGenLock(fn) {
 }
 
 function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
-  const job = { status: 'generating', imagePath: null, relPath: null, error: null, startedAt: Date.now() };
+  const job = { status: 'generating', imagePath: null, relPath: null, error: null, startedAt: Date.now(), waiters: [] };
   let _settled = false;
   _jobs.set(jobId, job);
   pruneJobs();
@@ -154,13 +176,17 @@ function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
   function settle(err, imgPath) {
     if (_settled) return;
     _settled = true;
+    const waiters = job.waiters || [];
+    job.waiters = [];
+    for (const waiter of waiters) {
+      try { waiter(); } catch {}
+    }
     if (onComplete) onComplete(err, imgPath);
   }
 
   const assets = loadAssets(brandAssetsDir, assetNames || []);
-  const reqBody = buildCodexRequest(prompt, assets, size);
 
-  callCodexAPI(reqBody).then(imgBuf => {
+  callCodexAPIWithFallback(prompt, assets, size).then(imgBuf => {
     return withGenLock(() => {
       if (_settled) return;
       const generatedDir = path.join(brandAssetsDir, 'generated');
@@ -199,4 +225,26 @@ function getJobStatus(jobId) {
   return { status: 'generating' };
 }
 
-module.exports = { startJob, getJobStatus, generateJobId };
+function waitForJobResult(jobId, timeoutMs = 3000) {
+  const job = _jobs.get(jobId);
+  if (!job) return Promise.resolve({ status: 'not_found' });
+  if (job.status !== 'generating') return Promise.resolve(getJobStatus(jobId));
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(getJobStatus(jobId)), timeoutMs);
+    job.waiters.push(() => {
+      clearTimeout(timer);
+      resolve(getJobStatus(jobId));
+    });
+  });
+}
+
+module.exports = {
+  startJob,
+  getJobStatus,
+  generateJobId,
+  waitForJobResult,
+  _test: {
+    buildCodexRequest,
+    isImageToolChoiceUnsupported
+  }
+};

@@ -318,6 +318,7 @@ Google Sheet link flow — BẮT BUỘC:
 - Trước khi đọc dữ liệu, gọi `GET /api/google/sheets/metadata?token=<token>&spreadsheetId=<id>` để lấy tên tab thật.
 - Nếu CEO không nói tab/range, đọc tab đầu tiên bằng range `<Tên tab đầu tiên>!A1:Z50` (quote tên tab nếu có khoảng trắng/ký tự đặc biệt).
 - Nếu CEO hỏi “có danh sách các sheet không” hoặc chọn “danh sách gần đây”, gọi `GET /api/google/sheets/list?token=<token>&max=20`, không dùng query tự chế như `type:spreadsheet`.
+- Khi ghi bảng nhiều dòng qua `/api/google/sheets/update` hoặc `/api/google/sheets/append`, `values` PHẢI là JSON 2D array, ví dụ `[["Ngày","Danh mục"],["",""]]`, URL-encode nếu dùng GET. Có thể dùng range bắt đầu như `Sheet1!A1`; API sẽ tự mở rộng vùng ghi theo số dòng/cột. KHÔNG tự retry bằng cách giảm range nếu Google báo “tried writing to row ...”; lỗi đó nghĩa là `values`/range chưa khớp hoặc values chưa được parse đúng.
 
 Google Docs link flow — BẮT BUỘC:
 - Nếu CEO gửi link `docs.google.com/document/d/<id>/...`, trích `<id>` rồi dùng local API `/api/google/docs/*` với `token=<token>`. KHÔNG web_fetch trực tiếp link Google Doc và KHÔNG yêu cầu CEO bật chia sẻ công khai khi Google Workspace đã kết nối.

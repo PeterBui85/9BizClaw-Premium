@@ -15,6 +15,40 @@ let _cronApiServer = null;
 let _cronApiPort = 20200;
 let _cronApiToken = '';
 
+function replaceTokenInValue(value, token, changedRef) {
+  if (typeof value === 'string') {
+    const next = value.replace(/token=[a-f0-9]{48}\b/gi, 'token=' + token);
+    if (next !== value) changedRef.changed = true;
+    return next;
+  }
+  if (Array.isArray(value)) return value.map(v => replaceTokenInValue(v, token, changedRef));
+  if (value && typeof value === 'object') {
+    const next = {};
+    for (const [key, child] of Object.entries(value)) next[key] = replaceTokenInValue(child, token, changedRef);
+    return next;
+  }
+  return value;
+}
+
+function refreshCronApiTokenInCustomCrons(token) {
+  if (!/^[a-f0-9]{48}$/i.test(String(token || ''))) return;
+  try {
+    const cronsPath = getCustomCronsPath();
+    if (!fs.existsSync(cronsPath)) return;
+    const raw = fs.readFileSync(cronsPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    const changedRef = { changed: false };
+    const next = replaceTokenInValue(parsed, token, changedRef);
+    if (changedRef.changed) {
+      writeJsonAtomic(cronsPath, next);
+      console.log('[cron-api] refreshed API token in custom-crons.json');
+    }
+  } catch (e) {
+    console.error('[cron-api] custom-crons token refresh failed:', e.message);
+  }
+}
+
 function startCronApi() {
   if (_cronApiServer) return;
   const http = require('http');
@@ -27,6 +61,7 @@ function startCronApi() {
     const tokenPath = path.join(getWorkspace(), 'cron-api-token.txt');
     fs.writeFileSync(tokenPath, _cronApiToken, 'utf-8');
   } catch (e) { console.error('[cron-api] failed to write token file:', e.message); }
+  refreshCronApiTokenInCustomCrons(_cronApiToken);
   try {
     const ws = getWorkspace();
     const agentsPath = ws && path.join(ws, 'AGENTS.md');
@@ -842,15 +877,23 @@ function startCronApi() {
       const jobId = imageGen.generateJobId();
       const brandDir = getBrandAssetsDir();
       const assetList = Array.isArray(assets) ? assets : (assets ? String(assets).split(',').map(s => s.trim()).filter(Boolean) : []);
+      let earlyFailureHandled = false;
       imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', (err, imgPath) => {
         if (err) {
-          sendTelegram('[Tạo ảnh] Thất bại: ' + err.message, { skipFilter: true });
+          setTimeout(() => {
+            if (!earlyFailureHandled) sendTelegram('[Tạo ảnh] Thất bại: ' + err.message, { skipFilter: true });
+          }, 3000);
         } else if (imgPath) {
           sendTelegramPhoto(imgPath, 'Ảnh đã tạo xong').then(() => {}).catch(e =>
             console.error('[image-gen] proactive photo send failed:', e.message));
         }
       });
-      return jsonResp(res, 200, { jobId });
+      const earlyStatus = await imageGen.waitForJobResult(jobId, 3000);
+      if (earlyStatus.status === 'failed') {
+        earlyFailureHandled = true;
+        return jsonResp(res, 502, { jobId, status: 'failed', error: earlyStatus.error || 'image generation failed' });
+      }
+      return jsonResp(res, 200, { jobId, status: earlyStatus.status || 'generating', imagePath: earlyStatus.imagePath });
 
     } else if (urlPath === '/api/image/status') {
       const { jobId } = params;

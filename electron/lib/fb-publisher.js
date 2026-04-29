@@ -97,19 +97,30 @@ function formatPostUrl(compoundId) {
 }
 
 async function verifyToken(token) {
+  if (!token || !String(token).trim()) {
+    return { valid: false, error: 'Token Facebook trống.' };
+  }
+  const requiredMsg = 'Token cần là Page Access Token hoặc User Token có pages_show_list, pages_manage_posts, pages_read_engagement và Page task CREATE_CONTENT.';
   try {
-    const data = await graphRequest('GET', '/me/accounts', token);
+    const data = await graphRequest('GET', '/me/accounts?fields=id,name,access_token,tasks&limit=25', token);
     if (data.data && data.data.length > 0) {
-      const page = data.data[0];
+      const page = data.data.find(p => p && p.access_token && (!Array.isArray(p.tasks) || p.tasks.includes('CREATE_CONTENT')));
+      if (!page) {
+        return { valid: false, error: 'Không tìm thấy Fanpage có quyền tạo nội dung. ' + requiredMsg };
+      }
       return { valid: true, pageId: page.id, pageName: page.name, pageToken: page.access_token };
     }
-    return { valid: false, error: 'Không tìm thấy Page nào. Token cần quyền pages_manage_posts.' };
-  } catch {
+    return { valid: false, error: 'Không tìm thấy Fanpage nào. ' + requiredMsg };
+  } catch (accountsErr) {
     try {
-      const me = await graphRequest('GET', '/me?fields=id,name', token);
-      if (me.id) return { valid: true, pageId: me.id, pageName: me.name, pageToken: token };
-      return { valid: false, error: 'Token không hợp lệ.' };
-    } catch (e2) { return { valid: false, error: e2.message }; }
+      const page = await graphRequest('GET', '/me?fields=id,name,category', token);
+      if (page.id && page.category !== undefined) {
+        return { valid: true, pageId: page.id, pageName: page.name, pageToken: token };
+      }
+      return { valid: false, error: requiredMsg };
+    } catch (pageErr) {
+      return { valid: false, error: accountsErr.message || pageErr.message || requiredMsg };
+    }
   }
 }
 

@@ -1,0 +1,79 @@
+{
+  "id": "google-sheets",
+  "title": "Read and update Google Sheets through connected Workspace",
+  "ownerSource": [
+    "electron/lib/google-routes.js",
+    "electron/lib/google-api.js",
+    "AGENTS.md"
+  ],
+  "triggerExamples": [
+    "đọc sheet này",
+    "liệt kê Google Sheet gần đây",
+    "thêm dòng vào Sheet",
+    "sửa Google Sheet cho AppSheet"
+  ],
+  "allowedChannels": [
+    "telegram-ceo",
+    "dashboard"
+  ],
+  "blockedChannels": [
+    "zalo-customer-write"
+  ],
+  "requiresConfirmation": false,
+  "sideEffects": [
+    "may-update-google-sheet"
+  ],
+  "tokenSource": "current internal token from AGENTS, or /api/auth/token?bot_token=<telegram_bot_token>",
+  "apiCalls": [
+    {
+      "method": "GET",
+      "path": "/api/google/status",
+      "purpose": "check Workspace connection"
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/health",
+      "purpose": "prove Sheets and Drive APIs are enabled"
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/sheets/list",
+      "purpose": "list recent Google Sheets through Drive"
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/sheets/metadata",
+      "purpose": "read real tab names before choosing a range"
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/sheets/get",
+      "purpose": "read sheet values"
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/sheets/update",
+      "purpose": "update a selected range"
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/sheets/append",
+      "purpose": "append rows"
+    }
+  ],
+  "externalPermissions": [
+    "Google OAuth Desktop client",
+    "Drive API",
+    "Sheets API"
+  ],
+  "successProofs": [
+    "metadata response contains sheet titles",
+    "get response contains values array",
+    "write response contains Google API update metadata"
+  ],
+  "negativeTests": [
+    "must not fetch docs.google.com directly when Workspace is connected",
+    "must not ask CEO to make a Sheet public before trying local API",
+    "must not use ad-hoc Drive query type:spreadsheet for recent Sheets"
+  ]
+}
