@@ -23,23 +23,23 @@ function cleanupFbPostApprovals(now = Date.now()) {
   }
 }
 
-function replaceTokenInValue(value, token, changedRef) {
+function stripTokenInValue(value, changedRef) {
   if (typeof value === 'string') {
-    const next = value.replace(/token=[a-f0-9]{48}\b/gi, 'token=' + token);
+    let next = value.replace(/([?&])token=[a-f0-9]{48}(?=&|\s|$)/gi, (_match, sep) => sep === '?' ? '?' : '');
+    next = next.replace(/\?&/g, '?').replace(/[?&](?=\s|$)/g, '').replace(/[?&]$/g, '');
     if (next !== value) changedRef.changed = true;
     return next;
   }
-  if (Array.isArray(value)) return value.map(v => replaceTokenInValue(v, token, changedRef));
+  if (Array.isArray(value)) return value.map(v => stripTokenInValue(v, changedRef));
   if (value && typeof value === 'object') {
     const next = {};
-    for (const [key, child] of Object.entries(value)) next[key] = replaceTokenInValue(child, token, changedRef);
+    for (const [key, child] of Object.entries(value)) next[key] = stripTokenInValue(child, changedRef);
     return next;
   }
   return value;
 }
 
-function refreshCronApiTokenInCustomCrons(token) {
-  if (!/^[a-f0-9]{48}$/i.test(String(token || ''))) return;
+function stripCronApiTokenFromCustomCrons() {
   try {
     const cronsPath = getCustomCronsPath();
     if (!fs.existsSync(cronsPath)) return;
@@ -47,13 +47,13 @@ function refreshCronApiTokenInCustomCrons(token) {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return;
     const changedRef = { changed: false };
-    const next = replaceTokenInValue(parsed, token, changedRef);
+    const next = stripTokenInValue(parsed, changedRef);
     if (changedRef.changed) {
       writeJsonAtomic(cronsPath, next);
-      console.log('[cron-api] refreshed API token in custom-crons.json');
+      console.log('[cron-api] removed live API token from custom-crons.json');
     }
   } catch (e) {
-    console.error('[cron-api] custom-crons token refresh failed:', e.message);
+    console.error('[cron-api] custom-crons token cleanup failed:', e.message);
   }
 }
 
@@ -105,7 +105,7 @@ function startCronApi() {
     const tokenPath = path.join(getWorkspace(), 'cron-api-token.txt');
     fs.writeFileSync(tokenPath, _cronApiToken, 'utf-8');
   } catch (e) { console.error('[cron-api] failed to write token file:', e.message); }
-  refreshCronApiTokenInCustomCrons(_cronApiToken);
+  stripCronApiTokenFromCustomCrons();
   try {
     const ws = getWorkspace();
     const agentsPath = ws && path.join(ws, 'AGENTS.md');
@@ -411,7 +411,7 @@ function startCronApi() {
             : 'targetId=' + encodeURIComponent(delivery.ids[0]) + '&isGroup=false';
           const deliveryLabel = delivery.labels[0] || delivery.ids[0];
           finalPrompt += '\n\n---\nSAU KHI HOÀN THÀNH: gửi kết quả vào ' + (delivery.type === 'group' ? 'nhóm Zalo' : 'Zalo cá nhân') + ' "' + deliveryLabel + '":\n'
-            + 'web_fetch url=http://127.0.0.1:20200/api/zalo/send?token=' + _cronApiToken + '&' + deliveryParam + '&text=KET_QUA_DA_VIET\n'
+            + 'web_fetch url=http://127.0.0.1:' + (_cronApiPort || 20200) + '/api/zalo/send?' + deliveryParam + '&text=KET_QUA_DA_VIET\n'
             + 'QUY TẮC VIẾT:\n'
             + '- Thay KET_QUA_DA_VIET bằng nội dung cuối cùng, URL-encode đúng cách nếu cần.\n'
             + '- Viết tiếng Việt CÓ DẤU đầy đủ.\n'
@@ -1102,7 +1102,7 @@ function startCronApi() {
             console.error('[media] async describe failed:', e.message);
           });
         }
-        return jsonResp(res, 200, { success: true, asset, describing: shouldDescribe });
+        return jsonResp(res, 200, { success: true, asset: sanitizeMediaAssetForApi(asset), describing: shouldDescribe });
       } catch (e) { return jsonResp(res, 500, { success: false, error: e.message }); }
 
     } else if (urlPath === '/api/media/describe') {
@@ -1111,7 +1111,7 @@ function startCronApi() {
         const id = String(params.id || params.mediaId || '').trim();
         if (!id) return jsonResp(res, 400, { error: 'id required' });
         const asset = await mediaLibrary.describeMediaAsset(id);
-        return jsonResp(res, 200, { success: true, asset });
+        return jsonResp(res, 200, { success: true, asset: sanitizeMediaAssetForApi(asset) });
       } catch (e) { return jsonResp(res, 500, { success: false, error: e.message }); }
 
     } else if (urlPath === '/api/image/generate') {

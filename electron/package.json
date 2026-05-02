@@ -173,6 +173,10 @@
           "!**/files/*",
           "!**/index.md"
         ]
+      },
+      {
+        "from": "../knowledge/9bizclaw",
+        "to": "knowledge/9bizclaw"
       }
     ],
     "asar": true,
@@ -223,6 +227,10 @@
             "!**/node/share/**",
             "!**/node/include/**"
           ]
+        },
+        {
+          "from": "vendor-meta.json",
+          "to": "vendor-meta.json"
         }
       ],
       "extendInfo": {

@@ -5177,7 +5177,11 @@
         variant: 'danger',
       });
       if (!ok) return;
-      await window.claw.deleteBrandAsset(name);
+      var result = await window.claw.deleteBrandAsset(name);
+      if (!result || result.success === false) {
+        showToast((result && result.error) || 'Chưa xóa được tài sản thương hiệu', 'error');
+        return;
+      }
       showToast('Đã xóa tài sản thương hiệu', 'success');
       loadBrandAssets();
     });
@@ -5194,7 +5198,11 @@
         variant: 'danger',
       });
       if (!ok) return;
-      await window.claw.deleteMediaAsset(id);
+      var result = await window.claw.deleteMediaAsset(id);
+      if (!result || result.success === false) {
+        showToast((result && result.error) || 'Chưa xóa được tài sản hình ảnh', 'error');
+        return;
+      }
       showToast('Đã xóa tài sản hình ảnh', 'success');
       loadImageAssetsTab();
     });

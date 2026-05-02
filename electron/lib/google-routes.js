@@ -86,7 +86,7 @@ module.exports._test = { normalizeSheetValues, fitSheetRangeToValues };
 
 async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
   try {
-    const sourceChannel = (req.headers['x-source-channel'] || '').toLowerCase();
+    const sourceChannel = String(req.headers['x-source-channel'] || req.headers['x-9bizclaw-agent-channel'] || '').toLowerCase();
     const isZalo = sourceChannel === 'zalo';
     const blockZaloMutation = (label) => {
       if (!isZalo) return false;

@@ -87,7 +87,26 @@ jobs:
         env:
           MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          IS_RELEASE_TAG=false
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            IS_RELEASE_TAG=true
+          fi
+          if [ "$IS_RELEASE_TAG" = "true" ]; then
+            missing=""
+            for var_name in MAC_CERT_P12_BASE64 MAC_CERT_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!var_name}" ]; then
+                missing="$missing $var_name"
+              fi
+            done
+            if [ -n "$missing" ]; then
+              echo "::error::Release tags require macOS signing and notarization secrets:$missing"
+              exit 1
+            fi
+          fi
           if [ -z "$MAC_CERT_P12_BASE64" ]; then
             echo "⚠ No signing cert — building unsigned"
             echo "SIGN_AVAILABLE=false" >> $GITHUB_ENV
@@ -95,6 +114,10 @@ jobs:
             CERT_PATH="$RUNNER_TEMP/cert.p12"
             if ! echo "$MAC_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH" 2>/dev/null || [ ! -s "$CERT_PATH" ]; then
               echo "⚠ MAC_CERT_P12_BASE64 secret is set but base64 decode failed — building unsigned"
+              if [ "$IS_RELEASE_TAG" = "true" ]; then
+                echo "::error::MAC_CERT_P12_BASE64 secret is set but base64 decode failed; refusing to publish unsigned release"
+                exit 1
+              fi
               echo "SIGN_AVAILABLE=false" >> $GITHUB_ENV
               rm -f "$CERT_PATH"
             else
@@ -113,9 +136,17 @@ jobs:
             fi
           fi
 
+      - name: Run smoke guards
+        working-directory: electron
+        run: npm run smoke
+
       - name: Build .dmg
         working-directory: electron
         env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          npm_config_arch: ${{ matrix.arch }}
+          npm_config_target_arch: ${{ matrix.arch }}
+          npm_config_target_platform: darwin
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.SIGN_AVAILABLE == 'true' && 'true' || 'false' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -201,6 +232,36 @@ jobs:
             exit 1
           fi
           echo "FIXED — ${{ matrix.arch }} binary in place"
+
+      - name: Verify better-sqlite3 arch inside dmg
+        working-directory: electron
+        run: |
+          DMG=$(find "$(pwd)/../dist" -maxdepth 1 -name "*.dmg" | head -1)
+          if [ -z "$DMG" ]; then
+            echo "FATAL: no DMG found"
+            exit 1
+          fi
+          MOUNT_DIR="$RUNNER_TEMP/9bizclaw-dmg-${{ matrix.arch }}"
+          mkdir -p "$MOUNT_DIR"
+          hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -readonly
+          BINARY=$(find "$MOUNT_DIR" -name "better_sqlite3.node" -path "*/app.asar.unpacked/*" 2>/dev/null | head -1)
+          if [ -z "$BINARY" ]; then
+            hdiutil detach "$MOUNT_DIR" -quiet || true
+            echo "FATAL: better_sqlite3.node not found inside DMG"
+            exit 1
+          fi
+          DETECTED=$(node -e "
+            const fs=require('fs'),fd=fs.openSync(process.argv[1],'r'),b=Buffer.alloc(16);
+            fs.readSync(fd,b,0,16,0);fs.closeSync(fd);
+            const cpu=b.readUInt32LE(4);
+            console.log(cpu===0x0100000c?'arm64':cpu===0x01000007?'x64':'unknown');
+          " "$BINARY")
+          hdiutil detach "$MOUNT_DIR" -quiet
+          echo "DMG better-sqlite3 arch: $DETECTED, target: ${{ matrix.arch }}"
+          if [ "$DETECTED" != "${{ matrix.arch }}" ]; then
+            echo "FATAL: DMG better_sqlite3.node arch mismatch"
+            exit 1
+          fi
 
       - name: List dist output
         run: ls -lh dist/ || true

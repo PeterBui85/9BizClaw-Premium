@@ -85,8 +85,11 @@ if (/return\s+\{\s*valid:\s*true,\s*pageId:\s*me\.id/.test(fbPublisher)) {
 }
 
 const cronApi = readText('electron/lib/cron-api.js');
-if (!cronApi.includes('refreshCronApiTokenInCustomCrons') || !/token=\[a-f0-9\]\{48\}/.test(cronApi)) {
-  fail('electron/lib/cron-api.js', 'cron API must refresh embedded custom-cron tokens after restart');
+if (!cronApi.includes('stripCronApiTokenFromCustomCrons') || !cronApi.includes('removed live API token from custom-crons.json')) {
+  fail('electron/lib/cron-api.js', 'cron API must remove embedded live tokens from custom-crons after restart');
+}
+if (/finalPrompt\s*\+=[\s\S]{0,600}token=\s*['"]?\s*\+\s*_cronApiToken/.test(cronApi)) {
+  fail('electron/lib/cron-api.js', 'agent cron prompts must not persist the live cron API token');
 }
 
 const facebookSkill = readText('skills/operations/facebook-image.md');

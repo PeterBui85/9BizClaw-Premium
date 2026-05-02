@@ -157,6 +157,43 @@ async function ensureVendorExtracted({ onProgress } = {}) {
 
   if (onProgress) onProgress({ percent: 0, message: 'Đang chuẩn bị giải nén...' });
 
+  // Verify SHA256 BEFORE touching the existing vendor directory. If the
+  // installer bundle is corrupt, the last working vendor must remain intact.
+  if (meta.sha256) {
+    if (onProgress) onProgress({ percent: 1, message: 'Đang kiểm tra tính toàn vẹn...' });
+    try {
+      const crypto = require('crypto');
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(tarPath, { highWaterMark: 4 * 1024 * 1024 });
+      const totalBytes = meta.archive_bytes || 0;
+      let readBytes = 0;
+      let lastSha256Percent = 1;
+      await new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => {
+          hash.update(chunk);
+          readBytes += chunk.length;
+          if (totalBytes > 0) {
+            const pct = 1 + Math.floor((readBytes / totalBytes) * 3);
+            if (pct > lastSha256Percent) {
+              lastSha256Percent = pct;
+              if (onProgress) onProgress({ percent: pct, message: 'Đang kiểm tra tính toàn vẹn...' });
+            }
+          }
+        });
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      const actual = hash.digest('hex');
+      if (actual !== meta.sha256) {
+        throw new Error(`vendor-bundle.tar SHA256 mismatch (expected ${meta.sha256.slice(0, 16)}..., got ${actual.slice(0, 16)}...). File is corrupt or tampered. Re-install 9BizClaw.`);
+      }
+      console.log('[vendor-extract] sha256 verified');
+    } catch (e) {
+      if (e.message && e.message.includes('mismatch')) throw e;
+      console.warn('[vendor-extract] sha256 check skipped:', e.message);
+    }
+  }
+
   // CRITICAL: if an old vendor dir exists (from a previous install with a
   // different bundle version), we MUST NOT call fs.rmSync here — Windows can
   // take 5-15 minutes to sync-delete 126k+ small files while Defender scans
@@ -229,44 +266,6 @@ async function ensureVendorExtracted({ onProgress } = {}) {
     }, 15000);
   } catch {}
   try { fs.mkdirSync(userData, { recursive: true }); } catch {}
-
-  // Verify SHA256 BEFORE extraction — defends against corrupted install, disk
-  // bit rot, MITM at download (if future version streams from network).
-  if (meta.sha256) {
-    if (onProgress) onProgress({ percent: 1, message: 'Đang kiểm tra tính toàn vẹn...' });
-    try {
-      const crypto = require('crypto');
-      const hash = crypto.createHash('sha256');
-      const stream = fs.createReadStream(tarPath, { highWaterMark: 4 * 1024 * 1024 });
-      const totalBytes = meta.archive_bytes || 0;
-      let readBytes = 0;
-      let lastSha256Percent = 1;
-      await new Promise((resolve, reject) => {
-        stream.on('data', (chunk) => {
-          hash.update(chunk);
-          readBytes += chunk.length;
-          if (totalBytes > 0) {
-            // 1-4% range during SHA256 check so splash shows steady progress
-            const pct = 1 + Math.floor((readBytes / totalBytes) * 3);
-            if (pct > lastSha256Percent) {
-              lastSha256Percent = pct;
-              if (onProgress) onProgress({ percent: pct, message: 'Đang kiểm tra tính toàn vẹn...' });
-            }
-          }
-        });
-        stream.on('end', resolve);
-        stream.on('error', reject);
-      });
-      const actual = hash.digest('hex');
-      if (actual !== meta.sha256) {
-        throw new Error(`vendor-bundle.tar SHA256 mismatch (expected ${meta.sha256.slice(0, 16)}..., got ${actual.slice(0, 16)}...). File is corrupt or tampered. Re-install 9BizClaw.`);
-      }
-      console.log('[vendor-extract] sha256 verified');
-    } catch (e) {
-      if (e.message && e.message.includes('mismatch')) throw e;
-      console.warn('[vendor-extract] sha256 check skipped:', e.message);
-    }
-  }
 
   // Spawn Windows native tar.exe — same binary prebuild-vendor uses.
   // Avoid Git Bash MSYS tar (fails on drive letters with "Cannot connect to C:").

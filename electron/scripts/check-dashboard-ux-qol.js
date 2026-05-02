@@ -42,6 +42,8 @@ mustNotInclude('calendar create error alert', "alert('Lỗi tạo sự kiện:")
 mustNotInclude('calendar update error alert', "alert('Lỗi cập nhật sự kiện:");
 mustNotInclude('calendar delete error alert', "alert('Lỗi xóa sự kiện:");
 mustNotInclude('calendar drag error alert', "alert('Lỗi cập nhật thời gian");
+mustInclude('brand delete checks backend success', 'Chưa xóa được tài sản thương hiệu');
+mustInclude('media delete checks backend success', 'Chưa xóa được tài sản hình ảnh');
 
 if (failures.length) {
   console.error('[dashboard-ux-qol] FAIL');

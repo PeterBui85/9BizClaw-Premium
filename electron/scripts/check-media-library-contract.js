@@ -79,6 +79,10 @@ for (const route of ['/api/media/list', '/api/media/search', '/api/media/upload'
 }
 assert('zalo send-media rejects raw file paths', cronApiSource.includes('send-media requires mediaId') && !/filePath\s*\|\|\s*imagePath/.test(cronApiSource));
 assert('media list defaults to customer audience over HTTP', /audience:\s*params\.audience\s*\|\|\s*'customer'/.test(cronApiSource));
+assert('media upload returns sanitized asset', /success:\s*true,\s*asset:\s*sanitizeMediaAssetForApi\(asset\)/.test(cronApiSource), 'upload response must not expose absolute media path');
+assert('media describe returns sanitized asset', /success:\s*true,\s*asset:\s*sanitizeMediaAssetForApi\(asset\)/.test(cronApiSource), 'describe response must not expose absolute media path');
+assert('agent cron prompts do not persist live API tokens', !/token='\s*\+\s*_cronApiToken|token=\s*'\s*\+\s*_cronApiToken|token=' \+ _cronApiToken|token=\s*\$\{_cronApiToken\}/.test(cronApiSource), 'custom-crons.json must not receive live API tokens');
+assert('cron token cleanup strips custom cron tokens', cronApiSource.includes('stripCronApiTokenFromCustomCrons') && !cronApiSource.includes('refreshCronApiTokenInCustomCrons(_cronApiToken)'), 'startup must strip, not refresh, live tokens in custom-crons.json');
 
 const channelsSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'channels.js'), 'utf8');
 assert('channels exports sendZaloMediaTo', /sendZaloMediaTo/.test(channelsSource));
@@ -108,6 +112,11 @@ const googleRoutesSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'go
 for (const action of ['create', 'update', 'delete']) {
   assert(`calendar ${action} blocks Zalo-origin writes`, googleRoutesSource.includes(`Google Calendar ${action} not allowed from Zalo channel`));
 }
+assert('google routes accept web_fetch agent channel header', googleRoutesSource.includes("x-9bizclaw-agent-channel"), 'Zalo/Telegram channel gate must read the header emitted by vendor web_fetch patch');
+
+const vendorPatchesSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf8');
+assert('web_fetch auth covers all Cron API fallback ports', /2020\[0-3\]/.test(vendorPatchesSource), 'web_fetch patch must cover ports 20200-20203');
+assert('web_fetch emits legacy and 9BizClaw channel headers', vendorPatchesSource.includes('"X-9BizClaw-Agent-Channel"') && vendorPatchesSource.includes('"X-Source-Channel"'), 'web_fetch patch must emit channel headers consumed by routes');
 
 if (failures.length) {
   console.error('[media-library-contract] FAIL');

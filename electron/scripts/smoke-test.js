@@ -1086,6 +1086,12 @@ function checkModuleContracts() {
   // Wave 1: boot.js
   try {
     const boot = require('../lib/boot');
+    const bootSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'boot.js'), 'utf-8');
+    const shaIdx = bootSource.indexOf("console.log('[vendor-extract] sha256 verified')");
+    const renameIdx = bootSource.indexOf('fs.renameSync(targetDir, stale)');
+    if (shaIdx === -1 || renameIdx === -1 || shaIdx > renameIdx) {
+      errors.push('boot.js must verify vendor-bundle.tar SHA256 before renaming existing vendor/');
+    }
     const required = ['getBundledVendorDir', 'ensureVendorExtracted', 'getBundledNodeBin',
       'getBundledOpenClawCliJs', 'augmentPathWithBundledNode', 'initPathAugmentation',
       'enumerateNodeManagerBinDirs', 'enumerateNodeManagerLibDirs',
@@ -2133,6 +2139,27 @@ try {
     fail('mac release workflow secrets', `build-mac.yml missing secret wiring: ${missing.join(', ')}`);
   } else {
     pass('mac release workflow wires signing and notarization secrets');
+  }
+  if (!workflow.includes('Run smoke guards') || !workflow.includes('npm run smoke')) {
+    fail('mac release workflow smoke', 'build-mac.yml must run npm run smoke before creating release DMGs');
+  } else if (!workflow.includes('Verify better-sqlite3 arch inside dmg') || !workflow.includes('hdiutil attach')) {
+    fail('mac release workflow dmg verify', 'build-mac.yml must verify native binary arch inside the uploaded DMG');
+  } else if (!workflow.includes('refusing to publish unsigned release') || !workflow.includes('Release tags require macOS signing and notarization secrets')) {
+    fail('mac release signing gate', 'release tags must fail instead of publishing unsigned/unnotarized DMGs');
+  } else {
+    pass('mac release workflow gates smoke, signing, notarization, and DMG arch');
+  }
+  const macResources = pkg.build?.mac?.extraResources || [];
+  if (!macResources.some(r => r && r.from === 'vendor-meta.json' && r.to === 'vendor-meta.json')) {
+    fail('mac vendor metadata', 'mac.extraResources must package vendor-meta.json for model integrity checks');
+  } else {
+    pass('mac vendor metadata packaged');
+  }
+  const extraResources = pkg.build?.extraResources || [];
+  if (!extraResources.some(r => r && r.from === '../knowledge/9bizclaw' && r.to === 'knowledge/9bizclaw')) {
+    fail('9BizClaw self-knowledge package', 'packaged installs must include knowledge/9bizclaw outside filtered CEO knowledge templates');
+  } else {
+    pass('9BizClaw self-knowledge packaged');
   }
 } catch (e) { fail('mac signing/notarization', e.message); }
 
