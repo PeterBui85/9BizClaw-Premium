@@ -660,6 +660,90 @@ function detectBinaryArch(filePath) {
   return 'unknown';
 }
 
+function isDarwinMachO(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return false;
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(4);
+    fs.readSync(fd, buf, 0, 4, 0);
+    fs.closeSync(fd);
+    const be = buf.readUInt32BE(0);
+    const le = buf.readUInt32LE(0);
+    return be === 0xfeedface || be === 0xfeedfacf ||
+      le === 0xfeedface || le === 0xfeedfacf ||
+      be === 0xcafebabe || be === 0xcafebabf ||
+      le === 0xcafebabe || le === 0xcafebabf;
+  } catch {
+    return false;
+  }
+}
+
+function findDeveloperIdIdentity() {
+  const explicit = (process.env.CSC_NAME || process.env.MAC_CODESIGN_IDENTITY || '').trim();
+  if (explicit) return explicit;
+
+  try {
+    const out = execSync('security find-identity -v -p codesigning', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    for (const line of out.split(/\r?\n/)) {
+      const m = line.match(/"([^"]*Developer ID Application[^"]*)"/);
+      if (m) return m[1];
+    }
+  } catch (e) {
+    warn('could not list macOS signing identities:', e.message);
+  }
+  return '';
+}
+
+function signDarwinVendorBinaries() {
+  if (detectTargetPlatform() !== 'darwin') return;
+  if (process.platform !== 'darwin') {
+    warn('cannot sign darwin vendor binaries on non-darwin host');
+    return;
+  }
+  if (process.env.SIGN_AVAILABLE !== 'true') {
+    log('SIGN_AVAILABLE is not true; skipping vendor codesign');
+    return;
+  }
+
+  const identity = findDeveloperIdIdentity();
+  if (!identity) fatal('SIGN_AVAILABLE=true but no Developer ID Application identity is available for vendor codesign');
+
+  const binaries = [];
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile() && isDarwinMachO(full)) {
+        binaries.push(full);
+      }
+    }
+  }
+  walk(VENDOR);
+
+  log(`signing ${binaries.length} darwin vendor Mach-O binaries before tar pack...`);
+  for (const file of binaries) {
+    const res = spawnSync('/usr/bin/codesign', [
+      '--force',
+      '--timestamp',
+      '--options', 'runtime',
+      '--sign', identity,
+      file,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+    if (res.status !== 0) {
+      fatal(
+        `codesign failed for vendor binary: ${file}\n` +
+        `${res.stdout || ''}${res.stderr || ''}`.trim()
+      );
+    }
+  }
+  log('vendor Mach-O codesign complete');
+}
+
 // Rebuild better-sqlite3 inside 9router's bundled Next.js app dir so it
 // matches the bundled Node binary (v22.x, not Electron). Without this step
 // the binary 9router ships in its npm package was compiled on the 9router
@@ -963,6 +1047,7 @@ async function main() {
   await downloadGogBinary(platform, arch);
   npmInstallVendorPackages();
   fixNineRouterNativeModules(platform, arch);
+  signDarwinVendorBinaries();
 
   // Apply vendor patches at BUILD TIME so the packaged app ships pre-patched.
   // Runtime ensure*Fix calls in main.js become no-ops (idempotent via markers).

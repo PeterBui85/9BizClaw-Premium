@@ -86,12 +86,6 @@ jobs:
             console.log('OK');
           "
 
-      - name: Pre-bake vendor (real Node + openclaw + 9router)
-        working-directory: electron
-        env:
-          TARGET_ARCH: ${{ matrix.arch }}
-        run: npm run prebuild:vendor
-
       - name: Import signing certificate
         env:
           MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
@@ -159,6 +153,12 @@ jobs:
               echo "✓ Signing cert imported"
             fi
           fi
+
+      - name: Pre-bake vendor (real Node + openclaw + 9router)
+        working-directory: electron
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: npm run prebuild:vendor
 
       - name: Run smoke guards
         working-directory: electron
