@@ -554,7 +554,10 @@ function checkPatchAnchor(name, file, anchorRegex, patchMarker, hint) {
     warn(name, `plugin source not found at ${file} — skipped (Mac vendor or fresh install)`);
     return;
   }
-  const content = fs.readFileSync(file, 'utf-8');
+  checkPatchAnchorContent(name, fs.readFileSync(file, 'utf-8'), anchorRegex, patchMarker, hint);
+}
+
+function checkPatchAnchorContent(name, content, anchorRegex, patchMarker, hint) {
   if (anchorRegex.test(content)) {
     pass(name + ' (anchor matches — unpatched)');
     return;
@@ -581,13 +584,22 @@ let modoroZaloSrc = null;
 for (const c of modoroZaloSrcCandidates) {
   if (fs.existsSync(c)) { modoroZaloSrc = c; break; }
 }
+const modoroZaloTarSrc = !!(
+  tarContents
+  && tarContents.has('vendor/node_modules/modoro-zalo/src/openzca.ts')
+  && tarContents.has('vendor/node_modules/modoro-zalo/src/inbound.ts')
+);
 
 // In CI Mac builds the vendor MUST contain modoro-zalo (no user-installed
 // fallback exists in CI). Fail loudly if vendor is empty so the build doesn't
 // silently ship a DMG with no plugin patches applied at runtime.
 const isCiBuild = !!process.env.CI || !!process.env.GITHUB_ACTIONS;
-if (!modoroZaloSrc && isCiBuild && process.platform === 'darwin') {
+if (!modoroZaloSrc && !modoroZaloTarSrc && isCiBuild && process.platform === 'darwin') {
   fail('modoro-zalo vendor source', 'CI Mac build requires vendor/node_modules/modoro-zalo/src — prebuild-vendor failed silently');
+}
+
+if (!modoroZaloSrc && modoroZaloTarSrc && isCiBuild && process.platform === 'darwin') {
+  pass('modoro-zalo vendor source present in vendor-bundle.tar');
 }
 
 if (modoroZaloSrc) {
@@ -616,6 +628,30 @@ if (modoroZaloSrc) {
     /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
     '9BizClaw BLOCKLIST PATCH',
     'modoro-zalo inbound.ts missing blocklist patch — check electron/packages/modoro-zalo/src/inbound.ts'
+  );
+} else if (modoroZaloTarSrc) {
+  const tarOpenzcaTs = readTarEntryText(VENDOR_TAR, 'vendor/node_modules/modoro-zalo/src/openzca.ts');
+  const tarInboundTs = readTarEntryText(VENDOR_TAR, 'vendor/node_modules/modoro-zalo/src/inbound.ts');
+  checkPatchAnchorContent(
+    'openzca.ts spawn anchor',
+    tarOpenzcaTs,
+    /spawn\s*\(\s*binary\s*,/,
+    '9BizClaw PATCH',
+    'modoro-zalo openzca.ts missing shell-fix patch - check electron/packages/modoro-zalo/src/openzca.ts'
+  );
+  checkPatchAnchorContent(
+    'inbound.ts disableBlockStreaming anchor',
+    tarInboundTs,
+    /disableBlockStreaming:\s*\n?\s*typeof account\.config\.blockStreaming === ["']boolean["']/,
+    '9BizClaw FORCE-ONE-MESSAGE PATCH',
+    'modoro-zalo inbound.ts missing force-one-message patch - check electron/packages/modoro-zalo/src/inbound.ts'
+  );
+  checkPatchAnchorContent(
+    'inbound.ts blocklist anchor',
+    tarInboundTs,
+    /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
+    '9BizClaw BLOCKLIST PATCH',
+    'modoro-zalo inbound.ts missing blocklist patch - check electron/packages/modoro-zalo/src/inbound.ts'
   );
 } else {
   warn('modoro-zalo plugin source', 'not found in vendor or ~/.openclaw/extensions — patch anchors skipped');

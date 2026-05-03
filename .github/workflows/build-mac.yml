@@ -85,7 +85,7 @@ jobs:
         working-directory: electron
         env:
           TARGET_ARCH: ${{ matrix.arch }}
-        run: node scripts/prebuild-vendor.js
+        run: npm run prebuild:vendor
 
       - name: Import signing certificate
         env:
