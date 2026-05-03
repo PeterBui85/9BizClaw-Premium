@@ -223,6 +223,7 @@ function readTarEntryText(tarPath, entry) {
 // Uses `tar -tvf` to list contents without extracting — fast.
 let tarContents = null;
 let tarListFailed = false;
+let vendorMeta = null;
 if (hasVendorTar && !hasVendorDir) {
   try {
     const tarBin = process.platform === 'win32'
@@ -235,8 +236,8 @@ if (hasVendorTar && !hasVendorDir) {
       tarContents = new Set(res.stdout.split('\n').map(s => s.trim()).filter(Boolean));
       pass(`vendor-bundle.tar contains ${tarContents.size} entries`);
       try {
-        const meta = JSON.parse(fs.readFileSync(VENDOR_META, 'utf8'));
-        pass(`vendor-meta.json bundle_version=${meta.bundle_version}`);
+        vendorMeta = JSON.parse(fs.readFileSync(VENDOR_META, 'utf8'));
+        pass(`vendor-meta.json bundle_version=${vendorMeta.bundle_version}`);
       } catch {}
     } else {
       warn('vendor-bundle.tar', `system tar -tf failed exit ${res.status}: ${res.error?.message || (res.stderr || '').slice(0, 200) || 'no stderr'}; using JS tar scanner`);
@@ -253,6 +254,9 @@ if (hasVendorTar && !hasVendorDir) {
       fail('vendor-bundle.tar', `could not inspect: ${fallbackErr.message}`);
     }
   }
+}
+if (hasVendorTar && !vendorMeta) {
+  try { vendorMeta = JSON.parse(fs.readFileSync(VENDOR_META, 'utf8')); } catch {}
 }
 
 function checkVendorVersion(pkgName, expected) {
@@ -328,7 +332,8 @@ const gogBin = process.platform === 'win32'
   ? path.join(VENDOR, 'gog', 'gog.exe')
   : path.join(VENDOR, 'gog', 'gog');
 if (tarContents && !hasVendorDir) {
-  const gogEntry = process.platform === 'win32' ? 'vendor/gog/gog.exe' : 'vendor/gog/gog';
+  const tarPlatform = vendorMeta?.target_platform || process.platform;
+  const gogEntry = tarPlatform === 'win32' ? 'vendor/gog/gog.exe' : 'vendor/gog/gog';
   if (tarContents.has(gogEntry)) {
     pass('vendor tar: gog binary present');
   } else {
@@ -350,14 +355,16 @@ if (tarContents && !hasVendorDir) {
 }
 
 function checkVendorExtractionSentinels() {
-  if (!isBundledBuild || process.platform !== 'win32') return;
+  if (!isBundledBuild) return;
   const bootSource = fs.readFileSync(path.join(ROOT, 'lib', 'boot.js'), 'utf8');
   if (/node_modules['"],\s*['"]pdf-parse['"]/.test(bootSource)) {
     fail('vendor extraction sentinels', 'boot.js must not sentinel-check pdf-parse under vendor; pdf-parse is packaged as an Electron app dependency, not in vendor-bundle.tar');
     return;
   }
+  const tarPlatform = vendorMeta?.target_platform || process.platform;
+  const nodeEntry = tarPlatform === 'win32' ? 'vendor/node/node.exe' : 'vendor/node/bin/node';
   const sentinelEntries = [
-    'vendor/node/node.exe',
+    nodeEntry,
     'vendor/node_modules/openclaw/openclaw.mjs',
     'vendor/node_modules/openclaw/package.json',
     'vendor/node_modules/modoro-zalo/openclaw.plugin.json',

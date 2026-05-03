@@ -804,10 +804,11 @@ function fixNineRouterNativeModules(platform, arch) {
 // vendor-version.txt).
 //
 // Mac DMG is untouched — drag-drop APFS copy is already fast enough.
-function packVendorForWindows() {
-  if (process.platform !== 'win32' && detectTargetPlatform() !== 'win32') return;
+function packVendorForPackagedApp() {
+  const targetPlatform = detectTargetPlatform();
+  if (targetPlatform !== 'win32' && targetPlatform !== 'darwin') return;
 
-  log('packing vendor/ → vendor-bundle.tar for Windows (one-big-file install)...');
+  log(`packing vendor/ → vendor-bundle.tar for ${targetPlatform} (one-big-file install)...`);
 
   const tarPath = path.join(ROOT, 'vendor-bundle.tar');
   const metaPath = path.join(ROOT, 'vendor-meta.json');
@@ -847,7 +848,9 @@ function packVendorForWindows() {
   // chained before prebuild-vendor in package.json). No extra include list needed
   // — if prebuild-models ran, models ship in the tar; if it didn't, tar just has
   // node/ + node_modules/ and RAG smoke will warn+skip instead of fail.
-  const tarBin = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  const tarBin = process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+    : 'tar';
   const tarArgs = ['-cf', tarPath, '-C', ROOT, 'vendor'];
   log(`  running: ${tarBin} ${tarArgs.join(' ')}`);
   const tarRes = spawnSync(tarBin, tarArgs, { stdio: 'inherit', shell: false });
@@ -897,7 +900,8 @@ function packVendorForWindows() {
     modelSha,
     created_at: new Date().toISOString(),
     node_version: NODE_VERSION,
-    target_platform: 'win32',
+    target_platform: targetPlatform,
+    target_arch: detectTargetArch(),
   };
   fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
   log(`  ✓ vendor-meta.json written`);
@@ -922,7 +926,7 @@ async function main() {
 
   // Skip everything if vendor-bundle.tar + meta already exist and match pinned
   // versions. Saves ~4 minutes on rebuild when nothing has changed.
-  if (platform === 'win32') {
+  if (platform === 'win32' || platform === 'darwin') {
     const tarPath = path.join(ROOT, 'vendor-bundle.tar');
     const metaPath = path.join(ROOT, 'vendor-meta.json');
     const expectedBundleVersion = getVendorBundleVersion(platform, arch);
@@ -930,8 +934,9 @@ async function main() {
       try {
         const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
         if (meta.node_version === NODE_VERSION && meta.bundle_version === expectedBundleVersion && meta.sha256) {
-          if (!tarHasEntry(tarPath, 'vendor/gog/gog.exe')) {
-            warn('vendor-bundle.tar missing gog.exe — rebuilding');
+          const expectedGogEntry = platform === 'win32' ? 'vendor/gog/gog.exe' : 'vendor/gog/gog';
+          if (!tarHasEntry(tarPath, expectedGogEntry)) {
+            warn(`vendor-bundle.tar missing ${expectedGogEntry} — rebuilding`);
           } else {
           // Verify tar integrity hasn't been tampered with since meta was written
           const actualSha = sha256File(tarPath);
@@ -974,8 +979,8 @@ async function main() {
     warn('vendor patches failed (non-fatal — runtime will retry):', e.message);
   }
 
-  if (platform === 'win32') {
-    packVendorForWindows();
+  if (platform === 'win32' || platform === 'darwin') {
+    packVendorForPackagedApp();
     log('vendor archive ready at', path.join(ROOT, 'vendor-bundle.tar'));
   } else {
     // Platform-F1: emit vendor-meta.json for Mac too so verifyEmbedderModelSha

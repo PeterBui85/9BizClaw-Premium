@@ -46,17 +46,16 @@ let splashWindow = null;
 function getBundledVendorDir() {
   try {
     if (!app || !app.isPackaged) return null;
-    if (process.platform === 'win32') {
-      // Windows packaged: extracted vendor lives in userData (written by
-      // ensureVendorExtracted on first launch). Falls back to resources/vendor
-      // if the old direct-ship layout is still present (old installs).
+    if (process.platform === 'win32' || process.platform === 'darwin') {
+      // Packaged vendor lives in userData after first-launch extraction.
+      // Falls back to resources/vendor if an old direct-ship layout is present.
       const extracted = path.join(app.getPath('userData'), 'vendor');
       if (fs.existsSync(extracted)) return extracted;
       const legacy = path.join(process.resourcesPath, 'vendor');
       if (fs.existsSync(legacy)) return legacy;
       return null;
     }
-    // Mac / Linux packaged: vendor ships directly in resources/
+    // Linux packaged: vendor ships directly in resources/ if ever supported.
     const v = path.join(process.resourcesPath, 'vendor');
     if (fs.existsSync(v)) return v;
   } catch {}
@@ -77,10 +76,16 @@ function getBundledVendorDir() {
 //
 // Errors are fatal to the launch — if extraction fails, show an error dialog
 // and quit. There's no safe fallback: bot can't run without vendor.
+function getVendorNodeBinPath(targetDir) {
+  return process.platform === 'win32'
+    ? path.join(targetDir, 'node', 'node.exe')
+    : path.join(targetDir, 'node', 'bin', 'node');
+}
+
 function getVendorSentinelPaths(targetDir) {
   const e5 = path.join(targetDir, 'models', 'Xenova', 'multilingual-e5-small');
   return [
-    path.join(targetDir, 'node', 'node.exe'),
+    getVendorNodeBinPath(targetDir),
     path.join(targetDir, 'node_modules', 'openclaw', 'openclaw.mjs'),
     path.join(targetDir, 'node_modules', 'openclaw', 'package.json'),
     path.join(targetDir, 'node_modules', 'modoro-zalo', 'openclaw.plugin.json'),
@@ -96,8 +101,8 @@ function findMissingVendorSentinel(targetDir) {
 }
 
 async function ensureVendorExtracted({ onProgress } = {}) {
-  // Mac + Linux + dev mode → no-op. Only Windows packaged uses the tar indirection.
-  if (process.platform !== 'win32') return { skipped: true };
+  // Packaged Windows + Mac use the tar indirection. Dev/Linux no-op.
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return { skipped: true };
   if (!app.isPackaged) return { skipped: true };
 
   const resDir = process.resourcesPath;
@@ -124,7 +129,7 @@ async function ensureVendorExtracted({ onProgress } = {}) {
   try {
     if (fs.existsSync(versionStamp)) {
       const current = fs.readFileSync(versionStamp, 'utf8').trim();
-      if (current === meta.bundle_version && fs.existsSync(path.join(targetDir, 'node', 'node.exe'))) {
+      if (current === meta.bundle_version && fs.existsSync(getVendorNodeBinPath(targetDir))) {
         // SAFETY: verify load-bearing files are present. C5 FIX: add model
         // .onnx to sentinel list. If antivirus quarantines the onnx post-
         // install, version stamp still matches, old code would skip re-extract
@@ -209,21 +214,23 @@ async function ensureVendorExtracted({ onProgress } = {}) {
   // 2 client machines hit this on every overlay install.
   try {
     if (fs.existsSync(targetDir)) {
-      // Phase 0: kill processes that hold locks inside vendor/
-      try {
-        const { execSync } = require('child_process');
-        const vendorAbs = path.resolve(targetDir).replace(/\//g, '\\\\');
-        // taskkill any node.exe whose command line references our vendor dir
-        // /F = force, /T = tree-kill children. Errors ignored (process may not exist).
-        try { execSync(`powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${vendorAbs.replace(/'/g, "''")}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`, { timeout: 8000 }); } catch {}
-        // Also kill by known process names that commonly lock vendor files
-        try { execSync('taskkill /F /IM 9router.exe 2>nul', { timeout: 3000 }); } catch {}
-        try { execSync('taskkill /F /IM openzca.exe 2>nul', { timeout: 3000 }); } catch {}
-        // Give OS a moment to release file handles after kill
-        await new Promise(r => setTimeout(r, 2000));
-        console.log('[vendor-extract] killed leftover processes before rename');
-      } catch (killErr) {
-        console.warn('[vendor-extract] process cleanup (non-fatal):', killErr.message);
+      // Phase 0: kill Windows processes that hold locks inside vendor/
+      if (process.platform === 'win32') {
+        try {
+          const { execSync } = require('child_process');
+          const vendorAbs = path.resolve(targetDir).replace(/\//g, '\\\\');
+          // taskkill any node.exe whose command line references our vendor dir
+          // /F = force, /T = tree-kill children. Errors ignored (process may not exist).
+          try { execSync(`powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${vendorAbs.replace(/'/g, "''")}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`, { timeout: 8000 }); } catch {}
+          // Also kill by known process names that commonly lock vendor files
+          try { execSync('taskkill /F /IM 9router.exe 2>nul', { timeout: 3000 }); } catch {}
+          try { execSync('taskkill /F /IM openzca.exe 2>nul', { timeout: 3000 }); } catch {}
+          // Give OS a moment to release file handles after kill
+          await new Promise(r => setTimeout(r, 2000));
+          console.log('[vendor-extract] killed leftover processes before rename');
+        } catch (killErr) {
+          console.warn('[vendor-extract] process cleanup (non-fatal):', killErr.message);
+        }
       }
       const stale = targetDir + '.stale-' + Date.now();
       try {
@@ -269,8 +276,10 @@ async function ensureVendorExtracted({ onProgress } = {}) {
 
   // Spawn Windows native tar.exe — same binary prebuild-vendor uses.
   // Avoid Git Bash MSYS tar (fails on drive letters with "Cannot connect to C:").
-  const tarBin = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
-  if (!fs.existsSync(tarBin)) {
+  const tarBin = process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+    : 'tar';
+  if (process.platform === 'win32' && !fs.existsSync(tarBin)) {
     throw new Error(`Windows native tar.exe not found at ${tarBin}. Need Windows 10 1803+ or later.`);
   }
 
@@ -347,9 +356,9 @@ async function ensureVendorExtracted({ onProgress } = {}) {
         return reject(new Error(`tar extract failed (exit ${code}): ${stderrBuf.slice(0, 500)}`));
       }
       // Verify extract landed where expected
-      const nodeBin = path.join(targetDir, 'node', 'node.exe');
+      const nodeBin = getVendorNodeBinPath(targetDir);
       if (!fs.existsSync(nodeBin)) {
-        return reject(new Error(`Extract succeeded but vendor/node/node.exe missing at ${nodeBin}. Archive may be damaged.`));
+        return reject(new Error(`Extract succeeded but bundled Node is missing at ${nodeBin}. Archive may be damaged.`));
       }
       const missing = findMissingVendorSentinel(targetDir);
       if (missing) {
@@ -1138,7 +1147,7 @@ function findGlobalPackageFile(packageName, relativeFile) {
 // on first launch (or after update). Returns when extraction is done OR immediately
 // on Mac / dev / already-extracted cases.
 async function runSplashAndExtractVendor() {
-  if (process.platform !== 'win32' || !app.isPackaged) return;
+  if ((process.platform !== 'win32' && process.platform !== 'darwin') || !app.isPackaged) return;
 
   // Check upfront if extraction is needed before spawning a splash window
   try {
@@ -1149,7 +1158,7 @@ async function runSplashAndExtractVendor() {
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
     const versionStamp = path.join(app.getPath('userData'), 'vendor-version.txt');
     const targetDir = path.join(app.getPath('userData'), 'vendor');
-    const vendorNode = path.join(targetDir, 'node', 'node.exe');
+    const vendorNode = getVendorNodeBinPath(targetDir);
     if (fs.existsSync(versionStamp) && fs.existsSync(vendorNode)) {
       const current = fs.readFileSync(versionStamp, 'utf8').trim();
       if (current === meta.bundle_version) {

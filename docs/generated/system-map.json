@@ -2151,7 +2151,7 @@
     },
     {
       "path": "electron/lib/boot.js",
-      "bytes": 58312
+      "bytes": 58646
     },
     {
       "path": "electron/lib/config.js",
