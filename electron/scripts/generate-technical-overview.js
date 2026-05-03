@@ -414,7 +414,7 @@ sections.push(
   h2('Cron API (port 20200)'),
   bullet([{ text: 'Auth: ', bold: true }, { text: 'crypto.randomBytes(24) = 48 hex chars, rotated mỗi boot, lưu cron-api-token.txt' }]),
   bullet([{ text: 'Bind: ', bold: true }, { text: '127.0.0.1 only (localhost)' }]),
-  bullet([{ text: 'Endpoints: ', bold: true }, { text: '/api/cron/create, /list, /delete, /toggle' }]),
+  bullet([{ text: 'Endpoints: ', bold: true }, { text: '/api/cron/create, /replace, /list, /delete, /toggle' }]),
   bullet([{ text: 'Port fallback: ', bold: true }, { text: 'Bắt đầu 20200, retry 3 lần (tăng port) nếu EADDRINUSE' }]),
   pageBreak(),
 );

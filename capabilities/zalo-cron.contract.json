@@ -36,6 +36,11 @@
       "purpose": "create fixed-message or agent-mode cron"
     },
     {
+      "method": "POST",
+      "path": "/api/cron/replace",
+      "purpose": "atomically delete old cron entries and create replacements so partial updates cannot lose schedules"
+    },
+    {
       "method": "GET",
       "path": "/api/cron/delete",
       "purpose": "delete cron by id"
@@ -57,12 +62,14 @@
   ],
   "successProofs": [
     "create response contains id",
+    "replace response contains success:true, transactional:true, and createdIds",
     "custom-crons.json entry is enabled and schedulable",
     "safe openzca parser accepts fixed-message prompt"
   ],
   "negativeTests": [
     "must reject unknown groupId",
     "must reject every-minute cron frequency",
+    "must not delete existing cron entries when replacement create validation fails",
     "must refresh embedded internal tokens after app restart"
   ]
 }

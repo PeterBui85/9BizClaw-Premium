@@ -81,6 +81,23 @@ web_fetch http://127.0.0.1:20200/api/cron/toggle?id=<cronId>&enabled=false
 
 Moi thao tac phai confirm CEO truoc.
 
+## Sua / thay nhieu cron
+
+KHONG xoa tung cron roi moi tao lai. Neu buoc tao lai loi, cron cu se mat.
+
+Dung route atomic:
+
+```
+web_fetch url="http://127.0.0.1:20200/api/cron/replace" method=POST body="{\"deleteIds\":[\"cron_cu\"],\"creates\":[{\"label\":\"Bao cao moi\",\"cronExpr\":\"0 8 * * *\",\"groupId\":\"123456\",\"mode\":\"agent\",\"prompt\":\"Tong hop hoat dong hom qua va gui bao cao ngan gon\"}]}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+Chi bao da cap nhat khi response co:
+- `success:true`
+- `transactional:true`
+- `createdIds` du so cron moi
+
+Neu route tra loi, API tu giu nguyen cron cu va bot phai bao ro loi cho CEO.
+
 ## Luu y
 
 - Label tieng Viet day du dau, KHONG emoji.

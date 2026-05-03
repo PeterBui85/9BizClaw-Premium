@@ -297,6 +297,130 @@ function startCronApi() {
     return _withCustomCronLock(fn);
   }
 
+  function normalizeCronScheduleSpec(spec) {
+    const cronExpr = spec?.cronExpr;
+    const oneTimeAt = spec?.oneTimeAt;
+    if (cronExpr) {
+      const normalized = String(cronExpr).trim().replace(/\s+/g, ' ');
+      if (!nodeCron.validate(normalized)) return { error: 'invalid cronExpr: ' + cronExpr };
+      const minField = normalized.split(' ')[0] || '';
+      const stepMatch = minField.match(/^\*\/(\d+)$/);
+      if (minField === '*' || (stepMatch && parseInt(stepMatch[1], 10) < 5)) {
+        return { error: 'frequency too high - minimum 5 minutes (use */5 or wider).' };
+      }
+      return { cronExpr: normalized };
+    }
+    if (oneTimeAt) {
+      const d = new Date(oneTimeAt);
+      if (isNaN(d.getTime())) return { error: 'invalid oneTimeAt: ' + oneTimeAt };
+      if (d.getTime() < Date.now() - 60000) return { error: 'oneTimeAt is in the past: ' + oneTimeAt };
+      return { oneTimeAt: String(oneTimeAt) };
+    }
+    return { error: 'cronExpr or oneTimeAt required' };
+  }
+
+  function parseMaybeJsonArray(value, fieldName) {
+    if (value == null || value === '') return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return Array.isArray(parsed) ? parsed : { error: fieldName + ' must be an array' };
+        } catch (e) {
+          return { error: 'invalid JSON for ' + fieldName + ': ' + e.message };
+        }
+      }
+      return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return { error: fieldName + ' must be an array' };
+  }
+
+  function makeCronId() {
+    return 'cron_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex');
+  }
+
+  function escapeCronSendText(text) {
+    return String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ').replace(/\r/g, '');
+  }
+
+  function buildCronEntryForAtomicReplace(spec, index = 0) {
+    if (!spec || typeof spec !== 'object') return { error: 'create entry #' + (index + 1) + ' must be an object' };
+    const schedule = normalizeCronScheduleSpec(spec);
+    if (schedule.error) return { error: 'create entry #' + (index + 1) + ': ' + schedule.error };
+
+    const mode = spec.mode === 'agent' ? 'agent' : 'fixed';
+    const id = makeCronId();
+    const label = String(spec.label || (mode === 'agent' ? 'Agent cron' : 'Cron') + ' ' + new Date().toISOString().slice(0, 16)).trim();
+
+    if (mode === 'agent') {
+      const agentPrompt = spec.prompt || spec.content;
+      if (!agentPrompt) return { error: 'create entry #' + (index + 1) + ': prompt (or content) required for mode=agent' };
+      if (String(agentPrompt).length > 2000) return { error: 'create entry #' + (index + 1) + ': prompt too long (max 2000 chars)' };
+
+      let finalPrompt = String(agentPrompt);
+      const delivery = resolveCronZaloTarget({
+        groupId: spec.groupId,
+        groupIds: spec.groupIds,
+        groupName: spec.groupName,
+        targetId: spec.targetId,
+        friendName: spec.friendName,
+        isGroup: spec.isGroup,
+      }, { allowMultipleGroups: false });
+      if (delivery?.error) return { error: 'create entry #' + (index + 1) + ': ' + delivery.error };
+      if (delivery) {
+        const deliveryParam = delivery.type === 'group'
+          ? 'groupId=' + encodeURIComponent(delivery.ids[0])
+          : 'targetId=' + encodeURIComponent(delivery.ids[0]) + '&isGroup=false';
+        const deliveryLabel = delivery.labels[0] || delivery.ids[0];
+        finalPrompt += '\n\n---\nSAU KHI HOAN THANH: gui ket qua vao ' + (delivery.type === 'group' ? 'nhom Zalo' : 'Zalo ca nhan') + ' "' + deliveryLabel + '":\n'
+          + 'web_fetch url=http://127.0.0.1:' + (_cronApiPort || 20200) + '/api/zalo/send?' + deliveryParam + '&text=KET_QUA_DA_VIET\n'
+          + 'QUY TAC VIET:\n'
+          + '- Thay KET_QUA_DA_VIET bang noi dung cuoi cung, URL-encode dung cach neu can.\n'
+          + '- Chi bao da xong sau khi API gui Zalo tra success:true.';
+      }
+
+      const entry = { id, label, prompt: finalPrompt, mode: 'agent', enabled: true, createdAt: new Date().toISOString() };
+      if (delivery?.type === 'group') entry.groupId = delivery.ids[0];
+      if (delivery?.type === 'user') {
+        entry.targetId = delivery.ids[0];
+        entry.isGroup = false;
+        if (delivery.friendName) entry.friendName = delivery.friendName;
+      }
+      if (schedule.cronExpr) entry.cronExpr = schedule.cronExpr;
+      else entry.oneTimeAt = schedule.oneTimeAt;
+      return { entry, delivery };
+    }
+
+    const content = spec.content;
+    if (!content) return { error: 'create entry #' + (index + 1) + ': content required' };
+    if (String(content).length > 500) return { error: 'create entry #' + (index + 1) + ': content too long (max 500 chars)' };
+    const delivery = resolveCronZaloTarget({
+      groupId: spec.groupId,
+      groupIds: spec.groupIds,
+      groupName: spec.groupName,
+      targetId: spec.targetId,
+      friendName: spec.friendName,
+      isGroup: spec.isGroup,
+    }, { allowMultipleGroups: true });
+    if (delivery?.error) return { error: 'create entry #' + (index + 1) + ': ' + delivery.error };
+    if (!delivery) return { error: 'create entry #' + (index + 1) + ': groupId/groupIds/groupName/targetId/friendName required' };
+    if (delivery.type === 'user' && delivery.ids.length !== 1) return { error: 'create entry #' + (index + 1) + ': fixed personal Zalo cron requires exactly one target' };
+    const targetStr = delivery.ids.join(',');
+    const entry = {
+      id,
+      label,
+      prompt: 'exec: openzca msg send ' + targetStr + ' "' + escapeCronSendText(content) + '"' + (delivery.type === 'group' ? ' --group' : '') + ' --profile default',
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    if (schedule.cronExpr) entry.cronExpr = schedule.cronExpr;
+    else entry.oneTimeAt = schedule.oneTimeAt;
+    return { entry, delivery };
+  }
+
   const server = http.createServer(async (req, res) => {
     const host = req.headers.host || '';
     if (!/^127\.0\.0\.1(:\d+)?$/.test(host) && !/^localhost(:\d+)?$/.test(host)) {
@@ -505,6 +629,79 @@ function startCronApi() {
           return jsonResp(res, 200, { success: true, id, entry });
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/cron/replace') {
+      try {
+        const deleteIdsRaw = params.deleteIds ?? params.ids ?? params.id;
+        const deleteIdsParsed = parseMaybeJsonArray(deleteIdsRaw, 'deleteIds');
+        if (deleteIdsParsed?.error) return jsonResp(res, 400, { error: deleteIdsParsed.error });
+        const deleteIds = [...new Set(deleteIdsParsed.map(id => String(id || '').trim()).filter(Boolean))];
+
+        let createsParsed = parseMaybeJsonArray(params.creates ?? params.create ?? params.entries, 'creates');
+        if (createsParsed?.error) return jsonResp(res, 400, { error: createsParsed.error });
+        if (createsParsed.length === 0 && (params.label || params.cronExpr || params.oneTimeAt || params.content || params.prompt)) {
+          createsParsed = [{
+            label: params.label,
+            cronExpr: params.cronExpr,
+            oneTimeAt: params.oneTimeAt,
+            groupId: params.groupId,
+            groupIds: params.groupIds,
+            groupName: params.groupName,
+            targetId: params.targetId,
+            friendName: params.friendName,
+            isGroup: params.isGroup,
+            content: params.content,
+            mode: params.mode,
+            prompt: params.prompt,
+          }];
+        }
+        if (deleteIds.length === 0 && createsParsed.length === 0) {
+          return jsonResp(res, 400, { error: 'deleteIds or creates required' });
+        }
+        if (createsParsed.length > 20) return jsonResp(res, 400, { error: 'too many creates (max 20)' });
+
+        const built = [];
+        for (let i = 0; i < createsParsed.length; i++) {
+          const result = buildCronEntryForAtomicReplace(createsParsed[i], i);
+          if (result.error) return jsonResp(res, 400, { error: result.error, transactional: true, changed: false });
+          built.push(result);
+        }
+
+        return await withWriteLock(async () => {
+          const crons = loadCustomCrons();
+          const existingIds = new Set(crons.map(c => String(c?.id || '')).filter(Boolean));
+          const missingIds = deleteIds.filter(id => !existingIds.has(id));
+          if (missingIds.length > 0) {
+            return jsonResp(res, 404, { error: 'cron not found: ' + missingIds.join(', '), transactional: true, changed: false });
+          }
+          const remaining = crons.filter(c => !deleteIds.includes(String(c?.id || '')));
+          if (remaining.length + built.length > 20) {
+            return jsonResp(res, 400, {
+              error: 'too many crons after replace (max 20). Existing after delete: ' + remaining.length + ', creates: ' + built.length,
+              transactional: true,
+              changed: false,
+            });
+          }
+          const entries = built.map(item => item.entry);
+          const next = remaining.concat(entries);
+          writeJsonAtomic(getCustomCronsPath(), next);
+          try { restartCronJobs(); } catch {}
+          const createdIds = entries.map(e => e.id);
+          console.log('[cron-api] replace transaction:', { deleted: deleteIds, created: createdIds });
+          try {
+            sendCeoAlert('[Cron] Da thay doi atomic: xoa ' + deleteIds.length + ', tao ' + createdIds.length + '.');
+          } catch {}
+          return jsonResp(res, 200, {
+            success: true,
+            transactional: true,
+            deletedIds: deleteIds,
+            createdIds,
+            entries,
+          });
+        });
+      } catch (e) {
+        return jsonResp(res, 500, { error: e.message, transactional: true, changed: false });
+      }
 
     } else if (urlPath === '/api/cron/list') {
       try {
@@ -1287,7 +1484,7 @@ function startCronApi() {
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/replace', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent'] });
     }
   });
 

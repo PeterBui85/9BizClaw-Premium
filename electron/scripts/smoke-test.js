@@ -1068,6 +1068,7 @@ try {
     '/api/zalo/send',
     '/api/cron/list',
     '/api/cron/create',
+    '/api/cron/replace',
     '/api/google/health',
     'jobId',
     'accessNotConfigured',

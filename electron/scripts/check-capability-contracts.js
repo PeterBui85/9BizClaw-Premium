@@ -88,6 +88,9 @@ const cronApi = readText('electron/lib/cron-api.js');
 if (!cronApi.includes('stripCronApiTokenFromCustomCrons') || !cronApi.includes('removed live API token from custom-crons.json')) {
   fail('electron/lib/cron-api.js', 'cron API must remove embedded live tokens from custom-crons after restart');
 }
+if (!cronApi.includes("urlPath === '/api/cron/replace'") || !cronApi.includes('transactional: true') || !cronApi.includes('changed: false')) {
+  fail('electron/lib/cron-api.js', 'cron replace must be atomic and report unchanged validation failures');
+}
 if (/finalPrompt\s*\+=[\s\S]{0,600}token=\s*['"]?\s*\+\s*_cronApiToken/.test(cronApi)) {
   fail('electron/lib/cron-api.js', 'agent cron prompts must not persist the live cron API token');
 }
