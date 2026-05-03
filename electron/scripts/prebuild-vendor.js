@@ -270,6 +270,27 @@ function bundledNodeBinPath(platform) {
   return path.join(VENDOR_NODE, 'bin', 'node');
 }
 
+function removeUnusedNodeManagerShims(platform) {
+  if (platform !== 'darwin') return;
+
+  // Node's macOS archive includes bin/corepack as a symlink into
+  // lib/node_modules/corepack. Our electron-builder filter strips that target
+  // to keep the DMG smaller, so leaving the symlink makes codesign fail while
+  // walking Resources/vendor/node/bin/corepack. The packaged app never calls
+  // corepack; it runs the bundled node binary and direct JS entrypoints.
+  const entries = [
+    path.join(VENDOR_NODE, 'bin', 'corepack'),
+    path.join(VENDOR_NODE, 'lib', 'node_modules', 'corepack'),
+  ];
+  for (const entry of entries) {
+    try {
+      fs.rmSync(entry, { recursive: true, force: true });
+    } catch (e) {
+      warn(`failed to remove unused Node manager shim ${entry}:`, e.message);
+    }
+  }
+}
+
 async function downloadAndExtractNode(platform, arch) {
   // Stamp file: store "<platform>-<arch>" so re-builds for the same target skip download
   const stamp = path.join(VENDOR_NODE, '.target');
@@ -279,6 +300,7 @@ async function downloadAndExtractNode(platform, arch) {
       fs.existsSync(stamp) &&
       fs.readFileSync(stamp, 'utf-8').trim() === stampValue) {
     log('Node binary already extracted for', stampValue, '— skipping download');
+    removeUnusedNodeManagerShims(platform);
     return;
   }
 
@@ -358,6 +380,7 @@ async function downloadAndExtractNode(platform, arch) {
   if (platform !== 'win32') {
     try { fs.chmodSync(expectedNodeBin, 0o755); } catch {}
   }
+  removeUnusedNodeManagerShims(platform);
 
   // Stamp so we can skip re-download next time
   fs.writeFileSync(stamp, stampValue + '\n');

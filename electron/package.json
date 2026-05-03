@@ -222,6 +222,7 @@
             "!**/.github/**",
             "!**/{.DS_Store,Thumbs.db,.git,.svn,.hg,.editorconfig,.eslintrc*,.prettierrc*,.npmignore}",
             "!**/{appveyor.yml,.travis.yml,circle.yml}",
+            "!**/node/bin/corepack",
             "!**/node/lib/node_modules/npm/node_modules/**",
             "!**/node/lib/node_modules/corepack/**",
             "!**/node/share/**",
