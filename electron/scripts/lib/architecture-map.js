@@ -117,9 +117,8 @@ function collectLargeSourceFiles() {
     ...walkFiles('electron/ui', { exts: ['.html', '.css', '.js'] })
   ];
   return files.map(rel => {
-    const abs = absFromWorkspace(rel);
     let bytes = 0;
-    try { bytes = fs.statSync(abs).size; } catch {}
+    try { bytes = Buffer.byteLength(readText(rel).replace(/\r\n/g, '\n'), 'utf8'); } catch {}
     return { path: rel, bytes };
   }).filter(f => f.bytes >= 20000).sort((a, b) => b.bytes - a.bytes);
 }

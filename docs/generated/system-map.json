@@ -2119,11 +2119,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 527308
+      "bytes": 520137
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 228757
+      "bytes": 224434
     },
     {
       "path": "electron/lib/cron.js",
@@ -2131,7 +2131,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 91127
+      "bytes": 89142
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2171,7 +2171,7 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 34206
+      "bytes": 33786
     },
     {
       "path": "electron/lib/google-api.js",
