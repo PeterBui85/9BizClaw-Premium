@@ -30,20 +30,11 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.arch }} on ${{ matrix.runner }}
-    if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.arch == 'both' ||
-      github.event.inputs.arch == matrix.arch
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.arch != 'both' && 1 || 2 }}
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-14   # Apple Silicon (M-series)
-          - arch: x64
-            runner: macos-14   # macos-13 retired — build x64 from arm64 runner via Rosetta/cross
+      max-parallel: 2
+      matrix: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.event.inputs.arch == 'arm64' && '{"include":[{"arch":"arm64","runner":"macos-14"}]}' || github.event_name == 'workflow_dispatch' && github.event.inputs.arch == 'x64' && '{"include":[{"arch":"x64","runner":"macos-14"}]}' || '{"include":[{"arch":"arm64","runner":"macos-14"},{"arch":"x64","runner":"macos-14"}]}') }}
 
 
     steps:
