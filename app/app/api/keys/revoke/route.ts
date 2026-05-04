@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-export const dynamic = 'force-dynamic'
+import { requireAuth } from '@/lib/auth'
 
 async function sbUpsert(table: string, row: object) {
   const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -16,6 +15,9 @@ async function sbUpsert(table: string, row: object) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req)
+  if (!auth.ok) return auth.res
+
   try {
     const { keyHash, reason } = await req.json()
     if (!keyHash || typeof keyHash !== 'string') {
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ success: true, keyHash })
   } catch (err: any) {
-    console.error('[api/keys/revoke]', err)
+    console.error('[api/keys/revoke] FATAL:', err?.message, String(err).slice(0, 300))
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }

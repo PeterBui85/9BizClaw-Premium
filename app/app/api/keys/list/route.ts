@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,15 +16,11 @@ async function sbFetch(path: string, method = 'GET', body?: object) {
   return { status: res.status, body: await res.text() }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req)
+  if (!auth.ok) return auth.res
+
   try {
-    const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-    const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-    if (!SB_URL || !SB_KEY) {
-      const missing = { url: !!SB_URL, key: !!SB_KEY }
-      console.error('[api/keys/list] Missing env vars:', missing)
-      return NextResponse.json({ error: 'Supabase env missing: ' + JSON.stringify(missing) }, { status: 500 })
-    }
     const [licensesRes, revokedRes] = await Promise.all([
       sbFetch('licenses?select=*&order=created_at.desc'),
       sbFetch('revoked_keys?select=*&order=revoked_at.desc'),
@@ -34,7 +31,7 @@ export async function GET() {
     try { revoked = JSON.parse(revokedRes.body) } catch { console.error('[api/keys/list] revoked parse error:', revokedRes.body) }
     return NextResponse.json({ licenses, revoked })
   } catch (err: any) {
-    console.error('[api/keys/list] FATAL:', err?.message, err?.cause, String(err).slice(0, 300))
+    console.error('[api/keys/list] FATAL:', err?.message, String(err).slice(0, 300))
     return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 })
   }
 }
