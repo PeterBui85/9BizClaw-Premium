@@ -253,7 +253,12 @@ export default function Dashboard() {
   const fetchKeys = useCallback(async () => {
     setLoadingKeys(true)
     try {
-      const res = await fetch('/api/keys/list')
+      const res = await fetch('/api/keys/list', { redirect: 'manual' })
+      // redirect: 'manual' prevents fetch from following the redirect
+      // if redirected (307/302) → unauthenticated; if 401 → also unauthenticated
+      if (res.status === 307 || res.status === 302 || res.status === 301) {
+        setAuthenticated(false); return
+      }
       if (res.status === 401) { setAuthenticated(false); return }
       const json = await res.json()
       setData(json); setAuthenticated(true)
