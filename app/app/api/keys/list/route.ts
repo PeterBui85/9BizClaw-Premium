@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+export const dynamic = 'force-dynamic'
 
 async function sbFetch(path: string, method = 'GET', body?: object) {
+  const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
   const bodyStr = body ? JSON.stringify(body) : null
   const headers: Record<string, string> = {
     apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY,
