@@ -853,7 +853,7 @@ function startCronApi() {
       if (byteLen > 2000) return jsonResp(res, 400, { error: 'content too large (max 2000 bytes)' });
 
       const { withMemoryFileLock } = require('./conversation');
-      const { appendMemoryWriteAudit } = require('./conversation');
+      const { auditLog } = require('./workspace');
       const { sendMemoryWriteAlert } = require('./channels');
       const usersDir = path.join(ws, 'memory', 'zalo-users');
       const filePath = path.join(usersDir, senderId + '.md');
@@ -863,8 +863,8 @@ function startCronApi() {
           fs.appendFileSync(filePath, '\n' + content, 'utf-8');
         }, { senderId, action: 'append-via-api', source: 'workspace-api' });
 
-        // Audit log (already done by withMemoryFileLock hook, but double-log here for clarity)
-        appendMemoryWriteAudit({
+        // Audit log
+        auditLog('customer-memory-write', {
           senderId,
           action: 'append-via-api',
           file: senderId + '.md',

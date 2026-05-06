@@ -5,6 +5,16 @@ const ctx = require('./context');
 const { getWorkspace, auditLog } = require('./workspace');
 const { call9Router } = require('./nine-router');
 
+// Wire point: set by main.js so conversation.js can fire CEO Telegram alerts
+// when customer memory is written (except routine daily cron summaries).
+let _memoryWriteNotifyCeo = null;
+function setMemoryWriteNotifyCeo(fn) { _memoryWriteNotifyCeo = fn; }
+function notifyCeoMemoryWrite(info) {
+  if (typeof _memoryWriteNotifyCeo === 'function') {
+    try { _memoryWriteNotifyCeo(info); } catch (e) { /* non-blocking */ }
+  }
+}
+
 // Strip prompt-injection patterns from LLM-generated memory summaries.
 // Customers can send adversarial text that the summarizer LLM might echo
 // verbatim — those strings then persist in memory files and get fed to
@@ -465,4 +475,5 @@ module.exports = {
   appendPerCustomerSummaries,
   trimZaloMemoryFile,
   withMemoryFileLock: _withMemoryFileLock,
+  setMemoryWriteNotifyCeo,
 };
