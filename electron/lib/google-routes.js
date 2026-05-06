@@ -5,14 +5,28 @@ const googleApi = require('./google-api');
 function isHomedirPathSafe(p) {
   if (!p || typeof p !== 'string') return false;
   const fs = require('fs');
-  let resolved;
-  try { resolved = fs.realpathSync(path.resolve(p)); } catch { resolved = path.resolve(p); }
-  const home = require('os').homedir();
+  const absolute = path.resolve(p);
+  let resolved = absolute;
+  try { resolved = fs.realpathSync(absolute); } catch {
+    let cursor = absolute;
+    const missingParts = [];
+    while (!fs.existsSync(cursor)) {
+      const parent = path.dirname(cursor);
+      if (parent === cursor) break;
+      missingParts.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+    try { resolved = path.join(fs.realpathSync(cursor), ...missingParts); } catch { resolved = absolute; }
+  }
+  let home;
+  try { home = fs.realpathSync(require('os').homedir()); } catch { home = path.resolve(require('os').homedir()); }
   const blocked = ['.ssh', '.gnupg', '.env', 'credentials', 'credential', 'secret', 'private', 'token', 'auth', 'oauth', 'keyring', 'keychain', '.key'];
   const norm = s => s.toLowerCase().replace(/\\/g, '/');
   const lower = norm(resolved);
   if (blocked.some(b => lower.includes(b))) return false;
-  if (!lower.startsWith(norm(home))) return false;
+  const relative = path.relative(home, resolved);
+  if (relative && (relative.startsWith('..') || path.isAbsolute(relative))) return false;
+  if (!relative && norm(resolved) !== norm(home)) return false;
   return true;
 }
 
@@ -82,6 +96,8 @@ function fitSheetRangeToValues(range, values) {
 
 module.exports = handleGoogleRoute;
 module.exports.isHomedirPathSafe = isHomedirPathSafe;
+module.exports.normalizeSheetValues = normalizeSheetValues;
+module.exports.fitSheetRangeToValues = fitSheetRangeToValues;
 module.exports._test = { normalizeSheetValues, fitSheetRangeToValues };
 
 async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
@@ -154,13 +170,13 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
       return jsonResp(res, 200, r);
     }
     if (urlPath === '/gmail/send') {
-      if ((req.headers['x-source-channel'] || '').toLowerCase() === 'zalo') return jsonResp(res, 403, { error: 'Gmail send not allowed from Zalo channel' });
+      if (isZalo) return jsonResp(res, 403, { error: 'Gmail send not allowed from Zalo channel' });
       if (!params.to || !params.subject || !params.body) return jsonResp(res, 400, { error: 'to, subject, body required' });
       const r = await googleApi.sendEmail(params.to, params.subject, params.body);
       return jsonResp(res, 200, r);
     }
     if (urlPath === '/gmail/reply') {
-      if ((req.headers['x-source-channel'] || '').toLowerCase() === 'zalo') return jsonResp(res, 403, { error: 'Gmail reply not allowed from Zalo channel' });
+      if (isZalo) return jsonResp(res, 403, { error: 'Gmail reply not allowed from Zalo channel' });
       if (!params.id || !params.body) return jsonResp(res, 400, { error: 'id, body required' });
       const r = await googleApi.replyEmail(params.id, params.body);
       return jsonResp(res, 200, r);

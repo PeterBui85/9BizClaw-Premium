@@ -1,35 +1,41 @@
-; 9BizClaw custom uninstaller cleanup
+; 9BizClaw custom installer/uninstaller hooks
 ;
 ; DESIGN PRINCIPLE: Uninstaller NEVER touches user data. Windows convention —
 ; uninstall removes the app, keeps %APPDATA%. If user wants a full factory
-; reset, use the separate "Factory Reset" button in Dashboard (which has
-; 2-layer confirmation + explicit "XÓA" type-to-confirm).
+; reset, use the separate "Factory Reset" button in Dashboard.
 ;
-; Silent mode (${Silent}) = triggered by new installer during upgrade. Skip
-; ALL prompts so upgrade is seamless and data is preserved.
-;
-; Non-silent mode (user manually uninstalled from Windows Settings):
-;   - Offer to free disk space by removing extracted vendor (~1.8 GB). Low risk:
-;     if they reinstall, vendor auto-extracts from bundled tar on first launch.
-;   - Do NOT offer to wipe data. Ever.
+; Silent mode (${Silent}) = triggered by new installer during upgrade.
+
+!macro customInstall
+  ; Add vendor/node_modules/.bin to user PATH so openclaw/9router/openzca
+  ; work in any terminal, just like a normal global npm install.
+  ; Uses User-scope (not Machine-scope) so no admin required.
+  ; Uses %APPDATA% so it resolves to the actual user's folder dynamically.
+  DetailPrint "Adding vendor CLI to user PATH..."
+  nsExec::ExecToLog 'powershell -NoProfile -Command "$$p = [Environment]::GetEnvironmentVariable(''PATH'',''User''); $$bin = Join-Path $$env:APPDATA ''9bizclaw\vendor\node_modules\.bin''; if ($$p -notlike ''*'' + $$bin + ''*'') { $$newPath = $$p + '';'' + $$bin; [Environment]::SetEnvironmentVariable(''PATH'', $$newPath, ''User'') }"'
+!macroend
 
 !macro customRemoveFiles
-  ; Always remove CLI shims + clean PATH entry (silent or not)
+  ; Clean up user PATH: remove 9bizclaw entries (CLI shims + vendor bin)
+  DetailPrint "Cleaning user PATH..."
+  nsExec::ExecToLog 'powershell -NoProfile -Command "$$p = [Environment]::GetEnvironmentVariable(''PATH'',''User''); if ($$p) { $$parts = $$p -split '';'' | Where-Object { $$_ -notlike ''*9bizclaw*'' }; [Environment]::SetEnvironmentVariable(''PATH'', ($$parts -join '';''), ''User'') }"'
+
+  ; Remove CLI shim dir (legacy)
   DetailPrint "Removing CLI shims..."
   RMDir /r "$APPDATA\9bizclaw\cli"
-  nsExec::ExecToLog "powershell -NoProfile -Command $\"$$p = [Environment]::GetEnvironmentVariable('PATH','User'); if ($$p) { $$parts = $$p -split ';' | Where-Object { $$_ -notlike '*9bizclaw*cli*' }; [Environment]::SetEnvironmentVariable('PATH', ($$parts -join ';'), 'User') }$\""
 
+  ; Ask user about runtime vendor dir (~200 MB)
   ${IfNot} ${Silent}
-    ; Offer to remove extracted vendor (~1.8 GB) — disk space only, no user data
     MessageBox MB_YESNO|MB_ICONQUESTION \
-      "Xoa Node.js va plugin da giai nen? (~1.8 GB)$\n$\nGom: vendor/node, openclaw, 9router, openzca, modoro-zalo$\nNeu cai lai, file nay se duoc giai nen tu dau.$\n$\nLUU Y: Du lieu bot (Zalo, Telegram, knowledge) KHONG bi xoa." \
+      "Remove runtime files (~200 MB)? Data is preserved." \
       /SD IDNO \
       IDYES removeVendor IDNO skipVendor
     removeVendor:
-      DetailPrint "Removing extracted vendor..."
+      DetailPrint "Removing runtime vendor..."
       RMDir /r "$APPDATA\9bizclaw\vendor"
+      Delete "$APPDATA\9bizclaw\runtime-version.txt"
       Delete "$APPDATA\9bizclaw\vendor-version.txt"
-      DetailPrint "Vendor removed."
+      DetailPrint "Runtime removed."
     skipVendor:
   ${EndIf}
 !macroend

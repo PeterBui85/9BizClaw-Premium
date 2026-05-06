@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const ctx = require('./context');
 const { appDataDir, getBundledVendorDir, getBundledNodeBin, findNodeBin, findGlobalPackageFile } = require('./boot');
@@ -21,6 +22,7 @@ const PROVIDER_KEYS_PATH = () => path.join(appDataDir(), 'modoroclaw-provider-ke
 const RTK_DEFAULT_MARKER_PATH = () => path.join(appDataDir(), 'modoroclaw-rtk-default-applied.json');
 
 let _9routerSqliteFixAttempted = false;
+let _cached9RouterCliToken = null;
 
 function send9RouterAlert(text) {
   try {
@@ -42,6 +44,50 @@ function getRouterProcess() { return routerProcess; }
 // =========================================================================
 // Functions
 // =========================================================================
+
+function tryRequireNodeMachineId() {
+  const candidates = [];
+  try {
+    const vendorDir = getBundledVendorDir();
+    if (vendorDir) {
+      candidates.push(path.join(vendorDir, 'node_modules', 'node-machine-id'));
+      candidates.push(path.join(vendorDir, 'node_modules', '9router', 'node_modules', 'node-machine-id'));
+    }
+  } catch {}
+  try {
+    const hoisted = findGlobalPackageFile('node-machine-id', 'package.json');
+    if (hoisted) candidates.push(path.dirname(hoisted));
+  } catch {}
+  try {
+    const nested = findGlobalPackageFile('9router', path.join('node_modules', 'node-machine-id', 'package.json'));
+    if (nested) candidates.push(path.dirname(nested));
+  } catch {}
+
+  for (const candidate of candidates) {
+    try {
+      if (candidate && fs.existsSync(candidate)) return require(candidate);
+    } catch {}
+  }
+  try { return require('node-machine-id'); } catch {}
+  return null;
+}
+
+// 9Router v0.4.x protects /api/* with the same local CLI token used by its
+// own bundled CLI client. The token is deterministic per machine and only
+// accepted by the local server, so Electron can configure providers/settings
+// without asking the user to log into the 9Router web UI.
+function get9RouterCliToken() {
+  if (_cached9RouterCliToken !== null) return _cached9RouterCliToken;
+  try {
+    const machineId = tryRequireNodeMachineId()?.machineIdSync?.();
+    _cached9RouterCliToken = machineId
+      ? crypto.createHash('sha256').update(machineId + '9r-cli-auth').digest('hex').substring(0, 16)
+      : '';
+  } catch {
+    _cached9RouterCliToken = '';
+  }
+  return _cached9RouterCliToken;
+}
 
 // Strip any stored password from 9Router's settings store so the default
 // "123456" login always works. 9Router's /api/auth/login uses
@@ -226,7 +272,7 @@ function start9Router() {
       // Resolve absolute node path so spawn doesn't depend on PATH at all.
       const nodeBin = findNodeBin() || 'node';
       routerCmd = nodeBin;
-      routerArgs = [routerScript, '--host', '127.0.0.1', '-n', '--skip-update'];
+      routerArgs = [routerScript, '--host', '127.0.0.1', '-n', '--tray', '--skip-update'];
       routerSpawnOpts = { shell: false };
     } else {
       // Fallback: PATH lookup via shell shim. On Windows we need `9router.cmd`
@@ -253,7 +299,7 @@ function start9Router() {
         return;
       }
       routerCmd = probe;
-      routerArgs = ['--host', '127.0.0.1', '-n', '--skip-update'];
+      routerArgs = ['--host', '127.0.0.1', '-n', '--tray', '--skip-update'];
       routerSpawnOpts = { shell: isWin };
     }
     // Pin 9Router auth so the login form always accepts "123456" and the JWT
@@ -460,13 +506,15 @@ async function validateOllamaKeyDirect(apiKey) {
   });
 }
 
-// Generic 9router HTTP API caller. Localhost-only, no auth needed (9router
-// /api/* is bound to 127.0.0.1 and doesn't require auth — only /v1/* needs
-// the Bearer API key). Returns { success, data, error, statusCode }.
+// Generic 9router HTTP API caller. Localhost-only. 9Router v0.4.x requires
+// the CLI auth header for /api/*; /v1/* still uses the Bearer API key handled
+// by call9Router/call9RouterVision. Returns { success, data, error, statusCode }.
 function nineRouterApi(method, path, body = null, timeoutMs = 5000) {
   return new Promise((resolve) => {
     const http = require('http');
     const headers = { 'Content-Type': 'application/json' };
+    const cliToken = get9RouterCliToken();
+    if (cliToken) headers['x-9r-cli-token'] = cliToken;
     let bodyStr = null;
     if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
       bodyStr = JSON.stringify(body);

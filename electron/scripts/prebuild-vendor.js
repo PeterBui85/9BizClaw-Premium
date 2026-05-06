@@ -42,12 +42,20 @@ const os = require('os');
 // LTS as of 2026-04) to give plenty of headroom above openclaw's minimum and
 // avoid another "requires Node >=X.Y.Z" surprise after every openclaw bump.
 // Previous bumps: v22.11.0 → v22.12.0 (insufficient) → v22.22.2.
-const NODE_VERSION = process.env.NODE_VENDOR_VERSION || 'v22.22.2';
+const SHARED_VERSIONS = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'versions.json'), 'utf-8'));
+  } catch {
+    return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12', gog: 'v0.13.0', node: '22.22.2' };
+  }
+})();
+
+const NODE_VERSION = process.env.NODE_VENDOR_VERSION || ('v' + SHARED_VERSIONS.node);
 
 const PINNED_VENDOR_VERSIONS = {
-  openclaw: '2026.4.14',
-  '9router': '0.4.12',
-  openzca: '0.1.57',
+  openclaw: SHARED_VERSIONS.openclaw,
+  '9router': SHARED_VERSIONS.nineRouter,
+  openzca: SHARED_VERSIONS.openzca,
 };
 
 // SHA256 checksums from https://nodejs.org/dist/<version>/SHASUMS256.txt
@@ -1016,9 +1024,18 @@ function packVendorForPackagedApp() {
   // DELETE vendor/ directory after packing — we ship the tar, not the directory.
   // electron-builder must not copy vendor/ (would double-bundle). This is safe
   // because next build iteration will re-extract Node + re-npm-install fresh.
+  //
+  // Exception: darwin keeps vendor/ so smoke-test.js can verify package contents.
+  // smoke-test checks vendor/node_modules/openclaw/openclaw.mjs existence at
+  // smoke-test time (before electron-builder runs). The tar is still created
+  // for completeness (CI artifacts, future auto-extract use).
   log('  removing vendor/ directory (will be re-created on next build)...');
-  rmrf(VENDOR);
-  log('  ✓ vendor/ removed (ship vendor-bundle.tar instead)');
+  if (targetPlatform !== 'darwin') {
+    rmrf(VENDOR);
+    log('  ✓ vendor/ removed (ship vendor-bundle.tar instead)');
+  } else {
+    log('  ✓ vendor/ kept on darwin (smoke-test needs to verify contents)');
+  }
 }
 
 async function main() {
@@ -1033,6 +1050,8 @@ async function main() {
 
   // Skip everything if vendor-bundle.tar + meta already exist and match pinned
   // versions. Saves ~4 minutes on rebuild when nothing has changed.
+  // Note: on darwin, vendor/ directory is also kept (for smoke-test verification),
+  // so we check only the tar + meta for the skip decision.
   if (platform === 'win32' || platform === 'darwin') {
     const tarPath = path.join(ROOT, 'vendor-bundle.tar');
     const metaPath = path.join(ROOT, 'vendor-meta.json');

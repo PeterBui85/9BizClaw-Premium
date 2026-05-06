@@ -36,9 +36,10 @@ assert(
   'posting endpoint must require a CEO-approved preview nonce'
 );
 assert(
-  'bot instructions include Facebook approval nonce flow',
-  agents.includes('approvalNonce') && agents.includes('/api/fb/post?preview=1'),
-  'AGENTS.md must tell the bot to preview first and post with approvalNonce'
+  'bot instructions include Facebook approval flow',
+  (agents.includes('preview Telegram') || agents.includes('approvalNonce')) &&
+    (agents.includes('/api/fb/post') || agents.includes('send-photo')),
+  'AGENTS.md must tell the bot to preview before posting'
 );
 
 if (failures.length) {

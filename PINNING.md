@@ -1,6 +1,6 @@
 # Pinned dependency versions
 
-MODOROClaw bundles 4 third-party npm packages. Their versions are **pinned exactly** to protect against upstream schema/CLI breakage.
+MODOROClaw v2.4.0+ uses **runtime install** — packages are downloaded on first run instead of bundled in the EXE. This document tracks pinned versions for the runtime install process.
 
 ## Current pinned versions
 
@@ -11,16 +11,46 @@ MODOROClaw bundles 4 third-party npm packages. Their versions are **pinned exact
 | `9router` | `0.4.12` | AI provider router (proxies to Ollama / Codex / etc.) with RTK context filtering | All AI calls fail, bot can't think |
 | `modoro-zalo` | `1.0.0` | Self-owned Zalo channel plugin (fork of @tuyenhx/openzalo@2026.3.31) | Zalo channel disabled |
 
-## Where versions are referenced (single source of truth = this file)
+## Where versions are referenced
 
 | File | What |
 |---|---|
-| [electron/scripts/prebuild-vendor.js](electron/scripts/prebuild-vendor.js) | Mac packaged `.dmg` bundles these versions in `vendor/node_modules/` |
-| [electron/scripts/smoke-test.js](electron/scripts/smoke-test.js) | Pre-build validator checks bundled vendor matches |
-| [electron/main.js](electron/main.js) `install-openclaw` IPC handler | First-time Windows install via wizard fetches these versions |
-| [RUN.command](RUN.command) | Mac dev launcher auto-installs these versions |
+| [electron/scripts/versions.json](electron/scripts/versions.json) | **Canonical source** — single JSON file with all pinned versions. Loaded by both runtime-installer.js and prebuild-vendor.js so they always agree. |
+| [electron/lib/runtime-installer.js](electron/lib/runtime-installer.js) | Runtime install logic — loads `versions.json` → `PINNED_VERSIONS` |
+| [electron/lib/conflict-detector.js](electron/lib/conflict-detector.js) | Version conflict detection |
+| [electron/lib/migration.js](electron/lib/migration.js) | v2.3.x → v2.4.0 migration |
+| [electron/lib/updates.js](electron/lib/updates.js) | Auto-update logic |
+| [electron/package.json](electron/package.json) | `prebuild:modoro-zalo` script references |
+| [electron/scripts/prebuild-vendor.js](electron/scripts/prebuild-vendor.js) | Build-time vendor bundling — loads `versions.json` |
 
-When upgrading: change ALL FOUR locations + run `npm run smoke` + manual QA + ship build.
+**Upgrade rule:** When bumping a version, update only `electron/scripts/versions.json`. All other files read from it.
+## Runtime Install Architecture (v2.4.0+)
+
+```
+First Launch Flow:
+1. Show splash UI
+2. Check installation status
+3. Download Node.js v22.14+ (~120MB) if needed
+4. npm install openclaw, 9router, openzca (~45MB)
+5. Copy modoro-zalo plugin from bundle (~2MB)
+6. App ready! User data preserved.
+
+Subsequent Launches:
+- Skip installation (already done)
+- Boot directly to app
+
+EXE Size: ~50-80MB (vs ~436MB before)
+```
+
+## Bundle vs Runtime Comparison
+
+| Aspect | v2.3.x (Bundled) | v2.4.0+ (Runtime) |
+|--------|-------------------|---------------------|
+| EXE size | ~436 MB | ~50-80 MB |
+| First run | Extract vendor (~30-60s) | Download packages (~2-5 min) |
+| Subsequent runs | Fast | Fast |
+| Update size | Full EXE (~436MB) | Package only (~50MB) |
+| npm update | N/A | Automatic |
 
 ## Why we pin
 

@@ -20,6 +20,7 @@
     "guard:bundle": "node scripts/check-bundle-size.js",
     "guard:google-sheets": "node scripts/check-google-sheets-route.js",
     "guard:google-calendar": "node scripts/check-google-calendar-route.js",
+    "guard:google-workspace-audit": "node scripts/check-google-workspace-audit-fixes.js",
     "guard:gmail-inbox": "node scripts/check-gmail-inbox-normalizer.js",
     "guard:openclaw-launchers": "node scripts/check-openclaw-launchers.js",
     "guard:premium-theme": "node scripts/check-premium-theme-no-updates.js",
@@ -29,14 +30,15 @@
     "guard:image-generation": "node scripts/check-image-generation-route.js",
     "guard:media-library": "node scripts/check-media-library-contract.js",
     "guard:migration-safety": "node scripts/check-migration-safety.js",
-    "guard:architecture": "npm run map:check && npm run guard:contracts && npm run guard:api-docs && npm run guard:google-sheets && npm run guard:google-calendar && npm run guard:gmail-inbox && npm run guard:openclaw-launchers && npm run guard:premium-theme && npm run guard:dashboard-ux && npm run guard:9router-rtk && npm run guard:facebook && npm run guard:image-generation && npm run guard:media-library && npm run guard:migration-safety && npm run guard:bundle",
-    "prebuild:models": "node scripts/prebuild-models.js",
-    "prebuild:vendor": "node scripts/prebuild-models.js && node scripts/prebuild-vendor.js",
+    "guard:runtime-install": "node scripts/check-runtime-install-contract.js",
+    "guard:architecture": "npm run map:check && npm run guard:contracts && npm run guard:api-docs && npm run guard:google-sheets && npm run guard:google-calendar && npm run guard:google-workspace-audit && npm run guard:gmail-inbox && npm run guard:openclaw-launchers && npm run guard:premium-theme && npm run guard:dashboard-ux && npm run guard:9router-rtk && npm run guard:facebook && npm run guard:image-generation && npm run guard:media-library && npm run guard:migration-safety && npm run guard:runtime-install && npm run guard:bundle",
+    "prebuild:vendor": "node scripts/prebuild-vendor.js",
+    "prebuild:modoro-zalo": "node scripts/prebuild-modoro-zalo.js",
     "build:win": "node scripts/build-win.js",
-    "build:mac": "node scripts/build-mac-safe.js",
-    "build:mac:arm": "TARGET_ARCH=arm64 npm run prebuild:vendor && npm run smoke && electron-builder --mac --arm64 && node scripts/fix-artifact-name.js",
-    "build:mac:intel": "TARGET_ARCH=x64 npm run prebuild:vendor && npm run smoke && electron-builder --mac --x64 && node scripts/fix-artifact-name.js",
-    "build:mac:universal": "node scripts/build-mac-universal.js && npm run smoke && electron-builder --mac --universal && node scripts/fix-artifact-name.js"
+    "build:mac": "npm run prebuild:modoro-zalo && npm run prebuild:vendor && npm run smoke && electron-builder --mac",
+    "build:mac:arm": "npm run prebuild:modoro-zalo && TARGET_ARCH=arm64 TARGET_PLATFORM=darwin npm run prebuild:vendor && npm run smoke && electron-builder --mac --arm64 && node scripts/fix-artifact-name.js",
+    "build:mac:intel": "npm run prebuild:modoro-zalo && TARGET_ARCH=x64 TARGET_PLATFORM=darwin npm run prebuild:vendor && npm run smoke && electron-builder --mac --x64 && node scripts/fix-artifact-name.js",
+    "build:mac:universal": "node scripts/build-mac-universal.js && npm run prebuild:vendor && npm run smoke && electron-builder --mac --universal && node scripts/fix-artifact-name.js"
   },
   "build": {
     "appId": "vn.9biz.claw",
@@ -177,6 +179,10 @@
       {
         "from": "../knowledge/9bizclaw",
         "to": "knowledge/9bizclaw"
+      },
+      {
+        "from": "dist/modoro-zalo",
+        "to": "modoro-zalo"
       }
     ],
     "asar": true,
@@ -190,17 +196,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico",
-      "extraResources": [
-        {
-          "from": "vendor-bundle.tar",
-          "to": "vendor-bundle.tar"
-        },
-        {
-          "from": "vendor-meta.json",
-          "to": "vendor-meta.json"
-        }
-      ]
+      "icon": "build/icon.ico"
     },
     "mac": {
       "target": "dmg",
@@ -214,12 +210,16 @@
       "type": "distribution",
       "extraResources": [
         {
-          "from": "vendor-bundle.tar",
-          "to": "vendor-bundle.tar"
+          "from": "dist/modoro-zalo",
+          "to": "modoro-zalo"
         },
         {
           "from": "vendor-meta.json",
           "to": "vendor-meta.json"
+        },
+        {
+          "from": "vendor",
+          "to": "vendor"
         }
       ],
       "extendInfo": {

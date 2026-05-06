@@ -52,13 +52,22 @@ function warn(name, why) {
 }
 function section(label) { console.log(`\n[${label}]`); }
 
-// =========================================================================
-// PINNED VERSIONS — must match prebuild-vendor.js + main.js install handler
-// =========================================================================
+// Shared pinned versions — loaded from versions.json so all files always agree.
+// Upgrade rule: update ONLY electron/scripts/versions.json. All other files read from it.
+const SHARED_VERSIONS = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'versions.json'), 'utf-8'));
+  } catch {
+    return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12' };
+  }
+})();
+
+// NOTE: the 9router RTK guard (scripts/check-9router-rtk.js) checks for SHARED_VERSIONS
+// in this file. Do NOT refactor away the shared loading above.
 const PINNED = {
-  openclaw: '2026.4.14',
-  '9router': '0.4.12',
-  openzca: '0.1.57',
+  openclaw: SHARED_VERSIONS.openclaw,
+  '9router': SHARED_VERSIONS.nineRouter,
+  openzca: SHARED_VERSIONS.openzca,
 };
 
 // =========================================================================
@@ -1097,8 +1106,8 @@ try {
   const agentsSrc = fs.readFileSync(path.join(templateRoot, 'AGENTS.md'), 'utf-8');
   const requiredRouterBits = [
     'Capability Router',
-    'brand_image_generate',
-    'facebook_post',
+    'zalo_image_post',
+    'facebook_image_post',
     'zalo_send',
     'zalo_cron',
     'google_workspace',
@@ -1106,6 +1115,7 @@ try {
     'diagnostic_recovery',
     '/api/brand-assets/list',
     '/api/image/generate',
+    '/api/image/generate-and-send-zalo',
     '/api/fb/post',
     '/api/zalo/friends',
     '/api/zalo/send',
@@ -1115,6 +1125,8 @@ try {
     '/api/google/health',
     'jobId',
     'accessNotConfigured',
+    'done_and_delivered',
+    'done_not_delivered',
   ];
   const missingRouterBits = requiredRouterBits.filter(s => !agentsSrc.includes(s));
   if (missingRouterBits.length > 0) {
@@ -1128,14 +1140,16 @@ section('Module contracts');
 function checkModuleContracts() {
   const errors = [];
   // Wave 1: boot.js
+  // Pure runtime model (v2.4.0+): boot.js no longer extracts vendor-bundle.tar.
+  // SHA256 verification is done in runtime-installer.js instead.
+  const runtimeSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'runtime-installer.js'), 'utf-8');
+  const hasSha256Verify = runtimeSource.includes('verifySha256') && runtimeSource.includes('NODE_SHA256');
+  if (!hasSha256Verify) {
+    errors.push('runtime-installer.js must verify node.exe SHA256 after extraction (verifySha256 + NODE_SHA256)');
+  }
+  // Wave 1: boot.js — verify all required exports
   try {
     const boot = require('../lib/boot');
-    const bootSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'boot.js'), 'utf-8');
-    const shaIdx = bootSource.indexOf("console.log('[vendor-extract] sha256 verified')");
-    const renameIdx = bootSource.indexOf('fs.renameSync(targetDir, stale)');
-    if (shaIdx === -1 || renameIdx === -1 || shaIdx > renameIdx) {
-      errors.push('boot.js must verify vendor-bundle.tar SHA256 before renaming existing vendor/');
-    }
     const required = ['getBundledVendorDir', 'ensureVendorExtracted', 'getBundledNodeBin',
       'getBundledOpenClawCliJs', 'augmentPathWithBundledNode', 'initPathAugmentation',
       'enumerateNodeManagerBinDirs', 'enumerateNodeManagerLibDirs',
@@ -1143,8 +1157,7 @@ function checkModuleContracts() {
       'findOpenClawBin', 'findOpenClawBinSync', 'findNodeBin', 'findOpenClawCliJs',
       'spawnOpenClawSafe', 'runOpenClaw',
       'bootDiagLog', 'bootDiagInit', 'bootDiagRunFullCheck',
-      'npmGlobalModules', 'findGlobalPackageFile',
-      'runSplashAndExtractVendor'];
+      'npmGlobalModules', 'findGlobalPackageFile'];
     for (const fn of required) {
       if (typeof boot[fn] !== 'function') errors.push(`boot.js missing export: ${fn}`);
     }
@@ -1718,7 +1731,10 @@ try {
     vendorPatchSrc.includes('params.agentChannel') &&
     vendorPatchSrc.includes('agentChannel: options?.agentChannel') &&
     vendorPatchSrc.includes('agentSessionKey: options?.agentSessionKey') &&
-    vendorPatchSrc.includes('resolveProviderFallback,\\n\\t\\t\\t\\tagentSessionKey: options?.agentSessionKey,\\n\\t\\t\\t\\tagentChannel: options?.agentChannel');
+    // verify the injected runWebFetch params include agentSessionKey + agentChannel
+    /agentSessionKey:\s*options\?\.(?:agentSessionKey|agentChannel)[^}]*agentChannel:\s*options\?\.(?:agentChannel|agentSessionKey)/.test(vendorPatchSrc) &&
+    // Port range must cover 20200-20203 (bug: [01] would only match 20200-20201, fail 20202-20203)
+    /2020\[0-3\]/.test(vendorPatchSrc);
   if (!hasWebFetchTokenPatch) {
     fail('web_fetch cron token patch', 'vendor patch must pass agentChannel through createWebFetchTool into runWebFetch params, and attach Cron API auth only for Telegram-originated tool calls');
   } else {
@@ -1913,7 +1929,7 @@ try {
   const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
   const hasHelper = /function\s+startRuntimeSidecars\s*\(/.test(ipcSrc);
   const helperBody = (ipcSrc.match(/function\s+startRuntimeSidecars\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/) || [])[1] || '';
-  const toggleBody = (ipcSrc.match(/ipcMain\.handle\('toggle-bot'[\s\S]*?await\s+startOpenClaw\(\);([\s\S]*?)\n\s*\}\n\s*return\s+\{\s*running:\s*ctx\.botRunning\s*\};/) || [])[1] || '';
+  const toggleBody = (ipcSrc.match(/ipcMain\.handle\('toggle-bot'[\s\S]*?await\s+startOpenClaw\(\);([\s\S]*?)\r?\n\s*\}\r?\n\s*return\s+\{\s*running:\s*ctx\.botRunning\s*\}\s*;/) || [])[1] || '';
   const requiredSidecars = [
     'startCronJobs',
     'startFollowUpChecker',
@@ -2194,12 +2210,22 @@ try {
     pass('mac release workflow gates smoke, signing, notarization, and DMG arch');
   }
   const macResources = pkg.build?.mac?.extraResources || [];
-  if (!macResources.some(r => r && r.from === 'vendor-meta.json' && r.to === 'vendor-meta.json')) {
+  const topResources = pkg.build?.extraResources || [];
+  const runtimeBuild = (pkg.scripts?.['build:mac:arm'] || '').includes('prebuild:modoro-zalo')
+    && !(pkg.scripts?.['build:mac:arm'] || '').includes('prebuild:vendor');
+  if (runtimeBuild) {
+    const hasPlugin = [...topResources, ...macResources].some(r => r && r.from === 'dist/modoro-zalo' && r.to === 'modoro-zalo');
+    if (!hasPlugin) {
+      fail('mac runtime plugin resource', 'runtime-install builds must package dist/modoro-zalo for OpenClaw channel startup');
+    } else {
+      pass('mac runtime plugin resource packaged');
+    }
+  } else if (!macResources.some(r => r && r.from === 'vendor-meta.json' && r.to === 'vendor-meta.json')) {
     fail('mac vendor metadata', 'mac.extraResources must package vendor-meta.json for model integrity checks');
   } else {
     pass('mac vendor metadata packaged');
   }
-  const extraResources = pkg.build?.extraResources || [];
+  const extraResources = topResources;
   if (!extraResources.some(r => r && r.from === '../knowledge/9bizclaw' && r.to === 'knowledge/9bizclaw')) {
     fail('9BizClaw self-knowledge package', 'packaged installs must include knowledge/9bizclaw outside filtered CEO knowledge templates');
   } else {

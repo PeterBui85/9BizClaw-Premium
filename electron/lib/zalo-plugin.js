@@ -36,11 +36,20 @@ function cleanupOrphanZaloListener() {
     // Kill any openzca listen process tree on Windows/Unix
     if (process.platform === 'win32') {
       try {
-        // Use PowerShell (always available on Win10+) instead of wmic (deprecated/removed on Win11 24H2+)
         const { execSync } = require('child_process');
-        const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId"`;
-        const out = execSync(psCmd, { encoding: 'utf-8', timeout: 8000 }).trim();
-        const pids = out.split(/\r?\n/).map(l => l.trim()).filter(p => /^\d+$/.test(p));
+        // Fallback chain for Windows 7 compatibility:
+        // 1. Get-CimInstance  — Win8+/PS3.0+ (fast, modern)
+        // 2. Get-WmiObject    — Win7/PS2.0 fallback
+        // 3. wmic             — ancient Windows, last resort
+        const psCmd1 = `powershell -NoProfile -Command "try { (Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId) -join ',' } catch { try { (Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId) -join ',' } catch { (wmic process where \"name='node.exe' and commandline like '%openzca%listen%'\" get ProcessId 2>nul) } }"`;
+        let out;
+        try {
+          out = execSync(psCmd1, { encoding: 'utf-8', timeout: 8000 }).trim();
+        } catch (e) {
+          console.warn('[zalo-cleanup] All PS/WMI probes failed:', e.message);
+          out = '';
+        }
+        const pids = out.split(/[,\r\n]+/).map(l => l.trim()).filter(p => /^\d+$/.test(p));
         for (const pid of pids) {
           try {
             execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 3000 });

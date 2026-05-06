@@ -975,8 +975,14 @@
 
           <!-- ============ STEP 1B: Industry & style ============ -->
           <section class="wz-step" id="step-1b">
-            <h2>Lĩnh vực & phong cách</h2>
+            <h2>Cá nhân hóa theo ngành</h2>
             <p class="wz-step-desc">Trợ lý sẽ được tối ưu kỹ năng theo ngành của anh/chị và điều chỉnh phong cách xưng hô phù hợp.</p>
+
+            <div class="wz-field">
+              <label class="wz-label">Trợ lý gọi anh/chị là</label>
+              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
+              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram và Zalo.</p>
+            </div>
 
             <div class="wz-field">
               <label class="wz-label">Lĩnh vực kinh doanh</label>
@@ -1029,15 +1035,6 @@
                 </div>
               </div>
 
-              <div class="wz-mix-section">
-                <div class="wz-mix-label">Độ trang trọng</div>
-                <div class="wz-mix-slider-row">
-                  <span class="wz-mix-slider-label">Rất thân mật</span>
-                  <input type="range" id="mix-formality" min="1" max="10" value="5" class="wz-mix-slider">
-                  <span class="wz-mix-slider-label">Rất trang trọng</span>
-                </div>
-              </div>
-
               <details class="wz-mix-section wz-mix-custom">
                 <summary>Tùy chỉnh nâng cao (không bắt buộc)</summary>
                 <div style="padding-top:12px">
@@ -1084,12 +1081,6 @@
                   </div>
                 </label>
               </div>
-            </div>
-
-            <div class="wz-field">
-              <label class="wz-label">Trợ lý gọi anh/chị là</label>
-              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
-              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram và Zalo.</p>
             </div>
           </section>
 

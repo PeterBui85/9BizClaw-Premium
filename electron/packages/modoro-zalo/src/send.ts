@@ -341,7 +341,7 @@ function buildOpenzcaMediaArgs(params: {
       args.push(source);
     }
     const caption = params.message?.trim();
-    if (mediaCommand === "video" && caption) {
+    if ((mediaCommand === "video" || mediaCommand === "image") && caption) {
       args.push("--message", caption);
     }
   }

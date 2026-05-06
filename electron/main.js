@@ -119,12 +119,9 @@ const {
   setCompilePersonaMix,
 } = require('./lib/workspace');
 const {
-  getBundledVendorDir, getBundledNodeBin,
-  initPathAugmentation, findBundledOpenClawMjs,
+  initPathAugmentation,
   findOpenClawBinSync,
   bootDiagRunFullCheck,
-  runSplashAndExtractVendor,
-  ensureCliShims,
 } = require('./lib/boot');
 const {
   stop9Router, setKillPort,
@@ -192,12 +189,23 @@ const {
 
 const { startCronApi, cleanupCronApi } = require('./lib/cron-api');
 const { registerAllIpcHandlers } = require('./lib/dashboard-ipc');
+const { compactAllSessions, compactSession, getAllSessionStats, parseCompactCommand, setAutoCompactTrigger, autoCompactIfNeeded } = require('./lib/compact');
+const { setMemoryWriteNotifyCeo } = require('./lib/conversation');
+const { sendMemoryWriteAlert } = require('./lib/channels');
 
 // Wire runCronAgentPrompt into follow-up.js (now imported from cron.js)
 setFollowUpRunCronAgentPrompt(runCronAgentPrompt);
 
 // Wire killPort into nine-router.js (gateway.js now owns killPort)
 setKillPort(killPort);
+
+// Wire auto-compact trigger into Zalo plugin
+// compact.js calls this once; inbound.ts fires it before every LLM call
+setAutoCompactTrigger((sessionPath) => autoCompactIfNeeded(sessionPath));
+
+// Wire memory write notification into conversation.js
+// Fires CEO Telegram alert on every customer memory write (except routine daily cron)
+setMemoryWriteNotifyCeo(sendMemoryWriteAlert);
 
 // Wire isGatewayAlive into channels.js (gateway.js now owns it)
 setChannelsIsGatewayAlive(isGatewayAlive);
@@ -283,9 +291,6 @@ function createWindow() {
     console.log('[createWindow] app.isPackaged=true, platform=', process.platform);
     console.log('[createWindow] userData:', app.getPath('userData'));
     console.log('[createWindow] resourcesPath:', process.resourcesPath);
-    console.log('[createWindow] getBundledVendorDir():', getBundledVendorDir());
-    console.log('[createWindow] getBundledNodeBin():', getBundledNodeBin());
-    console.log('[createWindow] findBundledOpenClawMjs():', findBundledOpenClawMjs());
   }
   const configured = openclawBin ? isOpenClawConfigured() : false;
   const onboardingComplete = hasCompletedOnboarding();
@@ -294,12 +299,19 @@ function createWindow() {
 
   // Register ready-to-show BEFORE any early return (license gate, etc.) so
   // the window always becomes visible regardless of which page is loaded.
+  // CRITICAL: guard against flash when a splash window is also being shown.
+  // Both windows may fire ready-to-show within milliseconds of each other.
+  // If the main window shows while splash is still up, user sees both.
   ctx.mainWindow.once('ready-to-show', () => {
     let startMinimized = false;
     try { startMinimized = !!loadAppPrefs().startMinimized; } catch {}
     if (startMinimized) {
       console.log('[createWindow] startMinimized=true → hiding window (tray only)');
       try { ctx.mainWindow.hide(); } catch {}
+    } else if (global._splashActive) {
+      // Splash is still up — defer show until splash closes so they never overlap.
+      // When splash closes below, we call mainWindow.show() explicitly.
+      console.log('[createWindow] splash still active, deferring show()');
     } else {
       ctx.mainWindow.show();
     }
@@ -309,7 +321,6 @@ function createWindow() {
   const isMembershipBuild = require('./package.json').membership === true;
   if (isMembershipBuild) {
     const license = require('./lib/license');
-    license.init(getWorkspace);
     const ls = license.checkLicenseStatus();
     if (ls.status === 'no_license' || ls.status === 'invalid' || ls.status === 'locked') {
       console.log('[createWindow] membership build, license status:', ls.status, '-> license.html');
@@ -349,13 +360,7 @@ function createWindow() {
         try { seedZaloCustomersFromCache(); } catch (e) { console.error('[boot] seedZaloCustomers error:', e?.message || e); }
         try { startCronApi(); } catch (e) { console.error('[boot] startCronApi preflight error:', e?.message || e); }
         try { await startOpenClaw(); } catch (e) { console.error('[boot] startOpenClaw error:', e?.message || e); }
-        try { startCronJobs(); } catch (e) { console.error('[boot] startCronJobs error:', e?.message || e); }
-        try { startFollowUpChecker(); } catch (e) { console.error('[boot] startFollowUpChecker error:', e?.message || e); }
-        try { startEscalationChecker(); } catch (e) { console.error('[boot] startEscalationChecker error:', e?.message || e); }
-        try { startCronApi(); } catch (e) { console.error('[boot] startCronApi error:', e?.message || e); }
-        try { watchCustomCrons(); } catch (e) { console.error('[boot] watchCustomCrons error:', e?.message || e); }
-        try { startZaloCacheAutoRefresh(); } catch (e) { console.error('[boot] startZaloCacheAutoRefresh error:', e?.message || e); }
-        try { startAppointmentDispatcher(); } catch (e) { console.error('[boot] startAppointmentDispatcher error:', e?.message || e); }
+        startRuntimeSidecars('boot');
         // Warm cookie age check 30s after boot, then broadcast loop handles daily cadence.
         setTimeout(() => { try { checkZaloCookieAge(); } catch {} }, 30000);
       })();
@@ -373,9 +378,18 @@ function createWindow() {
   });
 }
 
-// ============================================
-//  TRAY
-// ============================================
+function startRuntimeSidecars(source) {
+  const prefix = source ? `[${source}]` : '[runtime-sidecars]';
+  try { startCronApi(); } catch (e) { console.error(prefix, 'startCronApi error:', e?.message || e); }
+  try { startCronJobs(); } catch (e) { console.error(prefix, 'startCronJobs error:', e?.message || e); }
+  try { startFollowUpChecker(); } catch (e) { console.error(prefix, 'startFollowUpChecker error:', e?.message || e); }
+  try { startEscalationChecker(); } catch (e) { console.error(prefix, 'startEscalationChecker error:', e?.message || e); }
+  try { watchCustomCrons(); } catch (e) { console.error(prefix, 'watchCustomCrons error:', e?.message || e); }
+  try { startZaloCacheAutoRefresh(); } catch (e) { console.error(prefix, 'startZaloCacheAutoRefresh error:', e?.message || e); }
+  try { startAppointmentDispatcher(); } catch (e) { console.error(prefix, 'startAppointmentDispatcher error:', e?.message || e); }
+  // Auto-compact fires inside Zalo inbound handler (triggerAutoCompact in inbound.ts)
+  // triggered before every LLM call — no separate interval needed
+}
 
 function createTray() {
   if (ctx.tray) { ctx.tray.destroy(); ctx.tray = null; }
@@ -408,7 +422,19 @@ function createTray() {
     { label: 'Mở Dashboard', click: show },
     { type: 'separator' },
     { label: ctx.botRunning ? 'Bot đang chạy' : 'Bot đã dừng', enabled: false },
-    { label: ctx.botRunning ? 'Dừng bot' : 'Khởi động bot', click: () => { if (ctx.botRunning) stopOpenClaw(); else { try { startCronApi(); } catch (e) { console.error('[tray] startCronApi error:', e?.message || e); } startOpenClaw(); } createTray(); } },
+    { label: ctx.botRunning ? 'Dừng bot' : 'Khởi động bot', click: () => {
+        if (ctx.botRunning) {
+          stopOpenClaw();
+        } else {
+          (async () => {
+            try { startCronApi(); } catch (e) { console.error('[tray] startCronApi preflight error:', e?.message || e); }
+            try { await startOpenClaw(); } catch (e) { console.error('[tray] startOpenClaw error:', e?.message || e); }
+            startRuntimeSidecars('tray');
+          })();
+        }
+        createTray();
+      }
+    },
     { type: 'separator' },
     { label: 'Tạm dừng Zalo 30 phút', click: async () => {
         try { await pauseChannel('zalo', 30); } catch (e) { console.error('[tray] pause zalo failed:', e?.message || e); }
@@ -544,16 +570,16 @@ app.whenReady().then(async () => {
     invalidateWorkspaceCache(); // Force getWorkspace() to re-evaluate with new ctx.userDataDir
   }
 
-  // Platform-F3: strip quarantine xattr from bundled vendor on Mac first boot.
-  // DMG drag triggers Gatekeeper quarantine on nested files. Spawning
-  // vendor/node/bin/node for autoFix* can silently fail with "cannot be opened
-  // because it is from an unidentified developer" until xattr is cleared.
-  // Idempotent marker prevents repeating work.
+  // Mac: strip Gatekeeper quarantine xattr from runtime vendor on first boot.
+  // DMG drag triggers quarantine on all files inside the DMG. Without xattr
+  // strip, spawning userData/vendor/node/bin/node fails with
+  // "cannot be opened because it is from an unidentified developer".
+  // Idempotent via .xattr-stripped marker.
   if (process.platform === 'darwin' && app.isPackaged) {
     try {
       const markerPath = path.join(app.getPath('userData'), '.xattr-stripped');
       if (!fs.existsSync(markerPath)) {
-        const vendorPath = path.join(process.resourcesPath, 'vendor');
+        const vendorPath = path.join(app.getPath('userData'), 'vendor');
         if (fs.existsSync(vendorPath)) {
           require('child_process').spawn('xattr', ['-dr', 'com.apple.quarantine', vendorPath], {
             stdio: 'ignore', detached: true,
@@ -566,27 +592,154 @@ app.whenReady().then(async () => {
     } catch (e) { console.warn('[mac-xattr] strip failed:', e.message); }
   }
 
-  // Windows packaged FIRST LAUNCH: extract vendor-bundle.tar → userData/vendor
-  // with a progress splash window. No-op on Mac, dev mode, or subsequent launches.
-  // MUST run BEFORE anything that calls getBundledVendorDir() / findOpenClawBin()
-  // because on Windows packaged, those now read from userData/vendor which
-  // doesn't exist yet on first launch.
+    // v2.4.0+ pure runtime install model:
+  // - No bundled vendor tar in EXE — runtime installer downloads everything on first launch.
+  // - userData/vendor/ holds runtime-installed Node + npm packages.
+  // - gogcli is optional (Google Workspace CLI) — never blocks boot.
   try {
-    await runSplashAndExtractVendor();
+    const runtimeInstaller = require('./lib/runtime-installer');
+    const migration = require('./lib/migration');
+    const conflictDetector = require('./lib/conflict-detector');
+
+    // Surface any detected conflicts proactively — helps users understand why install is slow.
+    if (app.isPackaged) {
+      try {
+        const cdResult = await conflictDetector.detectAllConflicts();
+        if (cdResult && (cdResult.packages?.length || cdResult.strategies?.length)) {
+          console.log('[boot] Conflict detection result:', JSON.stringify(cdResult));
+          const issues = cdResult.strategies.map(s => `${s.type}: ${s.reason}`).join('; ');
+          if (issues) {
+            console.log('[boot] Conflicts detected:', issues);
+            try {
+              const diagFile = path.join(getWorkspace(), 'logs', 'boot-diagnostic.txt');
+              fs.appendFileSync(diagFile, `[conflict-detector] ${issues}\n`);
+            } catch {}
+          }
+        }
+      } catch (e) {
+        console.warn('[boot] Conflict detection failed (non-fatal):', e.message);
+      }
+    }
+
+    // Check if we need work BEFORE showing splash (fast subsequent launches = no splash)
+    const preCheck = await runtimeInstaller.checkInstallation();
+    const needsWork = !preCheck.ready || (migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
+
+    // Show splash window ONLY if we have real work to do
+    let splashWindow;
+    if (needsWork) {
+      global._splashActive = true;
+      splashWindow = new BrowserWindow({
+        width: 540,
+        height: 400,
+        minWidth: 540,
+        minHeight: 400,
+        frame: false,
+        resizable: true,
+        movable: true,
+        alwaysOnTop: true,
+        backgroundColor: '#0a0a0c',
+        show: false,
+        skipTaskbar: false,
+        webPreferences: {
+          preload: path.join(__dirname, 'splash-preload.js'),
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+        },
+      });
+      const { ipcMain } = require('electron');
+      ipcMain.on('splash-minimize', () => { try { splashWindow.minimize(); } catch {} });
+      ipcMain.on('splash-cancel', () => {
+        try {
+          splashWindow.webContents.send('splash-error', 'Cài đặt bị hủy. Thoát ứng dụng để thử lại.');
+          new Promise(r => setTimeout(r, 3000)).then(() => { try { app.exit(0); } catch {} });
+        } catch {}
+      });
+      splashWindow.setMenuBarVisibility(false);
+      await splashWindow.loadFile(path.join(__dirname, 'ui', 'splash.html'));
+      splashWindow.show();
+      splashWindow.focus();
+    }
+
+    const sendSplashProgress = (data) => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        try { splashWindow.webContents.send('splash-progress', data); } catch {}
+      }
+    };
+
+    // Migration: v2.3.x → v2.4.0 (bundled vendor → runtime install)
+    if (migration.isUpgradeFromV23() && !migration.isMigrationCompleted()) {
+      console.log('[boot] Detected upgrade from v2.3.x, running migration...');
+      const migrationResult = await new Promise((resolve, reject) => {
+        migration.runMigration({
+          onProgress: (data) => {
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              try { splashWindow.webContents.send('splash-progress', data); } catch {}
+            }
+          },
+          onError: (err) => { console.error('[boot] Migration error:', err); },
+        }).then(resolve).catch(reject);
+      });
+      if (!migrationResult.migrated && migrationResult.error) {
+        throw new Error('Migration failed: ' + migrationResult.error);
+      }
+      console.log('[boot] Migration completed:', migrationResult.migrated ? 'success' : 'skipped');
+    }
+
+    // Pure runtime install: download Node + npm packages if not yet installed.
+    // On fast subsequent launches, checkInstallation() returns ready=true → skip.
+    const status = await runtimeInstaller.checkInstallation();
+    if (!status.ready) {
+      console.log('[boot] Runtime installation needed...');
+      const installedStatus = await runtimeInstaller.runInstallation({
+        onProgress: sendSplashProgress,
+      });
+      if (!installedStatus?.ready) {
+        const missing = [
+          ...(installedStatus?.missingPackages || []),
+          installedStatus?.needsNodeInstall ? 'node' : null,
+          installedStatus?.needsModoroZaloInstall ? 'modoro-zalo' : null,
+        ].filter(Boolean);
+        if (installedStatus?.gogReady === false) {
+          console.warn('[boot] gogcli unavailable — Google Workspace CLI optional (non-fatal)');
+        }
+        throw new Error('Runtime install incomplete' + (missing.length ? ': ' + missing.join(', ') : ''));
+      }
+      console.log('[boot] Runtime installation completed');
+    } else {
+      console.log('[boot] Runtime installation already complete');
+    }
+
+    // Close splash window
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      try {
+        sendSplashProgress({ step: 'complete', percent: 100, message: 'Sẵn sàng!' });
+        await new Promise(r => setTimeout(r, 500));
+        splashWindow.close();
+      } catch {}
+    }
+    global._splashActive = false;
+    if (ctx.mainWindow && !ctx.mainWindow.isDestroyed() && ctx.mainWindow.isVisible() === false) {
+      try { ctx.mainWindow.show(); } catch {}
+    }
   } catch (e) {
-    console.error('[boot] runSplashAndExtractVendor failed:', e);
+    console.error('[boot] Runtime installation/migration failed:', e);
+    global._splashActive = false;
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      try {
+        splashWindow.webContents.send('splash-error', String(e?.message || e));
+        new Promise(r => setTimeout(r, 5000)).then(() => { try { splashWindow.close(); } catch {} });
+      } catch {}
+    }
     try {
       const { dialog } = require('electron');
-      dialog.showErrorBox('Loi khoi dong', 'Khong the giai nen vendor-bundle.tar. Vui long thu cai lai.\n\n' + String(e?.message || e));
+      dialog.showErrorBox('Lỗi khởi tạo', 'Không thể cài đặt 9BizClaw.\n\n' + String(e?.message || e));
     } catch {}
     return;
   }
 
-  // Create CLI shims so `openclaw` works from cmd.exe (Windows only, after vendor)
-  try { ensureCliShims(); } catch (e) { console.warn('[boot] ensureCliShims error:', e?.message || e); }
-
-  // Initialize knowledge embedder after vendor extraction (needs getBundledVendorDir)
-  // and after ctx.userDataDir update (needs app.getPath('userData') for cache dir).
+  // Initialize knowledge embedder after ctx.userDataDir update.
   try { initEmbedder(); } catch (e) { console.warn('[boot] initEmbedder error:', e?.message || e); }
 
   // Boot diagnostic: writes <workspace>/logs/boot-diagnostic.txt with everything
@@ -603,7 +756,6 @@ app.whenReady().then(async () => {
     setTimeout(async () => {
       try {
         const license = require('./lib/license');
-        license.init(getWorkspace);
         const ls = license.checkLicenseStatus();
         if (ls.status === 'expired') {
           sendCeoAlert('[Bản quyền] Bản quyền 9BizClaw đã hết hạn. Liên hệ tech@modoro.com.vn để gia hạn.');

@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 85 -->
+<!-- modoroclaw-agents-version: 88 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -87,7 +87,9 @@ Telegram ID ~10 số. Zalo ID ~18-19 số.
 **Lỗi → DỪNG → báo CEO Telegram → CHỜ.** Max 20 phút/task. Backup trước khi sửa file cốt lõi.
 
 **CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot gọi API nội bộ (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
-**CẤM SỬA FILE .md:** Bot KHÔNG được sửa/xóa/ghi đè `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `BOOTSTRAP.md`, hay bất kỳ file `.md` nào trong workspace. Memory (`memory/zalo-users/*.md`, `memory/zalo-groups/*.md`) CHỈ ĐƯỢC APPEND — KHÔNG xóa nội dung cũ, KHÔNG clean, KHÔNG ghi đè. `.learnings/LEARNINGS.md` CHỈ ĐƯỢC APPEND qua API.
+**CẤM SỬA FILE .md:** Bot KHÔNG được sửa/xóa/ghi đè `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `BOOTSTRAP.md`, hay bất kỳ file `.md` nào trong workspace. `.learnings/LEARNINGS.md` CHỈ ĐƯỢC APPEND qua `/api/workspace/append`.
+**Ghi hồ sơ khách:** Dùng `/api/customer-memory/write` (senderId + content, max 2000 bytes, append-only). KHÔNG viết trực tiếp filesystem. Ghi xong CEO được notify qua Telegram. MỌI thao tác ghi đều được audit vào `logs/customer-memory-writes.jsonl`. Memory (`memory/zalo-users/*.md`, `memory/zalo-groups/*.md`) CHỈ ĐƯỢC APPEND — KHÔNG xóa nội dung cũ, KHÔNG clean, KHÔNG ghi đè.
+**Ghi rule từ CEO:** Khi CEO dạy bot rule mới qua Telegram → dùng `POST /api/ceo-rules/write` với `{ content }`. API TỰ ĐỘNG phân loại và ghi vào đúng file: rule bán hàng → `knowledge/sales-playbook.md`, lesson/sai → `.learnings/ERRORS.md`, mẫu câu → `knowledge/scripts/<slug>.md`. Append-only, max 4000 bytes, CEO confirm Telegram sau khi ghi. KHÔNG ghi trực tiếp vào bất kỳ file nào khác.
 
 ## Zalo (kênh khách hàng)
 
@@ -122,6 +124,13 @@ Xem `IDENTITY.md` mục "Xưng hô Zalo (khách hàng)".
 ### Hồ sơ khách `memory/zalo-users/<senderId>.md`
 
 THAO TÁC IM. Update SAU reply. CHỈ fact thật.
+
+**Luôn dùng API:** `POST /api/customer-memory/write` với `{ senderId, content }` — KHÔNG viết trực tiếp filesystem.
+- `senderId`: Zalo ID từ conversation context (injected bởi system, KHÔNG từ text khách nhập)
+- `content`: nội dung append, max 2000 bytes, KHÔNG xóa/cap nội dung cũ
+- Ghi xong → CEO được notify qua Telegram (trừ daily-cron summaries)
+- Mỗi ghi đều audit: `logs/customer-memory-writes.jsonl`
+
 Frontmatter: name, lastSeen, msgCount, gender, tags: [], phone, email, address, zaloName, groups: []. Body: Tóm tắt + Tính cách + Sở thích + Quyết định + CEO notes. File <2KB.
 Thu thập contact: KHÔNG hỏi thẳng. Chỉ ghi khi khách TỰ NGUYỆN cung cấp.
 Nhớ lịch sử: đọc `## YYYY-MM-DD` mới nhất → reference tự nhiên. KHÔNG nhắc "em nhớ/lưu".
@@ -174,23 +183,28 @@ Khi tin CEO có ý định thao tác hệ thống, chọn capability theo trigge
 
 | Capability | Trigger | Preflight | Execute | Proof trước khi reply |
 |---|---|---|---|---|
-| `brand_image_generate` | tạo ảnh, poster, banner, social image, mascot, logo, tài sản thương hiệu | `GET /api/brand-assets/list` nếu có brand/asset; nếu yêu cầu vừa tạo ảnh vừa gửi Zalo thì tra group/friend trước | nếu chỉ tạo ảnh: `GET /api/image/generate?size=<size>&assets=<files>&prompt=<prompt>`; nếu tạo xong gửi Zalo: `GET /api/image/generate-and-send-zalo?groupId=<id>&caption=<caption>&size=<size>&assets=<files>&prompt=<prompt>` | tạo ảnh đơn: poll `/api/image/status?jobId=<id>` tới `done` trước khi dùng `imagePath`; tạo+gửi Zalo: response `success:true`, `jobId`, `delivery.status` |
-| `facebook_post` | đăng Facebook, post fanpage, lên bài, chạy bài | nếu cần ảnh thì chạy `brand_image_generate` → gọi preview `GET /api/fb/post?preview=1&imagePath=<path>&message=<caption>` để lấy `approvalNonce` → gửi preview Telegram | CHỜ CEO ok rồi mới gọi lại đúng message/imagePath kèm `approvalNonce=<nonce>` | Facebook response OK/link/id |
-| `zalo_send` | nhắn Zalo cho tên người, gửi nhóm Zalo, gửi khách | nếu tên người: `GET /api/zalo/friends?name=<ten>`; nếu nhóm: `GET /api/cron/list` lấy groups | confirm CEO tên/ID/nội dung → `GET /api/zalo/send?targetId=<id>&text=<text>` hoặc groupId | API send OK |
+| `zalo_image_post` | gửi ảnh vào nhóm Zalo, tạo ảnh gửi nhóm, poster nhóm Zalo, gửi hình nhóm | 1. CEO cung cấp tên nhóm + caption. Tra `/api/cron/list` lấy groupId. 2. Brand assets: `GET /api/brand-assets/list`. 3. Confirm với CEO trước khi tạo. 4. Gọi `/api/image/generate-and-send-zalo?groupId=<id>&caption=<cap>&size=<size>&assets=<files>&prompt=<prompt>`. 5. Đọc `status` trong body: `done_and_delivered` → đã gửi; `done_not_delivered` → báo kèm `zaloError`; `failed`/5xx → báo lỗi thật. | Đọc `skills/marketing/zalo-post-workflow.md` — 3 pha (chuẩn bị → tạo+gửi → báo kết quả). Không bao giờ nói "đã gửi" nếu chỉ có `jobId` đang `generating`. |
+| `facebook_image_post` | đăng bài Facebook, đăng ảnh fanpage, tạo ảnh đăng Facebook, poster fanpage | 1. Brand assets: `GET /api/brand-assets/list`. 2. Confirm với CEO (caption + mô tả ảnh). 3. `GET /api/image/generate?size=<size>&assets=<files>&prompt=<prompt>`. 4. Poll `/api/image/status?jobId=<id>` tới `done`. 5. Preview Telegram: `GET /api/telegram/send-photo?imagePath=<path>&caption=<cap>`. 6. CEO xác nhận "ok" → `GET /api/fb/post?imagePath=<path>&message=<cap>`. 7. Đọc body: có `id`/`post_id` → đã đăng. | Đọc `skills/marketing/facebook-post-workflow.md` — 4 pha (assets → tạo → preview → đăng). Preview BẮT BUỘC trước khi đăng. |
+| `zalo_send` | nhắn Zalo cho tên người, gửi nhóm Zalo, gửi khách (text, không tạo ảnh) | nếu tên người: `GET /api/zalo/friends?name=<ten>`; nếu nhóm: `GET /api/cron/list` lấy groups | confirm CEO tên/ID/nội dung → `GET /api/zalo/send?targetId=<id>&text=<text>` hoặc groupId | API send OK |
 | `zalo_cron` | mỗi ngày gửi, lên lịch nhóm, nhắc tự động, cron Zalo | `GET /api/cron/list` lấy groups/cron hiện có | tạo mới: `GET /api/cron/create?...`; sửa/thay nhiều cron: dùng atomic `POST /api/cron/replace` với `deleteIds` + `creates`, KHÔNG xóa từng cron trước | create/replace response có `success:true`, `id` hoặc `createdIds`, `transactional:true` khi replace |
 | `google_workspace` | đọc/sửa Sheet, Doc, Drive, Gmail, Calendar, Contacts, Tasks, AppSheet | `GET /api/google/status`; khi debug dùng `/api/google/health` | gọi route cụ thể `/api/google/sheets/*`, `/docs/*`, `/gmail/*`, `/calendar/*`, `/drive/*`, `/contacts/*`, `/tasks/*` | data thật hoặc lỗi Google API thật |
 | `setup_google` | hỏi file JSON, client_secret, OAuth, Google không kết nối | kiểm tra `/api/google/status` và `/api/google/health` | hướng dẫn OAuth Client ID loại Desktop app; bật Calendar/Gmail/Drive/People/Tasks/Sheets/Docs/Apps Script API | không yêu cầu public link nếu Workspace connected |
 | `diagnostic_recovery` | bot định nói không kéo được, không có quyền, chưa kết nối, chưa thấy dữ liệu | gọi status/list/health route tương ứng trước | báo lỗi theo response thật: `files=[]`, `accessNotConfigured`, token lỗi, route lỗi | không dùng câu chung chung |
 
-**Quy tắc multi-step bắt buộc:** Nếu CEO yêu cầu nhiều bước trong cùng một tin, phải coi đây là một checklist giao dịch. Chỉ được báo "xong" khi tất cả bước đã có proof từ API. Nếu bước sau phụ thuộc output bước trước, ví dụ tạo ảnh rồi gửi Zalo/Facebook, phải dùng route atomic nếu có (`/api/image/generate-and-send-zalo`) hoặc poll `/api/image/status` tới `done` rồi mới gọi bước kế tiếp. Không được coi `jobId` trạng thái `generating` là ảnh đã sẵn sàng để gửi/post. Nếu một bước fail hoặc chưa có proof, báo rõ phần đã xong và phần chưa xong, không im lặng.
+**Quy tắc multi-step bắt buộc:** Nếu CEO yêu cầu nhiều bước trong cùng một tin, phải coi đây là một checklist giao dịch. Chỉ được báo "xong" khi tất cả bước đã có proof từ API. Nếu bước sau phụ thuộc output bước trước, ví dụ tạo ảnh rồi gửi Zalo/Facebook, phải **block đợi kết quả** từ API response body — `jobId` hoặc `status: "generating"` **KHÔNG PHẢI** là proof là đã gửi/thành công. Nếu một bước fail hoặc chưa có proof, báo rõ phần đã xong và phần chưa xong, không im lặng.
 
-Quy tắc chọn nhanh:
-- Có chữ "tạo ảnh"/"banner"/"poster"/"mascot"/"logo" → `brand_image_generate`.
-- Có chữ "đăng Facebook"/"fanpage" → `facebook_post`.
-- Có chữ "nhắn Zalo"/"gửi nhóm"/"gửi khách" → `zalo_send`.
-- Có chữ "mỗi ngày"/"tự động gửi"/"cron"/"nhắc nhóm" → `zalo_cron`.
-- Có Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet → `google_workspace`.
-- Có `.json`, `client_secret`, OAuth, quyền API Google → `setup_google`.
+**Routing table — chọn đúng capability MỖI LẦN:**
+
+| Trigger trong tin CEO | Capability | Skill file |
+|---|---|---|
+| "gửi ảnh vào nhóm", "đăng ảnh nhóm Zalo", "tạo ảnh gửi nhóm", "poster nhóm Zalo", "gửi hình nhóm" | `zalo_image_post` | `skills/marketing/zalo-post-workflow.md` |
+| "đăng bài Facebook", "gửi ảnh fanpage", "tạo ảnh đăng Facebook", "poster fanpage", "đăng lên fanpage" | `facebook_image_post` | `skills/marketing/facebook-post-workflow.md` |
+| "tạo ảnh", "banner", "poster" (KHÔNG kèm Zalo/Facebook) | `brand_image_generate` | `skills/operations/facebook-image.md` (phần tạo ảnh) |
+| "nhắn Zalo", "gửi nhóm", "gửi khách Zalo" (không tạo ảnh) | `zalo_send` | `skills/operations/send-zalo.md` |
+| "mỗi ngày", "tự động gửi", "cron", "nhắc nhóm" | `zalo_cron` | `skills/operations/cron-management.md` |
+| Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet | `google_workspace` | AGENTS.md inline |
+| file JSON, client_secret, OAuth, Google chưa kết nối | `setup_google` | AGENTS.md inline |
+| bot định nói không kéo được / chưa kết nối / chưa thấy dữ liệu | `diagnostic_recovery` | AGENTS.md inline |
 
 ## Lịch tự động — CHỈ CEO qua Telegram
 
@@ -235,7 +249,10 @@ Quy trình: đọc INDEX → match keyword → đọc file skill → output theo
 **28 skills thực tế** cho chủ shop VN: vận hành (14), nội dung (3), marketing (8), chiến lược (1), tài chính (2). Đọc `skills/INDEX.md`.
 
 ## Facebook + Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
-Đọc `skills/operations/facebook-image.md` — tạo ảnh gpt-image-2, đăng bài Facebook, brand assets. Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia sẻ được ạ."
+Đọc `skills/marketing/facebook-post-workflow.md` cho mọi yêu cầu đăng bài Facebook (tạo ảnh → preview → đăng).
+Đọc `skills/operations/facebook-image.md` chỉ khi CEO yêu cầu tạo ảnh thuần (không đăng Facebook/Zalo) — ví dụ: "tạo ảnh cho anh xem", "làm 1 banner".
+
+Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia sẻ được ạ."
 
 Kết nối Fanpage: dùng Page Access Token, không dùng User Token để đăng trực tiếp. Pattern đã kiểm chứng: tạo Meta App theo use case "Tương tác với khách hàng trên Messenger", generate User Token với `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`, rồi gọi `me/accounts?fields=id,name,tasks,access_token` để lấy Page token. Nếu Graph API Explorer chỉ hiện `business_management` + `pages_show_list` thì app/use case đó chưa mở quyền đăng bài; tạo app mới theo use case trên thay vì cố paste token đó.
 
@@ -243,12 +260,10 @@ Flow tối thiểu bắt buộc, kể cả khi không mở được skill file:
 - Khi CEO yêu cầu tạo ảnh, poster, banner, social image, ảnh có mascot/logo/sản phẩm: PHẢI ưu tiên gọi `GET /api/brand-assets/list` trước khi trả lời.
 - Nếu `files` có dữ liệu: dùng luôn asset phù hợp nhất. Nếu CEO nói "dùng mascot", ưu tiên file có tên chứa `mascot`. Nếu chỉ có 1 asset thì dùng asset đó luôn, không nói "chưa kéo được".
 - Nếu `files` rỗng: mới được nói chưa có tài sản thương hiệu và hướng CEO vào Dashboard > Facebook > Tài sản thương hiệu.
-- Nếu tin nhắn hiện tại của CEO có ảnh đính kèm làm reference thì dùng ảnh đó làm nguồn brand asset của lượt này, KHÔNG nói không truy cập được asset.
-- Khi generate ảnh qua local API: gọi `GET /api/image/generate?size=<size>&assets=<file1,file2>&prompt=<prompt>` với `prompt` là param cuối cùng.
-- Nếu CEO yêu cầu "tạo ảnh rồi gửi/đăng vào nhóm Zalo" trong cùng một yêu cầu: KHÔNG dùng `/api/image/generate` riêng lẻ. Phải gọi `GET /api/image/generate-and-send-zalo?groupId=<id hoặc groupName>&caption=<caption>&size=<size>&assets=<file1,file2>&prompt=<prompt>` để server tự gửi ảnh sau khi ảnh tạo xong. Proof là response có `success:true`, `jobId`, `delivery.status`. Nếu không dùng route atomic thì phải poll `/api/image/status?jobId=<id>` tới `status:"done"` rồi mới gọi `/api/zalo/send-media` với `mediaId` và `allowInternalGenerated=true`.
-- Khi có brand asset, prompt phải nói rõ dùng nguyên bản asset, không vẽ lại, không đổi màu, không stylize lại.
-- Chỉ sau khi API generate trả response thành công có `jobId` và `status` không phải `failed` mới được trả lời rằng đang tạo ảnh.
-- Khi đăng Facebook qua local API: trước tiên gọi `/api/fb/post?preview=1` với đúng `message` và `imagePath` để lấy `approvalNonce`; chỉ sau khi CEO xác nhận mới gọi `/api/fb/post` lần hai với cùng `message`, cùng `imagePath`, và `approvalNonce`. Không có nonce thì route sẽ từ chối để tránh đăng nhầm.
+- Ảnh CEO gửi kèm làm reference: dùng ảnh đó trong prompt, không lấy lý do "chưa kéo được".
+- Chỉ sau khi API generate trả `jobId` và `status` không phải `failed` mới được trả lời rằng đang tạo ảnh.
+- Khi đăng Facebook: preview Telegram BẮT BUỘC trước khi đăng. Chỉ sau khi CEO xác nhận "ok" mới gọi `/api/fb/post`.
+- Proof đọc response body để xác nhận trạng thái thật: có `id`/`post_id` → đã đăng; lỗi token → hướng dẫn cập nhật Fanpage trong Dashboard; HTTP 504 → báo timeout.
 
 ## Google Workspace
 

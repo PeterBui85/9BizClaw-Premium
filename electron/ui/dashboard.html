@@ -7224,7 +7224,7 @@
         }
         const r = await window.claw.saveTelegramConfig(token, uid);
         if (r?.success) {
-          showToast('Đã lưu tài khoản Telegram', 'success');
+          showToast('Đã lưu — đang khởi động lại gateway để áp dụng bot mới...', 'success');
           closeTgChangeModal();
           loadTgConfigSummary();
         } else {

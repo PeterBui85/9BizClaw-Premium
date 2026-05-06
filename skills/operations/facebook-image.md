@@ -39,29 +39,14 @@ CEO noi "tao anh", "lam anh", "thiet ke anh", "anh quang cao", "tao banner" hoac
 
 Buoc goi generate la tool call bat buoc truoc khi reply text. Neu chua goi generate thi khong duoc noi da bat dau tao anh.
 
-## Tao anh roi gui Zalo
+**Phần đăng Zalo:** xem `skills/marketing/zalo-post-workflow.md`
+**Phần đăng Facebook:** xem `skills/marketing/facebook-post-workflow.md`
 
-Khi CEO noi tao anh va gui/dang vao nhom Zalo hoac Zalo ca nhan trong cung mot yeu cau, dung route atomic de tranh tao anh xong roi quen buoc gui:
+## Tao anh
 
-1. Lay asset nhu flow "Tao anh".
-2. Tra group/friend neu CEO dua ten, lay `groupId`/`targetId` bang `/api/cron/list` hoac `/api/zalo/friends`.
-3. Goi:
-   `web_fetch` url: `http://127.0.0.1:20200/api/image/generate-and-send-zalo?groupId=<groupId>&caption=<URL-encoded caption>&size=1024x1024&assets=<file1,file2>&prompt=<URL-encoded prompt>`
-   - Dung `groupName=<name>` neu chua co ID nhung group name match duoc.
-   - Dung `targetId=<id>&isGroup=false` neu gui Zalo ca nhan.
-   - `prompt` PHAI la param cuoi cung.
-4. Chi bao da len hang doi gui khi response co `success:true`, `jobId`, va `delivery.status`.
-5. Neu response loi, bao loi that. KHONG noi da gui anh.
+CEO noi "tao anh", "lam anh", "thiet ke anh", "anh quang cao", "tao banner" hoac bat ky yeu cau tao hinh anh nao - LAM NGAY.
 
-Fallback neu bat buoc tach buoc:
-1. Goi `/api/image/generate`.
-2. Poll `/api/image/status?jobId=<id>` toi khi `status:"done"` va co `mediaId`.
-3. Goi `/api/zalo/send-media?groupId=<id>&mediaId=<mediaId>&allowInternalGenerated=true&caption=<caption>`.
-4. Chi bao da gui khi `/api/zalo/send-media` tra `success:true`.
-
-## Dang bai Facebook
-
-KHI CEO yeu cau dang bai Facebook:
+**QUAN TRONG: Goi API generate TRUOC, reply text SAU. Server tu gui anh qua Telegram khi xong - ban KHONG can poll neu chi tao anh cho CEO xem. Neu con buoc sau can dung file anh (gui Zalo, preview Facebook, dang Facebook), KHONG duoc coi `jobId` la anh da xong; phai dung route atomic hoac poll `/api/image/status` toi `done`.**
 
 Ket noi Fanpage dung pattern da kiem chung tu ClawHub facebook-fanpage-manager:
 - Tao Meta App theo use case "Tuong tac voi khach hang tren Messenger".

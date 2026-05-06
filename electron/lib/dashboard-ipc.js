@@ -1047,7 +1047,7 @@ ipcMain.handle('append-zalo-user-note', async (_event, { senderId, note }) => {
       content = content.replace(/(## CEO notes\s*\n)/, `$1- **${stamp}** — ${cleanNote}\n`);
       fs.writeFileSync(filePath, content, 'utf-8');
       return { success: true };
-    });
+    }, { senderId: id, action: 'append-ceo-note', source: 'dashboard-ipc' });
   } catch (e) {
     console.error('[zalo-user-memory] append note error:', e?.message);
     return { success: false, error: e.message };
@@ -1071,7 +1071,7 @@ ipcMain.handle('delete-zalo-user-note', async (_event, { senderId, noteTimestamp
       if (newContent === content) return { success: false, error: 'note not found' };
       fs.writeFileSync(filePath, newContent, 'utf-8');
       return { success: true };
-    });
+    }, { senderId: id, action: 'delete-ceo-note', source: 'dashboard-ipc' });
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -2501,12 +2501,36 @@ ipcMain.handle('save-telegram-config', async (_e, { botToken, userId }) => {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
         if (!config.channels) config.channels = {};
         if (!config.channels.telegram) config.channels.telegram = {};
+        const oldToken = config.channels.telegram.botToken;
+        const tokenChanged = botToken !== undefined && botToken !== oldToken;
         if (botToken !== undefined) config.channels.telegram.botToken = botToken;
         if (userId !== undefined) {
           const uid = parseInt(userId, 10);
           if (!isNaN(uid) && uid > 0) config.channels.telegram.allowFrom = [uid];
         }
         writeOpenClawConfigIfChanged(configPath, config);
+
+        // Token changed → gateway MUST restart or it keeps using the old bot token.
+        // Same pattern as save-zalo-manager (stop + wait + start).
+        if (tokenChanged) {
+          if (ctx.gatewayRestartInFlight) {
+            console.log('[save-telegram-config] token changed — restart already in-flight, skip duplicate');
+          } else {
+            ctx.gatewayRestartInFlight = true;
+            console.log('[save-telegram-config] bot token changed — hard-restart gateway (bg)');
+            (async () => {
+              try {
+                try { await stopOpenClaw(); } catch (e1) { console.warn('[save-telegram-config] stop failed:', e1?.message); }
+                await new Promise(r => setTimeout(r, 2000));
+                try { await startOpenClaw({ ignoreCooldown: true }); } catch (e2) { console.warn('[save-telegram-config] start failed:', e2?.message); }
+                console.log('[save-telegram-config] gateway hard-restart complete');
+              } finally {
+                ctx.gatewayRestartInFlight = false;
+              }
+            })();
+          }
+        }
+
         return { success: true };
       } catch (e) { return { success: false, error: String(e) }; }
     });
@@ -4151,19 +4175,22 @@ ipcMain.handle('install-openclaw', async (event) => {
     // CRITICAL: pin versions to protect against upstream schema breakage.
     // Without pinning, fresh installs months from now will pull `latest` which
     // may have incompatible schema → wizard fails on day 1 with "Config invalid".
-    // To upgrade pinned versions: edit PINNED_VERSIONS table below,
-    // smoke-test, then ship a new build. Single source of truth is also in
-    // electron/scripts/prebuild-vendor.js — keep both in sync (and PINNING.md).
-    // CRIT #11: All 4 vendor packages must be pinned. Previously @tuyenhx/openzalo
-    // was missing — dev-mode fresh installs pulled `latest` via openclaw's
-    // plugin auto-install path, so an upstream breaking change in the zalo plugin
-    // would silently break Zalo for every new VIP installing that day.
+    // Upgrade: edit electron/scripts/versions.json only. All files read from it.
     // NOTE: modoro-zalo is the renamed fork; @tuyenhx/openzalo kept as fallback
     // for dev-mode network installs until modoro-zalo is published to npm.
+    const SHARED_VERSIONS = (() => {
+      try {
+        return JSON.parse(require('fs').readFileSync(
+          require('path').join(__dirname, '..', 'scripts', 'versions.json'), 'utf-8'
+        ));
+      } catch {
+        return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12' };
+      }
+    })();
     const PINNED_VERSIONS = [
-      'openclaw@2026.4.14',
-      '9router@0.4.12',
-      'openzca@0.1.57',
+      'openclaw@' + SHARED_VERSIONS.openclaw,
+      '9router@' + SHARED_VERSIONS.nineRouter,
+      'openzca@' + SHARED_VERSIONS.openzca,
     ];
     let cmd, args;
     if (isWin) {
@@ -4532,7 +4559,6 @@ ipcMain.handle('get-app-version', async () => {
 
 ipcMain.handle('activate-license', async (_event, { key }) => {
   const license = require('./license');
-  license.init(getWorkspace);
   try {
     const result = await license.activateLicense(key);
     if (!result.success) return result;
@@ -4546,7 +4572,6 @@ ipcMain.handle('activate-license', async (_event, { key }) => {
 
 ipcMain.handle('get-license-status', async () => {
   const license = require('./license');
-  license.init(getWorkspace);
   const status = license.checkLicenseStatus();
   status.machineId = license.getMachineId();
   return status;
@@ -4554,7 +4579,6 @@ ipcMain.handle('get-license-status', async () => {
 
 ipcMain.handle('deactivate-license', async () => {
   const license = require('./license');
-  license.init(getWorkspace);
   await license.clearLicense();
   return { success: true };
 });
@@ -4906,15 +4930,30 @@ ipcMain.handle('download-and-install-update', async () => {
   ipcMain.handle('google-sheets-update', async (_ev, opts) => {
     try {
       if (!opts?.spreadsheetId || !opts?.range) return { error: 'spreadsheetId and range required' };
-      const r = await googleApi.updateSheet(opts.spreadsheetId, opts.range, opts.values, opts);
-      try { auditLog('google_sheets_update', { spreadsheetId: opts.spreadsheetId, range: opts.range }); } catch {}
+      const googleRoutes = require('./google-routes');
+      const parsedValues = googleRoutes.normalizeSheetValues
+        ? googleRoutes.normalizeSheetValues(opts)
+        : { ok: true, values: opts.values };
+      if (parsedValues && !parsedValues.ok) return { error: parsedValues.error };
+      const values = parsedValues ? parsedValues.values : opts.values;
+      const range = googleRoutes.fitSheetRangeToValues
+        ? googleRoutes.fitSheetRangeToValues(opts.range, values)
+        : opts.range;
+      const r = await googleApi.updateSheet(opts.spreadsheetId, range, values, opts);
+      try { auditLog('google_sheets_update', { spreadsheetId: opts.spreadsheetId, range }); } catch {}
       return r;
     } catch (e) { return { error: e.message }; }
   });
   ipcMain.handle('google-sheets-append', async (_ev, opts) => {
     try {
       if (!opts?.spreadsheetId || !opts?.range) return { error: 'spreadsheetId and range required' };
-      const r = await googleApi.appendSheet(opts.spreadsheetId, opts.range, opts.values, opts);
+      const googleRoutes = require('./google-routes');
+      const parsedValues = googleRoutes.normalizeSheetValues
+        ? googleRoutes.normalizeSheetValues(opts)
+        : { ok: true, values: opts.values };
+      if (parsedValues && !parsedValues.ok) return { error: parsedValues.error };
+      const values = parsedValues ? parsedValues.values : opts.values;
+      const r = await googleApi.appendSheet(opts.spreadsheetId, opts.range, values, opts);
       try { auditLog('google_sheets_append', { spreadsheetId: opts.spreadsheetId, range: opts.range }); } catch {}
       return r;
     } catch (e) { return { error: e.message }; }
@@ -4926,6 +4965,38 @@ ipcMain.handle('download-and-install-update', async () => {
       try { auditLog('google_appscript_run', { scriptId: opts.scriptId, functionName: opts.functionName }); } catch {}
       return r;
     } catch (e) { return { error: e.message }; }
+  });
+
+  // Compaction IPC handlers — expose compact engine to UI and Telegram agent
+  ipcMain.handle('compact-session', async (_ev, opts = {}) => {
+    // opts: { sessionPath, mode, focus, fromMessageId }
+    const { compactSession: doCompact } = require('./compact');
+    try {
+      if (!opts?.sessionPath) {
+        return { success: false, error: 'sessionPath required' };
+      }
+      const result = await doCompact(opts.sessionPath, {
+        mode: opts.mode || 'full',
+        focus: opts.focus || '',
+        fromMessageId: opts.fromMessageId || null,
+      });
+      return result;
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('compact-all-sessions', async () => {
+    const { compactAllSessions: sweep } = require('./compact');
+    try {
+      await sweep();
+      return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('get-compact-stats', async () => {
+    const { getAllSessionStats } = require('./compact');
+    try {
+      return getAllSessionStats();
+    } catch (e) { return []; }
   });
 
 } // end registerAllIpcHandlers

@@ -43,410 +43,108 @@ let splashWindow = null;
 //
 // The Windows indirection exists because shipping ~50k loose files through
 // NSIS is pathologically slow. See CLAUDE.md "Vendor tar-and-extract" section.
+// =====================================================================
+//  VENDOR PATH (v2.4.0+ pure runtime install)
+// =====================================================================
+// v2.4.0+ ships NO bundled vendor in EXE/DMG. The runtime installer
+// downloads Node + packages on first launch into userData/vendor/.
+//
+// Layout:
+//   Win/Mac (packaged): %APPDATA%/9bizclaw/vendor/
+//     vendor/node/node.exe           ← runtime-installed Node
+//     vendor/node_modules/openclaw/openclaw.mjs
+//     vendor/node_modules/9router/
+//     vendor/node_modules/modoro-zalo/
+//
+// Dev mode: null → callers fall back to system Node + global packages.
+
 function getBundledVendorDir() {
-  try {
-    if (!app || !app.isPackaged) return null;
-    if (process.platform === 'win32' || process.platform === 'darwin') {
-      // Packaged vendor lives in userData after first-launch extraction.
-      // Falls back to resources/vendor if an old direct-ship layout is present.
-      const extracted = path.join(app.getPath('userData'), 'vendor');
-      if (fs.existsSync(extracted)) return extracted;
-      const legacy = path.join(process.resourcesPath, 'vendor');
-      if (fs.existsSync(legacy)) return legacy;
-      return null;
-    }
-    // Linux packaged: vendor ships directly in resources/ if ever supported.
-    const v = path.join(process.resourcesPath, 'vendor');
-    if (fs.existsSync(v)) return v;
-  } catch {}
-  return null;
-}
-
-// Windows-only: extract vendor-bundle.tar from resources/ to userData/vendor/
-// if not already extracted (first launch or after update). Emits progress via
-// the optional onProgress callback so a splash window can show a progress bar.
-//
-// Behavior:
-//   - Checks userData/vendor-version.txt vs resources/vendor-meta.json.bundle_version
-//   - If match → resolve immediately (no-op, subsequent launches)
-//   - If mismatch or missing → spawn Windows native tar.exe to extract the .tar
-//     Progress = count lines from tar -v stdout / meta.file_count
-//   - After successful extract, write userData/vendor-version.txt = bundle_version
-//   - Returns { skipped: bool, extracted: bool, durationMs: number }
-//
-// Errors are fatal to the launch — if extraction fails, show an error dialog
-// and quit. There's no safe fallback: bot can't run without vendor.
-function getVendorNodeBinPath(targetDir) {
-  return process.platform === 'win32'
-    ? path.join(targetDir, 'node', 'node.exe')
-    : path.join(targetDir, 'node', 'bin', 'node');
-}
-
-function getVendorSentinelPaths(targetDir) {
-  const e5 = path.join(targetDir, 'models', 'Xenova', 'multilingual-e5-small');
-  return [
-    getVendorNodeBinPath(targetDir),
-    path.join(targetDir, 'node_modules', 'openclaw', 'openclaw.mjs'),
-    path.join(targetDir, 'node_modules', 'openclaw', 'package.json'),
-    path.join(targetDir, 'node_modules', 'modoro-zalo', 'openclaw.plugin.json'),
-    path.join(targetDir, 'node_modules', '9router', 'app', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
-    path.join(e5, 'onnx', 'model_quantized.onnx'),
-    path.join(e5, 'tokenizer.json'),
-    path.join(e5, 'config.json'),
-  ];
-}
-
-function findMissingVendorSentinel(targetDir) {
-  return getVendorSentinelPaths(targetDir).find(p => !fs.existsSync(p) || fs.statSync(p).size === 0) || null;
-}
-
-async function ensureVendorExtracted({ onProgress } = {}) {
-  // Packaged Windows + Mac use the tar indirection. Dev/Linux no-op.
-  if (process.platform !== 'win32' && process.platform !== 'darwin') return { skipped: true };
-  if (!app.isPackaged) return { skipped: true };
-
-  const resDir = process.resourcesPath;
-  const tarPath = path.join(resDir, 'vendor-bundle.tar');
-  const metaPath = path.join(resDir, 'vendor-meta.json');
-  const userData = app.getPath('userData');
-  const targetDir = path.join(userData, 'vendor');
-  const versionStamp = path.join(userData, 'vendor-version.txt');
-
-  if (!fs.existsSync(tarPath) || !fs.existsSync(metaPath)) {
-    // Old-layout install (vendor shipped directly in resources/). No-op.
-    console.log('[vendor-extract] no tar/meta in resources — assuming legacy direct-ship layout');
-    return { skipped: true };
-  }
-
-  let meta;
-  try {
-    meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-  } catch (e) {
-    throw new Error(`vendor-meta.json unreadable: ${e.message}`);
-  }
-
-  // Check if already extracted with matching version
-  try {
-    if (fs.existsSync(versionStamp)) {
-      const current = fs.readFileSync(versionStamp, 'utf8').trim();
-      if (current === meta.bundle_version && fs.existsSync(getVendorNodeBinPath(targetDir))) {
-        // SAFETY: verify load-bearing files are present. C5 FIX: add model
-        // .onnx to sentinel list. If antivirus quarantines the onnx post-
-        // install, version stamp still matches, old code would skip re-extract
-        // → embedder throws at load → RAG permanently broken until manual
-        // reinstall. Now: any sentinel missing → re-extract from tar.
-        // cold-F1: expanded sentinel list. Power-fail during extract could
-        // leave stamp valid but any of these missing/truncated. Each is
-        // load-bearing — missing one = broken feature down the line.
-        const missing = findMissingVendorSentinel(targetDir);
-        if (!missing) {
-          console.log('[vendor-extract] already extracted at', targetDir, '→', meta.bundle_version);
-          return { skipped: true, reason: 'already_extracted' };
-        }
-        console.log('[vendor-extract] version stamp matches but sentinel missing/empty:', missing, '— re-extracting');
-      } else {
-        console.log('[vendor-extract] version mismatch — re-extracting. have:', current, 'want:', meta.bundle_version);
-      }
-    }
-  } catch {}
-  // NOTE: do NOT delete old vendor dir before extract. tar -xf naturally
-  // overwrites existing files. Deleting first fails when files are locked
-  // by running processes (9Router, gateway) → tar extract fails → app crash.
-  // Old files that no longer exist in new tar remain as orphans but are harmless.
-
-  console.log('[vendor-extract] extracting vendor bundle...');
-  console.log('  source:', tarPath);
-  console.log('  target:', targetDir);
-  console.log('  file_count:', meta.file_count, ' archive_bytes:', meta.archive_bytes);
-  const startedAt = Date.now();
-
-  if (onProgress) onProgress({ percent: 0, message: 'Đang chuẩn bị giải nén...' });
-
-  // Verify SHA256 BEFORE touching the existing vendor directory. If the
-  // installer bundle is corrupt, the last working vendor must remain intact.
-  if (meta.sha256) {
-    if (onProgress) onProgress({ percent: 1, message: 'Đang kiểm tra tính toàn vẹn...' });
-    try {
-      const crypto = require('crypto');
-      const hash = crypto.createHash('sha256');
-      const stream = fs.createReadStream(tarPath, { highWaterMark: 4 * 1024 * 1024 });
-      const totalBytes = meta.archive_bytes || 0;
-      let readBytes = 0;
-      let lastSha256Percent = 1;
-      await new Promise((resolve, reject) => {
-        stream.on('data', (chunk) => {
-          hash.update(chunk);
-          readBytes += chunk.length;
-          if (totalBytes > 0) {
-            const pct = 1 + Math.floor((readBytes / totalBytes) * 3);
-            if (pct > lastSha256Percent) {
-              lastSha256Percent = pct;
-              if (onProgress) onProgress({ percent: pct, message: 'Đang kiểm tra tính toàn vẹn...' });
-            }
-          }
-        });
-        stream.on('end', resolve);
-        stream.on('error', reject);
-      });
-      const actual = hash.digest('hex');
-      if (actual !== meta.sha256) {
-        throw new Error(`vendor-bundle.tar SHA256 mismatch (expected ${meta.sha256.slice(0, 16)}..., got ${actual.slice(0, 16)}...). File is corrupt or tampered. Re-install 9BizClaw.`);
-      }
-      console.log('[vendor-extract] sha256 verified');
-    } catch (e) {
-      if (e.message && e.message.includes('mismatch')) throw e;
-      console.warn('[vendor-extract] sha256 check skipped:', e.message);
-    }
-  }
-
-  // CRITICAL: if an old vendor dir exists (from a previous install with a
-  // different bundle version), we MUST NOT call fs.rmSync here — Windows can
-  // take 5-15 minutes to sync-delete 126k+ small files while Defender scans
-  // each one, which blocks the Electron main thread → splash freezes with
-  // "not responding". Instead rename the old dir to a stale suffix (instant
-  // atomic NTFS rename) and delete it in background AFTER the main thread
-  // is free. Next launch will also clean up any leftover stale dirs.
+  // Returns the path where bundled vendor packages live.
   //
-  // OVERLAY-INSTALL FIX: kill leftover 9Router / openzca / gateway processes
-  // from the PREVIOUS app instance BEFORE rename. Otherwise their open file
-  // handles lock DLLs and .node binaries inside vendor/ → renameSync throws
-  // EBUSY → tar overwrite also fails on locked files → splash shows error →
-  // 2 client machines hit this on every overlay install.
-  try {
-    if (fs.existsSync(targetDir)) {
-      // Phase 0: kill Windows processes that hold locks inside vendor/
-      if (process.platform === 'win32') {
-        try {
-          const { execSync } = require('child_process');
-          const vendorAbs = path.resolve(targetDir).replace(/\//g, '\\\\');
-          // taskkill any node.exe whose command line references our vendor dir
-          // /F = force, /T = tree-kill children. Errors ignored (process may not exist).
-          try { execSync(`powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${vendorAbs.replace(/'/g, "''")}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`, { timeout: 8000 }); } catch {}
-          // Also kill by known process names that commonly lock vendor files
-          try { execSync('taskkill /F /IM 9router.exe 2>nul', { timeout: 3000 }); } catch {}
-          try { execSync('taskkill /F /IM openzca.exe 2>nul', { timeout: 3000 }); } catch {}
-          // Give OS a moment to release file handles after kill
-          await new Promise(r => setTimeout(r, 2000));
-          console.log('[vendor-extract] killed leftover processes before rename');
-        } catch (killErr) {
-          console.warn('[vendor-extract] process cleanup (non-fatal):', killErr.message);
-        }
-      }
-      const stale = targetDir + '.stale-' + Date.now();
-      try {
-        fs.renameSync(targetDir, stale);
-        console.log('[vendor-extract] old vendor renamed to', stale, '(will be deleted in background)');
-        setTimeout(() => {
-          fs.rm(stale, { recursive: true, force: true }, (err) => {
-            if (err) console.warn('[vendor-extract] background cleanup failed:', err.message);
-            else console.log('[vendor-extract] background cleanup done:', stale);
-          });
-        }, 10000);
-      } catch (renameErr) {
-        console.warn('[vendor-extract] rename failed after kill, retrying...', renameErr.message);
-        // Retry once after longer wait — handles can take a moment to release
-        try {
-          await new Promise(r => setTimeout(r, 3000));
-          fs.renameSync(targetDir, stale);
-          console.log('[vendor-extract] rename succeeded on retry');
-          setTimeout(() => {
-            fs.rm(stale, { recursive: true, force: true }, () => {});
-          }, 10000);
-        } catch (retryErr) {
-          console.warn('[vendor-extract] rename retry failed, tar will overwrite in place:', retryErr.message);
-        }
-      }
-    }
-  } catch {}
-  // Also clean up any stale dirs from prior interrupted runs (background,
-  // doesn't block).
-  try {
-    setTimeout(() => {
-      try {
-        const entries = fs.readdirSync(userData);
-        for (const e of entries) {
-          if (e.startsWith('vendor.stale-')) {
-            fs.rm(path.join(userData, e), { recursive: true, force: true }, () => {});
-          }
-        }
-      } catch {}
-    }, 15000);
-  } catch {}
-  try { fs.mkdirSync(userData, { recursive: true }); } catch {}
+  // Layout differences by platform + install model:
+  //
+  //   macOS bundled (DMG):   Contents/Resources/vendor/
+  //                           (electron-builder extraResources copies electron/vendor/
+  //                            → app/Contents/Resources/vendor/)
+  //
+  //   Windows bundled (EXE):  userData/vendor/
+  //                           (runtime installer downloads on first launch; previously
+  //                            extracted from vendor-bundle.tar in resources/)
+  //
+  //   Dev mode (both):        electron/vendor/ (local prebuild output) — NOT userData
+  //
+  // getBundledVendorDir() is called in PACKAGED mode only, so we check both
+  // the macOS (resourcesPath) and Windows (userData) locations.
+  if (!app || !app.isPackaged) return null;
 
-  // Spawn Windows native tar.exe — same binary prebuild-vendor uses.
-  // Avoid Git Bash MSYS tar (fails on drive letters with "Cannot connect to C:").
-  const tarBin = process.platform === 'win32'
-    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
-    : 'tar';
-  if (process.platform === 'win32' && !fs.existsSync(tarBin)) {
-    throw new Error(`Windows native tar.exe not found at ${tarBin}. Need Windows 10 1803+ or later.`);
+  // macOS: extraResources go into Contents/Resources/vendor/
+  // Check this FIRST so bundled Mac builds use the correct path.
+  try {
+    const resourcesVendor = path.join(process.resourcesPath, 'vendor');
+    if (fs.existsSync(resourcesVendor)) return resourcesVendor;
+  } catch {}
+
+  // Windows runtime install: userData/vendor/
+  try {
+    const userDataVendor = path.join(app.getPath('userData'), 'vendor');
+    if (fs.existsSync(userDataVendor)) return userDataVendor;
+  } catch {}
+
+  return null;
+}
+
+// Stub: pure runtime model — no tar extraction needed.
+// The runtime installer handles all downloads into userData/vendor/ on first launch.
+// This stub exists only for backward compatibility with any external callers that
+// still import ensureVendorExtracted from boot.js (should use runtime-installer instead).
+async function ensureVendorExtracted({ onProgress } = {}) {
+  return { skipped: true, reason: 'pure_runtime' };
+}
+
+// Resolve the bundled Node binary path.
+// For v2.4.0 pure runtime: userData/vendor/node/ (win32: node.exe, darwin: bin/node)
+// For dev mode: null (falls back to system Node via findNodeBin)
+function getBundledNodeBin() {
+  // Returns the bundled Node binary path.
+  //
+  // Layout:
+  //   macOS bundled: Contents/Resources/vendor/node/bin/node
+  //   Windows bundled: userData/vendor/node/node.exe
+  //   Dev mode:       null (falls back to system Node)
+  //
+  // Uses the same two-location strategy as getBundledVendorDir().
+  if (!app || !app.isPackaged) return null;
+
+  // macOS: extraResources vendor is in Contents/Resources/vendor/
+  if (process.platform === 'darwin') {
+    try {
+      const macNode = path.join(process.resourcesPath, 'vendor', 'node', 'bin', 'node');
+      if (fs.existsSync(macNode)) return macNode;
+    } catch {}
+  } else if (process.platform === 'win32') {
+    // Windows: userData/vendor/node/node.exe
+    try {
+      const winNode = path.join(app.getPath('userData'), 'vendor', 'node', 'node.exe');
+      if (fs.existsSync(winNode)) return winNode;
+    } catch {}
   }
 
-  // -x extract, -f file, -v verbose (one line per extracted entry → progress),
-  // -C target dir. The archive contains "vendor/" as top-level; we extract to
-  // userData, so final path is userData/vendor/...
-  const tarArgs = ['-xvf', tarPath, '-C', userData];
-
-  if (onProgress) onProgress({ percent: 5, message: 'Đang giải nén thành phần...' });
-
-  return new Promise((resolve, reject) => {
-    const { spawn } = require('child_process');
-    const child = spawn(tarBin, tarArgs, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
-
-    let extractedCount = 0;
-    let lastPercentReported = 5;
-    let stderrBuf = '';
-
-    // Total entries (files + directories) tar will emit. Prefer entry_count;
-    // fall back to file_count for backwards-compat with older meta.json.
-    const totalEntries = meta.entry_count || meta.file_count || 0;
-
-    // tar -v writes one line per entry to stderr (BSD) or stdout (GNU). Listen on both.
-    const onLine = () => {
-      extractedCount++;
-      if (totalEntries > 0 && onProgress) {
-        // Reserve 5-95% for extraction. HARD CLAMP at 95 so percent never
-        // exceeds 95 during extract phase — the final 95→100 happens after
-        // extract finishes + version stamp is written. Previous bug: count
-        // exceeded totalEntries (dirs vs files mismatch) → percent > 100%.
-        let percent = 5 + Math.floor((extractedCount / totalEntries) * 90);
-        if (percent > 95) percent = 95;
-        if (percent < 5) percent = 5;
-        if (percent > lastPercentReported) {
-          lastPercentReported = percent;
-          // Show percent only. Hide file counter entirely to avoid confusing
-          // mismatches (tar entries vs user expectation of "files"). CEO rule:
-          // "nếu không biết thì bỏ, số cũng ko đc vượt quá 100% lúc giải nén".
-          onProgress({ percent, message: 'Đang giải nén...' });
-        }
-      }
-    };
-
-    const lineReader = (stream) => {
-      let buf = '';
-      stream.on('data', (chunk) => {
-        buf += chunk.toString('utf8');
-        let idx;
-        while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, idx);
-          buf = buf.slice(idx + 1);
-          if (line.trim()) onLine();
-        }
-      });
-      stream.on('end', () => { if (buf.trim()) onLine(); });
-    };
-
-    lineReader(child.stdout);
-    // BSD tar (Windows native) writes verbose lines to stderr. Count those too.
-    // BUT real errors ALSO go to stderr. Save full stderr for error reporting.
-    child.stderr.on('data', (chunk) => {
-      const s = chunk.toString('utf8');
-      stderrBuf += s;
-      // Each line in stderr is either a file name (verbose) or an error.
-      // On BSD tar, verbose output is "x path/to/file" (no error prefix).
-      for (const line of s.split('\n')) {
-        if (line.trim()) onLine();
-      }
-    });
-
-    child.on('error', (e) => reject(new Error(`tar spawn failed: ${e.message}`)));
-    child.on('close', (code) => {
-      if (code !== 0) {
-        return reject(new Error(`tar extract failed (exit ${code}): ${stderrBuf.slice(0, 500)}`));
-      }
-      // Verify extract landed where expected
-      const nodeBin = getVendorNodeBinPath(targetDir);
-      if (!fs.existsSync(nodeBin)) {
-        return reject(new Error(`Extract succeeded but bundled Node is missing at ${nodeBin}. Archive may be damaged.`));
-      }
-      const missing = findMissingVendorSentinel(targetDir);
-      if (missing) {
-        return reject(new Error(`Extract succeeded but required vendor file is missing or empty: ${missing}. Archive may be damaged.`));
-      }
-      // cold-F1: 2-phase stamp write. Previous single writeFileSync could
-      // commit small stamp sector to disk BEFORE tar data pages flush (in
-      // write-back cache) → power-fail leaves valid stamp + incomplete
-      // vendor. Now: write to .staging, fsync, rename. Rename is atomic on
-      // NTFS + ext4. Combined with expanded sentinel list in the skip-check
-      // path above, this closes the partial-install window.
-      try {
-        const stagingPath = versionStamp + '.staging';
-        const fd = fs.openSync(stagingPath, 'w');
-        fs.writeSync(fd, Buffer.from(meta.bundle_version, 'utf8'));
-        try { fs.fsyncSync(fd); } catch {}
-        fs.closeSync(fd);
-        fs.renameSync(stagingPath, versionStamp);
-      } catch (e) {
-        console.warn('[vendor-extract] could not write version stamp:', e.message);
-      }
-      const durationMs = Date.now() - startedAt;
-      // Post-extract: log openclaw version for diagnostics
-      try {
-        const oclawPkg = path.join(targetDir, 'node_modules', 'openclaw', 'package.json');
-        if (fs.existsSync(oclawPkg)) {
-          const ver = JSON.parse(fs.readFileSync(oclawPkg, 'utf8')).version;
-          console.log(`[vendor-extract] openclaw version: ${ver}`);
-        }
-      } catch {}
-      console.log(`[vendor-extract] done in ${(durationMs / 1000).toFixed(1)}s, ${extractedCount} files`);
-      if (onProgress) onProgress({ percent: 100, message: 'Hoàn tất!' });
-      resolve({ skipped: false, extracted: true, durationMs, fileCount: extractedCount });
-    });
-  });
-}
-
-function getBundledNodeBin() {
-  const v = getBundledVendorDir();
-  if (!v) return null;
-  // Layout differs per platform (set by prebuild-vendor.js):
-  //   darwin: vendor/node/bin/node     (Mac tar.gz extracts with bin/ subdir)
-  //   win32:  vendor/node/node.exe     (Windows zip is flat at top level)
-  const isWin = process.platform === 'win32';
-  const candidate = isWin
-    ? path.join(v, 'node', 'node.exe')
-    : path.join(v, 'node', 'bin', 'node');
-  try { if (fs.existsSync(candidate)) return candidate; } catch {}
   return null;
 }
 
-function getBundledOpenClawCliJs() {
-  const v = getBundledVendorDir();
-  if (!v) return null;
-  const candidate = path.join(v, 'node_modules', 'openclaw', 'openclaw.mjs');
-  try { if (fs.existsSync(candidate)) return candidate; } catch {}
-  return null;
-}
-
-// PATH augmentation: when packaged, prepend vendor/node/bin so any child
-// process spawned by openclaw (or its plugins) that calls plain `node` finds
-// our bundled binary instead of failing with ENOENT on a Mac without Node.
-// Safe to call multiple times.
+// Augment PATH so child processes (openclaw plugins, 9router) find the bundled Node
+// even when the user's shell PATH doesn't include it (e.g. nvm/volta not loaded).
+// Idempotent: only prepends if the path isn't already there.
 function augmentPathWithBundledNode() {
-  const v = getBundledVendorDir();
-  if (!v) return;
-  // Prepend TWO dirs: (1) the directory containing the bundled `node` binary,
-  // (2) vendor/node_modules/.bin for the shims of bundled npm packages
-  // (openclaw, openzca, 9router). Without the second dir, the modoro-zalo
-  // plugin running inside the gateway calls `spawn('openzca', ...)` and gets
-  // ENOENT because the bundled openzca shim is not on PATH.
-  // Layout differs: darwin has vendor/node/bin/, win32 has vendor/node/ flat.
-  const isWin = process.platform === 'win32';
-  const nodeDir = isWin ? path.join(v, 'node') : path.join(v, 'node', 'bin');
-  const pathsToAdd = [
-    nodeDir,
-    path.join(v, 'node_modules', '.bin'),
-  ].filter(p => fs.existsSync(p));
-  if (pathsToAdd.length === 0) return;
-  const sep = process.platform === 'win32' ? ';' : ':';
-  const cur = process.env.PATH || '';
-  const curSet = new Set(cur.split(sep));
-  const newEntries = pathsToAdd.filter(p => !curSet.has(p));
-  if (newEntries.length === 0) return;
-  process.env.PATH = newEntries.join(sep) + sep + cur;
-  for (const p of newEntries) console.log('[vendor] PATH prepended:', p);
+  const nodeBin = getBundledNodeBin();
+  if (!nodeBin) return;
+  const nodeDir = path.dirname(nodeBin);
+  const existing = (process.env.PATH || '').split(path.delimiter);
+  if (existing.includes(nodeDir)) return;
+  process.env.PATH = nodeDir + path.delimiter + process.env.PATH;
 }
 
+// =====================================================================
 // Cross-platform helpers
 
 // =====================================================================
@@ -842,6 +540,16 @@ function findNodeBin() {
   return null;
 }
 
+// Resolve the bundled openclaw.mjs path for packaged builds.
+// Returns null in dev mode — callers fall back to system openclaw.
+function getBundledOpenClawCliJs() {
+  const v = getBundledVendorDir();
+  if (!v) return null;
+  const mjs = path.join(v, 'node_modules', 'openclaw', 'openclaw.mjs');
+  try { if (fs.existsSync(mjs)) return mjs; } catch {}
+  return null;
+}
+
 // 9BizClaw PATCH: resolve openclaw.mjs path so we can spawn `node openclaw.mjs ...`
 // directly with shell:false. Avoids cmd.exe silently truncating args containing
 // newlines (same class of bug as the OpenZalo `shell:true` issue documented in CLAUDE.md).
@@ -1143,164 +851,12 @@ function findGlobalPackageFile(packageName, relativeFile) {
   return null;
 }
 
-// Windows packaged: show a splash window and extract vendor-bundle.tar → userData/vendor
-// on first launch (or after update). Returns when extraction is done OR immediately
-// on Mac / dev / already-extracted cases.
-async function runSplashAndExtractVendor() {
-  if ((process.platform !== 'win32' && process.platform !== 'darwin') || !app.isPackaged) return;
-
-  // Check upfront if extraction is needed before spawning a splash window
-  try {
-    const resDir = process.resourcesPath;
-    const tarPath = path.join(resDir, 'vendor-bundle.tar');
-    const metaPath = path.join(resDir, 'vendor-meta.json');
-    if (!fs.existsSync(tarPath) || !fs.existsSync(metaPath)) return; // legacy layout
-    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-    const versionStamp = path.join(app.getPath('userData'), 'vendor-version.txt');
-    const targetDir = path.join(app.getPath('userData'), 'vendor');
-    const vendorNode = getVendorNodeBinPath(targetDir);
-    if (fs.existsSync(versionStamp) && fs.existsSync(vendorNode)) {
-      const current = fs.readFileSync(versionStamp, 'utf8').trim();
-      if (current === meta.bundle_version) {
-        const missing = findMissingVendorSentinel(targetDir);
-        if (missing) {
-          console.log('[splash] vendor stamp matches but sentinel missing/empty:', missing, 'continuing to splash + extract');
-        } else {
-        console.log('[splash] vendor already extracted — skipping splash');
-        return; // Fast path: already extracted. No splash at all.
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[splash] pre-check failed, continuing to splash + extract:', e.message);
-  }
-
-  // Need to extract → show splash window
-  splashWindow = new BrowserWindow({
-    width: 540,
-    height: 400,
-    frame: false,
-    resizable: false,
-    movable: true,
-    alwaysOnTop: true,
-    backgroundColor: '#0a0a0c',
-    show: false,
-    skipTaskbar: false,
-    webPreferences: {
-      preload: path.join(__dirname, '..', 'splash-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  splashWindow.setMenuBarVisibility(false);
-  await splashWindow.loadFile(path.join(__dirname, '..', 'ui', 'splash.html'));
-  splashWindow.show();
-  splashWindow.focus();
-
-  const sendProgress = (data) => {
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      try { splashWindow.webContents.send('splash-progress', data); } catch {}
-    }
-  };
-  const sendError = (message) => {
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      try { splashWindow.webContents.send('splash-error', message); } catch {}
-    }
-  };
-
-  try {
-    await ensureVendorExtracted({ onProgress: sendProgress });
-    // Small grace period so user sees "100% Hoàn tất!"
-    await new Promise(r => setTimeout(r, 500));
-  } catch (e) {
-    console.error('[splash] vendor extract failed:', e);
-    sendError('Lỗi: ' + (e.message || 'không rõ nguyên nhân') + '. Vui lòng cài lại 9BizClaw.');
-    // Keep splash open 5s so user can read the error, then quit
-    await new Promise(r => setTimeout(r, 5000));
-    try { splashWindow.close(); } catch {}
-    const { dialog } = require('electron');
-    dialog.showErrorBox('Lỗi khởi tạo 9BizClaw', 'Không thể giải nén thành phần cần thiết:\n\n' + (e.message || '?') + '\n\nVui lòng gỡ cài đặt và cài lại 9BizClaw.');
-    app.exit(1);
-    return;
-  }
-
-  try { splashWindow.close(); } catch {}
-  splashWindow = null;
-}
-
 // =====================================================================
 //  CLI SHIMS — make `openclaw` work from cmd.exe after install
 // =====================================================================
-// Windows packaged only. Creates .cmd shim files in userData/cli/ that
-// forward to the bundled node + openclaw.mjs. Adds that directory to the
-// user PATH (registry, not session) so new cmd windows can run `openclaw`
-// exactly like a global npm install.
-//
-// Idempotent: safe to call every boot. Overwrites shims (in case paths
-// changed after update) but only touches PATH if our dir isn't there yet.
-function ensureCliShims() {
-  if (process.platform !== 'win32') return;
-  if (!app || !app.isPackaged) return;
-
-  const vendorDir = getBundledVendorDir();
-  if (!vendorDir) return;
-
-  const userData = app.getPath('userData');
-  const cliDir = path.join(userData, 'cli');
-  try { fs.mkdirSync(cliDir, { recursive: true }); } catch {}
-
-  const shimTemplate = (mjs) => [
-    '@echo off',
-    'setlocal',
-    'set "VENDOR=%APPDATA%\\9bizclaw\\vendor"',
-    'if not exist "%VENDOR%\\node\\node.exe" (',
-    '  echo [9BizClaw] Vui long mo app 9BizClaw mot lan de giai nen truoc khi dung CLI.',
-    '  exit /b 1',
-    ')',
-    '"%VENDOR%\\node\\node.exe" "%VENDOR%\\node_modules\\' + mjs + '" %*',
-  ].join('\r\n') + '\r\n';
-
-  const shims = [
-    ['openclaw.cmd', 'openclaw\\openclaw.mjs'],
-    ['openzca.cmd',  'openzca\\dist\\cli.js'],
-  ];
-  for (const [name, mjs] of shims) {
-    try {
-      fs.writeFileSync(path.join(cliDir, name), shimTemplate(mjs));
-    } catch (e) {
-      console.warn('[cli-shims] failed to write ' + name + ':', e?.message);
-    }
-  }
-
-  // Add cliDir to user PATH via PowerShell -EncodedCommand.
-  // MUST use EncodedCommand (base64 UTF-16LE) to bypass cmd.exe expansion:
-  // if user PATH contains %JAVA_HOME%\bin, plain -Command would expand it
-  // and permanently replace the reference with the resolved value.
-  try {
-    const { execSync } = require('child_process');
-    const readScript = "$p = [Environment]::GetEnvironmentVariable('PATH','User'); Write-Output $p";
-    const readB64 = Buffer.from(readScript, 'utf16le').toString('base64');
-    const current = execSync(
-      'powershell -NoProfile -EncodedCommand ' + readB64,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 8000 }
-    ).trim();
-    if (current.toLowerCase().includes(cliDir.toLowerCase())) {
-      return; // already registered
-    }
-    const newPath = current ? (current + ';' + cliDir) : cliDir;
-    const writeScript = "[Environment]::SetEnvironmentVariable('PATH','" +
-      newPath.replace(/'/g, "''") + "','User')";
-    const writeB64 = Buffer.from(writeScript, 'utf16le').toString('base64');
-    execSync(
-      'powershell -NoProfile -EncodedCommand ' + writeB64,
-      { stdio: 'pipe', timeout: 8000 }
-    );
-    console.log('[cli-shims] registered in user PATH:', cliDir);
-  } catch (e) {
-    console.warn('[cli-shims] PATH registration failed (non-fatal):', e?.message);
-  }
-}
+//  CLI SHIMS — removed in pure runtime model (v2.4.0+)
+// In runtime install, the CLI shims are generated by runtime-installer.js.
+// kept as no-op stub for backward compatibility.
 
 module.exports = {
   getBundledVendorDir,
@@ -1325,6 +881,6 @@ module.exports = {
   bootDiagRunFullCheck,
   npmGlobalModules,
   findGlobalPackageFile,
-  runSplashAndExtractVendor,
-  ensureCliShims,
+  // runSplashAndExtractVendor removed — pure runtime model (v2.4.0+)
+  // ensureCliShims removed — CLI shims generated by runtime-installer.js
 };

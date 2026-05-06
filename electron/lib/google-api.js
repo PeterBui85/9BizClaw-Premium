@@ -8,7 +8,9 @@ try { app = require('electron').app; } catch {}
 
 const _activeChildren = new Set();
 let _connectInFlight = null;
+let _gogInstallInFlight = null;
 const GOOGLE_SERVICES = 'calendar,gmail,drive,contacts,tasks,sheets,docs,appscript';
+const INLINE_TEXT_ARG_LIMIT = process.platform === 'win32' ? 8000 : 32000;
 
 function getGogConfigDir() {
   if (app) return path.join(app.getPath('userData'), 'gog');
@@ -25,11 +27,17 @@ function getGogBinaryPath() {
     vendorDir = getBundledVendorDir();
   } catch {}
   if (!vendorDir) vendorDir = path.join(__dirname, '..', 'vendor');
-  const bin = process.platform === 'win32'
-    ? path.join(vendorDir, 'gog', 'gog.exe')
-    : path.join(vendorDir, 'gog', 'gog');
+  const binName = process.platform === 'win32' ? 'gog.exe' : 'gog';
+  const candidates = [path.join(vendorDir, 'gog', binName)];
 
-  if (!fs.existsSync(bin)) return null;
+  try {
+    const { getRuntimeNodeDir } = require('./runtime-installer');
+    const runtimeBin = path.join(getRuntimeNodeDir(), 'gog', binName);
+    if (!candidates.includes(runtimeBin)) candidates.push(runtimeBin);
+  } catch {}
+
+  const bin = candidates.find(candidate => fs.existsSync(candidate));
+  if (!bin) return null;
 
   if (process.platform !== 'win32') {
     try {
@@ -68,6 +76,25 @@ function gogEnv() {
 
 async function gogExec(args, timeoutMs = 15000) {
   return gogSpawnAsync(args, timeoutMs);
+}
+
+async function ensureGogBinaryAvailable() {
+  let bin = getGogBinaryPath();
+  if (bin) return bin;
+
+  try {
+    const runtimeInstaller = require('./runtime-installer');
+    if (!_gogInstallInFlight) {
+      _gogInstallInFlight = runtimeInstaller.ensureGogCli().finally(() => {
+        _gogInstallInFlight = null;
+      });
+    }
+    await _gogInstallInFlight;
+  } catch {}
+
+  bin = getGogBinaryPath();
+  if (!bin) throw new Error('gog binary not found');
+  return bin;
 }
 
 function sleep(ms) {
@@ -113,40 +140,42 @@ function normalizeGogArgs(args) {
 
 function gogSpawnAsync(args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
-    const bin = getGogBinaryPath();
-    if (!bin) return reject(new Error('gog binary not found'));
-    const child = spawn(bin, normalizeGogArgs(args), { env: gogEnv(), windowsHide: true });
-    _activeChildren.add(child);
-    let stdout = '', stderr = '';
-    let settled = false;
-    child.stdout?.on('data', d => stdout += d);
-    child.stderr?.on('data', d => stderr += d);
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill();
-      try { child.stdout?.destroy(); } catch {}
-      try { child.stderr?.destroy(); } catch {}
-      _activeChildren.delete(child);
-      reject(new Error('Timeout after ' + (timeoutMs / 1000) + 's'));
-    }, timeoutMs);
-    child.on('close', code => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      _activeChildren.delete(child);
-      if (code !== 0) return reject(new Error(stderr || `exit code ${code}`));
-      try { resolve(JSON.parse(stdout)); } catch {
-        resolve({ ok: true, raw: stdout.slice(0, 2000) });
-      }
-    });
-    child.on('error', e => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      _activeChildren.delete(child);
-      reject(e);
-    });
+    let child;
+    (async () => {
+      const bin = await ensureGogBinaryAvailable();
+      child = spawn(bin, normalizeGogArgs(args), { env: gogEnv(), windowsHide: true });
+      _activeChildren.add(child);
+      let stdout = '', stderr = '';
+      let settled = false;
+      child.stdout?.on('data', d => stdout += d);
+      child.stderr?.on('data', d => stderr += d);
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill();
+        try { child.stdout?.destroy(); } catch {}
+        try { child.stderr?.destroy(); } catch {}
+        _activeChildren.delete(child);
+        reject(new Error('Timeout after ' + (timeoutMs / 1000) + 's'));
+      }, timeoutMs);
+      child.on('close', code => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        _activeChildren.delete(child);
+        if (code !== 0) return reject(new Error(stderr || `exit code ${code}`));
+        try { resolve(JSON.parse(stdout)); } catch {
+          resolve({ ok: true, raw: stdout.slice(0, 2000) });
+        }
+      });
+      child.on('error', e => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        _activeChildren.delete(child);
+        reject(e);
+      });
+    })().catch(reject);
   });
 }
 
@@ -533,6 +562,27 @@ async function shareFile(fileId, email, role) {
 
 // --- Docs ---
 
+function shouldUseTempTextFile(value) {
+  return process.platform === 'win32' || String(value || '').length > INLINE_TEXT_ARG_LIMIT;
+}
+
+function makeTempTextFile(content) {
+  const os = require('os');
+  const name = `9bizclaw-google-doc-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`;
+  const filePath = path.join(os.tmpdir(), name);
+  fs.writeFileSync(filePath, String(content), 'utf8');
+  return filePath;
+}
+
+async function withTempTextFile(content, fn) {
+  const filePath = makeTempTextFile(content);
+  try {
+    return await fn(filePath);
+  } finally {
+    try { fs.unlinkSync(filePath); } catch {}
+  }
+}
+
 async function listDocs(max) {
   return gogReadExec([
     'drive', 'ls',
@@ -548,7 +598,8 @@ async function getDocInfo(docId) {
 
 async function readDoc(docId, opts) {
   const args = ['docs', 'cat', docId];
-  if (opts?.maxBytes) args.push('--max-bytes', String(opts.maxBytes));
+  const maxBytes = Math.max(1, Math.min(parseInt(opts?.maxBytes, 10) || 200000, 1000000));
+  args.push('--max-bytes', String(maxBytes));
   if (opts?.tab) args.push('--tab', opts.tab);
   if (opts?.allTabs) args.push('--all-tabs');
   if (opts?.numbered) args.push('--numbered');
@@ -565,6 +616,18 @@ async function createDoc(title, opts) {
 
 async function writeDoc(docId, opts) {
   const args = ['docs', 'write', docId];
+  if (opts?.text !== undefined && !opts?.file && shouldUseTempTextFile(opts.text)) {
+    return withTempTextFile(opts.text, async (filePath) => {
+      const fileArgs = args.slice();
+      fileArgs.push('--file', filePath);
+      if (opts?.replace) fileArgs.push('--replace');
+      if (opts?.append) fileArgs.push('--append');
+      if (opts?.markdown) fileArgs.push('--markdown');
+      if (opts?.pageless) fileArgs.push('--pageless');
+      if (opts?.tabId) fileArgs.push('--tab-id', opts.tabId);
+      return gogExec(fileArgs, 30000);
+    });
+  }
   if (opts?.text !== undefined) args.push('--text', String(opts.text));
   if (opts?.file) args.push('--file', opts.file);
   if (opts?.replace) args.push('--replace');
@@ -577,6 +640,15 @@ async function writeDoc(docId, opts) {
 
 async function insertDoc(docId, content, opts) {
   const args = ['docs', 'insert', docId];
+  if (content !== undefined && !opts?.file && shouldUseTempTextFile(content)) {
+    return withTempTextFile(content, async (filePath) => {
+      const fileArgs = args.slice();
+      fileArgs.push('--file', filePath);
+      if (opts?.index) fileArgs.push('--index', String(opts.index));
+      if (opts?.tabId) fileArgs.push('--tab-id', opts.tabId);
+      return gogExec(fileArgs, 30000);
+    });
+  }
   if (content !== undefined) args.push(String(content));
   if (opts?.index) args.push('--index', String(opts.index));
   if (opts?.file) args.push('--file', opts.file);
@@ -586,6 +658,17 @@ async function insertDoc(docId, content, opts) {
 
 async function findReplaceDoc(docId, find, replace, opts) {
   const args = ['docs', 'find-replace', docId, find];
+  if (replace !== undefined && !opts?.contentFile && shouldUseTempTextFile(replace)) {
+    return withTempTextFile(replace, async (filePath) => {
+      const fileArgs = args.slice();
+      fileArgs.push('--content-file', filePath);
+      if (opts?.matchCase) fileArgs.push('--match-case');
+      if (opts?.format) fileArgs.push('--format', opts.format);
+      if (opts?.first) fileArgs.push('--first');
+      if (opts?.tabId) fileArgs.push('--tab-id', opts.tabId);
+      return gogExec(fileArgs, 30000);
+    });
+  }
   if (replace !== undefined) args.push(String(replace));
   if (opts?.contentFile) args.push('--content-file', opts.contentFile);
   if (opts?.matchCase) args.push('--match-case');
@@ -701,6 +784,19 @@ async function runAppScript(scriptId, functionName, params, devMode) {
   return gogExec(args, 60000);
 }
 
+async function probeAppScriptAccess() {
+  try {
+    await gogReadExec(['appscript', 'get', '9bizclaw-health-check-nonexistent-script'], 20000, 1);
+  } catch (e) {
+    const message = String(e?.message || e || '');
+    if (/not\s*found|notFound|requested entity was not found|invalid.*script/i.test(message)) {
+      return { ok: true, probe: 'not_found' };
+    }
+    throw e;
+  }
+  return { ok: true, probe: 'read' };
+}
+
 function serviceErrorMessage(e) {
   return String(e?.message || e || '').replace(/\s+/g, ' ').slice(0, 500);
 }
@@ -730,6 +826,7 @@ async function serviceHealth() {
     probeService('tasks', () => gogReadExec(['tasks', 'lists', 'list', '--max', '1'], 20000)),
     probeService('sheets', () => listSheets(1)),
     probeService('docs', () => listDocs(1)),
+    probeService('appscript', () => probeAppScriptAccess()),
   ];
   const services = await Promise.all(checks);
   return { ok: services.every(s => s.ok), services };
@@ -761,4 +858,6 @@ module.exports._test = {
   normalizeGmailReadResult,
   normalizeGmailThread,
   isTransientGogError,
+  shouldUseTempTextFile,
+  normalizeGogArgs,
 };

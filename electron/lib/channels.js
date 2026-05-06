@@ -28,6 +28,16 @@ function setIsGatewayAlive(fn) { _isGatewayAliveFn = fn; }
 let _checkZaloCookieAgeFn = null;
 function setCheckZaloCookieAge(fn) { _checkZaloCookieAgeFn = fn; }
 
+// Cached openzca CLI path — findGlobalPackageFile scans disk each call.
+// Cached for the process lifetime so Zalo sends don't pay the scan cost.
+let _cachedZcaBin = null;
+function getCachedZcaBin() {
+  if (_cachedZcaBin !== null) return _cachedZcaBin;
+  _cachedZcaBin = findGlobalPackageFile('openzca', 'dist/cli.js') || null;
+  return _cachedZcaBin;
+}
+function clearCachedZcaBin() { _cachedZcaBin = null; } // called on stopZalo / app restart
+
 // ============================================
 //  SEND CEO ALERT
 // ============================================
@@ -57,6 +67,32 @@ async function sendCeoAlert(text) {
     }
   }
   return delivered;
+}
+
+/**
+ * Notify CEO via Telegram when the bot writes to a customer memory file.
+ * Only fires for non-cron, non-routine writes (Dashboard IPC or bot-direct writes).
+ * Silent for routine daily-cron summaries (to avoid noise).
+ *
+ * @param {{ senderId, action, details }} opts
+ */
+async function sendMemoryWriteAlert({ senderId, action, details }) {
+  // Only notify for manual/interactive writes — skip routine daily-cron summaries
+  if (details?.source === 'daily-cron') return;
+
+  const actionLabels = {
+    'append-ceo-note': 'thêm ghi chú',
+    'append-summary': 'cập nhật hồ sơ',
+    'delete-ceo-note': 'xóa ghi chú',
+    'write': 'ghi vào',
+    'update-frontmatter': 'cập nhật thông tin',
+  };
+  const actionLabel = actionLabels[action] || action;
+  const customerRef = details?.customerName || `khách ${senderId ? senderId.slice(-6) : '?'}`;
+  const sourceLabel = details?.source === 'dashboard-ipc' ? 'Dashboard' : 'Bot';
+
+  const text = `📝 ${sourceLabel} vừa ${actionLabel} hồ sơ khách *${customerRef}*`;
+  return await sendCeoAlert(text);
 }
 
 // ============================================
@@ -723,20 +759,25 @@ async function sendZaloTo(target, text, opts = {}) {
     targetId = String(target.id || target.toId || '');
     isGroup = !!target.isGroup;
   }
-  if (!targetId) { console.error('[sendZaloTo] missing target id'); return null; }
+  if (!targetId) {
+    const err = '[sendZaloTo] missing target id';
+    console.error(err);
+    return { ok: false, error: err };
+  }
 
   const { skipFilter = false, skipPauseCheck = false } = opts;
   if (!isZaloChannelEnabled()) {
     console.log('[sendZaloTo] channel disabled in config — skipping');
-    return null;
+    return { ok: false, error: 'channel_disabled' };
   }
   if (!skipPauseCheck && isChannelPaused('zalo')) {
     console.log('[sendZaloTo] channel paused — skipping');
-    return null;
+    return { ok: false, error: 'channel_paused' };
   }
   if (!opts.skipListenerCheck && !isZaloListenerAlive()) {
-    console.error('[sendZaloTo] Zalo listener not running — refusing send (would silently fail)');
-    return null;
+    const err = 'Zalo listener not running — check if the Zalo plugin is active in the app';
+    console.error('[sendZaloTo] ' + err);
+    return { ok: false, error: 'listener_dead: ' + err };
   }
   if (!skipFilter) {
     text = sanitizeZaloText(text);
@@ -749,18 +790,24 @@ async function sendZaloTo(target, text, opts = {}) {
 
   const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
   if (!allow.allowed) {
-    console.warn(`[sendZaloTo] blocked by policy (${allow.reason}) target=${targetId}`);
-    return null;
+    const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
+    console.warn(`[sendZaloTo] ${err} target=${targetId}`);
+    return { ok: false, error: err };
   }
 
-  const zcaBin = findGlobalPackageFile('openzca', 'dist/cli.js');
-  if (!zcaBin) { console.error('[sendZaloTo] openzca CLI not found'); return null; }
+  const zcaBin = getCachedZcaBin();
+  if (!zcaBin) {
+    const err = 'openzca CLI not found — Zalo plugin may not be installed';
+    console.error('[sendZaloTo] ' + err);
+    return { ok: false, error: err };
+  }
   const nodeBin = findNodeBin() || 'node';
   const zcaProfile = opts.profile || (allow.state?.profile) || (_getZcaProfileFn ? _getZcaProfileFn() : 'default');
   const knownTarget = _isKnownZaloTargetFn ? _isKnownZaloTargetFn(targetId, { isGroup, profile: zcaProfile }) : { known: true };
   if (!knownTarget.known) {
-    console.warn(`[sendZaloTo] target not in cache (${knownTarget.reason}) target=${targetId}`);
-    return null;
+    const err = 'target_not_in_cache: ' + (knownTarget.reason || 'unknown — open the Zalo app and ensure the contact is visible');
+    console.warn(`[sendZaloTo] ${err} target=${targetId}`);
+    return { ok: false, error: err };
   }
 
   const ZALO_CHUNK = 2000;
@@ -787,22 +834,30 @@ async function sendZaloTo(target, text, opts = {}) {
     chunks.push(text);
   }
 
+  let lastResult = null;
+  let lastError = null;
+
+  function isRateLimitError(err) {
+    if (!err) return false;
+    const s = String(err).toLowerCase();
+    return /rate.limit|429|throttl|too.fast|quá.nhanh|retry/i.test(s);
+  }
+
   const sendOneChunk = (chunk) => new Promise((resolve) => {
     try {
       const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
       if (!liveAllow.allowed) {
-        console.log(`[sendZaloTo] blocked before chunk send (${liveAllow.reason})`);
-        resolve(null);
+        const err = 'blocked_by_policy: ' + (liveAllow.reason || 'unknown');
+        console.log(`[sendZaloTo] ${err}`);
+        resolve({ ok: false, error: err });
         return;
       }
       if (!isZaloChannelEnabled()) {
-        console.log('[sendZaloTo] disabled before chunk send — aborting');
-        resolve(null);
+        resolve({ ok: false, error: 'channel_disabled' });
         return;
       }
       if (isChannelPaused('zalo')) {
-        console.log('[sendZaloTo] paused before chunk send — aborting');
-        resolve(null);
+        resolve({ ok: false, error: 'channel_paused' });
         return;
       }
       const args = [zcaBin, '--profile', zcaProfile, 'msg', 'send', targetId, chunk];
@@ -815,32 +870,49 @@ async function sendZaloTo(target, text, opts = {}) {
       child.stderr.on('data', (d) => { stderr += d; });
       child.on('close', (code) => {
         if (code === 0) {
-          resolve(true);
+          resolve({ ok: true });
         } else {
-          console.error(`[sendZaloTo] exit ${code}: ${stderr.slice(0, 200)}`);
-          resolve(null);
+          const err = 'openzca_exit_' + code + ': ' + (stderr.slice(0, 200) || 'no stderr');
+          console.error(`[sendZaloTo] ${err}`);
+          resolve({ ok: false, error: err });
         }
       });
-      child.on('error', (e) => { console.error('[sendZaloTo] spawn error:', e.message); resolve(null); });
+      child.on('error', (e) => {
+        const err = 'spawn_error: ' + e.message;
+        console.error('[sendZaloTo] ' + err);
+        resolve({ ok: false, error: err });
+      });
     } catch (e) {
-      console.error('[sendZaloTo] error:', e.message);
-      resolve(null);
+      const err = 'internal_error: ' + e.message;
+      console.error('[sendZaloTo] ' + err);
+      resolve({ ok: false, error: err });
     }
   });
 
-  let lastResult = null;
+  async function sendChunkWithRetry(chunk) {
+    const r = await sendOneChunk(chunk);
+    if (!r.ok && isRateLimitError(r.error)) {
+      console.log('[sendZaloTo] rate-limit detected, retrying in 5s...');
+      await new Promise(res => setTimeout(res, 5000));
+      return await sendOneChunk(chunk);
+    }
+    return r;
+  }
+
   for (let i = 0; i < chunks.length; i++) {
-    lastResult = await sendOneChunk(chunks[i]);
-    if (!lastResult) {
+    lastResult = await sendChunkWithRetry(chunks[i]);
+    lastError = lastResult.error || null;
+    if (!lastResult.ok) {
       console.error(`[sendZaloTo] chunk ${i + 1}/${chunks.length} failed`);
       break;
     }
     if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 800));
   }
-  if (lastResult) {
+  if (lastResult && lastResult.ok) {
     console.log(`[sendZaloTo] sent to ${isGroup ? 'group' : 'user'} ${targetId}${chunks.length > 1 ? ` (${chunks.length} chunks)` : ''}`);
+    return { ok: true, mode: 'text' };
   }
-  return lastResult;
+  return { ok: false, error: lastError || 'send failed' };
 }
 
 const ZALO_IMAGE_MEDIA_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.heif', '.avif']);
@@ -916,28 +988,33 @@ async function sendZaloMediaTo(target, filePath, opts = {}) {
     targetId = String(target.id || target.toId || '');
     isGroup = !!target.isGroup;
   }
-  if (!targetId) { console.error('[sendZaloMediaTo] missing target id'); return null; }
+  if (!targetId) {
+    const err = '[sendZaloMediaTo] missing target id';
+    console.error(err);
+    return { ok: false, error: err };
+  }
 
   let media;
   try {
     media = resolveZaloMediaFile(filePath, opts);
   } catch (e) {
     console.error('[sendZaloMediaTo] invalid media:', e.message);
-    return null;
+    return { ok: false, error: 'media_invalid: ' + e.message };
   }
 
   const { skipFilter = false, skipPauseCheck = false } = opts;
   if (!isZaloChannelEnabled()) {
     console.log('[sendZaloMediaTo] channel disabled in config — skipping');
-    return null;
+    return { ok: false, error: 'channel_disabled' };
   }
   if (!skipPauseCheck && isChannelPaused('zalo')) {
     console.log('[sendZaloMediaTo] channel paused — skipping');
-    return null;
+    return { ok: false, error: 'channel_paused' };
   }
   if (!opts.skipListenerCheck && !isZaloListenerAlive()) {
-    console.error('[sendZaloMediaTo] Zalo listener not running — refusing send (would silently fail)');
-    return null;
+    const err = 'Zalo listener not running — check if the Zalo plugin is active in the app';
+    console.error('[sendZaloMediaTo] ' + err);
+    return { ok: false, error: 'listener_dead: ' + err };
   }
 
   let caption = opts.caption ? String(opts.caption) : '';
@@ -952,67 +1029,76 @@ async function sendZaloMediaTo(target, filePath, opts = {}) {
 
   const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
   if (!allow.allowed) {
-    console.warn(`[sendZaloMediaTo] blocked by policy (${allow.reason}) target=${targetId}`);
-    return null;
+    const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
+    console.warn(`[sendZaloMediaTo] ${err} target=${targetId}`);
+    return { ok: false, error: err };
   }
 
-  const zcaBin = findGlobalPackageFile('openzca', 'dist/cli.js');
-  if (!zcaBin) { console.error('[sendZaloMediaTo] openzca CLI not found'); return null; }
+  const zcaBin = getCachedZcaBin();
+  if (!zcaBin) {
+    const err = 'openzca CLI not found — Zalo plugin may not be installed';
+    console.error('[sendZaloMediaTo] ' + err);
+    return { ok: false, error: err };
+  }
   const nodeBin = findNodeBin() || 'node';
   const zcaProfile = opts.profile || (allow.state?.profile) || (_getZcaProfileFn ? _getZcaProfileFn() : 'default');
   const knownTarget = _isKnownZaloTargetFn ? _isKnownZaloTargetFn(targetId, { isGroup, profile: zcaProfile }) : { known: true };
   if (!knownTarget.known) {
-    console.warn(`[sendZaloMediaTo] target not in cache (${knownTarget.reason}) target=${targetId}`);
-    return null;
+    const err = 'target_not_in_cache: ' + (knownTarget.reason || 'unknown — open the Zalo app and ensure the contact is visible');
+    console.warn(`[sendZaloMediaTo] ${err} target=${targetId}`);
+    return { ok: false, error: err };
   }
 
   const sendMode = ZALO_IMAGE_MEDIA_EXTS.has(media.ext) ? 'image' : 'upload';
-  return await new Promise((resolve) => {
-    try {
-      const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
-      if (!liveAllow.allowed) {
-        console.log(`[sendZaloMediaTo] blocked before send (${liveAllow.reason})`);
-        resolve(null);
-        return;
-      }
-      if (!isZaloChannelEnabled()) {
-        console.log('[sendZaloMediaTo] disabled before send — aborting');
-        resolve(null);
-        return;
-      }
-      if (isChannelPaused('zalo')) {
-        console.log('[sendZaloMediaTo] paused before send — aborting');
-        resolve(null);
-        return;
-      }
-      const args = sendMode === 'image'
-        ? [zcaBin, '--profile', zcaProfile, 'msg', 'image', targetId, media.path]
-        : [zcaBin, '--profile', zcaProfile, 'msg', 'upload', media.path, targetId];
-      if (sendMode === 'image' && caption) args.push('--message', caption);
-      if (isGroup) args.push('--group');
-      const child = require('child_process').spawn(
-        nodeBin, args,
-        { shell: false, timeout: opts.timeoutMs || 125000, env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] }
-      );
-      let stderr = '';
-      let stdout = '';
-      child.stdout.on('data', (d) => { stdout += d; });
-      child.stderr.on('data', (d) => { stderr += d; });
-      child.on('close', (code) => {
-        if (code === 0) {
-          console.log(`[sendZaloMediaTo] sent ${sendMode} to ${isGroup ? 'group' : 'user'} ${targetId}`);
-          resolve({ ok: true, mode: sendMode, stdout: stdout.slice(0, 1000) });
-        } else {
-          console.error(`[sendZaloMediaTo] exit ${code}: ${stderr.slice(0, 300)}`);
-          resolve(null);
-        }
-      });
-      child.on('error', (e) => { console.error('[sendZaloMediaTo] spawn error:', e.message); resolve(null); });
-    } catch (e) {
-      console.error('[sendZaloMediaTo] error:', e.message);
-      resolve(null);
-    }
-  });
+
+  function isRateLimitError(err) {
+    if (!err) return false;
+    const s = String(err).toLowerCase();
+    return /rate.limit|429|throttl|too.fast|quá.nhanh|retry/i.test(s);
+  }
+
+  function doSend() {
+    return new Promise((resolve) => {
+      try {
+        const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+        if (!liveAllow.allowed) { resolve({ ok: false, error: 'blocked_by_policy: ' + (liveAllow.reason || 'unknown') }); return; }
+        if (!isZaloChannelEnabled()) { resolve({ ok: false, error: 'channel_disabled' }); return; }
+        if (isChannelPaused('zalo')) { resolve({ ok: false, error: 'channel_paused' }); return; }
+        const args = sendMode === 'image'
+          ? [zcaBin, '--profile', zcaProfile, 'msg', 'image', targetId, media.path]
+          : [zcaBin, '--profile', zcaProfile, 'msg', 'upload', media.path, targetId];
+        if (sendMode === 'image' && caption) args.push('--message', caption);
+        if (isGroup) args.push('--group');
+        const child = require('child_process').spawn(
+          nodeBin, args,
+          { shell: false, timeout: opts.timeoutMs || 125000, env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'] }
+        );
+        let stderr = '';
+        let stdout = '';
+        child.stdout.on('data', (d) => { stdout += d; });
+        child.stderr.on('data', (d) => { stderr += d; });
+        child.on('close', (code) => {
+          if (code === 0) {
+            console.log(`[sendZaloMediaTo] sent ${sendMode} to ${isGroup ? 'group' : 'user'} ${targetId}`);
+            resolve({ ok: true, mode: sendMode, stdout: stdout.slice(0, 1000) });
+          } else {
+            const err = 'openzca_exit_' + code + ': ' + (stderr.slice(0, 300) || 'no stderr');
+            console.error(`[sendZaloMediaTo] ${err}`);
+            resolve({ ok: false, error: err });
+          }
+        });
+        child.on('error', (e) => { resolve({ ok: false, error: 'spawn_error: ' + e.message }); });
+      } catch (e) { resolve({ ok: false, error: 'internal_error: ' + e.message }); }
+    });
+  }
+
+  const firstResult = await doSend();
+  if (!firstResult.ok && isRateLimitError(firstResult.error)) {
+    console.log('[sendZaloMediaTo] rate-limit on first attempt, retrying in 5s...');
+    await new Promise(r => setTimeout(r, 5000));
+    return await doSend();
+  }
+  return firstResult;
 }
 
 // ============================================
@@ -1670,7 +1756,7 @@ module.exports = {
   isZaloChannelEnabled, setZaloChannelEnabled,
   isChannelPaused, pauseChannel, resumeChannel, getChannelPauseStatus,
   // Send
-  sendTelegram, sendTelegramPhoto, sendZalo, sendZaloTo, sendZaloMediaTo, sendCeoAlert,
+  sendTelegram, sendTelegramPhoto, sendZalo, sendZaloTo, sendZaloMediaTo, sendCeoAlert, sendMemoryWriteAlert,
   // Probes
   isZaloListenerAlive, getReadyGateState,
   finalizeTelegramReadyProbe, finalizeZaloReadyProbe,

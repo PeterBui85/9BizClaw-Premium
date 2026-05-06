@@ -1,97 +1,27 @@
-# CLAUDE.md — Rules cho dev / Claude Code khi làm việc với repo này
+### Runtime Install Architecture (v2.4.0+)
 
-## RULE #0: Preflight checklist — ĐỌC TRƯỚC KHI THÊM TÍNH NĂNG
+**macOS (DMG): bundled vendor model.** The DMG ships the full vendor bundle (~400MB) inside `Contents/Resources/vendor/` via electron-builder `extraResources`. User installs ZERO things on first run. APFS drag-drop is fast enough that bundling is not a UX pain point.
 
-**Trước khi thêm bất kỳ function/integration/patch nào, đọc [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) và chạy qua checklist tương ứng.** Doc này chứa known landmines, IPC parity check, bootstrap budget, và cross-cutting invariants. Bỏ qua = regression.
+**Windows (EXE): runtime install model.** The EXE only bundles `modoro-zalo` plugin (~2MB). Node.js + npm packages are downloaded on first run (~165MB). This keeps the EXE small (~50-80MB) and avoids the NSIS small-file write bottleneck on slow SSDs.
 
-## RULE #1: Fresh-install parity — BẮT BUỘC
+**Both:** RAG model downloaded lazily when Knowledge tab opened (~600MB).
 
-**Mọi fix, patch, workaround ĐỀU PHẢI áp dụng được cho user mới cài fresh trên máy mới.**
+**Build scripts:** macOS: `build:mac:arm`/`build:mac:intel` -> `prebuild-modoro-zalo` -> `prebuild-vendor` -> `smoke` -> `electron-builder --mac`. Win: `build:win` -> `prebuild-modoro-zalo` -> `smoke` -> `electron-builder --win` (runtime install on first launch).
 
-### Checklist cho mỗi fix:
+**Critical path macOS:** `boot.js:getBundledVendorDir()` checks `process.resourcesPath/vendor/` (from `extraResources`) FIRST -> found = bundled Mac build. Falls back to `userData/vendor/` for Win runtime model. `runtime-installer.js:detectNodeInstallation()` returns `type: 'bundled'` for darwin when vendor found at resourcesPath.
 
-- [ ] Fix nằm trong **source tree** (`Desktop/claw/...`), không phải file runtime (`~/.openclaw/...` chỉ)
-- [ ] Fix được áp dụng tự động khi app chạy lần đầu (qua `seedWorkspace`, `ensureDefaultConfig`, `ensureXxxFix`, v.v.)
-- [ ] Fix được re-apply sau mỗi restart (bảo vệ khi plugin/dependency bị reinstall)
-- [ ] Verify: sau khi chạy `RESET.bat` + `RUN.bat` trên máy trắng, fix vẫn có hiệu lực
-- [ ] Nếu patch file của plugin third-party → lưu template vào `electron/patches/`, auto-restore khi khởi động
+**Key files:**
+- `electron/lib/runtime-installer.js` - core install logic (handles both bundled + runtime models)
+- `electron/lib/conflict-detector.js` - version conflict detection
+- `electron/lib/model-downloader.js` - RAG model lazy download
+- `electron/lib/migration.js` - v2.3.x -> v2.4.0 migration
+- `electron/lib/installation-recovery.js` - error recovery
 
-### Các pattern PHẢI tuân thủ:
-
-**1. Patch third-party plugin files:**
-- Lưu file patched vào `electron/patches/<plugin-name>-<file>.ts`
-- Thêm function `ensureXxxFix()` trong `main.js` kiểm tra marker `MODOROClaw PATCH` trong file plugin
-- Nếu chưa có marker → copy template từ `electron/patches/` sang `~/.openclaw/extensions/xxx/src/`
-- Gọi `ensureXxxFix()` trong `startOpenClaw()` để apply mỗi lần start
-
-**2. Patch openclaw config defaults:**
-- Thêm logic vào `ensureDefaultConfig()` trong `main.js`
-- Đảm bảo field mặc định (VD: `channels["modoro-zalo"].groupPolicy: "open"`) được set nếu thiếu
-- Chạy mỗi lần `startOpenClaw()`
-
-**3. Patch workspace files (AGENTS.md, schedules.json, v.v.):**
-- File template trong source tree (`Desktop/claw/`)
-- `seedWorkspace()` copy vào writable workspace khi missing
-- `RESET.bat` xóa runtime files → `seedWorkspace()` re-tạo từ template
-
-**4. Patch bot behavior (LEARNINGS, rules):**
-- Thêm vào `.learnings/LEARNINGS.md` với format L-XXX
-- Thêm vào `AGENTS.md` section tương ứng
-- Sync từ source (`Desktop/claw/`) sang workspace via `seedWorkspace`
-
-### Anti-pattern — KHÔNG ĐƯỢC làm:
-
-- ❌ Fix chỉ trong `~/.openclaw/...` mà không cập nhật source tree
-- ❌ Fix thủ công mà không thêm auto-apply logic
-- ❌ Fix chỉ cho case hiện tại, không handle fresh install
-- ❌ Hardcode path chỉ có trên máy dev hiện tại
-- ❌ Giả định user đã cài openclaw/openzca toàn cục trước đó
-
-## RULE #2: Verify trước khi claim success
-
-Sau mỗi fix:
-1. Test trên máy dev hiện tại
-2. Mental-simulate flow cho fresh install (user chạy RESET.bat → RUN.bat → wizard → test)
-3. Ghi rõ trong response: "Fix áp dụng cho: [dev | fresh install | cả hai]"
-
-## RULE #3: Document in session log
-
-Mọi fix lớn → cập nhật `docs/superpowers/sessions/` với:
-- Root cause đã tìm ra
-- Fix đã áp dụng
-- File đã thay đổi
-- Cách verify
-
-## RULE #4: Pin third-party versions — BẮT BUỘC
-
-MODOROClaw bundles 3 npm packages we don't control (`openclaw`, `openzca`, `9router`) plus our own `modoro-zalo` channel plugin (fork of `@tuyenhx/openzalo@2026.3.31`, source at `electron/packages/modoro-zalo/`).
-
-**Versions are pinned in 4 places** — see [PINNING.md](PINNING.md) for the table + upgrade procedure. Single source of truth: PINNING.md.
-
-**Never `npm install` without explicit version.** Never use `latest`. Every fresh install MUST get the same versions we tested.
-
-**Smoke test runs before every build** (`npm run build:win` + `build:mac` chain through `npm run smoke`). It verifies:
-- Vendor packages match pinned versions
-- openclaw `--help` exits 0 with config from `ensureDefaultConfig()` (catches schema breaks)
-- Plugin patch anchors still match upstream source (catches restructured plugins)
-- Workspace templates exist + AGENTS.md has no-emoji + history-block rules
-- IDENTITY.md template has no leaked dev names
-
-If smoke fails, build is BLOCKED. Fix the failure before shipping.
-
----
-
-## Current patches (cần auto-restore trên fresh install)
-
-### modoro-zalo fork (v2.3.49) — permanent fork of @tuyenhx/openzalo
-**Before:** @tuyenhx/openzalo npm package installed as vendor dependency, then 4 files (inbound.ts, send.ts, channel.ts, openzca.ts) runtime-patched by `applyOpenzaloFork()` every boot. 17+ inline patches injected by ensure*Fix functions. Fragile: any upstream update could break patch anchors.
-**After:** Self-owned `electron/packages/modoro-zalo/` package. All ~1,300 openzalo refs renamed to modoro-zalo variants. All 17 patches baked in at source level. No runtime injection. No upstream sync ever.
-**Channel ID migration:** `channels.openzalo` → `channels["modoro-zalo"]` in openclaw.json. `ensureDefaultConfig()` auto-migrates on first boot after upgrade. Backward-compat fallback reads: `cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo`.
-**Plugin installer:** `_ensureZaloPluginImpl()` copies from `packages/modoro-zalo/` (dev) or `vendor/node_modules/modoro-zalo/` (packaged) to `~/.openclaw/extensions/modoro-zalo/`. Cleans up old `extensions/openzalo/` directory.
-**Deleted:** `electron/patches/openzalo-fork/` (4 files), `electron/patches/openzalo-openzca.ts`, `applyOpenzaloFork()` function, all ensure*Fix injection functions (blocklist, dedup, system-msg, command-block, output-filter, etc. — now built into package source).
-**Build:** `prebuild-vendor.js` copies from packages/ instead of npm-installing @tuyenhx/openzalo. Smoke test validates package source markers.
-**Naming convention:** string literals → `"modoro-zalo"`, camelCase → `modoroZalo`, PascalCase → `ModoroZalo`, display → `"Modoro Zalo"`. Config access MUST use bracket notation: `config.channels['modoro-zalo']`.
-**Files:** `electron/packages/modoro-zalo/` (76 files), `electron/main.js`, `electron/lib/vendor-patches.js`, `electron/scripts/prebuild-vendor.js`, `electron/scripts/smoke-test.js`, `electron/scripts/test-core.js`, `tools/zalo-manage.js`, `tools/send-zalo-safe.js`, `PINNING.md`.
+**Migration (existing v2.3.x users):**
+- Auto-detected on first launch of v2.4.0
+- Preserves user data (memory, knowledge, configs)
+- Cleans up old bundled vendor files (rename to `vendor.stale-*` for APFS safety on Mac)
+- Falls back gracefully if migration fails
 
 ### Dashboard Tổng quan redesign (v2.2.9) — actually useful for CEO
 **Trước:** 2 cards tĩnh — channel status (đã có ở sidebar) + lệnh nhanh tĩnh (đã có ở tab Telegram). CEO mở vào không học được gì.
@@ -142,52 +72,31 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 **Fix:** Inject platform-aware path resolution mirroring `getWorkspace()` (darwin/win32/linux branches), PLUS `process.env.MODORO_WORKSPACE` env var as highest-priority lookup (set bởi main.js gateway spawn). Auto-strip OLD broken patch on upgrade qua version-pin `ZALO-OWNER-PATCH-V2` trong patch BLOCK (không scan whole-file fingerprint vì sẽ false-positive với content của patch khác như friend-check).
 **Plus:** `build-mac.yml` workflow giờ pass `TARGET_ARCH`/`npm_config_arch`/`npm_config_target_arch`/`npm_config_target_platform` cho `npm install` step. Trước đó npm install chạy không có arch hint → postinstall `fix-better-sqlite3.js` fetch HOST arch (arm64) cho cả x64 build → x64 .dmg ship arm64 binary → "Bad CPU type" trên Intel Mac. Add explicit Mach-O CPU verification step in CI.
 
-### Vendor tar-and-extract-on-first-launch (Win only) — fix slow install on low-end SSDs
-**Bug:** Ship `vendor/` với **126,644 file nhỏ** qua NSIS = pathological. Mỗi file tốn 3-5 ms (MFT + NTFS journal + Defender real-time scan + inode create). Tổng overhead = **5-10 phút install trên máy khách có SSD trung bình** (Micron 2200V entry-level, older OEM SSDs, laptop văn phòng). CEO không kỹ thuật sẽ thấy installer im lặng 10 phút và tưởng stuck.
+### Windows Pure-Runtime Install (v2.4.0+) vs Mac Bundled
 
-**Root cause verified:** User báo "càng về sau càng chậm, chỉ 3 MB/s trên SSD" — classic small-file write bottleneck. SSD random 4K write ceiling (~50-200 MB/s rated) bị kéo xuống 3-5 MB/s vì Windows filesystem stack + Defender scan tranh tài nguyên. Sequential write trên cùng SSD đó = 300-500 MB/s.
+**Windows EXE: pure runtime model** (no bundled vendor shipped in EXE):
+- `build:win` chain: `prebuild:modoro-zalo → smoke → electron-builder --win`
+- `prebuild:vendor` is NOT called for win builds
+- EXE ships only `modoro-zalo` plugin (~2 MB) via `extraResources`
+- On first launch: downloads Node v22.22.2 (~20 MB) + npm packages (~145 MB) + gogcli (~5 MB)
+- Total first-launch download: ~170 MB, EXE size: ~50-80 MB
+- `getBundledVendorDir()` on Windows returns `userData/vendor/` (runtime-installed, NOT shipped)
+- `ensureVendorExtracted()` in boot.js is a no-op stub (`{ skipped: true, reason: 'pure_runtime' }`)
+- NSIS installer comment: "Pure runtime install model (v2.4.0+). No bundled vendor tar to manage."
 
-**Fix architecture:**
-1. `electron/scripts/prebuild-vendor.js` (Windows only): sau khi npm install, pack vendor/ → **vendor-bundle.tar** (uncompressed) + ghi **vendor-meta.json** với SHA256, file_count, bundle_version. Xóa vendor/ directory. NSIS LZMA sau đó compress tar 1 lần (hiệu quả hơn nén 126k file riêng lẻ).
-2. `electron/package.json`: split `extraResources` per platform. Win ships `vendor-bundle.tar` + `vendor-meta.json` (2 files). Mac vẫn ships `vendor/` directory như cũ (APFS drag-drop nhanh sẵn).
-3. `electron/main.js` `ensureVendorExtracted({ onProgress })`: Windows-only. First launch check `userData/vendor-version.txt` vs meta.bundle_version. Nếu mismatch → SHA256 verify tar → spawn `C:\Windows\System32\tar.exe -xvf` với stdout line-counting để tính progress → write version stamp.
-4. `electron/ui/splash.html`: premium splash window (540×400, frameless, alwaysOnTop) show khi extract. Progress bar + "Đang giải nén... X / 126,644 file". IPC `splash-progress` events.
-5. `electron/main.js` `getBundledVendorDir()` Windows: trả `userData/vendor/` (extracted) thay vì `resources/vendor/` (không còn tồn tại).
-6. `app.whenReady()`: `await runSplashAndExtractVendor()` BEFORE `createWindow()`. Fast path nếu đã extracted (no splash, no extract, skip instantly).
+**Mac DMG: bundled model** (full vendor shipped in DMG):
+- `build:mac` chain: `prebuild:modoro-zalo → prebuild:vendor → smoke → electron-builder --mac`
+- `prebuild:vendor` creates `vendor/` with Node + all npm packages
+- electron-builder copies `electron/vendor/` → `Contents/Resources/vendor/` via `extraResources`
+- First launch: instant (no download), no splash shown
+- `getBundledVendorDir()` on Mac returns `process.resourcesPath/vendor/` (never touches userData for vendor)
 
-**Kết quả (dự kiến, cần verify trên máy khách):**
-| | Cũ (ship vendor/) | Mới (tar+extract) |
-|---|---|---|
-| EXE size | 436 MB | **369 MB** (-15%) |
-| Install time trên SSD chậm | **5-10 phút im lặng** | **~30-60s với NSIS progress bar** |
-| First launch extract | N/A | +30-60s với **splash progress bar rõ ràng** |
-| Subsequent launches | Chậm load 126k file | **Nhanh hơn** (userData tidy) |
-| Tổng từ click đến bot chạy (máy khách) | 10-15 phút + hoang mang | **~3-4 phút + luôn thấy tiến độ** |
-
-**Mac unchanged:** DMG vẫn ships vendor/ directly vì APFS drag-drop đã nhanh, không có pain point cần fix.
-
-**Auto-apply:** prebuild:vendor chạy mỗi `npm run build:win`, skip silently nếu tar đã có với matching version. First launch extract chạy 1 lần, write version stamp, subsequent launches no-op.
-
-**Verify:**
-- `dist/win-unpacked/resources/vendor-bundle.tar` exists (~1.6 GB)
-- `dist/win-unpacked/resources/vendor-meta.json` exists với `file_count`, `sha256`
-- EXE size ~370 MB (giảm từ 436 MB)
-- Cài EXE trên máy chưa có gì → splash hiện ra lần đầu với progress bar → bot chạy
-
-### Full-bundled Windows EXE (Node + 4 plugins) — zero install dependency
-**Goal:** User cài MODOROClaw EXE → mở app → chạy ngay, không cần Node.js, npm, hoặc bất kỳ thứ gì cài sẵn. Trước đó, Windows EXE (89 MB) phụ thuộc system Node + npm install các plugin qua wizard. Sếp Mac đã có cách này từ trước (DMG bundles vendor/), giờ Win EXE cũng vậy.
-**Implementation:**
-- `electron/scripts/prebuild-vendor.js` extended cho `win32` (trước chỉ darwin):
-  - Download `node-v22.11.0-win-x64.zip` (hoặc arm64) từ nodejs.org, SHA256 verify, extract via Windows native `C:\Windows\System32\tar.exe` (BSD tar handle drive letters đúng — Git Bash MSYS tar interpret `C:\` như URL scheme và fail)
-  - Layout: `vendor/node/node.exe` flat (no `bin/` subdir như Mac), `vendor/npm.cmd` etc cùng cấp
-  - npm install 3 pinned packages (openclaw, openzca, 9router) + copy `modoro-zalo` from `electron/packages/modoro-zalo/` vào `vendor/node_modules/`
-- `electron/main.js` `getBundledNodeBin()` + `augmentPathWithBundledNode()` cập nhật để pick `vendor/node/node.exe` trên Windows (đã có sẵn cho Mac path `vendor/node/bin/node`)
-- `electron/scripts/smoke-test.js` đổi `isMacBuild` → `isBundledBuild` (fail nếu vendor dir tồn tại nhưng version drift, bất kể platform)
-- `package.json` `build:win` chain: `prebuild:vendor → smoke-test → electron-builder --win`
-- electron-builder `extraResources` đã có `from: vendor → to: vendor` filter copies vendor sang `resources/vendor/` cho cả Mac + Win
-**Trade-off:** EXE size 89 MB → **436 MB** (NSIS LZMA nén 1.8 GB raw). Đổi lại: zero dependency, fresh install zero network requirement (trừ ChatGPT Plus OAuth lúc dùng).
-**Auto-apply:** Đã wire vào `build:win` script — mỗi lần `npm run build:win`, prebuild auto-chạy nếu cần (skip silent nếu vendor đã extracted cho cùng target). Smoke test fail nếu version drift hoặc vendor structure sai.
-**Verify:** `dist/win-unpacked/resources/vendor/node/node.exe` exists, `dist/win-unpacked/resources/vendor/node_modules/openclaw/openclaw.mjs` exists, EXE size > 400 MB. Cài EXE trên máy KHÔNG có Node → wizard chạy xong → bot reply Telegram OK trong ~30s.
+**Orphaned `vendor-bundle.tar` on Windows:**
+- `prebuild-vendor.js` still creates `vendor-bundle.tar` + `vendor-meta.json` on Windows (for potential future use)
+- These are build artifacts only — NOT shipped in EXE, NOT extracted at runtime
+- The CLAUDE.md section "Vendor tar-and-extract-on-first-launch" describes the **planned** architecture that was not shipped in v2.4.0
+- `package.json` `build:win` does NOT include `vendor-bundle.tar` in `extraResources` or `files`
+- If you want to enable the bundled model on Windows, add `vendor-bundle.tar` + `vendor-meta.json` to `extraResources` and implement extraction in `ensureVendorExtracted()`
 
 ### Boot latency: bot không reply 2-3 phút sau startup (9router cold-start race)
 **Bug:** Sau khi mở MODOROClaw, Telegram + Zalo nhận được tin nhưng KHÔNG reply trong 2-3 phút. Sidebar dot xanh từ giây đầu (sai). Zalo tệ hơn Telegram.
@@ -548,3 +457,61 @@ If smoke fails, build is BLOCKED. Fix the failure before shipping.
 **Fix:** New IPC handler `delete-openclaw-cron` reads `~/.openclaw/cron/jobs.json`, filters out matching job by id, writes back. Dashboard `deleteCustomCron()` checks `source === 'openclaw'` → calls `deleteOpenclawCron(id)` IPC, then saves modoro crons separately.
 **Auto-apply:** IPC handler in main.js, preload bridge in preload.js, UI logic in dashboard.html.
 **Verify:** Create cron via OpenClaw tool → appears in Dashboard → delete → does NOT reappear after refresh.
+
+### License system — hardware lock + revocation (v2.4.0)
+
+**Architecture:** Offline Ed25519-signed keys. No server required. Works forever until expiry. Hardware binding prevents license file copying. Revocation list kills keys instantly.
+
+**Key format:** `CLAW-{base64url(payload_json + 64-byte Ed25519 signature)}`
+
+**Payload fields:**
+- `e` — customer email
+- `p` — plan (`premium` | `enterprise`)
+- `i` — issue date (YYYY-MM-DD)
+- `v` — expiry date (YYYY-MM-DD)
+- `m` — (optional) pre-bound machine fingerprint — if set, key only works on that machine
+
+**Hardware lock (seal):** When activated, `license.json` is written to `%APPDATA%/9bizclaw/license.json` (NOT workspace — workspace is copyable). The HMAC seal is computed over `(key + stored_machineId + activatedAt + email)`. On any subsequent check, `verifySeal()` reads the **stored** machineId from the license data, NOT the current machine. This means:
+- Copying `license.json` to another PC → seal verification uses PC-A's machineId → fails → license rejected
+- Moving the whole `%APPDATA%` folder to another PC → the stored machineId is PC-A's → fails on PC-B → rejected
+- Changing any field (email, key, expiry) in the file → HMAC breaks → rejected
+
+**Machine fingerprint:** `getMachineId()` computes SHA-256 of `(hostname + first-real-MAC + platform)`. Stored in `%APPDATA%/9bizclaw/.machine-id`. Consistent across app restarts.
+
+**Pre-bound keys (optional):** Generate with `--machine-id <id>`:
+```
+node generate-license.js customer@co.com 12 --machine-id a1b2c3d4e5f6
+```
+The machine ID is embedded in the signed payload (`payload.m`). On activation, if `payload.m` exists and doesn't match the current machineId, activation is rejected with `machine_mismatch` error. This lets you pre-bind a key before the customer even activates.
+
+**Revocation:** `revokeKey(hash)` in license-manager:
+1. Removes key from active list (`~/.claw-license-issued.jsonl`)
+2. Appends to revocation log (`~/.claw-license-revoked.jsonl`)
+3. Pushes hash to GitHub Gist (`https://gist.githubusercontent.com/huybt-peter/raw/revoked-keys.json`)
+4. Running apps check this Gist on every revalidation (24h cache, non-blocking)
+
+**CLI usage:**
+```
+node license-manager.js                              # open UI at http://localhost:3847
+node license-manager.js --setup-gist <gist-id> <token>   # configure GitHub Gist
+node license-manager.js --revoke <key-hash>         # revoke via CLI
+node generate-license.js --list                      # list all issued keys
+node generate-license.js customer@co.com 12 --machine-id <id>  # pre-bound key
+```
+
+**Gist setup (one-time):**
+1. Create gist at gist.github.com with one file: `revoked-keys.json` — content: `[]`
+2. Run: `node license-manager.js --setup-gist <gist-id> <github-token>`
+3. Config stored in `~/.claw-license-gist.json`
+
+**Files:**
+- `electron/lib/license.js` — core license logic (seal, activation, revocation check)
+- `electron/lib/license-public.pem` — Ed25519 public key (NEVER private key)
+- `electron/scripts/generate-license.js` — CLI key generator
+- `electron/scripts/license-manager.js` — web UI + revocation manager
+- `electron/ui/license.html` — activation page shown to end users
+- `~/.claw-license-issued.jsonl` — log of all issued keys (on dev machine)
+- `~/.claw-license-revoked.jsonl` — log of revoked keys
+- `~/.claw-license-gist.json` — GitHub Gist config (token + gist ID)
+- `%APPDATA%/9bizclaw/license.json` — activated license on end-user PC (APPDATA, not workspace)
+- `%APPDATA%/9bizclaw/.machine-id` — machine fingerprint on end-user PC

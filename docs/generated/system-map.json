@@ -1,8 +1,8 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 75,
-    "ipcHandlers": 152,
+    "apiRoutes": 78,
+    "ipcHandlers": 155,
     "preloadBridges": 147,
     "dashboardPages": 14,
     "capabilityContracts": 5
@@ -28,6 +28,15 @@
     },
     {
       "path": "/api/brand-assets/save",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/ceo-rules/write",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -73,6 +82,15 @@
     },
     {
       "path": "/api/cron/toggle",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/customer-memory/write",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -567,6 +585,15 @@
       ]
     },
     {
+      "path": "/api/internal/agent-deliver-zalo",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/knowledge/add",
       "sources": [
         "electron/lib/cron-api.js"
@@ -722,6 +749,14 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "compact-all-sessions",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "compact-session",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "create-appointment",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -799,6 +834,10 @@
     },
     {
       "channel": "get-bot-status",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-compact-stats",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -2119,27 +2158,27 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 520137
+      "bytes": 520184
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 224434
+      "bytes": 227598
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 99106
-    },
-    {
-      "path": "electron/ui/wizard.html",
-      "bytes": 89142
+      "bytes": 103613
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 78207
+      "bytes": 96078
+    },
+    {
+      "path": "electron/ui/wizard.html",
+      "bytes": 88676
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 76932
+      "bytes": 80734
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -2150,8 +2189,8 @@
       "bytes": 66322
     },
     {
-      "path": "electron/lib/boot.js",
-      "bytes": 58646
+      "path": "electron/lib/runtime-installer.js",
+      "bytes": 54542
     },
     {
       "path": "electron/lib/config.js",
@@ -2163,11 +2202,15 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 36698
+      "bytes": 38510
+    },
+    {
+      "path": "electron/lib/boot.js",
+      "bytes": 37953
     },
     {
       "path": "electron/lib/zalo-plugin.js",
-      "bytes": 34343
+      "bytes": 34972
     },
     {
       "path": "electron/lib/vendor-patches.js",
@@ -2175,7 +2218,7 @@
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 25701
+      "bytes": 29327
     },
     {
       "path": "electron/lib/media-library.js",

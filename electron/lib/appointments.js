@@ -236,7 +236,7 @@ async function fireApptPushTarget(apt, target) {
         } catch {}
         return false;
       }
-      ok = !!(await sendZaloTo({ id: target.toId, isGroup: target.channel === 'zalo_group' }, text));
+      ok = (await sendZaloTo({ id: target.toId, isGroup: target.channel === 'zalo_group' }, text)).ok;
     }
     if (ok) {
       try { auditLog('appt_push', { id: apt.id, channel: target.channel, to: target.toName || target.toId }); } catch {}

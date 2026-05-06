@@ -5,7 +5,7 @@ const { isPathSafe, writeJsonAtomic } = require('./util');
 const { getWorkspace, getBrandAssetsDir, readFbConfig, purgeAgentSessions, auditLog, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE } = require('./workspace');
 const { _withCustomCronLock, loadCustomCrons, getCustomCronsPath, restartCronJobs } = require('./cron');
 const { sendCeoAlert, sendZaloTo, sendZaloMediaTo, sendTelegram, sendTelegramPhoto } = require('./channels');
-const { getZcaCacheDir } = require('./zalo-memory');
+const { getZcaCacheDir, sanitizeZaloUserId } = require('./zalo-memory');
 const { stripCronApiTokenFromAgents } = require('./cron-api-token');
 const mediaLibrary = require('./media-library');
 
@@ -371,15 +371,13 @@ function startCronApi() {
       }, { allowMultipleGroups: false });
       if (delivery?.error) return { error: 'create entry #' + (index + 1) + ': ' + delivery.error };
       if (delivery) {
-        const deliveryParam = delivery.type === 'group'
-          ? 'groupId=' + encodeURIComponent(delivery.ids[0])
-          : 'targetId=' + encodeURIComponent(delivery.ids[0]) + '&isGroup=false';
-        const deliveryLabel = delivery.labels[0] || delivery.ids[0];
-        finalPrompt += '\n\n---\nSAU KHI HOAN THANH: gui ket qua vao ' + (delivery.type === 'group' ? 'nhom Zalo' : 'Zalo ca nhan') + ' "' + deliveryLabel + '":\n'
-          + 'web_fetch url=http://127.0.0.1:' + (_cronApiPort || 20200) + '/api/zalo/send?' + deliveryParam + '&text=KET_QUA_DA_VIET\n'
-          + 'QUY TAC VIET:\n'
-          + '- Thay KET_QUA_DA_VIET bang noi dung cuoi cung, URL-encode dung cach neu can.\n'
-          + '- Chi bao da xong sau khi API gui Zalo tra success:true.';
+        // Delivery instructions are handled by the server-side internal endpoint
+        // (api/internal/agent-deliver-zalo). Do NOT include delivery instructions
+        // in the prompt — the LLM should only produce content and let the system
+        // handle sending it. Including web_fetch instructions in the prompt risks
+        // them being sent verbatim to Zalo.
+        // (Previous pattern: appended web_fetch instructions to prompt — removed to
+        // prevent prompt leakage and enable server-side async delivery.)
       }
 
       const entry = { id, label, prompt: finalPrompt, mode: 'agent', enabled: true, createdAt: new Date().toISOString() };
@@ -388,6 +386,10 @@ function startCronApi() {
         entry.targetId = delivery.ids[0];
         entry.isGroup = false;
         if (delivery.friendName) entry.friendName = delivery.friendName;
+      }
+      // Store Zalo target for post-agent delivery (cron.js reads this after agent runs)
+      if (delivery) {
+        entry.zaloTarget = { id: delivery.ids[0], isGroup: delivery.type === 'group', label: delivery.labels[0] || delivery.ids[0] };
       }
       if (schedule.cronExpr) entry.cronExpr = schedule.cronExpr;
       else entry.oneTimeAt = schedule.oneTimeAt;
@@ -558,6 +560,10 @@ function startCronApi() {
           entry.targetId = delivery.ids[0];
           entry.isGroup = false;
           if (delivery.friendName) entry.friendName = delivery.friendName;
+        }
+        // Store Zalo target for post-agent delivery (cron.js reads this after agent runs)
+        if (delivery) {
+          entry.zaloTarget = { id: delivery.ids[0], isGroup: delivery.type === 'group', label: delivery.labels[0] || delivery.ids[0] };
         }
         if (cronExpr) entry.cronExpr = String(cronExpr).trim().replace(/\s+/g, ' ');
         else entry.oneTimeAt = oneTimeAt;
@@ -752,15 +758,45 @@ function startCronApi() {
         /^\.?learnings\/LEARNINGS\.md$/,
         /^LEARNINGS\.md$/,
         /^memory\/[^\/]+\.md$/,
+        /^memory\/[^\/]+\/[^\/]+\.md$/,
+        /^memory\/[^\/]+\/[^\/]+\/[^\/]*\.md$/,
         /^memory\/zalo-users\/[^\/]+\.md$/,
         /^memory\/zalo-groups\/[^\/]+\.md$/,
+        /^memory\/[^\/]+\.json$/,
+        /^memory\/[^\/]+\/[^\/]+\.json$/,
         /^knowledge\/[^\/]+\/index\.md$/,
+        /^knowledge\/[^\/]+\/[^\/]+\.md$/,
+        /^knowledge\/[^\/]+\/[^\/]+$/,
+        /^knowledge\/[^\/]+\/[^\/]+\/[^\/]+$/,
+        /^AGENTS\.md$/,
+        /^SOUL\.md$/,
         /^IDENTITY\.md$/,
+        /^USER\.md$/,
+        /^BOOTSTRAP\.md$/,
+        /^MEMORY\.md$/,
+        /^HEARTBEAT\.md$/,
+        /^TOOLS\.md$/,
+        /^COMPANY\.md$/,
+        /^PRODUCTS\.md$/,
         /^schedules\.json$/,
         /^custom-crons\.json$/,
+        /^zalo-blocklist\.json$/,
+        /^active-persona\.json$/,
+        /^active-persona\.md$/,
+        /^shop-state\.json$/,
         /^logs\/cron-runs\.jsonl$/,
         /^logs\/escalation-queue\.jsonl$/,
         /^logs\/ceo-alerts-missed\.log$/,
+        /^logs\/audit\.jsonl$/,
+        /^skills\/[^\/]+\.md$/,
+        /^skills\/[^\/]+\/[^\/]+\.md$/,
+        /^skills\/[^\/]+\/[^\/]+\/[^\/]+\.md$/,
+        /^prompts\/[^\/]+\.md$/,
+        /^prompts\/[^\/]+\/[^\/]+\.md$/,
+        /^tools\/[^\/]+\.md$/,
+        /^tools\/[^\/]+\/[^\/]+\.md$/,
+        /^docs\/[^\/]+\.md$/,
+        /^docs\/[^\/]+\/[^\/]+\.md$/,
       ];
       if (reqPath.includes('..') || !ALLOWED.some(r => r.test(reqPath))) {
         return jsonResp(res, 403, { error: 'path not in whitelist' });
@@ -796,24 +832,205 @@ function startCronApi() {
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
+    // ============================================================
+    //  PROTECTED CUSTOMER MEMORY WRITE ENDPOINT
+    //  Guardrails:
+    //  1. senderId must be numeric Zalo ID (sanitized)
+    //  2. Only writes to memory/zalo-users/<senderId>.md (no other paths)
+    //  3. Append-only — never overwrites existing content
+    //  4. Max 2000 bytes per write
+    //  5. Audit log entry on every write
+    //  6. CEO Telegram notification (non-blocking)
+    // ============================================================
+    } else if (urlPath === '/api/customer-memory/write') {
+      const ws = getWorkspace();
+      if (!ws) return jsonResp(res, 500, { error: 'workspace not found' });
+      const senderId = sanitizeZaloUserId(params.senderId);
+      const content = String(params.content || '').trim();
+      if (!senderId) return jsonResp(res, 400, { error: 'invalid senderId' });
+      if (!content) return jsonResp(res, 400, { error: 'content required' });
+      const byteLen = Buffer.byteLength(content, 'utf-8');
+      if (byteLen > 2000) return jsonResp(res, 400, { error: 'content too large (max 2000 bytes)' });
+
+      const { withMemoryFileLock } = require('./conversation');
+      const { appendMemoryWriteAudit } = require('./conversation');
+      const { sendMemoryWriteAlert } = require('./channels');
+      const usersDir = path.join(ws, 'memory', 'zalo-users');
+      const filePath = path.join(usersDir, senderId + '.md');
+
+      try {
+        await withMemoryFileLock(filePath, () => {
+          fs.appendFileSync(filePath, '\n' + content, 'utf-8');
+        }, { senderId, action: 'append-via-api', source: 'workspace-api' });
+
+        // Audit log (already done by withMemoryFileLock hook, but double-log here for clarity)
+        appendMemoryWriteAudit({
+          senderId,
+          action: 'append-via-api',
+          file: senderId + '.md',
+          source: 'workspace-api',
+          size: (() => { try { return fs.statSync(filePath).size; } catch { return 0; } })(),
+        });
+
+        // CEO notification (non-blocking — don't block the API response)
+        sendMemoryWriteAlert({
+          senderId,
+          action: 'append-via-api',
+          details: { file: senderId + '.md', source: 'workspace-api' },
+        }).catch(() => {});
+
+        return jsonResp(res, 200, { success: true, senderId, bytes: byteLen });
+      } catch (e) {
+        return jsonResp(res, 500, { error: e.message });
+      }
+
+    // ============================================================
+    //  CEO RULE WRITING ENDPOINT
+    //  CEO sends rule via Telegram → bot calls this endpoint
+    //  System classifies the rule type → routes to correct append-only file
+    //
+    //  Routing table:
+    //  - sales/vip/discount/shipping/pricing/policy/upsell → knowledge/sales-playbook.md
+    //  - script/template/reply example/mẫu câu → knowledge/scripts/<slug>.md
+    //  - sai/nhầm/lỗi/không đúng → .learnings/ERRORS.md
+    //  - lesson/học được/remember/nhớ → .learnings/LEARNINGS.md
+    //  - khách.*/customer.* + tên/id cụ thể → memory/zalo-users/<id>.md
+    //  - default → knowledge/sales-playbook.md
+    //
+    //  Guardrails:
+    //  1. Requires Bearer token (CEO-only via Telegram)
+    //  2. Append-only — never overwrites existing content
+    //  3. Sanitizes content before writing
+    //  4. Max 4000 bytes per rule
+    //  5. CEO Telegram notification with target file confirmation
+    // ============================================================
+    } else if (urlPath === '/api/ceo-rules/write') {
+      const ws = getWorkspace();
+      if (!ws) return jsonResp(res, 500, { error: 'workspace not found' });
+      const content = String(params.content || '').trim();
+      if (!content) return jsonResp(res, 400, { error: 'content required' });
+      if (Buffer.byteLength(content, 'utf-8') > 4000) {
+        return jsonResp(res, 400, { error: 'content too large (max 4000 bytes)' });
+      }
+
+      // Classify rule type from content keywords
+      const lc = content.toLowerCase();
+      let destFile;
+      if (/khách[hn]|customer|người mua|anh.*muốn.*lưu/i.test(lc) && /(\d{15,19})/.test(content)) {
+        destFile = null; // needs customer ID — handled below
+      } else if (/sai|nhầm|lỗi|sai rồi|không đúng|bot.*làm sai|bot.*nhầm|đáng lẽ/i.test(lc)) {
+        destFile = '.learnings/ERRORS.md';
+      } else if (/học được|nhớ|memorize|remember|lesson|tự động|bây giờ.*phải|nên.*phải|mỗi khi/i.test(lc)) {
+        destFile = '.learnings/LEARNINGS.md';
+      } else if (/script|mẫu câu|reply template|ví dụ.*trả lời|trả lời.*mẫu|template.*câu/i.test(lc)) {
+        // Extract a slug from content for the script filename
+        const slug = content.replace(/[^a-z0-9áàảãạăâặằắẳẵâầấẩẫậéèẻẽẹêềếểễệíìỉĩịóòỏõọôồốổỗộơờớởỡợúùủũụưừứửữựýỳỷỹỵ\s]/gi, '-').replace(/-+/g, '-').slice(0, 50).toLowerCase();
+        destFile = `knowledge/scripts/${slug}.md`;
+      } else {
+        // Default: sales/business rules → sales playbook
+        destFile = 'knowledge/sales-playbook.md';
+      }
+
+      // If customer-specific rule, require senderId param
+      if (!destFile) {
+        const senderId = sanitizeZaloUserId(params.senderId);
+        if (!senderId) return jsonResp(res, 400, { error: 'senderId required for customer-specific rules' });
+        destFile = `memory/zalo-users/${senderId}.md`;
+      }
+
+      const destPath = path.join(ws, destFile);
+      const destDir = path.dirname(destPath);
+
+      try {
+        // Append-only: read existing, check for duplicate, append
+        let existingContent = '';
+        if (fs.existsSync(destPath)) {
+          existingContent = fs.readFileSync(destPath, 'utf-8');
+        }
+
+        // Sanitize: remove prompt injection patterns
+        const safeContent = content
+          .replace(/^(SYSTEM|ASSISTANT|HUMAN|USER|INSTRUCTION|PROMPT|RULE|BẮT BUỘC)\s*:/gim, '[CEO]: ')
+          .replace(/(?:127\.0\.0\.1|localhost|0\.0\.0\.0):\d{4,5}/g, '[local-api]')
+          .replace(/(?:api[_-]?(?:key|token|secret)|password)\s*[:=]\s*\S+/gi, '[credential-removed]');
+
+        const ts = new Date().toISOString().slice(0, 10);
+        const appendEntry = `\n\n---\n**CEO rule · ${ts}**\n\n${safeContent}\n`;
+
+        // Idempotency: skip if same content already appended today
+        if (existingContent.includes(safeContent.slice(0, 100))) {
+          return jsonResp(res, 200, {
+            success: true,
+            action: 'skipped-duplicate',
+            file: destFile,
+            message: 'Rule đã tồn tại, không ghi trùng.',
+          });
+        }
+
+        fs.mkdirSync(destDir, { recursive: true });
+        fs.appendFileSync(destPath, appendEntry, 'utf-8');
+        const sizeAfter = fs.statSync(destPath).size;
+
+        console.log(`[ceo-rules] appended rule to ${destFile} (${safeContent.length} chars)`);
+
+        // Audit log
+        const auditPath = path.join(ws, 'logs', 'ceo-rules-writes.jsonl');
+        fs.mkdirSync(path.dirname(auditPath), { recursive: true });
+        fs.appendFileSync(auditPath, JSON.stringify({
+          t: new Date().toISOString(),
+          file: destFile,
+          chars: safeContent.length,
+          sizeAfter,
+        }) + '\n', 'utf-8');
+
+        // CEO notification via Telegram (non-blocking)
+        const shortContent = safeContent.slice(0, 120) + (safeContent.length > 120 ? '...' : '');
+        sendCeoAlert(
+          `✅ Đã lưu rule vào *${destFile}*\n\n"${shortContent}"`,
+        ).catch(() => {});
+
+        return jsonResp(res, 200, { success: true, file: destFile, chars: safeContent.length });
+      } catch (e) {
+        return jsonResp(res, 500, { error: e.message });
+      }
+
     } else if (urlPath === '/api/workspace/list') {
       const ws = getWorkspace();
       if (!ws) return jsonResp(res, 500, { error: 'workspace not found' });
       const dir = String(params.dir || '').replace(/\\/g, '/');
       const DIRS_ALLOWED = [
+        /^$/,
+        /^\/?$/,
         /^\.?learnings\/?$/,
         /^memory\/?$/,
         /^memory\/zalo-users\/?$/,
         /^memory\/zalo-groups\/?$/,
         /^knowledge\/[^\/]+\/?$/,
+        /^knowledge\/[^\/]+\/files\/?$/,
+        /^skills\/?$/,
+        /^skills\/[^\/]+\/?$/,
+        /^skills\/[^\/]+\/[^\/]+\/?$/,
+        /^prompts\/?$/,
+        /^prompts\/[^\/]+\/?$/,
+        /^tools\/?$/,
+        /^tools\/[^\/]+\/?$/,
+        /^docs\/?$/,
+        /^docs\/[^\/]+\/?$/,
       ];
       if (!dir || dir.includes('..') || !DIRS_ALLOWED.some(r => r.test(dir))) {
-        return jsonResp(res, 403, { error: 'dir not in whitelist. Allowed: .learnings/, memory/, memory/zalo-users/, memory/zalo-groups/, knowledge/*/' });
+        return jsonResp(res, 403, { error: 'dir not in whitelist. Allowed: root, .learnings/, memory/, memory/zalo-users/, memory/zalo-groups/, knowledge/*/, skills/*/, prompts/*/, tools/*/, docs/*/' });
       }
       try {
         const fullDir = path.join(ws, dir);
         if (!fs.existsSync(fullDir)) return jsonResp(res, 200, { dir, files: [] });
-        const files = fs.readdirSync(fullDir).filter(f => f.endsWith('.md') || f.endsWith('.json'));
+        // Root dir: show all non-hidden files of all types. Sub-dirs: .md/.json only.
+        const isRoot = !dir || dir === '/' || dir === '';
+        const files = fs.readdirSync(fullDir).filter(f => {
+          if (f.startsWith('.')) return false;
+          if (f === 'node_modules' || f === 'backups' || f === 'vendor' || f === 'logs') return false;
+          if (isRoot) return true;
+          return f.endsWith('.md') || f.endsWith('.json');
+        });
         return jsonResp(res, 200, { dir, files });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
@@ -853,18 +1070,30 @@ function startCronApi() {
       if (!tId) return jsonResp(res, 400, { error: 'groupId, targetId, groupName, or friendName required' });
       if (!text) return jsonResp(res, 400, { error: 'text required' });
       if (String(text).length > 5000) return jsonResp(res, 400, { error: 'text too long (max 5000 chars)' });
-      const isGroup = resolveZaloIsGroup({ groupId, groupName, friendName, isGroupParam });
-      const { byId } = loadGroupsMap();
-      if (isGroup && !byId[String(tId)]) {
+      // Auto-detect group vs user from cache — avoids "user-not-in-cache" when passing
+      // a bare groupId as targetId (resolveZaloIsGroup returns false for bare targetId).
+      const { byId: groupsById } = loadGroupsMap();
+      let isGroup = !!groupsById[String(tId)];
+      if (!isGroup) {
+        // Fall back to explicit params if not found in groups cache
+        isGroup = resolveZaloIsGroup({ groupId, groupName, friendName, isGroupParam });
+        if (!isGroup) {
+          // Double-check: if targetId looks like a known friend, force user mode
+          const friends = loadFriendsList();
+          const isFriend = friends.some(f => String(f.userId || f.uid || f.id || f.userKey || '') === String(tId));
+          if (isFriend) isGroup = false;
+        }
+      }
+      if (isGroup && !groupsById[String(tId)]) {
         return jsonResp(res, 400, { error: 'unknown groupId: ' + tId + '. Check /api/cron/list for available groups.' });
       }
       try {
-        const ok = await sendZaloTo({ id: String(tId), isGroup }, String(text), { skipFilter: false });
-        if (ok) {
+        const result = await sendZaloTo({ id: String(tId), isGroup }, String(text), { skipFilter: false });
+        if (result && result.ok) {
           console.log(`[cron-api] /api/zalo/send OK → ${isGroup ? 'group' : 'user'} ${tId}`);
           return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup });
         } else {
-          return jsonResp(res, 500, { success: false, error: 'sendZaloTo returned null — check listener status, target validity, or channel pause state' });
+          return jsonResp(res, 500, { success: false, error: (result && result.error) ? result.error : 'sendZaloTo failed' });
         }
       } catch (e) {
         return jsonResp(res, 500, { success: false, error: String(e?.message || e).slice(0, 300) });
@@ -893,9 +1122,18 @@ function startCronApi() {
         }
       }
       if (!tId) return jsonResp(res, 400, { error: 'groupId, targetId, groupName, or friendName required' });
-      const isGroup = resolveZaloIsGroup({ groupId, groupName, friendName, isGroupParam });
-      const { byId } = loadGroupsMap();
-      if (isGroup && !byId[String(tId)]) {
+      // Auto-detect group vs user from cache (same logic as /api/zalo/send).
+      const { byId: groupsById } = loadGroupsMap();
+      let isGroup = !!groupsById[String(tId)];
+      if (!isGroup) {
+        isGroup = resolveZaloIsGroup({ groupId, groupName, friendName, isGroupParam });
+        if (!isGroup) {
+          const friends = loadFriendsList();
+          const isFriend = friends.some(f => String(f.userId || f.uid || f.id || f.userKey || '') === String(tId));
+          if (isFriend) isGroup = false;
+        }
+      }
+      if (isGroup && !groupsById[String(tId)]) {
         return jsonResp(res, 400, { error: 'unknown groupId: ' + tId + '. Check /api/cron/list for available groups.' });
       }
       let absPath = '';
@@ -911,12 +1149,12 @@ function startCronApi() {
       }
       absPath = asset.path;
       try {
-        const ok = await sendZaloMediaTo({ id: String(tId), isGroup }, absPath, { caption: caption || asset?.title || '' });
-        if (ok) {
+        const result = await sendZaloMediaTo({ id: String(tId), isGroup }, absPath, { caption: caption || asset?.title || '' });
+        if (result.ok) {
           console.log(`[cron-api] /api/zalo/send-media OK → ${isGroup ? 'group' : 'user'} ${tId}`);
-          return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup, mediaId: asset?.id || null, mode: ok.mode || null });
+          return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup, mediaId: asset?.id || null, mode: result.mode || null });
         }
-        return jsonResp(res, 500, { success: false, error: 'sendZaloMediaTo returned null — check listener status, target validity, media path, or channel pause state' });
+        return jsonResp(res, 500, { success: false, error: result.error || 'sendZaloMediaTo failed' });
       } catch (e) {
         return jsonResp(res, 500, { success: false, error: String(e?.message || e).slice(0, 300) });
       }
@@ -1317,11 +1555,15 @@ function startCronApi() {
       } catch (e) { return jsonResp(res, 500, { success: false, error: e.message }); }
 
     } else if (urlPath === '/api/image/generate-and-send-zalo') {
-      const { prompt, assets, size, caption } = params;
+      // FIX: This endpoint was returning success immediately after starting the async job,
+      // causing the agent to report "Ảnh đã tạo xong" BEFORE Zalo delivery happened.
+      // Now fully blocks until both image generation AND Zalo delivery are done.
+      // The response tells the agent the truthful status so it can report to CEO accurately.
+      const { prompt, assets, size, caption, groupId, groupName, targetId, friendName, isGroup } = params;
       if (!prompt) return jsonResp(res, 400, { error: 'prompt required' });
       if (String(prompt).length > 5000) return jsonResp(res, 400, { error: 'prompt too long (max 5000)' });
-      const delivery = resolveCronZaloTarget(params, { allowMultipleGroups: false });
-      if (!delivery) return jsonResp(res, 400, { error: 'groupId, groupName, targetId, or friendName required' });
+      const delivery = resolveCronZaloTarget({ groupId, groupName, targetId, friendName, isGroup }, { allowMultipleGroups: false });
+      if (!delivery) return jsonResp(res, 400, { error: 'groupId, groupName, targetId, hoặc friendName cần được cung cấp để gửi Zalo. Nếu đã cung cấp groupId nhưng bị lỗi — thử dùng groupName thay vì groupId.' });
       if (delivery.error) return jsonResp(res, 400, { error: delivery.error });
 
       const imageGen = require('./image-gen');
@@ -1330,41 +1572,68 @@ function startCronApi() {
       const assetList = Array.isArray(assets) ? assets : (assets ? String(assets).split(',').map(s => s.trim()).filter(Boolean) : []);
       const deliveryTarget = { id: delivery.ids[0], isGroup: delivery.type === 'group' };
       const deliveryLabel = delivery.labels?.[0] || delivery.ids[0];
-      let earlyFailureHandled = false;
 
-      imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', async (err, imgPath) => {
-        if (err) {
-          setTimeout(() => {
-            if (!earlyFailureHandled) sendCeoAlert('[Tạo ảnh/Zalo] Tạo ảnh thất bại: ' + err.message).catch(() => {});
-          }, 3000);
-          return;
-        }
-        if (!imgPath) return;
-        try {
-          const ok = await sendZaloMediaTo(deliveryTarget, imgPath, { caption: caption || 'Ảnh đã tạo xong' });
-          const status = imageGen.getJobStatus(jobId);
-          if (ok) {
-            sendCeoAlert(`[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào ${delivery.type === 'group' ? 'nhóm' : 'Zalo cá nhân'} "${deliveryLabel}".`).catch(() => {});
-          } else {
-            sendCeoAlert(`[Tạo ảnh/Zalo] Ảnh đã tạo xong nhưng gửi vào "${deliveryLabel}" thất bại. jobId: ${jobId}${status?.mediaId ? ', mediaId: ' + status.mediaId : ''}`).catch(() => {});
+      const jobDone = new Promise((resolveJob) => {
+        imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', async (err, imgPath) => {
+          if (err) {
+            resolveJob({ status: 'gen_failed', error: err.message });
+            return;
           }
-        } catch (e) {
-          sendCeoAlert(`[Tạo ảnh/Zalo] Ảnh đã tạo xong nhưng bước gửi Zalo lỗi: ${String(e?.message || e).slice(0, 200)}. jobId: ${jobId}`).catch(() => {});
-        }
+          if (!imgPath) {
+            resolveJob({ status: 'gen_failed', error: 'no image path returned' });
+            return;
+          }
+          try {
+            const result = await sendZaloMediaTo(deliveryTarget, imgPath, { caption: caption || '' });
+            resolveJob({
+              status: 'done',
+              imagePath: imgPath,
+              zaloDelivered: result.ok,
+              zaloError: result.error || null,
+            });
+          } catch (e) {
+            resolveJob({
+              status: 'done',
+              imagePath: imgPath,
+              zaloDelivered: false,
+              zaloError: String(e?.message || e).slice(0, 300),
+            });
+          }
+        });
       });
-      const earlyStatus = await imageGen.waitForJobResult(jobId, 3000);
-      if (earlyStatus.status === 'failed') {
-        earlyFailureHandled = true;
-        return jsonResp(res, 502, { jobId, status: 'failed', error: earlyStatus.error || 'image generation failed' });
+
+      const timeout = new Promise(r => setTimeout(() => r({ status: 'timeout' }), 14 * 60 * 1000));
+      const result = await Promise.race([jobDone, timeout]);
+
+      if (result.status === 'gen_failed') {
+        sendCeoAlert('[Tạo ảnh/Zalo] Thất bại: ' + result.error).catch(() => {});
+        return jsonResp(res, 502, { success: false, jobId, status: 'gen_failed', error: result.error });
       }
+      if (result.status === 'timeout') {
+        sendCeoAlert('[Tạo ảnh/Zalo] Quá thời gian chờ (14 phút). Thử lại với ảnh đơn giản hơn.').catch(() => {});
+        return jsonResp(res, 504, { success: false, jobId, status: 'timeout', error: 'image generation timed out after 14 minutes' });
+      }
+
+      // Both image and Zalo delivery done — return truthful status
+      console.log(`[image-gen] generate-and-send-zalo: gen=ok zalo=${result.zaloDelivered ? 'OK' : 'FAILED'}`);
+      const status = result.zaloDelivered
+        ? 'done_and_delivered'
+        : 'done_not_delivered';
+
+      if (result.zaloDelivered) {
+        sendCeoAlert(`[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào ${delivery.type === 'group' ? 'nhóm' : 'Zalo cá nhân'} "${deliveryLabel}".`).catch(() => {});
+      } else {
+        sendCeoAlert(`[Tạo ảnh/Zalo] Ảnh tạo xong nhưng gửi vào "${deliveryLabel}" thất bại. jobId: ${jobId}. Lỗi: ${result.zaloError || 'unknown'}`).catch(() => {});
+      }
+
       return jsonResp(res, 200, {
         success: true,
         jobId,
-        status: earlyStatus.status || 'generating',
-        imagePath: earlyStatus.imagePath,
-        mediaId: earlyStatus.mediaId || null,
+        status,
+        imagePath: result.imagePath,
+        zaloDelivered: result.zaloDelivered,
+        zaloError: result.zaloError || null,
         delivery: {
-          status: earlyStatus.status === 'done' ? 'sending_or_sent' : 'queued_after_image_done',
           targetId: delivery.ids[0],
           isGroup: delivery.type === 'group',
           label: deliveryLabel,
@@ -1372,30 +1641,96 @@ function startCronApi() {
       });
 
     } else if (urlPath === '/api/image/generate') {
-      const { prompt, assets, size } = params;
+      const { prompt, assets, size, targetId, isGroup, caption } = params;
       if (!prompt) return jsonResp(res, 400, { error: 'prompt required' });
       if (String(prompt).length > 5000) return jsonResp(res, 400, { error: 'prompt too long (max 5000)' });
       const imageGen = require('./image-gen');
       const jobId = imageGen.generateJobId();
       const brandDir = getBrandAssetsDir();
       const assetList = Array.isArray(assets) ? assets : (assets ? String(assets).split(',').map(s => s.trim()).filter(Boolean) : []);
+      const hasZaloTarget = !!targetId;
+      const zaloTarget = hasZaloTarget ? { id: String(targetId), isGroup: isGroup === true || isGroup === 'true' } : null;
       let earlyFailureHandled = false;
-      imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', (err, imgPath) => {
-        if (err) {
-          setTimeout(() => {
-            if (!earlyFailureHandled) sendTelegram('[Tạo ảnh] Thất bại: ' + err.message, { skipFilter: true });
-          }, 3000);
-        } else if (imgPath) {
-          sendTelegramPhoto(imgPath, 'Ảnh đã tạo xong').then(() => {}).catch(e =>
-            console.error('[image-gen] proactive photo send failed:', e.message));
+
+      // If zaloTarget is set, we must wait for the image to finish and attempt delivery
+      // within this request — so the cron-agent gets a truthful delivery status.
+      if (zaloTarget) {
+        const jobDone = new Promise((resolveJob) => {
+          imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', async (err, imgPath) => {
+            if (err) {
+              resolveJob({ status: 'failed', error: err.message });
+              return;
+            }
+            if (!imgPath) { resolveJob({ status: 'failed', error: 'no image path' }); return; }
+            try {
+              const result = await sendZaloMediaTo(zaloTarget, imgPath, { caption: caption || '' });
+              resolveJob({
+                status: result.ok ? 'done' : 'failed',
+                imagePath: imgPath,
+                deliveryOk: result.ok,
+                deliveryError: result.error || null,
+              });
+            } catch (e) {
+              resolveJob({ status: 'failed', imagePath: imgPath, deliveryError: String(e?.message || e).slice(0, 200) });
+            }
+          });
+        });
+
+        const timeout = new Promise(resolve => setTimeout(() => resolve({ status: 'timeout' }), 14 * 60 * 1000));
+        const result = await Promise.race([jobDone, timeout]);
+
+        if (result.status === 'failed') {
+          earlyFailureHandled = true;
+          sendCeoAlert('[Tạo ảnh/Zalo] Thất bại: ' + (result.error || result.deliveryError || 'lỗi không rõ')).catch(() => {});
+          return jsonResp(res, 502, { jobId, status: 'failed', error: result.error || result.deliveryError || 'image generation or Zalo delivery failed' });
         }
-      });
+        if (result.status === 'timeout') {
+          earlyFailureHandled = true;
+          return jsonResp(res, 504, { jobId, status: 'timeout', error: 'image generation timed out after 14 minutes' });
+        }
+        // Image generated and delivered (or delivery failed but image is done)
+        console.log(`[image-gen] zalo delivery result: ${result.deliveryOk ? 'OK' : 'FAILED'} for job ${jobId}`);
+        if (result.deliveryOk) {
+          sendCeoAlert('[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào nhóm Zalo thành công.').catch(() => {});
+        } else {
+          sendCeoAlert('[Tạo ảnh/Zalo] Ảnh đã tạo xong nhưng gửi vào nhóm Zalo thất bại. jobId: ' + jobId + (result.deliveryError ? ' — ' + result.deliveryError : '')).catch(() => {});
+        }
+        return jsonResp(res, 200, {
+          jobId,
+          status: result.deliveryOk ? 'done_and_delivered' : 'done_not_delivered',
+          imagePath: result.imagePath,
+          zaloTarget: { targetId: zaloTarget.id, isGroup: zaloTarget.isGroup },
+          deliveryOk: !!result.deliveryOk,
+          deliveryError: result.deliveryError || null,
+        });
+      }
+
+      // No zaloTarget: non-blocking, just generate and hand back to caller.
+      // The polling loop (skills/marketing/facebook-post-workflow.md) handles
+      // success/failure reporting — we do NOT proactively send Telegram here.
+      // image-gen.js also does NOT send Telegram on failure (fire-and-forget).
+      let startErr = null;
+      try {
+        imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', () => {});
+      } catch (e) {
+        startErr = e;
+      }
+      if (startErr) {
+        console.error('[image-gen] startJob failed:', startErr.message);
+        return jsonResp(res, 502, { jobId, status: 'failed', error: startErr.message });
+      }
       const earlyStatus = await imageGen.waitForJobResult(jobId, 3000);
       if (earlyStatus.status === 'failed') {
         earlyFailureHandled = true;
         return jsonResp(res, 502, { jobId, status: 'failed', error: earlyStatus.error || 'image generation failed' });
       }
-      return jsonResp(res, 200, { jobId, status: earlyStatus.status || 'generating', imagePath: earlyStatus.imagePath });
+      return jsonResp(res, 200, {
+        jobId,
+        status: earlyStatus.status || 'generating',
+        imagePath: earlyStatus.imagePath,
+        mediaId: earlyStatus.mediaId || null,
+        zaloTarget: zaloTarget ? { targetId: zaloTarget.id, isGroup: zaloTarget.isGroup } : null,
+      });
 
     } else if (urlPath === '/api/image/status') {
       const { jobId } = params;
@@ -1468,7 +1803,7 @@ function startCronApi() {
         }
         return jsonResp(res, 200, result);
       } catch (e) {
-        if (/OAuthException|Invalid OAuth|expired/i.test(e.message)) {
+        if (e._isTokenExpired || e._httpStatus === 401 || /OAuthException|Invalid OAuth|expired|invalid.token|session.*invalid/i.test(e.message)) {
           return jsonResp(res, 401, { error: 'Token Facebook hết hạn. Paste token mới vào Dashboard.' });
         }
         return jsonResp(res, 500, { error: e.message });
@@ -1483,8 +1818,42 @@ function startCronApi() {
         return jsonResp(res, 200, { posts });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
+    // ─── Internal: agent-mode cron delivers Zalo without token ──────
+    // The cron-agent (running as openclaw CLI via Electron main process) cannot
+    // call /api/zalo/send because it lacks the cron-api auth token that the
+    // agent knows nothing about. This internal endpoint bypasses auth so the
+    // agent can call it via web_fetch 127.0.0.1 with no token.
+    } else if (urlPath === '/api/internal/agent-deliver-zalo') {
+      const { text, targetId, isGroup, mediaId, caption } = params;
+      const tId = targetId || rawTargetId;
+      if (!tId) return jsonResp(res, 400, { error: 'targetId required' });
+      try {
+        let ok;
+        if (mediaId) {
+          const mediaLibrary = require('./media-library');
+          const asset = mediaLibrary.findMediaAsset(String(mediaId));
+          if (!asset) return jsonResp(res, 404, { error: 'media asset not found' });
+          const absPath = asset.path;
+          if (!fs.existsSync(absPath)) return jsonResp(res, 400, { error: 'media file not found on disk' });
+          const isGrp = isGroup === true || isGroup === 'true';
+          ok = await sendZaloMediaTo({ id: String(tId), isGroup: isGrp }, absPath, { caption: caption || '' });
+        } else {
+          if (!text) return jsonResp(res, 400, { error: 'text required when no mediaId' });
+          const isGrp = isGroup === true || isGroup === 'true';
+          ok = await sendZaloTo({ id: String(tId), isGroup: isGrp }, String(text), { skipFilter: false });
+        }
+        if (ok && ok.ok) {
+          console.log(`[cron-api] /api/internal/agent-deliver-zalo OK → ${isGroup ? 'group' : 'user'} ${tId}`);
+          return jsonResp(res, 200, { success: true });
+        } else {
+          return jsonResp(res, 500, { success: false, error: ok && ok.error ? ok.error : 'send failed — check listener, target validity, or pause state' });
+        }
+      } catch (e) {
+        return jsonResp(res, 500, { error: String(e?.message || e).slice(0, 300) });
+      }
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/replace', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/replace', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/customer-memory/write', '/api/ceo-rules/write', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent'] });
     }
   });
 

@@ -106,9 +106,74 @@ async function selfTestOpenClawAgent() {
   return _selfTestPromise;
 }
 
-function buildAgentArgs(prompt, chatId) {
+// ── Agent output parsing ───────────────────────────────────────────────
+// The cron agent runs with --json to get structured JSON output instead of
+// channel delivery (--deliver is omitted; openclaw defaults it to false).
+// This lets us capture the reply text and deliver it to the correct Zalo
+// target without the LLM seeing or leaking the delivery instructions.
+//
+// Expected JSON shape from openclaw agent --json:
+// { "result": { "payloads": [{ "text": "...", "mediaUrls": [...] }], ... } }
+
+function parseAgentJsonOutput(stdout) {
+  if (!stdout) return null;
+  const trimmed = stdout.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    // Look for result.payloads[0].text (openclaw's standard response shape)
+    const payloads = parsed?.result?.payloads || parsed?.payloads || [];
+    if (payloads.length > 0) {
+      const first = payloads[0];
+      return { text: first.text || '', mediaUrls: first.mediaUrls || first.mediaUrl || [] };
+    }
+    // Fallback: direct text field
+    if (parsed?.text) return { text: parsed.text, mediaUrls: [] };
+    return null;
+  } catch {
+    // Not JSON — treat entire stdout as plain text reply
+    return { text: trimmed, mediaUrls: [] };
+  }
+}
+
+// ── Post-agent Zalo delivery ─────────────────────────────────────────
+// After the agent produces content, deliver it to the Zalo target.
+// Uses sendZaloTo directly (same-process, same-permissions as the bot).
+// This is the reliable path: no HTTP, no auth token needed.
+
+async function deliverCronResultToZalo(replyText, zaloTarget, label) {
+  if (!replyText) return true;
+  const target = zaloTarget || {};
+  const targetId = target.id;
+  const isGroup = target.isGroup === true;
+  const targetLabel = target.label || targetId;
+  try {
+    const result = await sendZaloTo({ id: String(targetId), isGroup }, String(replyText).slice(0, 5000));
+    if (result && result.ok) {
+      console.log(`[cron-agent] Zalo delivery OK → ${isGroup ? 'group' : 'user'} ${targetLabel}`);
+      return true;
+    }
+    // sendZaloTo returned {ok:false, error} — try CEO alert as last resort
+    console.warn(`[cron-agent] Zalo delivery to "${targetLabel}" failed: ${(result && result.error) || 'unknown'}, alerting CEO instead`);
+    try {
+      await sendCeoAlert(`[Cron "${label}"] Kết quả:\n${String(replyText).slice(0, 3000)}${(result && result.error) ? '\n[Lỗi: ' + result.error + ']' : ''}`);
+    } catch {}
+    return false;
+  } catch (e) {
+    console.error(`[cron-agent] deliverCronResultToZalo error: ${e.message}`);
+    try {
+      await sendCeoAlert(`[Cron "${label}"] Kết quả (Zalo thất bại):\n${String(replyText).slice(0, 3000)}`);
+    } catch {}
+    return false;
+  }
+}
+
+function buildAgentArgs(prompt, chatId, useJson = false) {
   const idStr = String(chatId);
-  const base = ['agent', '--message', prompt, '--deliver'];
+  // When useJson=true, we want structured JSON output and handle delivery ourselves
+  // (omitting --deliver means no channel delivery; openclaw will output JSON only).
+  // When useJson=false, --deliver sends the reply to Telegram (the old behaviour).
+  const base = ['agent', '--message', prompt];
+  if (useJson) base.push('--json');
   if (_agentFlagProfile === 'full') {
     return [...base, '--channel', 'telegram', '--to', idStr, '--reply-channel', 'telegram', '--reply-to', idStr];
   }
@@ -204,16 +269,16 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   }
   if (targetIds.length === 1) {
     console.log(`[cron-exec] "${label || 'cron'}" rerouted to safe Zalo sender`);
-    const ok = await sendZaloTo({ id: targetIds[0], isGroup }, text, { profile });
-    return ok ? true : false;
+    const result = await sendZaloTo({ id: targetIds[0], isGroup }, text, { profile });
+    return result && result.ok;
   }
   console.log(`[cron-exec] "${label || 'cron'}" broadcast to ${targetIds.length} targets`);
   let sent = 0;
   for (let t = 0; t < targetIds.length; t++) {
     try {
-      const ok = await sendZaloTo({ id: targetIds[t], isGroup }, text, { profile });
-      if (ok) sent++;
-      else console.warn(`[cron-exec] broadcast target ${targetIds[t]} failed`);
+      const result = await sendZaloTo({ id: targetIds[t], isGroup }, text, { profile });
+      if (result && result.ok) sent++;
+      else console.warn(`[cron-exec] broadcast target ${targetIds[t]} failed: ${(result && result.error) || 'unknown'}`);
     } catch (e) {
       console.error(`[cron-exec] broadcast target ${targetIds[t]} error:`, e?.message || e);
     }
@@ -239,7 +304,7 @@ async function runCronAgentPrompt(prompt, opts = {}) {
   return run;
 }
 
-async function _runCronAgentPromptImpl(prompt, { label, timeoutMs = 600000 } = {}) {
+async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 600000 } = {}) {
   const niceLabel = label || 'cron';
 
   const execMatch = prompt.trim().match(/^exec:\s+(.+)$/s);
@@ -288,7 +353,7 @@ async function _runCronAgentPromptImpl(prompt, { label, timeoutMs = 600000 } = {
     await new Promise(r => setTimeout(r, 15000));
   }
 
-  const args = buildAgentArgs(prompt, chatId);
+  const args = buildAgentArgs(prompt, chatId, true); // --json, --deliver=false
   const promptHasNewline = prompt.includes('\n');
   let lastErr = '';
   let lastCode = -1;
@@ -301,9 +366,18 @@ async function _runCronAgentPromptImpl(prompt, { label, timeoutMs = 600000 } = {
     });
     const durMs = Date.now() - startedAt;
     if (res.code === 0) {
-      journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell });
-      console.log(`[cron-agent] "${niceLabel}" delivered in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);
-      return true;
+      // Parse structured JSON output to extract the agent's reply text
+      const agentReply = parseAgentJsonOutput(res.stdout || '');
+      const replyText = agentReply?.text?.trim();
+      console.log(`[cron-agent] "${niceLabel}" done in ${durMs}ms, reply length=${replyText ? replyText.length : 0} chars`);
+      // Deliver to Zalo if this cron has a zaloTarget
+      let zaloOk = true;
+      if (zaloTarget && replyText) {
+        zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
+      }
+      journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
+      console.log(`[cron-agent] "${niceLabel}" delivered${zaloTarget ? ' (Telegram+zalo)' : ' (Telegram only)'} in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);
+      return zaloOk;
     }
     lastCode = res.code;
     lastErr = (res.stderr || res.stdout || '').slice(0, 800);
@@ -960,9 +1034,14 @@ async function runCronViaSessionOrFallback(prompt, opts = {}) {
     const ok = await sendToGatewaySession(sessionKey, prompt);
     if (ok) {
       journalCronRun({ phase: 'ok', label: opts.label || 'cron', mode: 'session-send' });
-      return true;
+      // Session send delivered to CEO only (Telegram). If zaloTarget is set,
+      // also deliver the prompt result to Zalo — but we have no reply text here,
+      // so fall through to runCronAgentPrompt which gives us the actual content.
+      // Actually session-send is fire-and-forget to CEO; we still want agent content.
+      // Skip session path when zaloTarget is set to get structured agent output.
+      if (!opts.zaloTarget) return true;
     }
-    console.log('[cron] sessions.send failed, falling back to runCronAgentPrompt');
+    console.log('[cron] sessions.send failed or zaloTarget set, falling back to runCronAgentPrompt');
   }
   return runCronAgentPrompt(prompt, opts);
 }
@@ -1827,9 +1906,9 @@ function _startCronJobsInner() {
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
             if (c.prompt && !c.prompt.startsWith('exec:')) {
-              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id });
+              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
             } else {
-              await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+              await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
             }
             try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time' }); } catch {}
           } catch (e) {
@@ -1880,9 +1959,9 @@ function _startCronJobsInner() {
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
             if (c.prompt && !c.prompt.startsWith('exec:')) {
-              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id });
+              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
             } else {
-              await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+              await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
             }
             try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time-healed' }); } catch {}
           } catch (e) {
@@ -1916,8 +1995,8 @@ function _startCronJobsInner() {
         try {
           console.log(`[cron] Custom "${c.label || c.id}" triggered at`, new Date().toISOString());
           const ok = (c.prompt && !c.prompt.startsWith('exec:'))
-            ? await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id })
-            : await runCronAgentPrompt(c.prompt, { label: c.label || c.id });
+            ? await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget })
+            : await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
           console.log(`[cron] Custom ${c.id} agent run result:`, ok);
           try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'custom' }); } catch {}
         } catch (e) {
