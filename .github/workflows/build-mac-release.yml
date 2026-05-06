@@ -192,8 +192,17 @@ jobs:
         working-directory: electron
         run: npm run prebuild:modoro-zalo
 
+      # Vendor is already pre-built by the "prepare-vendor" job (runs on Ubuntu,
+      # downloads the 2 GB embedding model, uploads as artifact). Downloading the
+      # artifact into electron/vendor/ satisfies the smoke-test sentinel checks.
+      # Do NOT run prebuild:vendor here again — it would re-download node + npm
+      # install the vendor packages from scratch, overwriting the artifact with
+      # a freshly-built (but potentially arch-mismatched) copy.
+      # Tell prebuild-vendor.js to skip its work when SKIP_VENDOR_PREBUILD=1.
       - name: Run smoke guards
         working-directory: electron
+        env:
+          SKIP_VENDOR_PREBUILD: '1'
         run: npm run smoke
 
       - name: Build .dmg

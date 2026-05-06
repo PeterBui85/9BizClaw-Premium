@@ -1039,6 +1039,11 @@ function packVendorForPackagedApp() {
 }
 
 async function main() {
+  if (process.env.SKIP_VENDOR_PREBUILD === '1') {
+    log('SKIP_VENDOR_PREBUILD=1 — skipping vendor prebuild (artifact already present)');
+    return;
+  }
+
   const platform = detectTargetPlatform();
   if (platform !== 'darwin' && platform !== 'win32') {
     log(`platform=${platform} → skipping (vendor bundling only supported for darwin/win32)`);

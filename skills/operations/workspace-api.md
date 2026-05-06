@@ -1,83 +1,89 @@
 ---
 name: workspace-api
-description: Workspace API port 20200 — doc/ghi/list file noi bo
+description: Workspace API port 20200 — đọc/ghi/list file nội bộ
 metadata:
-  version: 3.0.0
-  added: customer-memory-write, ceo-rules-write endpoints
+  version: 3.1.0
+  added: customer-memory-write, ceo-rules-write endpoints, diacritic enforcement
 ---
 
-# Workspace API — doc/ghi file noi bo
+# Workspace API — đọc/ghi file nội bộ
 
-Cung server port 20200. Phien Telegram CEO tu xac thuc khi `web_fetch` goi API local. KHONG doc `cron-api-token.txt`, KHONG them `token=<token>`.
+⚠️ **QUAN TRỌNG: Tất cả nội dung tiếng Việt trong workspace này phải viết CÓ DẤU đầy đủ.**
+Viết không dấu (ví dụ: "khach hoi ve giao hang") → bị API reject.
+Hướng dẫn đúng: "khách hỏi về giao hàng nhanh".
 
-## Doc file (khong can token)
+## Server nội bộ
+
+- **Port:** 20200
+- **Auth:** Phiên Telegram CEO tự xác thực khi `web_fetch` gọi API local
+- **⚠️ KHÔNG** đọc `cron-api-token.txt`, **KHÔNG** thêm `token=<token>` vào URL
+
+## Đọc file (không cần token)
 
 ```
 web_fetch http://127.0.0.1:20200/api/workspace/read?path=.learnings/LEARNINGS.md
 ```
 
-Whitelist: `LEARNINGS.md`, `.learnings/LEARNINGS.md`, `memory/*.md`, `memory/zalo-users/*.md`, `memory/zalo-groups/*.md`, `knowledge/*/index.md`, `IDENTITY.md`, `schedules.json`, `custom-crons.json`, `logs/cron-runs.jsonl`.
+**Whitelist paths:**
+- `LEARNINGS.md`, `.learnings/LEARNINGS.md`
+- `memory/*.md`, `memory/zalo-users/*.md`, `memory/zalo-groups/*.md`
+- `knowledge/*/index.md`
+- `IDENTITY.md`, `schedules.json`, `custom-crons.json`
+- `logs/cron-runs.jsonl`
 
 ## Ghi hồ sơ khách hàng
 
 ```
-web_fetch "http://127.0.0.1:20200/api/customer-memory/write?senderId=<zalo-id>&content=<noi-dung>"
+web_fetch "http://127.0.0.1:20200/api/customer-memory/write?senderId=<zalo-id>&content=<nội-dung>"
 ```
 
-- `senderId`: Zalo ID (18-19 so)
-- `content`: noi dung append, max 2000 bytes
-- Chi ghi vao `memory/zalo-users/<senderId>.md` — append-only
-- CEO notify Telegram sau moi lan ghi (tru daily-cron)
-- Audit: `logs/customer-memory-writes.jsonl`
+**Parameters:**
+- `senderId`: Zalo ID (18-19 số)
+- `content`: **⚠️ TIẾNG VIỆT CÓ DẤU** — ví dụ: "khách hỏi về giao hàng nhanh", **KHÔNG phải** "khach hoi ve giao hang nhanh". Tối đa 2000 bytes.
 
-## Ghi rule tu CEO (CHINH)
+**Kết quả:** Chỉ ghi vào `memory/zalo-users/<senderId>.md` — append-only (không ghi đè). CEO được notify qua Telegram sau mỗi lần ghi. Audit log: `logs/customer-memory-writes.jsonl`.
 
-```
-web_fetch "http://127.0.0.1:20200/api/ceo-rules/write?content=<noi-dung-rule>"
-```
-
-**API TU DONG phan loai va ghi vao dung file — bot chi can truyen content:**
-
-| Noi dung | Duoc ghi vao |
-|---|---|
-| Rule ban hang: giam gia, VIP, upsell, shipping, policy | `knowledge/sales-playbook.md` |
-| Loi sai/nham: "bot lam sai", "nham roi" | `.learnings/ERRORS.md` |
-| Bai hoc/nho: "tu dong phai", "moi khi" | `.learnings/LEARNINGS.md` |
-| Mau cau tra loi: script, template reply | `knowledge/scripts/<slug>.md` |
-| Rule rieng cua khach (co ID) | `memory/zalo-users/<id>.md` |
-
-- Append-only, max 4000 bytes
-- CEO xac nhan qua Telegram sau khi ghi
-- Audit: `logs/ceo-rules-writes.jsonl`
-- Skip neu cung content da ton tai (idempotent)
-
-## Append vao LEARNINGS.md (chi dung cho learnings, khong dung cho rule)
+## Ghi rule từ CEO (CHÍNH)
 
 ```
-web_fetch http://127.0.0.1:20200/api/workspace/append?path=.learnings/LEARNINGS.md&content=L-042+...
+web_fetch "http://127.0.0.1:20200/api/ceo-rules/write?content=<nội-dung-rule>"
 ```
 
-Max 2000 bytes. Chi LEARNINGS.md.
+**⚠️ TIẾNG VIỆT CÓ DẤU BẮT BUỘC:**
+- ĐÚNG: "khách hỏi về giao hàng nhanh thì trả lời có và báo thời gian"
+- SAI: "khach hoi ve giao hang nhanh thi tra loi co va bao thoi gian"
+- Không dấu → bị API reject ngay lập tức
 
-## Them Knowledge FAQ
+**API tự động phân loại và ghi vào đúng file:**
+| Loại rule | File đích |
+|-----------|-----------|
+| Rule bán hàng / khách hàng | `knowledge/sales-playbook.md` |
+| Lesson / học được / nhớ / tự động | `.learnings/LEARNINGS.md` |
+| Lỗi / sai / bot nhầm | `.learnings/ERRORS.md` |
+| Mẫu câu / script / reply template | `knowledge/scripts/<slug>.md` |
+
+**Constraints:**
+- Append-only — không ghi đè
+- Tối đa 4000 bytes
+- Idempotency: ghi trùng nội dung trong cùng ngày → skip
+- CEO confirm qua Telegram sau khi ghi thành công
+
+## Các endpoints khác
 
 ```
-web_fetch http://127.0.0.1:20200/api/knowledge/add?category=san-pham&title=Chinh+sach+tra+gop&content=Noi+dung+FAQ
+# Tạo cron
+web_fetch "http://127.0.0.1:20200/api/cron/create?label=<tên>&cronExpr=<cron>&groupId=<id>&content=<nội-dung>"
+
+# Danh sách cron
+web_fetch http://127.0.0.1:20200/api/cron/list
+
+# Xóa cron
+web_fetch http://127.0.0.1:20200/api/cron/delete?id=<cronId>
+
+# Google Sheets
+web_fetch "http://127.0.0.1:20200/api/google/sheets/append?spreadsheetId=<id>&range=Sheet1&valuesJson=[[\"Ngày\",\"Danh mục\",\"Giá trị\"]]"
 ```
 
-Category: `cong-ty`, `san-pham`, `nhan-vien`. Append vao `knowledge/<category>/index.md`.
+## ⚠️ Nhắc nhở về tiếng Việt
 
-## Liet ke file
-
-```
-web_fetch http://127.0.0.1:20200/api/workspace/list?dir=memory/zalo-users/
-```
-
-Whitelist: `.learnings/`, `memory/`, `memory/zalo-users/`, `memory/zalo-groups/`, `knowledge/*/`.
-
-## Bao mat
-
-- System files (AGENTS.md, IDENTITY.md, SOUL.md, skills/, prompts/) bi chan o muc API
-- Prompt injection da duoc sanitize truoc khi ghi
-- CEO giam sat: notification Telegram + audit log
-- Idempotent: khong ghi trung noi dung
+Tất cả nội dung ghi vào workspace phải **CÓ DẤU đầy đủ**. Nếu bạn ghi nội dung không dấu (ví dụ: "trả lời khách nhanh"), bot sẽ bị reject hoặc context sẽ sai. Luôn dùng đầy đủ dấu: â, ă, ê, ô, ơ, ư, ơ, ư, ạ, ả, ấ, ầ, ẩ, ẫ, ậ, ắ, ằ, ẳ, ẵ, ặ, ế, ề, ể, ễ, ệ, ớ, ờ, ở, ỡ, ợ, ứ, ừ, ử, ữ, ự.
