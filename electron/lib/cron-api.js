@@ -73,30 +73,8 @@ function redactSecrets(value) {
   return value;
 }
 
-// Normalize Vietnamese diacritics in text content.
-// Replaces letters with diacritics by their non-diacritic equivalents.
-// Used to detect when CEO/bot sends text WITHOUT diacritics so we can warn.
-function hasDiacriticVietnamese(text) {
-  // áàảãạắằẳẵặâầấẩẫậéèẻẽẹêềếểễệíìỉĩịóòỏõọôồốổỗộơờớởỡợúùủũụưừứửữựýỳỷỹỵ
-  return /[àáảãạăằắặẳẵâầấậẩẫèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i.test(text);
-}
-
-function normalizeDiacriticsVietnamese(text) {
-  return text
-    .replace(/[àáảãạăằắặẳẵâầấậẩẫ]/g, 'a')
-    .replace(/[ÀÁẢÃẠĂẰẮẶẲẴÂẦẤẬẨẪ]/g, 'A')
-    .replace(/[èéẻẽẹêềếểễệ]/g, 'e')
-    .replace(/[ÈÉẺẼẸÊỀẾỂỄỆ]/g, 'E')
-    .replace(/[ìíỉĩị]/g, 'i')
-    .replace(/[ÌÍĨỊ]/g, 'I')
-    .replace(/[òóỏõọôồốổỗộơờớởỡợ]/g, 'o')
-    .replace(/[ÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢ]/g, 'O')
-    .replace(/[ùúủũụưừứửữự]/g, 'u')
-    .replace(/[ÙÚỦŨỤƯỪỨỬỮỰ]/g, 'U')
-    .replace(/[ỳýỷỹỵ]/g, 'y')
-    .replace(/[ỲÝỶỸỴ]/g, 'Y')
-    .replace(/[đĐ]/g, 'd');
-}
+// Note: Vietnamese diacritics are enforced at the AGENTS.md / skill level
+// (bot reads these rules and applies them naturally). No runtime filter needed.
 
 function sanitizeMediaAssetForApi(asset) {
   if (!asset || typeof asset !== 'object') return asset;
@@ -938,41 +916,8 @@ function startCronApi() {
         return jsonResp(res, 400, { error: 'content too large (max 4000 bytes)' });
       }
 
-      // Reject content without Vietnamese diacritics — all Vietnamese text in this
-      // workspace must use full diacritics. This catches ASCII-only Vietnamese
-      // (e.g. "khach hoi ve giao hang") which is a sign the sender used
-      // English/latin-letter substitution instead of proper Vietnamese.
-      const hasDiacritics = hasDiacriticVietnamese(content);
-      if (!hasDiacritics) {
-        // Check if content looks like Vietnamese written without diacritics.
-        // Strategy: strip diacritics from each word; if the result is
-        // suspiciously short (1-2 chars), the original was likely Vietnamese
-        // without diacritics (e.g. "giao" → "giao", "hang" → "hng" → "hng",
-        // "cua" → "cua"). Skip very short words (<3 chars) and pure ASCII.
-        const words = content.split(/\s+/);
-        let shortWordCount = 0;
-        for (const word of words) {
-          if (word.length < 3) continue; // skip short words
-          const stripped = normalizeDiacriticsVietnamese(word);
-          // If the word shrinks significantly after stripping diacritics,
-          // it was likely a Vietnamese word written with diacritic letters
-          // (e.g. "trong" (6) → "trng" (4), "của" (3) → "cua" (3 - same, no diacritics).
-          // "giá" (3) → "gi" (2) = likely Vietnamese without diacritics.
-          // "tháng" (6) → "thng" (4) = Vietnamese without diacritics.
-          if (stripped.length <= 2 && word.length >= 4) {
-            shortWordCount++;
-          }
-        }
-        // If more than 30% of non-short words become suspiciously short
-        // after diacritic stripping, the content is likely Vietnamese without diacritics
-        const nonShortWords = words.filter(w => w.length >= 3).length;
-        if (nonShortWords > 0 && shortWordCount / nonShortWords >= 0.3) {
-          return jsonResp(res, 400, {
-            error: 'Tiếng Việt phải có dấu đầy đủ (ví dụ: "khách hỏi về giao hàng nhanh" chứ KHÔNG "khach hoi ve giao hang nhanh"). Không viết tiếng Việt không dấu.',
-            suggestion: 'Viết lại nội dung với đầy đủ dấu tiếng Việt trước khi submit.'
-          });
-        }
-      }
+      // Diacritics are enforced at the AGENTS.md / skill level.
+      // The bot reads these rules and applies them naturally.
 
       // Classify rule type from content keywords
       const lc = content.toLowerCase();

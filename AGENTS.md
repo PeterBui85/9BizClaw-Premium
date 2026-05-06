@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 88 -->
+<!-- modoroclaw-agents-version: 89 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -88,8 +88,8 @@ Telegram ID ~10 số. Zalo ID ~18-19 số.
 
 **CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot gọi API nội bộ (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
 **CẤM SỬA FILE .md:** Bot KHÔNG được sửa/xóa/ghi đè `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `BOOTSTRAP.md`, hay bất kỳ file `.md` nào trong workspace. `.learnings/LEARNINGS.md` CHỈ ĐƯỢC APPEND qua `/api/workspace/append`.
-**Ghi hồ sơ khách:** Dùng `/api/customer-memory/write` (senderId + content, max 2000 bytes, append-only). **TIẾNG VIỆT PHẢI CÓ DẤU** (ví dụ: "khách hỏi về giao hàng nhanh", KHÔNG "khach hoi ve giao hang nhanh"). Nội dung không dấu sẽ bị reject. KHÔNG viết trực tiếp filesystem. Ghi xong CEO được notify qua Telegram. MỌI thao tác ghi đều được audit vào `logs/customer-memory-writes.jsonl`. Memory (`memory/zalo-users/*.md`, `memory/zalo-groups/*.md`) CHỈ ĐƯỢC APPEND — KHÔNG xóa nội dung cũ, KHÔNG clean, KHÔNG ghi đè.
-**Ghi rule từ CEO:** Khi CEO dạy bot rule mới qua Telegram → dùng `POST /api/ceo-rules/write` với `{ content }`. **TIẾNG VIỆT PHẢI CÓ DẤU đầy đủ** (bị reject nếu không có dấu). API TỰ ĐỘNG phân loại và ghi vào đúng file: rule bán hàng → `knowledge/sales-playbook.md`, lesson/sai → `.learnings/ERRORS.md`, mẫu câu → `knowledge/scripts/<slug>.md`. Append-only, max 4000 bytes, CEO confirm Telegram sau khi ghi. KHÔNG ghi trực tiếp vào bất kỳ file nào khác.
+**Ghi hồ sơ khách:** Dùng `/api/customer-memory/write` (senderId + content, max 2000 bytes, append-only). **TIẾNG VIỆT PHẢI CÓ DẤU** (ví dụ: "khách hỏi về giao hàng nhanh", KHÔNG "khach hoi ve giao hang nhanh"). Nội dung không dấu sẽ sai context → bot trả lời không đúng. KHÔNG viết trực tiếp filesystem. Ghi xong CEO được notify qua Telegram. MỌI thao tác ghi đều được audit vào `logs/customer-memory-writes.jsonl`. Memory (`memory/zalo-users/*.md`, `memory/zalo-groups/*.md`) CHỈ ĐƯỢC APPEND — KHÔNG xóa nội dung cũ, KHÔNG clean, KHÔNG ghi đè.
+**Ghi rule từ CEO:** Khi CEO dạy bot rule mới qua Telegram → dùng `POST /api/ceo-rules/write` với `{ content }`. **TIẾNG VIỆT PHẢI CÓ DẤU đầy đủ** (viết không dấu → context sai → bot không học đúng). API TỰ ĐỘNG phân loại và ghi vào đúng file: rule bán hàng → `knowledge/sales-playbook.md`, lesson/sai → `.learnings/ERRORS.md`, mẫu câu → `knowledge/scripts/<slug>.md`. Append-only, max 4000 bytes, CEO confirm Telegram sau khi ghi. KHÔNG ghi trực tiếp vào bất kỳ file nào khác.
 
 ## Zalo (kênh khách hàng)
 

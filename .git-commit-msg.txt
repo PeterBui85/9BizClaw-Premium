@@ -1,7 +1,15 @@
-fix: conversation.js setMemoryWriteNotifyCeo wire + customer-memory audit fix
+fix: remove runtime diacritic enforcement — bot self-enforces via AGENTS.md
 
-- Add setMemoryWriteNotifyCeo to conversation.js: wires CEO Telegram
-  alerts into customer memory writes (main.js calls setMemoryWriteNotifyCeo
-  with sendMemoryWriteAlert so CEO gets notified when bot writes memory).
-- Fix customer-memory/write: replace non-existent appendMemoryWriteAudit
-  (conversation.js) with auditLog (workspace.js).
+Remove hasDiacriticVietnamese + normalizeDiacriticsVietnamese helpers from
+cron-api.js. The runtime rejection heuristic (strip diacritics + 30%
+ratio) was fragile (normalizeDiacriticsVietnamese had a wrong character
+class that dropped some Vietnamese vowels) and caused false positives on
+mixed Vietnamese/English content.
+
+Diacritic enforcement is now purely at the instruction level:
+- AGENTS.md instructs the bot to always write Vietnamese with proper diacritics
+- Skills files reinforce this requirement
+- No runtime rejection in the API layer
+
+Also: remove app/lib/session.ts (unused Next.js session config, not
+imported anywhere in the codebase).

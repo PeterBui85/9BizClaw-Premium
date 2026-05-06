@@ -2,15 +2,15 @@
 name: workspace-api
 description: Workspace API port 20200 — đọc/ghi/list file nội bộ
 metadata:
-  version: 3.1.0
-  added: customer-memory-write, ceo-rules-write endpoints, diacritic enforcement
+  version: 3.2.0
+  added: customer-memory-write, ceo-rules-write endpoints
 ---
 
 # Workspace API — đọc/ghi file nội bộ
 
 ⚠️ **QUAN TRỌNG: Tất cả nội dung tiếng Việt trong workspace này phải viết CÓ DẤU đầy đủ.**
-Viết không dấu (ví dụ: "khach hoi ve giao hang") → bị API reject.
-Hướng dẫn đúng: "khách hỏi về giao hàng nhanh".
+Sai dấu hoặc không dấu → context bị sai → bot trả lời không đúng.
+Hướng dẫn đúng: "khách hỏi về giao hàng nhanh" chứ KHÔNG "khach hoi ve giao hang".
 
 ## Server nội bộ
 
@@ -52,7 +52,7 @@ web_fetch "http://127.0.0.1:20200/api/ceo-rules/write?content=<nội-dung-rule>"
 **⚠️ TIẾNG VIỆT CÓ DẤU BẮT BUỘC:**
 - ĐÚNG: "khách hỏi về giao hàng nhanh thì trả lời có và báo thời gian"
 - SAI: "khach hoi ve giao hang nhanh thi tra loi co va bao thoi gian"
-- Không dấu → bị API reject ngay lập tức
+- Không dấu → context sai → bot không học đúng, trả lời sai
 
 **API tự động phân loại và ghi vào đúng file:**
 | Loại rule | File đích |
@@ -86,4 +86,4 @@ web_fetch "http://127.0.0.1:20200/api/google/sheets/append?spreadsheetId=<id>&ra
 
 ## ⚠️ Nhắc nhở về tiếng Việt
 
-Tất cả nội dung ghi vào workspace phải **CÓ DẤU đầy đủ**. Nếu bạn ghi nội dung không dấu (ví dụ: "trả lời khách nhanh"), bot sẽ bị reject hoặc context sẽ sai. Luôn dùng đầy đủ dấu: â, ă, ê, ô, ơ, ư, ơ, ư, ạ, ả, ấ, ầ, ẩ, ẫ, ậ, ắ, ằ, ẳ, ẵ, ặ, ế, ề, ể, ễ, ệ, ớ, ờ, ở, ỡ, ợ, ứ, ừ, ử, ữ, ự.
+Tất cả nội dung ghi vào workspace phải **CÓ DẤU đầy đủ**. Nếu ghi không dấu (ví dụ: "trả lời khách nhanh"), context bị sai → bot trả lời không đúng. Luôn dùng đầy đủ dấu: â, ă, ê, ô, ơ, ư, ơ, ư, ạ, ả, ấ, ầ, ẩ, ẫ, ậ, ắ, ằ, ẳ, ẵ, ặ, ế, ề, ể, ễ, ệ, ớ, ờ, ở, ỡ, ợ, ứ, ừ, ử, ữ, ự.
