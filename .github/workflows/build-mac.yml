@@ -180,6 +180,8 @@ jobs:
 
       - name: Run smoke guards
         working-directory: electron
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
         run: npm run smoke
 
       - name: Build .dmg
