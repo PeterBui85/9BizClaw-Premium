@@ -13,6 +13,25 @@ const MAX_JOBS = 50;
 const IMAGE_ASSET_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const IMAGE_ASSET_TYPES = new Set(['brand', 'product', 'generated', 'knowledge_image', 'pdf_page']);
 
+const VALID_IMAGE_SIZES = new Set([
+  '1024x1024', '1024x1536', '1536x1024',
+  '1024x1792', '1792x1024', 'auto',
+]);
+const SIZE_ALIASES = {
+  landscape: '1792x1024', ngang: '1792x1024', horizontal: '1792x1024', wide: '1792x1024',
+  portrait: '1024x1792', doc: '1024x1792', dọc: '1024x1792', vertical: '1024x1792', tall: '1024x1792',
+  square: '1024x1024', vuông: '1024x1024', vuong: '1024x1024',
+};
+
+function normalizeImageSize(raw) {
+  if (!raw) return '1024x1024';
+  const s = String(raw).trim().toLowerCase();
+  if (SIZE_ALIASES[s]) return SIZE_ALIASES[s];
+  if (VALID_IMAGE_SIZES.has(s)) return s;
+  if (/^\d{3,4}x\d{3,4}$/.test(s)) return s;
+  return '1024x1024';
+}
+
 const _jobs = new Map();
 
 function generateJobId() {
@@ -61,25 +80,78 @@ function resolveAssetPath(brandAssetsDir, name) {
 }
 
 function loadAssets(brandAssetsDir, assetNames) {
+  console.log(`[image-gen] loadAssets called: brandDir=${brandAssetsDir}, names=${JSON.stringify(assetNames)}`);
   const loaded = [];
   for (const name of assetNames) {
     const resolved = resolveAssetPath(brandAssetsDir, name);
-    if (!resolved || !fs.existsSync(resolved)) continue;
+    if (!resolved || !fs.existsSync(resolved)) {
+      console.warn(`[image-gen] asset SKIP "${name}": resolved=${resolved}, exists=${resolved ? fs.existsSync(resolved) : false}`);
+      continue;
+    }
     const buf = fs.readFileSync(resolved);
     const b64Len = Math.ceil(buf.length / 3) * 4;
-    if (b64Len > MAX_ASSET_B64_SIZE) continue;
+    if (b64Len > MAX_ASSET_B64_SIZE) {
+      console.warn(`[image-gen] asset SKIP "${name}": too large (${(b64Len / 1024 / 1024).toFixed(1)} MB)`);
+      continue;
+    }
     const b64 = buf.toString('base64');
     const ext = path.extname(resolved).toLowerCase();
     const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
     loaded.push({ name: path.basename(resolved), base64: b64, mime });
+    console.log(`[image-gen] asset LOADED "${name}" → ${resolved} (${(buf.length / 1024).toFixed(0)} KB, ${mime})`);
   }
+  console.log(`[image-gen] loadAssets result: ${loaded.length} of ${assetNames.length} loaded`);
   return loaded;
 }
 
 const BRAND_ASSET_PREFIX = 'CRITICAL INSTRUCTION: The attached reference image(s) are brand assets. You MUST reproduce them EXACTLY as they appear — preserve every detail: exact colors, exact shapes, exact text/typography, exact proportions, exact art style. Do NOT redraw, reinterpret, reimagine, or stylize them. Composite the ORIGINAL image unchanged into the scene.\n\n';
 
+function get9RouterApiKey() {
+  try {
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    const cfg = JSON.parse(fs.readFileSync(path.join(home, '.openclaw', 'openclaw.json'), 'utf-8'));
+    return cfg?.models?.providers?.ninerouter?.apiKey || null;
+  } catch { return null; }
+}
+
+function findImageConnectionId() {
+  try {
+    const { primary } = findAllImageConnectionIds();
+    return primary[0] || null;
+  } catch { return null; }
+}
+
+function findAllImageConnectionIds() {
+  const result = { primary: [], free: [] };
+  try {
+    const appData = process.env.APPDATA || (process.platform === 'darwin'
+      ? path.join(process.env.HOME || '', 'Library', 'Application Support')
+      : path.join(process.env.HOME || '', '.config'));
+    const dbPath = path.join(appData, '9router', 'db.json');
+    if (!fs.existsSync(dbPath)) return result;
+    const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+    const conns = db.providerConnections || [];
+    const codex = conns.filter(c =>
+      c.provider === 'codex' && c.isActive !== false &&
+      typeof c['modelLock_gpt-5.4-image'] !== 'string'
+    );
+    const plus = codex.filter(c => c.providerSpecificData?.chatgptPlanType === 'plus');
+    const team = codex.filter(c => c.providerSpecificData?.chatgptPlanType === 'team');
+    const free = codex.filter(c => {
+      const plan = c.providerSpecificData?.chatgptPlanType;
+      return !plan || plan === 'free';
+    });
+    result.primary = [...plus.map(c => c.id), ...team.map(c => c.id)];
+    result.free = free.map(c => c.id);
+  } catch {}
+  return result;
+}
+
 function buildCodexRequest(prompt, assets, size, options = {}) {
+  const normalizedSize = normalizeImageSize(size);
   const finalPrompt = assets.length > 0 ? BRAND_ASSET_PREFIX + prompt : prompt;
+  console.log(`[image-gen] buildCodexRequest: ${assets.length} assets attached, size=${normalizedSize}, hasPrefix=${assets.length > 0}, promptLen=${finalPrompt.length}`);
+  if (assets.length > 0) console.log(`[image-gen] attached assets: ${assets.map(a => a.name + ' (' + (a.base64.length / 1024).toFixed(0) + 'KB b64)').join(', ')}`);
   const content = [{ type: 'input_text', text: finalPrompt }];
   for (const asset of assets) {
     content.push({
@@ -90,7 +162,7 @@ function buildCodexRequest(prompt, assets, size, options = {}) {
   const body = {
     model: 'cx/gpt-5.4',
     input: [{ role: 'user', content }],
-    tools: [{ type: 'image_generation', model: 'gpt-image-2', size: size || '1024x1024' }],
+    tools: [{ type: 'image_generation', model: 'gpt-image-2', size: normalizedSize }],
     stream: true,
     store: false
   };
@@ -98,8 +170,6 @@ function buildCodexRequest(prompt, assets, size, options = {}) {
   return body;
 }
 
-// SSE parser: buffer across TCP chunks, extract image from output_item.done
-// Image is in item.result directly (base64 string), NOT item.content[0].result
 function parseSSEForImage(rawData) {
   const lines = rawData.split('\n');
   for (const line of lines) {
@@ -111,28 +181,35 @@ function parseSSEForImage(rawData) {
           evt.item?.result) {
         return Buffer.from(evt.item.result, 'base64');
       }
-    } catch {
-      // Large image lines may be split across TCP chunks — JSON parse fails.
-    }
+    } catch {}
   }
   const match = rawData.match(/"result":"(iVBOR[A-Za-z0-9+/=]+)"/);
   if (match) return Buffer.from(match[1], 'base64');
   return null;
 }
 
-function callCodexAPI(requestBody) {
+function callCodexAPI(requestBody, connectionId) {
   return new Promise((resolve, reject) => {
+    const apiKey = get9RouterApiKey();
+    if (!apiKey) return reject(new Error('9Router API key not configured'));
+    const connId = connectionId || findImageConnectionId();
+    if (!connId) return reject(new Error('No codex provider connection available for image generation'));
     const payload = JSON.stringify(requestBody);
     const url = new URL(NINE_ROUTER_BASE + '/codex/responses');
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      'Authorization': `Bearer ${apiKey}`,
+      'x-connection-id': connId,
+    };
     const req = http.request({
       hostname: url.hostname, port: url.port, path: url.pathname,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), 'Authorization': 'Bearer dummy' }
+      method: 'POST', headers,
     }, res => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
-        if (res.statusCode !== 200) return reject(new Error(`9router ${res.statusCode}: ${data.slice(0, 200)}`));
+        if (res.statusCode !== 200) return reject(new Error(`9router ${res.statusCode}: ${data.slice(0, 300)}`));
         const imgBuf = parseSSEForImage(data);
         if (!imgBuf) return reject(new Error('No image in response'));
         resolve(imgBuf);
@@ -150,20 +227,28 @@ function isImageToolChoiceUnsupported(err) {
 }
 
 async function callCodexAPIWithFallback(prompt, assets, size) {
-  const primary = buildCodexRequest(prompt, assets, size);
-  try {
-    return await callCodexAPI(primary);
-  } catch (err) {
-    if (!isImageToolChoiceUnsupported(err)) throw err;
+  const { primary, free } = findAllImageConnectionIds();
+  const allIds = [...primary, ...free];
+  if (allIds.length === 0) throw new Error('No codex provider connection available for image generation');
 
-    const fallback = buildCodexRequest(prompt, assets, size, { toolChoice: false });
+  let lastErr = null;
+  for (const connId of allIds) {
+    const body = buildCodexRequest(prompt, assets, size);
     try {
-      return await callCodexAPI(fallback);
-    } catch (fallbackErr) {
-      fallbackErr.message = `${err.message}; fallback without tool_choice failed: ${fallbackErr.message}`;
-      throw fallbackErr;
+      return await callCodexAPI(body, connId);
+    } catch (err) {
+      lastErr = err;
+      if (isImageToolChoiceUnsupported(err)) {
+        try {
+          const noTc = buildCodexRequest(prompt, assets, size, { toolChoice: false });
+          return await callCodexAPI(noTc, connId);
+        } catch (e2) { lastErr = e2; }
+      }
+      console.warn(`[image-gen] connection ${connId.slice(0, 8)}… failed: ${err.message}, trying next`);
+      continue;
     }
   }
+  throw lastErr;
 }
 
 function cleanupGenerated(generatedDir) {
@@ -174,7 +259,12 @@ function cleanupGenerated(generatedDir) {
       .sort((a, b) => b.time - a.time);
     while (files.length > MAX_GENERATED) {
       const old = files.pop();
-      try { fs.unlinkSync(path.join(generatedDir, old.name)); } catch {}
+      const oldPath = path.join(generatedDir, old.name);
+      try { fs.unlinkSync(oldPath); } catch {}
+      try {
+        const media = require('./media-library');
+        media.removeAssetByPath(oldPath);
+      } catch {}
     }
   } catch {}
 }
@@ -275,8 +365,10 @@ module.exports = {
   getJobStatus,
   generateJobId,
   waitForJobResult,
+  normalizeImageSize,
   _test: {
     buildCodexRequest,
-    isImageToolChoiceUnsupported
+    isImageToolChoiceUnsupported,
+    findImageConnectionId,
   }
 };

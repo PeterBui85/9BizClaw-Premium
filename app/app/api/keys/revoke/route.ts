@@ -8,7 +8,6 @@ async function sbUpsert(table: string, row: object) {
   const headers: Record<string, string> = {
     apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY,
     'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates',
-    'Content-Length': String(Buffer.byteLength(body)),
   }
   const res = await fetch(`${SB_URL}/rest/v1/${table}`, { method: 'POST', headers, body })
   return res.status

@@ -89,12 +89,7 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: 2
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-14
-          - arch: x64
-            runner: macos-14
+      matrix: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.event.inputs.arch == 'arm64' && '{"include":[{"arch":"arm64","runner":"macos-14"}]}' || github.event_name == 'workflow_dispatch' && github.event.inputs.arch == 'x64' && '{"include":[{"arch":"x64","runner":"macos-14"}]}' || '{"include":[{"arch":"arm64","runner":"macos-14"},{"arch":"x64","runner":"macos-14"}]}') }}
 
     steps:
       - name: Checkout
@@ -419,16 +414,16 @@ jobs:
           body: |
             ## 9BizClaw Premium — macOS Release
 
-            **Tai file `.dmg` phu hop voi may Mac cua ban:**
-            - **Apple Silicon (M1/M2/M3/M4)**: file co chu `arm64`
-            - **Intel Mac (cu hon 2020)**: file co chu `x64`
+            **Tải file `.dmg` phù hợp với máy Mac của bạn:**
+            - **Apple Silicon (M1/M2/M3/M4)**: file có chữ `arm64`
+            - **Intel Mac (cũ hơn 2020)**: file có chữ `x64`
 
-            **Cai dat:**
+            **Cài đặt:**
             1. Double-click file `.dmg`
-            2. Keo icon **9BizClaw** vao thu muc **Applications**
-            3. Mo Launchpad hoac Applications → click 9BizClaw
-            4. Lan dau macOS co the hoi "ban co muon mo app tu internet?" → click **Open**
+            2. Kéo icon **9BizClaw** vào thư mục **Applications**
+            3. Mở Launchpad hoặc Applications → click 9BizClaw
+            4. Lần đầu macOS có thể hỏi "bạn có muốn mở app tải từ internet?" → click **Open**
 
-            **Lan dau chay:** App san sang ngay — khong can tai them gi.
+            **Lần đầu chạy:** App sẵn sàng ngay — không cần tải thêm gì.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

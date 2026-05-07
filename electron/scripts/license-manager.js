@@ -14,7 +14,11 @@ const { execSync } = require('child_process');
 const PORT = 3847;
 const PRIVATE_KEY_PATH = path.join(os.homedir(), '.claw-license-private.pem');
 const SUPABASE_URL = 'https://ndssbmedzbjutnfznale.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kc3NibWVkemJqdXRuZnpuYWxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Nzg4MjgwMywiZXhwIjoyMDkzNDU4ODAzfQ.-KlUesP2svgf2GWhUF0fNmcP3csmCnC4PwfTe22J9Jo';
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+if (!SERVICE_KEY) {
+  console.error('Error: SUPABASE_SERVICE_KEY environment variable is required.\nSet it: export SUPABASE_SERVICE_KEY=your-key-here');
+  process.exit(1);
+}
 
 function base64urlEncode(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -26,20 +30,23 @@ function loadPrivateKey() {
 
 // ---- Supabase helpers ----
 
-function sbFetch(tablePath, method, body) {
+function sbFetch(tablePath, method, body, extraHeaders) {
   return new Promise((resolve) => {
+    const m = method || 'GET';
     const bodyStr = body ? JSON.stringify(body) : null;
+    const headers = {
+      'apikey': SERVICE_KEY,
+      'Authorization': `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+      ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+      ...(extraHeaders || {}),
+    };
+    if (m !== 'GET') headers['Prefer'] = 'return=minimal';
     const opts = {
       hostname: 'ndssbmedzbjutnfznale.supabase.co',
       path: '/rest/v1/' + tablePath,
-      method: method || 'GET',
-      headers: {
-        'apikey': SERVICE_KEY,
-        'Authorization': `Bearer ${SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
-      },
+      method: m,
+      headers,
     };
     const req = https.request(opts, (res) => {
       let buf = '';
@@ -91,16 +98,21 @@ async function sbGenerateKey(email, months, plan) {
 }
 
 async function sbListKeys() {
-  const res = await sbFetch('licenses?select=*&order=created_at.desc', 'GET');
-  if (res.status !== 200) return { licenses: [], revoked: [] };
+  const [res, actRes, revRes] = await Promise.all([
+    sbFetch('licenses?select=*&order=created_at.desc', 'GET'),
+    sbFetch('activations?select=*', 'GET'),
+    sbFetch('revoked_keys?select=*&order=revoked_at.desc', 'GET'),
+  ]);
   let licenses = [];
-  try { licenses = JSON.parse(res.body); } catch {}
-
-  const revRes = await sbFetch('revoked_keys?select=*&order=revoked_at.desc', 'GET');
+  if (res.status === 200) { try { licenses = JSON.parse(res.body); } catch {} }
+  let activations = [];
+  if (actRes.status === 200) { try { activations = JSON.parse(actRes.body); } catch {} }
   let revoked = [];
-  if (revRes.status === 200) {
-    try { revoked = JSON.parse(revRes.body); } catch {}
-  }
+  if (revRes.status === 200) { try { revoked = JSON.parse(revRes.body); } catch {} }
+
+  const actMap = {};
+  for (const a of activations) { if (a.key_hash) actMap[a.key_hash] = a; }
+  for (const lic of licenses) { lic.activation = actMap[lic.key_hash] || null; }
 
   return { licenses, revoked };
 }
@@ -296,41 +308,49 @@ async function loadKeys() {
   }
   var keys = data.licenses || [];
   var revoked = data.revoked || [];
-  var total = keys.length + revoked.length;
-  document.getElementById('key-count').textContent = '(' + total + ')';
+  document.getElementById('key-count').textContent = '(' + keys.length + ')';
   if (!keys.length && !revoked.length) {
     document.getElementById('key-list').innerHTML = '<div class="empty">Chua co key nao trong Supabase</div>';
     return;
   }
   var now = new Date().toISOString().slice(0, 10);
 
-  var html = '<table><thead><tr><th>Email</th><th>Goi</th><th>Ngay tao</th><th>Het han</th><th>Machine</th><th>Hash</th><th></th></tr></thead><tbody>';
+  var html = '<table><thead><tr><th>Email</th><th>Goi</th><th>Trang thai</th><th>Ngay tao</th><th>Het han</th><th>Machine ID</th><th>Hash</th><th></th></tr></thead><tbody>';
 
   keys.forEach(function(k) {
     var p = k.payload || {};
+    var act = k.activation || null;
+    var isRevoked = revoked.some(function(r) { return r.key_hash === k.key_hash; });
     var expired = p.v && p.v < now;
-    var badge = expired ? '<span class="badge badge-expired">Het han</span>' : '<span class="badge badge-active">Active</span>';
+    var statusBadge;
+    if (isRevoked) { statusBadge = '<span class="badge badge-revoked">Thu hoi</span>'; }
+    else if (expired) { statusBadge = '<span class="badge badge-expired">Het han</span>'; }
+    else if (act) { statusBadge = '<span class="badge badge-active">Kich hoat</span>'; }
+    else { statusBadge = '<span class="badge" style="background:#1a1a2e;color:#a78bfa">Chua kich hoat</span>'; }
     var planBadge = p.p === 'enterprise' ? 'badge-enterprise' : 'badge-premium';
+    var machineDisplay = '-';
+    if (act && act.machine_id) { machineDisplay = act.machine_id; }
+    else if (p.m) { machineDisplay = p.m + ' (pre-bound)'; }
     html += '<tr>';
     html += '<td>' + esc(p.e || '') + '</td>';
     html += '<td><span class="badge ' + planBadge + '">' + esc(p.p || '') + '</span></td>';
+    html += '<td>' + statusBadge + '</td>';
     html += '<td>' + esc(p.i || '') + '</td>';
     html += '<td>' + esc(p.v || '') + '</td>';
-    html += '<td style="font-size:11px;color:#71717a;font-family:monospace">' + esc(p.m ? p.m.slice(0,8)+'...' : '-') + '</td>';
+    html += '<td style="font-size:11px;color:#71717a;font-family:monospace" title="' + escAttr(machineDisplay) + '">' + esc(machineDisplay.length > 12 ? machineDisplay.slice(0,12)+'...' : machineDisplay) + '</td>';
     html += '<td style="font-size:11px;font-family:monospace;color:#71717a">' + esc(k.key_hash || '') + '</td>';
     html += '<td style="text-align:right;white-space:nowrap">';
-    if (k.key) html += '<button class="btn-sm btn-copy" onclick="copyFromList(\\'' + k.key_hash + '\\')">Copy</button> ';
-    html += '<button class="btn-sm btn-delete" onclick="revokeKey(\\'' + k.key_hash + '\\')">Thu hoi</button>';
+    if (!isRevoked) html += '<button class="btn-sm btn-delete" onclick="revokeKey(\\'' + k.key_hash + '\\')">Thu hoi</button>';
     html += '</td>';
     html += '</tr>';
-    if (k.key) html += '<tr style="display:none"><td colspan="7"><span data-hash="' + k.key_hash + '">' + esc(k.key) + '</span></td></tr>';
   });
 
   revoked.forEach(function(k) {
+    if (keys.some(function(lic) { return lic.key_hash === k.key_hash; })) return;
     html += '<tr style="opacity:0.5">';
-    html += '<td colspan="3"><span class="badge badge-revoked">Da thu hoi</span></td>';
-    html += '<td colspan="2" style="font-size:11px;color:#71717a">' + esc(k.reason || '') + '</td>';
-    html += '<td colspan="2" style="font-size:11px;color:#71717a;font-family:monospace">' + esc(k.key_hash || '') + '</td>';
+    html += '<td colspan="3"><span class="badge badge-revoked">Thu hoi</span> ' + esc(k.reason || '') + '</td>';
+    html += '<td colspan="3" style="font-size:11px;color:#71717a;font-family:monospace">' + esc(k.key_hash || '') + '</td>';
+    html += '<td colspan="2"></td>';
     html += '</tr>';
   });
 
@@ -339,6 +359,7 @@ async function loadKeys() {
 }
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 
 loadKeys();
 document.getElementById('email').addEventListener('keydown', function(e) { if (e.key === 'Enter') generateKey(); });
@@ -379,8 +400,11 @@ if (args[0] === '--revoke') {
 }
 
 const server = http.createServer((req, res) => {
-  // CORS for local dev
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS restricted to localhost only
+  const origin = req.headers.origin || '';
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }

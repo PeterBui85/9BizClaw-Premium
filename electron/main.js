@@ -281,7 +281,11 @@ function createWindow() {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
     const url = params.src || '';
-    if (!url.startsWith('http://127.0.0.1:') && !url.startsWith('http://localhost:')) {
+    const allowedOrigins = [
+      'http://127.0.0.1:20128', 'http://127.0.0.1:18789', 'http://127.0.0.1:18791',
+      'http://localhost:20128', 'http://localhost:18789', 'http://localhost:18791'
+    ];
+    if (!allowedOrigins.some(origin => url.startsWith(origin))) {
       event.preventDefault();
     }
   });
@@ -322,7 +326,7 @@ function createWindow() {
   if (isMembershipBuild) {
     const license = require('./lib/license');
     const ls = license.checkLicenseStatus();
-    if (ls.status === 'no_license' || ls.status === 'invalid' || ls.status === 'locked') {
+    if (ls.status === 'no_license' || ls.status === 'invalid' || ls.status === 'locked' || ls.status === 'expired') {
       console.log('[createWindow] membership build, license status:', ls.status, '-> license.html');
       ctx.mainWindow.loadFile(path.join(__dirname, 'ui', 'license.html'));
       return;
@@ -774,6 +778,22 @@ app.whenReady().then(async () => {
         }
       } catch (e) { console.error('[license] check error:', e?.message); }
     }, 15000);
+    // Periodic revalidation every 2 hours (revocation check)
+    setInterval(async () => {
+      try {
+        const license = require('./lib/license');
+        const ls = license.checkLicenseStatus();
+        if (ls.status !== 'valid') return;
+        const result = await license.revalidateLicense();
+        if (!result) {
+          console.warn('[license] periodic revalidation: revoked');
+          sendCeoAlert('[Bản quyền] Key đã bị thu hồi. Liên hệ tech@modoro.com.vn.');
+          if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+            ctx.mainWindow.loadFile(path.join(__dirname, 'ui', 'license.html'));
+          }
+        }
+      } catch (e) { console.error('[license] periodic revalidation error:', e?.message); }
+    }, 2 * 60 * 60 * 1000);
   }
 
   // CRITICAL for Mac: prevent App Nap from suspending the process. macOS aggressively

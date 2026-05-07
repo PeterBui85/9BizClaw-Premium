@@ -680,8 +680,8 @@ async function ensureDefaultConfig() {
     //   Layer 2: AGENTS.md rules (exec/cron forbidden from Zalo context)
     //   Layer 3: Cron API token requires Telegram bot_token to acquire
     // cron tool still banned — cron management via web_fetch to local API only.
-    const REQUIRED_TOOLS = ['message', 'web_search', 'web_fetch', 'update_plan'];
-    const BANNED_TOOLS = ['cron', 'exec', 'process', 'read', 'write', 'apply_patch', 'memory', 'read_file', 'write_file', 'list_files', 'search_files'];
+    const REQUIRED_TOOLS = ['message', 'web_search', 'web_fetch', 'update_plan', 'read_file', 'list_files', 'search_files', 'exec'];
+    const BANNED_TOOLS = ['cron', 'process', 'read', 'write', 'apply_patch', 'memory', 'write_file'];
     const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
     const merged = REQUIRED_TOOLS.filter(t => !BANNED_TOOLS.includes(t));
     if (JSON.stringify(existingAllow.slice().sort()) !== JSON.stringify(merged.slice().sort())) {

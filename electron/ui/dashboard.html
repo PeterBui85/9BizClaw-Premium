@@ -5039,7 +5039,7 @@
         }
         el.innerHTML = assets.map(function(a) {
           var thumbHtml = a.thumbDataUrl
-            ? '<img src="' + a.thumbDataUrl + '" style="width:100%;height:100%;object-fit:cover" />'
+            ? '<img src="' + escAttr(a.thumbDataUrl) + '" style="width:100%;height:100%;object-fit:cover" />'
             : '<span data-icon="image" data-icon-size="32" style="color:var(--text-muted)"></span>';
           return '<div class="media-card">' +
             '<div class="media-card-thumb">' + thumbHtml + '</div>' +
@@ -5527,7 +5527,7 @@
           const sevColors = { high: 'var(--danger, #ef4444)', medium: '#f59e0b', low: 'var(--text-secondary)' };
           actEl.innerHTML = acts.map(a => {
             const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (sevColors[a.severity] || sevColors.low) + ';margin-right:8px;flex-shrink:0"></span>';
-            const cta = a.cta && a.ctaPage ? ' <a href="#" onclick="switchPage(\'' + _esc(a.ctaPage) + '\');return false" style="color:var(--accent);font-weight:500;margin-left:8px;white-space:nowrap">' + _esc(a.cta) + '</a>' : '';
+            const cta = a.cta && a.ctaPage ? ' <a href="#" onclick="switchPage(\'' + escJs(a.ctaPage) + '\');return false" style="color:var(--accent);font-weight:500;margin-left:8px;white-space:nowrap">' + _esc(a.cta) + '</a>' : '';
             return '<div class="ov-action-row" style="display:flex;align-items:center;padding:6px 0">' + dot + '<span class="ov-action-text">' + _esc(a.text) + '</span>' + cta + '</div>';
           }).join('');
         }
@@ -6127,7 +6127,7 @@
         list.innerHTML = files.map(f => {
           const sizeKB = (f.filesize / 1024).toFixed(1);
           const date = new Date(f.created_at + 'Z').toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-          const vis = f.visibility || 'public';
+          const vis = ['public', 'internal', 'private'].includes(f.visibility) ? f.visibility : 'public';
           const visLabel = vis === 'private' ? 'Chỉ CEO' : vis === 'internal' ? 'Nội bộ' : 'Khách thấy';
           const visBadge = (f.id != null)
             ? `<span class="vis-badge vis-${vis}" data-doc-id="${f.id}" onclick="editVisibility(${f.id}, this)" title="Đổi tầng hiển thị">${visLabel}</span>`

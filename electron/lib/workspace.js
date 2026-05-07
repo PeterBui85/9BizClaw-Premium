@@ -32,8 +32,37 @@ const DEFAULT_SCHEDULES_JSON = [
 ];
 
 // --- AGENTS.md versioning (private) ---
-const CURRENT_AGENTS_MD_VERSION = 85;
+const CURRENT_AGENTS_MD_VERSION = 92;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
+
+// ─── User data dir (Electron/APPDATA level) ─────────────────────
+function getUserDataDir() {
+  if (app && app.isPackaged) {
+    return app.getPath('userData');
+  }
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  for (const dir of [path.join(home, '9bizclaw'), path.join(home, '.openclaw')]) {
+    try {
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) return dir;
+    } catch {}
+  }
+  return path.join(home, '9bizclaw');
+}
+
+// ─── Recursive dir copy ─────────────────────────────────────────
+function copyDirRecursive(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
 
 // ─── Core workspace path ─────────────────────────────────────────
 function getWorkspace() {
@@ -983,6 +1012,8 @@ function hardenSensitiveFilePerms() {
 }
 
 module.exports = {
+  getUserDataDir,
+  copyDirRecursive,
   getWorkspace,
   invalidateWorkspaceCache,
   getWorkspaceTemplateRoot,

@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 78,
+    "apiRoutes": 80,
     "ipcHandlers": 155,
     "preloadBridges": 147,
     "dashboardPages": 14,
@@ -118,6 +118,15 @@
     },
     {
       "path": "/api/fb/recent",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/fb/verify",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -685,6 +694,15 @@
     },
     {
       "path": "/api/zalo/friends",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/zalo/ready",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -2158,7 +2176,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 520184
+      "bytes": 520252
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -2170,7 +2188,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 96283
+      "bytes": 99229
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2190,7 +2208,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 54542
+      "bytes": 54489
     },
     {
       "path": "electron/lib/config.js",
@@ -2198,7 +2216,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 42946
+      "bytes": 44069
     },
     {
       "path": "electron/lib/nine-router.js",
@@ -2222,7 +2240,7 @@
     },
     {
       "path": "electron/lib/media-library.js",
-      "bytes": 25204
+      "bytes": 26688
     },
     {
       "path": "electron/lib/conversation.js",

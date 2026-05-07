@@ -57,7 +57,6 @@ export async function POST(req: NextRequest) {
       Authorization: 'Bearer ' + SB_KEY,
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
-      'Content-Length': String(Buffer.byteLength(body)),
     }
     const sbRes = await fetch(`${SB_URL}/rest/v1/licenses`, {
       method: 'POST',

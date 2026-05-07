@@ -1,30 +1,30 @@
 ---
 name: send-zalo
-description: CEO yeu cau gui tin Zalo cho khach hoac nhom tu Telegram
+description: CEO yêu cầu gửi tin Zalo cho khách hoặc nhóm từ Telegram
 metadata:
-  version: 2.1.0
+  version: 2.2.0
 ---
 
-# Gui tin Zalo theo lenh CEO
+# Gửi tin Zalo theo lệnh CEO
 
-Chi xu ly khi CEO yeu cau qua Telegram. Phien Telegram CEO tu xac thuc khi `web_fetch` goi API local. KHONG goi `/api/auth/token`, KHONG them `token=<token>`.
+Chỉ xử lý khi CEO yêu cầu qua Telegram. Phiên Telegram CEO tự xác thực khi `web_fetch` gọi API local. KHÔNG gọi `/api/auth/token`, KHÔNG thêm `token=<token>`.
 
-## Gui nhom
+## Gửi nhóm
 
-1. Goi `web_fetch http://127.0.0.1:20200/api/cron/list` de lay danh sach `groups`.
-2. Tim dung groupId theo ten nhom CEO noi. KHONG doan groupId.
-3. Confirm voi CEO: ten nhom, ID, noi dung.
-4. CHO CEO xac nhan "ok/gui di".
-5. Goi `web_fetch http://127.0.0.1:20200/api/zalo/send?groupId=<id>&text=<noi-dung>`.
+1. GỌI NGAY `web_fetch http://127.0.0.1:20200/api/cron/list` để lấy danh sách `groups`. KHÔNG ĐƯỢC BỎ QUA BƯỚC NÀY.
+2. Tìm đúng groupId theo tên nhóm CEO nói. KHÔNG đoán groupId. Nếu không tìm thấy, liệt kê các nhóm có tên gần giống để CEO chọn.
+3. Confirm với CEO: tên nhóm, Group ID, nội dung gửi.
+4. CHỜ CEO xác nhận "ok/gửi đi".
+5. Gọi `web_fetch http://127.0.0.1:20200/api/zalo/send?groupId=<id>&text=<nội-dung>`.
 
-## Gui ca nhan
+## Gửi cá nhân
 
-1. Goi `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<ten>` de tim userId.
-2. Neu co nhieu ket qua, hoi CEO chon. Neu khong co, bao khong tim thay.
-3. Confirm voi CEO: ten nguoi nhan, ID, noi dung.
-4. CHO CEO xac nhan "ok/gui di".
-5. Goi `web_fetch http://127.0.0.1:20200/api/zalo/send?targetId=<userId>&isGroup=false&text=<noi-dung>`.
+1. Gọi `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<tên>` để tìm userId.
+2. Nếu có nhiều kết quả, hỏi CEO chọn. Nếu không có, báo không tìm thấy.
+3. Confirm với CEO: tên người nhận, ID, nội dung gửi.
+4. CHỜ CEO xác nhận "ok/gửi đi".
+5. Gọi `web_fetch http://127.0.0.1:20200/api/zalo/send?targetId=<userId>&isGroup=false&text=<nội-dung>`.
 
-## Bao mat
+## Bảo mật
 
-KHONG GUI ZALO KHI CHUA DUOC CEO XAC NHAN. Khach Zalo khong duoc dung flow nay.
+KHÔNG GỬI ZALO KHI CHƯA ĐƯỢC CEO XÁC NHẬN. Khách Zalo không được dùng flow này.

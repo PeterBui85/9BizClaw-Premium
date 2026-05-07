@@ -1081,6 +1081,8 @@ try {
   const googleRoutesSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'google-routes.js'), 'utf-8');
   const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
   const agentsSrc = fs.readFileSync(path.join(templateRoot, 'AGENTS.md'), 'utf-8');
+  const googleSkillSrc = (() => { try { return fs.readFileSync(path.join(templateRoot, 'skills', 'operations', 'google-workspace.md'), 'utf-8'); } catch { return ''; } })();
+  const botInstructionsSrc = agentsSrc + '\n' + googleSkillSrc;
   const requiredGoogleBits = [
     [googleApiSrc, 'serviceHealth', 'google-api serviceHealth export'],
     [googleApiSrc, 'gogReadExec', 'google-api safe read retry wrapper'],
@@ -1090,8 +1092,8 @@ try {
     [googleRoutesSrc, '/docs/read', 'google docs read route'],
     [googleRoutesSrc, '/docs/write', 'google docs write route'],
     [preloadSrc, 'googleDocsRead', 'preload Google Docs bridge'],
-    [agentsSrc, '/api/google/health', 'AGENTS Google health instruction'],
-    [agentsSrc, '/api/google/docs/read', 'AGENTS Google Docs instruction'],
+    [botInstructionsSrc, '/api/google/health', 'AGENTS+skill Google health instruction'],
+    [botInstructionsSrc, '/api/google/docs/read', 'AGENTS+skill Google Docs instruction'],
   ];
   const missing = requiredGoogleBits.filter(([src, needle]) => !src.includes(needle));
   if (missing.length) {
@@ -1104,6 +1106,9 @@ try {
 section('Action capability router');
 try {
   const agentsSrc = fs.readFileSync(path.join(templateRoot, 'AGENTS.md'), 'utf-8');
+  const _skillRoot = path.join(templateRoot, 'skills');
+  const _skillFiles = ['operations/google-workspace.md', 'operations/facebook-image.md', 'operations/cron-management.md', 'marketing/facebook-post-workflow.md', 'marketing/zalo-post-workflow.md'];
+  const combinedSrc = agentsSrc + '\n' + _skillFiles.map(f => { try { return fs.readFileSync(path.join(_skillRoot, f), 'utf-8'); } catch { return ''; } }).join('\n');
   const requiredRouterBits = [
     'Capability Router',
     'zalo_image_post',
@@ -1128,11 +1133,11 @@ try {
     'done_and_delivered',
     'done_not_delivered',
   ];
-  const missingRouterBits = requiredRouterBits.filter(s => !agentsSrc.includes(s));
+  const missingRouterBits = requiredRouterBits.filter(s => !combinedSrc.includes(s));
   if (missingRouterBits.length > 0) {
-    fail('action capability router', `AGENTS.md missing router entries: [${missingRouterBits.join(', ')}]`);
+    fail('action capability router', `AGENTS.md+skills missing router entries: [${missingRouterBits.join(', ')}]`);
   } else {
-    pass(`action capability router: ${requiredRouterBits.length} trigger/API/proof entries verified`);
+    pass(`action capability router: ${requiredRouterBits.length} trigger/API/proof entries verified (AGENTS.md + ${_skillFiles.length} skill files)`);
   }
 } catch (e) { fail('action capability router', 'source read failed: ' + e.message); }
 

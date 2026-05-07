@@ -1,7 +1,7 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 78
+- apiRoutes: 80
 - ipcHandlers: 155
 - preloadBridges: 147
 - dashboardPages: 14
@@ -28,6 +28,7 @@ API Routes
 - /api/exec [local-api]
 - /api/fb/post [local-api]
 - /api/fb/recent [local-api]
+- /api/fb/verify [local-api]
 - /api/file [local-api]
 - /api/file/copy [local-api]
 - /api/file/delete [local-api]
@@ -91,6 +92,7 @@ API Routes
 - /api/workspace/list [local-api]
 - /api/workspace/read [local-api]
 - /api/zalo/friends [local-api]
+- /api/zalo/ready [local-api]
 - /api/zalo/send [local-api]
 - /api/zalo/send-media [local-api]
 
@@ -111,21 +113,21 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 520184 bytes
+- electron/ui/dashboard.html: 520252 bytes
 - electron/lib/dashboard-ipc.js: 227598 bytes
 - electron/lib/cron.js: 103613 bytes
-- electron/lib/cron-api.js: 96283 bytes
+- electron/lib/cron-api.js: 99229 bytes
 - electron/ui/wizard.html: 88676 bytes
 - electron/lib/channels.js: 80734 bytes
 - electron/lib/knowledge.js: 74902 bytes
 - electron/lib/gateway.js: 66322 bytes
-- electron/lib/runtime-installer.js: 54542 bytes
+- electron/lib/runtime-installer.js: 54489 bytes
 - electron/lib/config.js: 44187 bytes
-- electron/lib/workspace.js: 42946 bytes
+- electron/lib/workspace.js: 44069 bytes
 - electron/lib/nine-router.js: 38510 bytes
 - electron/lib/boot.js: 37953 bytes
 - electron/lib/zalo-plugin.js: 34972 bytes
 - electron/lib/vendor-patches.js: 33786 bytes
 - electron/lib/google-api.js: 29327 bytes
-- electron/lib/media-library.js: 25204 bytes
+- electron/lib/media-library.js: 26688 bytes
 - electron/lib/conversation.js: 22020 bytes

@@ -3,7 +3,8 @@ const https = require('https');
 
 const SUPABASE_REF = 'ndssbmedzbjutnfznale';
 const SUPABASE_HOST = `${SUPABASE_REF}.supabase.co`;
-const SVC_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kc3NibWVkemJqdXRuZnpuYWxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Nzg4MjgwMywiZXhwIjoyMDkzNDU4ODAzfQ.-KlUesP2svgf2GWhUF0fNmcP3csmCnC4PwfTe22J9Jo';
+const SVC_TOKEN = process.env.SUPABASE_SERVICE_KEY;
+if (!SVC_TOKEN) { console.error('Set SUPABASE_SERVICE_KEY env var'); process.exit(1); }
 
 function httpsRequest(path, method, body, token) {
   return new Promise((resolve) => {

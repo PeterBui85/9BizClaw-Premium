@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 
 interface LicensePayload { e?: string; p?: string; i?: string; v?: string; m?: string }
-interface LicenseRow { id: string; key_hash: string; payload: LicensePayload; created_at: string }
+interface ActivationData { machine_id?: string; email?: string; activated_at?: string; machine_name?: string }
+interface LicenseRow { id: string; key_hash: string; payload: LicensePayload; created_at: string; activation?: ActivationData | null }
 interface RevokedRow { id: string; key_hash: string; reason: string; revoked_at: string }
 interface KeyData { licenses: LicenseRow[]; revoked: RevokedRow[] }
 interface GenerateResult { email: string; plan: string; issued: string; expires: string; keyHash: string; key: string }
@@ -18,12 +19,19 @@ function daysUntil(iso: string | undefined | null) {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000)
 }
 
-function statusBadge(row: LicenseRow) {
+function statusBadge(row: LicenseRow, revokedHashes: Set<string>) {
+  if (revokedHashes.has(row.key_hash)) return <span className="badge badge-red">Thu hồi</span>
   const days = daysUntil(row.payload.v ?? '')
-  if (days === null) return null
-  if (days < 0) return <span className="badge badge-red">Het han</span>
-  if (days <= 14) return <span className="badge badge-yellow">Con {days} ngay</span>
-  return <span className="badge badge-green">Active</span>
+  if (days !== null && days < 0) return <span className="badge badge-red">Hết hạn</span>
+  if (row.activation) return <span className="badge badge-green">Kích hoạt</span>
+  if (days !== null && days <= 14) return <span className="badge badge-yellow">Còn {days} ngày</span>
+  return <span className="badge badge-purple">Chưa kích hoạt</span>
+}
+
+function machineIdCell(row: LicenseRow) {
+  if (row.activation?.machine_id) return row.activation.machine_id.slice(0, 12) + '...'
+  if (row.payload.m) return row.payload.m.slice(0, 12) + '... (pre-bound)'
+  return '—'
 }
 
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
@@ -43,9 +51,9 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         body: JSON.stringify({ username, password }),
       })
       const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Sai thong tin dang nhap'); return }
+      if (!res.ok || !data.ok) { setError(data.error ?? 'Sai thông tin đăng nhập'); return }
       onLogin()
-    } catch { setError('Loi ket noi') }
+    } catch { setError('Lỗi kết nối') }
     finally { setLoading(false) }
   }
 
@@ -62,22 +70,22 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           </svg>
         </div>
         <h1 className="login-title">9BizClaw</h1>
-        <p className="login-sub">License Manager</p>
+        <p className="login-sub">Quản lý License</p>
         <form onSubmit={handleSubmit} className="login-form">
           <div className="field">
-            <label className="field-label">Username</label>
+            <label className="field-label">Tên đăng nhập</label>
             <input type="text" className="input" placeholder="peterbui85" value={username}
               onChange={e => setUsername(e.target.value)} autoComplete="username" required/>
           </div>
           <div className="field">
-            <label className="field-label">Password</label>
+            <label className="field-label">Mật khẩu</label>
             <input type="password" className="input" placeholder="••••••••••" value={password}
               onChange={e => setPassword(e.target.value)} autoComplete="current-password" required/>
           </div>
           {error && <div className="login-error">{error}</div>}
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? <span className="spinner"/> : null}
-            {loading ? 'Dang nhap...' : 'Dang nhap'}
+            {loading ? 'Đang nhập...' : 'Đăng nhập'}
           </button>
         </form>
       </div>
@@ -110,7 +118,7 @@ function GenerateForm({ onGenerated }: { onGenerated: () => void }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.includes('@')) { setError('Email khong hop le'); return }
+    if (!email.includes('@')) { setError('Email không hợp lệ'); return }
     setLoading(true); setError(''); setResult(null)
     try {
       const res = await fetch('/api/keys/generate', {
@@ -119,9 +127,9 @@ function GenerateForm({ onGenerated }: { onGenerated: () => void }) {
         body: JSON.stringify({ email, months: parseInt(months), plan }),
       })
       const data = await res.json()
-      if (data.error) { setError(data.error); return }
+      if (data.error) { setError(data.detail ? `${data.error}: ${data.detail}` : data.error); return }
       setResult(data); onGenerated()
-    } catch (e: any) { setError(e.message ?? 'Loi ket noi') }
+    } catch (e: any) { setError(e.message ?? 'Lỗi kết nối') }
     finally { setLoading(false) }
   }
 
@@ -129,25 +137,25 @@ function GenerateForm({ onGenerated }: { onGenerated: () => void }) {
 
   return (
     <div className="card">
-      <h2 className="card-title">Tao license key moi</h2>
-      <p className="card-desc">Key se duoc insert vao Supabase ngay khi tao. Khach nhan key va kich hoat tren app.</p>
+      <h2 className="card-title">Tạo license key mới</h2>
+      <p className="card-desc">Key sẽ được lưu vào Supabase ngay khi tạo. Khách nhận key và kích hoạt trên app.</p>
       <form onSubmit={submit} className="form-stack">
         <div className="form-row">
           <div className="field" style={{ flex: 2 }}>
-            <label className="field-label">Email khach hang</label>
+            <label className="field-label">Email khách hàng</label>
             <input type="email" className="input" placeholder="customer@company.com"
               value={email} onChange={e => setEmail(e.target.value)} required/>
           </div>
           <div className="field">
-            <label className="field-label">Thoi han</label>
+            <label className="field-label">Thời hạn</label>
             <select className="input" value={months} onChange={e => setMonths(e.target.value)}>
-              <option value="1">1 thang</option><option value="3">3 thang</option>
-              <option value="6">6 thang</option><option value="12" selected>12 thang</option>
-              <option value="24">24 thang</option><option value="36">36 thang</option>
+              <option value="1">1 tháng</option><option value="3">3 tháng</option>
+              <option value="6">6 tháng</option><option value="12" selected>12 tháng</option>
+              <option value="24">24 tháng</option><option value="36">36 tháng</option>
             </select>
           </div>
           <div className="field">
-            <label className="field-label">Goi</label>
+            <label className="field-label">Gói</label>
             <select className="input" value={plan} onChange={e => setPlan(e.target.value)}>
               <option value="premium">Premium</option><option value="enterprise">Enterprise</option>
             </select>
@@ -155,7 +163,7 @@ function GenerateForm({ onGenerated }: { onGenerated: () => void }) {
         </div>
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? <span className="spinner"/> : null}
-          {loading ? 'Dang tao…' : 'Tao license key'}
+          {loading ? 'Đang tạo…' : 'Tạo license key'}
         </button>
       </form>
       {error && <div className="alert alert-error">{error}</div>}
@@ -176,16 +184,15 @@ function GenerateForm({ onGenerated }: { onGenerated: () => void }) {
 function KeysTable({ licenses, revoked, onRevoke, onRefresh }: {
   licenses: LicenseRow[]; revoked: RevokedRow[]; onRevoke: (h: string) => void; onRefresh: () => void
 }) {
-  const all = [
-    ...licenses.map(l => ({ type: 'active' as const, row: l })),
-    ...revoked.map(r => ({ type: 'revoked' as const, row: r })),
-  ]
+  const revokedHashes = new Set(revoked.map(r => r.key_hash))
+  const revokedOnlyHashes = new Set(revoked.filter(r => !licenses.some(l => l.key_hash === r.key_hash)).map(r => r.key_hash))
+  const revokedOnly = revoked.filter(r => revokedOnlyHashes.has(r.key_hash))
   return (
     <div className="card">
       <div className="card-header-row">
         <div>
-          <h2 className="card-title">Danh sach license keys</h2>
-          <p className="card-desc">{licenses.length} key active · {revoked.length} da thu hoi</p>
+          <h2 className="card-title">Danh sách license keys</h2>
+          <p className="card-desc">{licenses.length} key · {revoked.length} đã thu hồi</p>
         </div>
         <button className="btn-sm btn-ghost" onClick={onRefresh}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -195,46 +202,43 @@ function KeysTable({ licenses, revoked, onRevoke, onRefresh }: {
           Refresh
         </button>
       </div>
-      {all.length === 0 ? (
+      {licenses.length === 0 && revokedOnly.length === 0 ? (
         <div className="empty-state">
-          <p>Chua co key nao. Tao key dau tien ben tren.</p>
+          <p>Chưa có key nào. Tạo key đầu tiên bên trên.</p>
         </div>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Email</th><th>Goi</th><th>Ngay tao</th><th>Het han</th><th>Trang thai</th><th>Hash</th><th></th>
+                <th>Email</th><th>Gói</th><th>Trạng thái</th><th>Ngày tạo</th><th>Hết hạn</th><th>Machine ID</th><th>Hash</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {all.map(({ type, row }) => {
-                if (type === 'revoked') {
-                  const r = row as RevokedRow
-                  return (
-                    <tr key={r.id} className="row-revoked">
-                      <td colSpan={3}><span className="badge badge-red">Da thu hoi</span></td>
-                      <td colSpan={2}>{r.reason}</td>
-                      <td style={{fontSize:'11px',fontFamily:'monospace',color:'var(--text-tertiary)'}}>{r.key_hash}</td>
-                      <td/>
-                    </tr>
-                  )
-                }
-                const l = row as LicenseRow
-                return (
-                  <tr key={l.id}>
-                    <td className="td-email">{l.payload.e ?? '—'}</td>
-                    <td><span className={`badge ${l.payload.p === 'enterprise' ? 'badge-purple' : 'badge-blue'}`}>{l.payload.p ?? 'premium'}</span></td>
-                    <td>{fmtDate(l.payload.i)}</td>
-                    <td>{fmtDate(l.payload.v)}</td>
-                    <td>{statusBadge(l)}</td>
-                    <td style={{fontSize:'11px',fontFamily:'monospace',color:'var(--text-tertiary)'}}>{l.key_hash}</td>
-                    <td className="td-actions">
-                      <button className="btn-sm btn-danger" onClick={() => onRevoke(l.key_hash)}>Thu hoi</button>
-                    </td>
-                  </tr>
-                )
-              })}
+              {licenses.map(l => (
+                <tr key={l.id}>
+                  <td className="td-email">{l.payload.e ?? '—'}</td>
+                  <td><span className={`badge ${l.payload.p === 'enterprise' ? 'badge-purple' : 'badge-blue'}`}>{l.payload.p ?? 'premium'}</span></td>
+                  <td>{statusBadge(l, revokedHashes)}</td>
+                  <td>{fmtDate(l.payload.i)}</td>
+                  <td>{fmtDate(l.payload.v)}</td>
+                  <td style={{fontSize:'11px',fontFamily:'monospace',color:'var(--text-tertiary)'}} title={l.activation?.machine_id || l.payload.m || ''}>{machineIdCell(l)}</td>
+                  <td style={{fontSize:'11px',fontFamily:'monospace',color:'var(--text-tertiary)'}}>{l.key_hash}</td>
+                  <td className="td-actions">
+                    {!revokedHashes.has(l.key_hash) && (
+                      <button className="btn-sm btn-danger" onClick={() => onRevoke(l.key_hash)}>Thu hồi</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {revokedOnly.map(r => (
+                <tr key={r.id} className="row-revoked">
+                  <td colSpan={3}><span className="badge badge-red">Thu hồi</span></td>
+                  <td colSpan={3}>{r.reason}</td>
+                  <td style={{fontSize:'11px',fontFamily:'monospace',color:'var(--text-tertiary)'}}>{r.key_hash}</td>
+                  <td/>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -260,12 +264,13 @@ export default function Dashboard() {
       if (!checkData.ok) { setAuthenticated(false); return }
 
       // Session valid — fetch license keys
-      const res = await fetch('/api/keys/list')
+      const res = await fetch(`/api/keys/list?_t=${Date.now()}`, { cache: 'no-store' })
       if (res.status === 401) { setAuthenticated(false); return }
       const json = await res.json()
+      if (json._debug) console.log('[license-list] debug:', JSON.stringify(json._debug))
       // Handle backend error (e.g. Supabase unreachable)
       if (json.error) {
-        setToast({ msg: json.error + ' (kiem tra Supabase env var tren Vercel)', type: 'error' })
+        setToast({ msg: json.error + ' (kiểm tra Supabase env var trên Vercel)', type: 'error' })
         setData({ licenses: [], revoked: [] })
       } else {
         setData(json)
@@ -278,7 +283,7 @@ export default function Dashboard() {
   useEffect(() => { fetchKeys() }, [fetchKeys])
 
   async function handleRevoke(hash: string) {
-    if (!confirm('Thu hoi key nay? App khach se bi chan trong ~1 gio.')) return
+    if (!confirm('Thu hồi key này? App khách sẽ bị chặn trong ~1 giờ.')) return
     try {
       const res = await fetch('/api/keys/revoke', {
         method: 'POST',
@@ -287,9 +292,9 @@ export default function Dashboard() {
       })
       const json = await res.json()
       if (json.error) { setToast({ msg: json.error, type: 'error' }); return }
-      setToast({ msg: 'Da thu hoi. App khach se bi chan trong ~1 gio.', type: 'success' })
+      setToast({ msg: 'Đã thu hồi. App khách sẽ bị chặn trong ~1 giờ.', type: 'success' })
       fetchKeys()
-    } catch (e: any) { setToast({ msg: e.message ?? 'Loi', type: 'error' }) }
+    } catch (e: any) { setToast({ msg: e.message ?? 'Lỗi', type: 'error' }) }
   }
 
   async function handleLogout() {
@@ -320,14 +325,14 @@ export default function Dashboard() {
         </div>
         <div className="header-right">
           <div className="supabase-badge"><span className="sb-dot"/>Supabase connected</div>
-          <button className="btn-sm btn-ghost" onClick={handleLogout}>Dang xuat</button>
+          <button className="btn-sm btn-ghost" onClick={handleLogout}>Đăng xuất</button>
         </div>
       </header>
       <main className="main">
         <div className="container">
           <GenerateForm onGenerated={fetchKeys}/>
           {loadingKeys && !data ? (
-            <div className="loading-row"><span className="spinner"/>Dang tai…</div>
+            <div className="loading-row"><span className="spinner"/>Đang tải…</div>
           ) : data ? (
             <KeysTable licenses={data.licenses} revoked={data.revoked} onRevoke={handleRevoke} onRefresh={fetchKeys}/>
           ) : null}

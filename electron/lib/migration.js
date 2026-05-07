@@ -6,6 +6,8 @@ const { execSync } = require('child_process');
 let app;
 try { ({ app } = require('electron')); } catch {}
 
+const { getUserDataDir, copyDirRecursive } = require('./workspace');
+
 // =====================================================================
 // Migration Configuration
 // =====================================================================
@@ -64,36 +66,7 @@ const CLEANUP_PATHS = [
 // Path Helpers
 // =====================================================================
 
-/**
- * Get userData directory - checks both 9bizclaw (VIP) and .openclaw (free) paths
- * Returns the directory that contains user data (vendor, version.txt, etc.)
- */
-function getUserDataDir() {
-  if (app && app.isPackaged) {
-    return app.getPath('userData'); // This is 9bizclaw in Electron
-  }
-  // Dev mode: check both paths, return the one that has data
-  const home = process.env.HOME || process.env.USERPROFILE || '';
-  const possiblePaths = [
-    path.join(home, '9bizclaw'),
-    path.join(home, '.openclaw'),
-  ];
-
-  for (const p of possiblePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        // Check if this path has actual user data (vendor dir, config, etc.)
-        const entries = fs.readdirSync(p);
-        if (entries.includes('vendor') || entries.includes('openclaw.json') || entries.includes('version.txt')) {
-          return p;
-        }
-      }
-    } catch {}
-  }
-
-  // Default: return 9bizclaw (new standard)
-  return path.join(home, '9bizclaw');
-}
+// getUserDataDir and copyDirRecursive imported from ./workspace above
 
 /**
  * Get all possible userData directories (for migration scanning)
@@ -268,21 +241,7 @@ function createBackup() {
   }
 }
 
-function copyDirRecursive(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
+// copyDirRecursive imported from ./workspace
 
 /**
  * List available backups
@@ -308,7 +267,7 @@ function listBackups() {
           manifest,
         };
       })
-      .sort((a, b) => (b.manifest?.timestamp || '') - (a.manifest?.timestamp || ''));
+      .sort((a, b) => (b.manifest?.timestamp || '').localeCompare(a.manifest?.timestamp || ''));
 
     return entries;
   } catch {
@@ -502,18 +461,41 @@ async function runMigration(options = {}) {
 
     // Step 5: Clean up old bundled files (userData)
     const cleaned = cleanupOldBundledFiles();
-    steps.push({ step: 'cleanup', success: true, cleaned });
+    // Check if the critical vendor/ directory was actually cleaned.
+    // If it still exists (rename failed, file locked, etc.), the cleanup
+    // is incomplete and should be retried on next boot.
+    const userData = getUserDataDir();
+    const vendorStillExists = fs.existsSync(path.join(userData, 'vendor'));
+    const cleanupComplete = !vendorStillExists;
+    steps.push({ step: 'cleanup', success: cleanupComplete, cleaned });
+    if (!cleanupComplete) {
+      console.warn('[migration] vendor/ directory still exists after cleanup — will retry on next boot');
+    }
 
     // Step 5b: Delete bundled tar from EXE resources (frees ~2 GB)
     const resourcesCleaned = cleanupBundledTarInResources();
     steps.push({ step: 'cleanupResources', success: true, cleaned: resourcesCleaned });
 
     // Step 6: Write migration marker
+    // Only write if cleanup is complete. Data preservation (backup, install,
+    // config) is already done — the marker specifically gates the cleanup step
+    // so it retries on next boot if vendor/ was not removed.
     if (onProgress) onProgress({ step: 'complete', percent: 90, message: 'Đang hoàn tất...' });
-    fs.writeFileSync(getMigrationMarkerFile(), MIGRATION_VERSION, 'utf8');
+    if (cleanupComplete) {
+      fs.writeFileSync(getMigrationMarkerFile(), MIGRATION_VERSION, 'utf8');
+    } else {
+      // Write a partial marker so we know data migration succeeded but cleanup didn't.
+      // On next boot, isMigrationCompleted() returns false (content !== MIGRATION_VERSION)
+      // so cleanupOldBundledFiles() will be retried.
+      fs.writeFileSync(getMigrationMarkerFile(), MIGRATION_VERSION + '-cleanup-pending', 'utf8');
+    }
 
     // Step 7: Update version file
-    fs.writeFileSync(getVersionFile(), MIGRATION_VERSION, 'utf8');
+    // Only update version when cleanup is fully done, otherwise isUpgradeFromV23()
+    // would return false on next boot and the cleanup retry would be skipped.
+    if (cleanupComplete) {
+      fs.writeFileSync(getVersionFile(), MIGRATION_VERSION, 'utf8');
+    }
 
     if (onProgress) onProgress({ step: 'complete', percent: 100, message: 'Đã hoàn tất!' });
 

@@ -47,11 +47,14 @@ function defaultVisibilityForType(type) {
 }
 
 function safeName(input) {
-  return String(input || 'asset')
+  let safe = String(input || 'asset')
     .replace(/[\\/:*?"<>|]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 180) || 'asset';
+    .replace(/^\.+/, '')
+    .slice(0, 180);
+  if (!safe) safe = 'unnamed';
+  return safe;
 }
 
 function normalizeType(type) {
@@ -176,6 +179,13 @@ function toRelPath(absPath) {
   return path.relative(getWorkspace(), absPath).replace(/\\/g, '/');
 }
 
+let _indexLock = Promise.resolve();
+function withIndexLock(fn) {
+  const next = _indexLock.then(fn, fn);
+  _indexLock = next.catch((e) => { console.warn('[media-library] index lock error:', e?.message || e); });
+  return next;
+}
+
 function upsertAsset(asset) {
   const index = readIndex();
   const i = index.assets.findIndex(a => a.id === asset.id);
@@ -185,6 +195,10 @@ function upsertAsset(asset) {
   else index.assets.unshift({ ...next, createdAt: asset.createdAt || now });
   writeIndex(index);
   return next;
+}
+
+async function upsertAssetSafe(asset) {
+  return withIndexLock(() => upsertAsset(asset));
 }
 
 function importMediaFile(sourcePath, options = {}) {
@@ -203,10 +217,21 @@ function importMediaFile(sourcePath, options = {}) {
 
   ensureMediaFolders();
   const dstDir = getMediaFilesDir(type);
-  const finalName = resolveUniqueFilename(dstDir, originalName);
+  let finalName = resolveUniqueFilename(dstDir, originalName);
   if (!isPathSafe(dstDir, finalName)) throw new Error('invalid filename');
-  const dst = path.join(dstDir, finalName);
-  fs.copyFileSync(sourcePath, dst);
+  let dst = path.join(dstDir, finalName);
+  try {
+    fs.copyFileSync(sourcePath, dst, fs.constants.COPYFILE_EXCL);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      finalName = resolveUniqueFilename(dstDir, originalName);
+      if (!isPathSafe(dstDir, finalName)) throw new Error('invalid filename');
+      dst = path.join(dstDir, finalName);
+      fs.copyFileSync(sourcePath, dst);
+    } else {
+      throw e;
+    }
+  }
 
   const now = new Date().toISOString();
   const asset = {
@@ -235,6 +260,10 @@ function importMediaFile(sourcePath, options = {}) {
 
 function registerExistingMediaFile(absPath, options = {}) {
   if (!absPath || !fs.existsSync(absPath)) throw new Error('media file not found');
+  if (!pathInsideWorkspace(absPath)) {
+    console.warn('[media-library] rejecting external path:', absPath);
+    return null;
+  }
   const type = normalizeType(options.type);
   const stat = fs.statSync(absPath);
   const now = new Date().toISOString();
@@ -397,6 +426,10 @@ function updateMediaAsset(id, patch = {}) {
   return upsertAsset(next);
 }
 
+async function updateMediaAssetSafe(id, patch = {}) {
+  return withIndexLock(() => updateMediaAsset(id, patch));
+}
+
 function shouldKeepSourceFileOnDelete(asset) {
   if (!asset) return false;
   if (asset.type === 'knowledge_image' || asset.type === 'pdf_page') return true;
@@ -418,6 +451,17 @@ function deleteMediaAsset(idOrName, options = {}) {
   index.assets = index.assets.filter(a => a.id !== asset.id);
   writeIndex(index);
   return { success: true, id: asset.id, unlinked: unlinkFile };
+}
+
+function removeAssetByPath(absPath) {
+  if (!absPath) return null;
+  const resolved = path.resolve(absPath);
+  const index = readIndex();
+  const asset = index.assets.find(a => a.path && path.resolve(a.path) === resolved);
+  if (!asset) return null;
+  index.assets = index.assets.filter(a => a.id !== asset.id);
+  writeIndex(index);
+  return { success: true, id: asset.id };
 }
 
 function matchesKnowledgeSource(asset, { docId, filename, filepath } = {}) {
@@ -469,7 +513,7 @@ async function describeMediaAsset(idOrAsset, options = {}) {
   const asset = typeof idOrAsset === 'object' ? idOrAsset : findMediaAsset(idOrAsset);
   if (!asset) throw new Error('media asset not found');
   if (!asset.path || !fs.existsSync(asset.path)) throw new Error('media file not found');
-  updateMediaAsset(asset.id, { status: 'processing', error: '' });
+  await updateMediaAssetSafe(asset.id, { status: 'processing', error: '' });
   const prompt = options.prompt || [
     'Bạn là hệ thống đọc tài sản hình ảnh cho trợ lý bán hàng Việt Nam.',
     'Hãy mô tả chính xác nội dung ảnh bằng tiếng Việt có dấu.',
@@ -486,19 +530,19 @@ async function describeMediaAsset(idOrAsset, options = {}) {
       throwOnError: true,
     });
   } catch (e) {
-    updateMediaAsset(asset.id, {
+    await updateMediaAssetSafe(asset.id, {
       status: 'needs_vision',
       error: localizeMediaError(e),
     });
     throw e;
   }
   if (!description) {
-    return updateMediaAsset(asset.id, {
+    return updateMediaAssetSafe(asset.id, {
       status: 'needs_vision',
       error: 'Vision provider unavailable or returned empty result',
     });
   }
-  return updateMediaAsset(asset.id, {
+  return updateMediaAssetSafe(asset.id, {
     description: String(description).trim(),
     status: 'ready',
     error: '',
@@ -552,7 +596,7 @@ async function renderPdfPagesToMedia(pdfPath, options = {}) {
         assets.push(asset);
         if (options.describe !== false) {
           try { assets[assets.length - 1] = await describeMediaAsset(asset); } catch (e) {
-            assets[assets.length - 1] = updateMediaAsset(asset.id, { status: 'needs_vision', error: localizeMediaError(e) });
+            assets[assets.length - 1] = await updateMediaAssetSafe(asset.id, { status: 'needs_vision', error: localizeMediaError(e) });
           }
         }
       }
@@ -610,7 +654,7 @@ async function renderPdfPagesToMedia(pdfPath, options = {}) {
     assets.push(asset);
     if (options.describe !== false) {
       try { assets[assets.length - 1] = await describeMediaAsset(asset); } catch (e) {
-        assets[assets.length - 1] = updateMediaAsset(asset.id, { status: 'needs_vision', error: localizeMediaError(e) });
+        assets[assets.length - 1] = await updateMediaAssetSafe(asset.id, { status: 'needs_vision', error: localizeMediaError(e) });
       }
     }
   }
@@ -663,7 +707,11 @@ module.exports = {
   searchMediaAssets,
   findMediaAsset,
   updateMediaAsset,
+  upsertAssetSafe,
+  withIndexLock,
   deleteMediaAsset,
+  removeAssetByPath,
+  updateMediaAssetSafe,
   updateKnowledgeMediaAssets,
   deleteKnowledgeMediaAssets,
   describeMediaAsset,

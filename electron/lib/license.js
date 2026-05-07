@@ -128,6 +128,7 @@ function computeSeal(data) {
 
 function verifySeal(data) {
   if (!data || !data.seal) return false;
+  if (data.machineId && data.machineId !== getMachineId()) return false;
   const expected = computeSeal(data);
   const a = Buffer.from(data.seal || '', 'hex');
   const b = Buffer.from(expected, 'hex');
@@ -379,7 +380,20 @@ async function activateLicense(key) {
     };
   }
 
-  // Activation allowed — write locally + register in Supabase
+  // Activation allowed — register in Supabase FIRST, then verify ownership
+  const regResult = await sbRegisterActivation(key, machineId, payload.e).catch(() => null);
+
+  // Re-check registry to confirm this machine won the race
+  const postCheck = await sbCheckRegistry(key).catch(() => null);
+  if (postCheck && postCheck.ok && postCheck.activation &&
+      postCheck.activation.machine_id && postCheck.activation.machine_id !== machineId) {
+    return {
+      success: false,
+      error: 'already_activated',
+      detail: 'Key da duoc kich hoat tren may khac. Lien he tech@modoro.com.vn de chuyen may.',
+    };
+  }
+
   const data = {
     key,
     email: payload.e || '',
@@ -391,9 +405,6 @@ async function activateLicense(key) {
   };
   const wrote = writeLicense(data);
   if (!wrote) return { success: false, error: 'write_failed' };
-
-  // Register in Supabase (non-blocking — already verified above)
-  sbRegisterActivation(key, machineId, payload.e).catch(() => {});
 
   return { success: true };
 }

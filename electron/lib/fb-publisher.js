@@ -26,7 +26,19 @@ function graphRequest(method, endpoint, token, body) {
         clearTimeout(bodyTimer);
         try {
           const parsed = JSON.parse(d);
-          if (parsed.error) return reject(new Error(parsed.error.message || 'Graph API error'));
+          if (parsed.error) {
+            const err = new Error(parsed.error.message || 'Graph API error');
+            err._httpStatus = res.statusCode;
+            if (res.statusCode === 401 || parsed.error.code === 190 || /expired|invalid.*token/i.test(parsed.error.message || '')) {
+              err._isTokenExpired = true;
+            }
+            return reject(err);
+          }
+          if (res.statusCode >= 400) {
+            const err = new Error(`Graph API HTTP ${res.statusCode}`);
+            err._httpStatus = res.statusCode;
+            return reject(err);
+          }
           resolve(parsed);
         } catch { reject(new Error('Invalid JSON from Graph API')); }
       });

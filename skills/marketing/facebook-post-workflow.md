@@ -1,0 +1,227 @@
+---
+name: facebook-post-workflow
+description: Tạo ảnh AI rồi đăng bài vào Facebook Fanpage — CHỈ CEO Telegram
+metadata:
+  version: 1.1.0
+  replaces: facebook-image.md (phần Facebook)
+---
+
+# Facebook Post Workflow — Tạo ảnh rồi đăng Fanpage
+
+**CHỈ CEO Telegram.** Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia sẻ được ạ."
+
+**Đọc skill này MỖI LẦN CEO yêu cầu đăng bài Facebook, đăng ảnh fanpage, tạo ảnh đăng Facebook.**
+
+---
+
+## Xác thực
+
+Trong phiên Telegram CEO, `web_fetch` tới `http://127.0.0.1:20200` tự động gắn header nội bộ.
+- KHÔNG gọi `/api/auth/token`
+- KHÔNG tự thêm `token=<token>`
+- KHÔNG đọc `cron-api-token.txt`
+
+---
+
+## Cấu trúc 5 pha — BẮT BUỘC
+
+```
+PHA 0: KIỂM TRA TOKEN  → Verify Facebook token TRƯỚC khi làm gì
+PHA 1: CHỌN ASSETS     → Brand assets hoặc không
+PHA 2: TẠO ẢNH        → Generate + poll đến done
+PHA 3: PREVIEW          → Gửi Telegram cho CEO xem trước
+PHA 4: ĐĂNG            → Chỉ khi CEO xác nhận "ok"
+```
+
+**NGUYÊN TẮC VÀNG:**
+- Ảnh chưa được CEO xác nhận → KHÔNG ĐĂNG.
+- Không bao giờ nói "đã đăng" nếu chưa nhận được `id` hoặc `post_id` từ Facebook API.
+
+---
+
+## Pha 0: Kiểm tra token Facebook — BẮT BUỘC TRƯỚC KHI TẠO ẢNH
+
+**LUÔN gọi trước khi tạo ảnh để tránh mất 2-5 phút tạo ảnh rồi mới phát hiện token hết hạn:**
+```
+web_fetch url="http://127.0.0.1:20200/api/fb/verify" method=GET
+```
+- `valid: true` → tiếp tục Pha 1
+- `valid: false` → BÁO NGAY: "Kết nối Fanpage chưa sẵn sàng: [error]. Vào Dashboard > Facebook > Kết nối Fanpage để cập nhật token." — DỪNG, không tạo ảnh.
+
+---
+
+## Pha 1: Chọn Assets
+
+### Bước 1.1 — Kiểm tra brand assets
+
+CEO nói "dùng logo", "dùng mascot", "dùng ảnh sản phẩm", "theo brand", hoặc CEO gửi kèm ảnh:
+```
+web_fetch url="http://127.0.0.1:20200/api/brand-assets/list" method=GET
+```
+- **Có file**: dùng file phù hợp nhất. Ưu tiên file có tên CEO nhắc (VD: "mascot" → file chứa `mascot`).
+- **Không có file**: nói "Anh chưa upload tài sản thương hiệu nào. Vào Dashboard > Facebook > Tài sản thương hiệu để thêm."
+- **CEO gửi kèm ảnh reference**: dùng ảnh đó làm reference trong prompt, không cần gọi brand-assets/list.
+
+### Bước 1.2 — Kết nối Fanpage (lần đầu)
+
+Nếu CEO hỏi về kết nối Fanpage:
+
+1. Hướng dẫn CEO tạo Meta App theo use case **"Tương tác với khách hàng trên Messenger"**
+2. Generate User Token với quyền: `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`
+3. Gọi `me/accounts?fields=id,name,tasks,access_token` để lấy Page Access Token
+4. Điền token vào Dashboard > Facebook > Kết nối Fanpage
+
+**Nếu CEO paste token nhưng lỗi:** Kiểm tra xem token có đủ quyền (`pages_manage_posts`). Nếu Graph API Explorer chỉ hiện `business_management` + `pages_show_list` → token chưa đủ đăng bài, cần tạo app mới.
+
+**Nếu Pha 0 đã pass** — token verified, tiếp tục bình thường. Nếu `/api/fb/post` vẫn trả lỗi token sau đó (token hết hạn giữa chừng), báo CEO cập nhật trong Dashboard.
+
+---
+
+## Pha 2: Tạo ảnh
+
+### Bước 2.1 — Confirm trước khi tạo
+
+Sau khi có thông tin (caption, mô tả ảnh, có/không brand assets):
+
+> Em sẽ tạo ảnh đăng Facebook cho anh:
+> - Nội dung: **[caption]**
+> - Mô tả ảnh: **[prompt mô tả]**
+> - Brand assets: **[có / không]**
+>
+> Anh nhắn **"ok"** để em bắt đầu tạo ảnh nhé.
+
+**CHỜ CEO nói "ok".** Không tạo ảnh trước.
+
+### Bước 2.2 — Generate ảnh
+
+```
+GET http://127.0.0.1:20200/api/image/generate
+  ?size=1024x1024
+  &assets=<file1,file2>
+  &prompt=<URL-encoded prompt>
+```
+
+- `size`: `1024x1024` (vuông), `1792x1024` (ngang/banner), `1024x1792` (doc/story)
+- `assets` để TRƯỚC `&prompt=`
+- `prompt` — **PHẢI là param CUỐI CÙNG**
+
+**Lỗi?** Báo lỗi thật. Không nói "đã tạo xong" nếu API lỗi.
+
+### Bước 2.3 — Poll đợi ảnh xong
+
+```
+GET http://127.0.0.1:20200/api/image/status?jobId=<jobId>
+```
+
+Tiếp tục poll cho đến khi `status: "done"` và có `imagePath`/`mediaId`.
+
+**TUYỆT ĐỐI KHÔNG:** Dùng `jobId` đang `generating` làm "ảnh đã xong".
+
+**Timeout (>120s):** "Tạo ảnh bị timeout, thử lại sau nhé anh."
+
+---
+
+## Pha 3: Preview cho CEO
+
+Sau khi ảnh done, gửi preview qua Telegram:
+
+```
+GET http://127.0.0.1:20200/api/telegram/send-photo
+  ?imagePath=<relative-path>
+  &caption=<URL-encoded caption>
+```
+
+Sau đó báo CEO:
+
+> Đây là preview ảnh đăng Facebook:
+> **Caption:** [caption]
+>
+> - Nhắn **"ok"** / **"đăng đi"** → em đăng lên Fanpage
+> - Nhắn **"sửa caption"** → em sửa chữ rồi gửi lại preview
+> - Nhắn **"tạo ảnh khác"** → em tạo ảnh mới
+> - Nhắn **"hủy"** / **"thôi"** → dừng, không đăng
+
+---
+
+## Pha 4: Đăng lên Fanpage
+
+**CHỈ khi CEO xác nhận "ok" / "đăng đi" / "gửi đi".**
+
+```
+GET http://127.0.0.1:20200/api/fb/post
+  ?imagePath=<relative-path>
+  &message=<URL-encoded caption>
+```
+
+- `imagePath` — **PHẢI là path TƯƠNG ĐỐI** từ workspace (VD: `brand-assets/generated/img_xxx.png`)
+- `message` — **PHẢI là param CUỐI CÙNG**
+
+### Đọc response body — BẮT BUỘC
+
+| Response | Ý nghĩa | Báo CEO |
+|---|---|---|
+| Có `id` hoặc `post_id` trong body | Đăng thành công | "Đã đăng bài lên Fanpage rồi ạ." |
+| `HTTP 200 + success: false` hoặc `error` | Facebook từ chối (token hết hạn, thiếu quyền, ...) | Báo lỗi thật. Hướng dẫn CEO kiểm tra lại kết nối Fanpage. |
+| HTTP 4xx/5xx khác | Lỗi hệ thống | Báo lỗi thật |
+| HTTP 504 | Timeout | "Facebook bị timeout, thử lại sau nhé anh." |
+
+### Lỗi token Fanpage
+
+Nếu response báo token lỗi:
+> "Kết nối Fanpage đã hết hạn. Vào Dashboard > Facebook > Kết nối Fanpage để cập nhật lại token."
+
+---
+
+## Prompt ảnh — TIẾNG ANH, SUY NGHĨ, KHÔNG COPY TEMPLATE
+
+**Soạn prompt TIẾNG ANH chi tiết.** KHÔNG copy template. Mỗi ảnh duy nhất — BẠN PHẢI SUY NGHĨ dựa trên ngữ cảnh.
+
+**Khi dùng brand asset, prompt PHẢI bắt đầu bằng:**
+`IMPORTANT: The attached reference image is a brand asset. Reproduce it EXACTLY as-is — same colors, same shapes, same text, same proportions, same style. Do NOT reinterpret, redesign, redraw, or reimagine it in any way. Place the EXACT original image into the composition.`
+
+**Prompt guidelines:**
+- Màu sắc cụ thể: dùng mã HEX (VD: "dark navy gradient from #0f172a to purple #7c3aed")
+- Typography hierarchy: heading large bold, subtitle smaller light, CTA prominent
+- Lighting and depth: volumetric, rim light, cinematic, blur/shadow/layering
+- MỌI CHỮ TIẾNG VIỆT TRONG ẢNH PHẢI CÓ DẤU ĐẦY ĐỦ — viết đúng trong prompt thì ảnh sẽ đúng
+
+**Size phù hợp:**
+- Banner/quảng cáo → `1792x1024`
+- Ảnh vuông → `1024x1024`
+- Story/ảnh dọc → `1024x1792`
+
+---
+
+## CEO muốn sửa sau khi preview
+
+| Tình huống | Hành động |
+|---|---|
+| "sửa caption" / "đổi chữ" | Sửa caption → gửi lại preview Telegram → chờ "ok" |
+| "tạo ảnh khác" / "thử ảnh khác" | Tạo ảnh mới → preview → chờ "ok" |
+| "đổi ảnh" / "không phải ảnh đó" | Tạo ảnh mới → preview → chờ "ok" |
+| "hủy" / "thôi" / "không đăng nữa" | Dừng, không làm gì |
+| "đăng đi" / "ok" / "gửi đi" | Gọi `/api/fb/post` → báo kết quả |
+
+---
+
+## Lỗi thường gặp
+
+| Tình huống | Xử lý |
+|---|---|
+| Brand assets `files: []` | Nói CEO vào Dashboard thêm brand assets |
+| API `/api/fb/post` trả lỗi token | Hướng dẫn CEO cập nhật Fanpage token |
+| Ảnh không tạo được (`error`) | Báo lỗi thật, không nói "đã tạo" |
+| Preview không gửi được | Báo lỗi, vẫn tiếp tục chờ CEO xác nhận caption để đăng |
+| `jobId` trả về `generating` | Tiếp tục poll `/api/image/status` |
+| Response timeout (504) | "Facebook bị timeout, thử lại sau nhé anh." |
+
+---
+
+## Checklist trước khi báo "đã đăng"
+
+- [ ] Đã confirm với CEO trước khi tạo ảnh?
+- [ ] Đã poll đến `status: "done"` trước khi dùng `imagePath`?
+- [ ] Đã gửi preview Telegram trước khi đăng?
+- [ ] Đã chờ CEO xác nhận "ok"/"đăng đi" trước khi gọi `/api/fb/post`?
+- [ ] Đã đọc `id`/`post_id` trong response body?
+- [ ] Nếu lỗi token: đã hướng dẫn CEO cập nhật Fanpage trong Dashboard?

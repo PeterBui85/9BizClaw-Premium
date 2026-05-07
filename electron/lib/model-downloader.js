@@ -36,13 +36,7 @@ const TOTAL_SIZE = Object.values(EXPECTED_SIZES).reduce((a, b) => a + b, 0); // 
 // Path Helpers
 // =====================================================================
 
-function getUserDataDir() {
-  if (app && app.isPackaged) {
-    return app.getPath('userData');
-  }
-  const home = process.env.HOME || process.env.USERPROFILE || '';
-  return path.join(home, '.openclaw');
-}
+const { getUserDataDir } = require('./workspace');
 
 function getModelDir() {
   return path.join(getUserDataDir(), MODEL_CONFIG.destSubdir);
@@ -270,19 +264,18 @@ async function downloadModels(options = {}) {
 
     try {
       await downloadWithFallback(filename, destPath, {
-        onProgress: (fileProgress) => {
+        onProgress: (fileProg) => {
           if (onFileProgress) {
-            // Calculate overall progress
-            const fileProgress = (totalDownloaded + (fileProgress?.downloaded || 0)) / (TOTAL_SIZE) * 100;
+            const overallPercent = (totalDownloaded + (fileProg?.downloaded || 0)) / (TOTAL_SIZE) * 100;
             onFileProgress({
               file: filename,
-              percent: fileProgress,
+              percent: overallPercent,
               message: `Đang tải ${filename}...`,
             });
           }
           if (onProgress) {
             const base = (i / missingFiles.length) * 100;
-            const filePercent = fileProgress?.percent || 0;
+            const filePercent = fileProg?.percent || 0;
             const totalPercent = Math.min(99, base + (filePercent / missingFiles.length));
             onProgress({
               percent: Math.floor(totalPercent),

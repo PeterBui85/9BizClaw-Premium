@@ -174,34 +174,7 @@ function verifyDownloadedGogArchive(filePath) {
 let _installStatus = null;
 let _installInProgress = false;
 
-/**
- * Get userData directory - checks both 9bizclaw (VIP) and .openclaw (free) paths
- */
-function getUserDataDir() {
-  if (app && app.isPackaged) {
-    return app.getPath('userData'); // Electron defaults to 9bizclaw based on package.json name
-  }
-  // Dev mode: check both paths
-  const home = process.env.HOME || process.env.USERPROFILE || '';
-  const possiblePaths = [
-    path.join(home, '9bizclaw'),
-    path.join(home, '.openclaw'),
-  ];
-
-  for (const p of possiblePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        const entries = fs.readdirSync(p);
-        if (entries.length > 0) {
-          return p;
-        }
-      }
-    } catch {}
-  }
-
-  // Default: return 9bizclaw (new standard)
-  return path.join(home, '9bizclaw');
-}
+const { getUserDataDir, copyDirRecursive: _copyDir } = require('./workspace');
 
 /**
  * Check if bundled vendor exists at resourcesPath (macOS bundled model).
@@ -504,6 +477,7 @@ async function downloadFile(url, destPath, onProgress) {
       client = spawn('curl', ['-fSL', '-o', destPath, '--progress-bar', url], { stdio: 'pipe' });
     }
 
+    if (onProgress) onProgress({ percent: 0, downloaded: 0, total: 0 });
     let stderr = '';
     client?.stderr?.on('data', (d) => { stderr += String(d); });
     client.on('error', (e) => { reject(attachHint(e)); });
@@ -511,6 +485,12 @@ async function downloadFile(url, destPath, onProgress) {
       if (code !== 0) {
         reject(attachHint(new Error(`Download failed (exit ${code}): ${stderr}`)));
       } else {
+        if (onProgress) {
+          try {
+            const size = fs.statSync(destPath).size;
+            onProgress({ percent: 100, downloaded: size, total: size });
+          } catch { onProgress({ percent: 100, downloaded: 0, total: 0 }); }
+        }
         resolve();
       }
     });
@@ -614,9 +594,8 @@ async function installNode(targetVersion, onProgress) {
       }
     }
 
-    // Cleanup extract dir
+    // Cleanup extract dir (keep downloadPath for SHA256 retry)
     fs.rmSync(extractDir, { recursive: true, force: true });
-    fs.unlinkSync(downloadPath);
 
   } catch (e) {
     // Cleanup on failure
@@ -657,6 +636,14 @@ async function installNode(targetVersion, onProgress) {
           await new Promise((resolve, reject) => {
             ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Expand-Archive retry failed (${code}): ${stderr}`)));
             ps.on('error', reject);
+          });
+        } else {
+          const tar = spawn('tar', ['xzf', downloadPath, '-C', tmpExtractDir], { stdio: 'pipe' });
+          let stderr = '';
+          tar.stderr?.on('data', d => { stderr += String(d); });
+          await new Promise((resolve, reject) => {
+            tar.on('close', (code) => code === 0 ? resolve() : reject(new Error(`tar retry failed (${code}): ${stderr}`)));
+            tar.on('error', reject);
           });
         }
         // Find and move
@@ -701,6 +688,9 @@ async function installNode(targetVersion, onProgress) {
       console.log('[runtime-installer] node.exe SHA256 verified OK');
     }
   }
+
+  // Cleanup download archive after successful verification
+  try { fs.unlinkSync(downloadPath); } catch {}
 
   if (onProgress) onProgress({ step: 'node', percent: 100, message: 'Node.js đã sẵn sàng' });
 
@@ -933,19 +923,7 @@ async function installNpmPackages(versions, onProgress) {
 // Utility Functions
 // =====================================================================
 
-function copyDirRecursive(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
+const copyDirRecursive = _copyDir;
 
 // =====================================================================
 // modoro-zalo Plugin Bundling
@@ -1167,9 +1145,10 @@ async function runInstallation({ onProgress } = {}) {
 
     // Step 1: Install Node.js if needed
     if (status.needsNodeInstall) {
-      const targetVersion = parseNodeVersion(process.versions.node)?.full || MIN_NODE_VERSION;
-      // Use a stable Node version
-      const stableVersion = MIN_NODE_VERSION;
+      // Use the pinned Node version from versions.json — must match the SHA256
+      // checksums in NODE_SHA256 above. MIN_NODE_VERSION is only used for the
+      // "minimum acceptable" check in detectNodeInstallation, not for downloads.
+      const stableVersion = SHARED_VERSIONS.node;
       await installNode(stableVersion, onProgress);
     } else {
       if (onProgress) onProgress({ step: 'node', percent: 100, message: 'Node.js đã có sẵn' });

@@ -1,107 +1,107 @@
 ---
 name: cron-management
-description: Tao/sua/xoa lich tu dong (cron) khi CEO yeu cau qua Telegram, bang API noi bo
+description: Tạo/sửa/xóa lịch tự động (cron) khi CEO yêu cầu qua Telegram, bằng API nội bộ
 metadata:
-  version: 2.2.0
+  version: 2.3.0
 ---
 
-# Quan ly lich tu dong (Cron) qua API noi bo
+# Quản lý lịch tự động (Cron) qua API nội bộ
 
-## Pham vi
+## Phạm vi
 
-CHI thuc hien khi CEO yeu cau qua Telegram. Khach hang Zalo KHONG duoc tao/sua/xoa cron.
+CHỈ thực hiện khi CEO yêu cầu qua Telegram. Khách hàng Zalo KHÔNG được tạo/sửa/xóa cron.
 
-## Cach thuc hien
+## Cách thực hiện
 
-Bot dung `web_fetch` goi `http://127.0.0.1:20200/api/cron/*`.
-KHONG ghi `custom-crons.json` truc tiep. API tu validate va ghi file.
+Bot dùng `web_fetch` gọi `http://127.0.0.1:20200/api/cron/*`.
+KHÔNG ghi `custom-crons.json` trực tiếp. API tự validate và ghi file.
 
-Phien Telegram CEO tu xac thuc khi goi API local. KHONG goi `/api/auth/token`, KHONG them `token=<token>`, KHONG doc file token.
+Phiên Telegram CEO tự xác thực khi gọi API local. KHÔNG gọi `/api/auth/token`, KHÔNG thêm `token=<token>`, KHÔNG đọc file token.
 
-## Buoc 1: Hieu yeu cau CEO
+## Bước 1: Hiểu yêu cầu CEO
 
-CEO noi: "tao lich gui nhom X moi sang 9h noi dung Y".
-Bot can xac dinh:
-- Nhom/nguoi nhan: ten nhom hoac groupId
-- Thoi gian: gio/ngay/tan suat
-- Noi dung: text gui di
-- Loai: lap lai (`cronExpr`) hay mot lan (`oneTimeAt`)
+CEO nói: "tạo lịch gửi nhóm X mỗi sáng 9h nội dung Y".
+Bot cần xác định:
+- Nhóm/người nhận: tên nhóm hoặc groupId
+- Thời gian: giờ/ngày/tần suất
+- Nội dung: text gửi đi
+- Loại: lặp lại (`cronExpr`) hay một lần (`oneTimeAt`)
 
-## Buoc 2: Tra cuu nhom
+## Bước 2: Tra cứu nhóm
 
 ```
 web_fetch http://127.0.0.1:20200/api/cron/list
 ```
 
-Response JSON chua:
-- `groups: [{ id, name }, ...]` de tim groupId theo ten nhom CEO noi.
-- `crons: [...]` danh sach cron hien co.
+Response JSON chứa:
+- `groups: [{ id, name }, ...]` để tìm groupId theo tên nhóm CEO nói.
+- `crons: [...]` danh sách cron hiện có.
 
-TUYET DOI KHONG doan groupId.
+TUYỆT ĐỐI KHÔNG đoán groupId.
 
-## Buoc 3: Confirm voi CEO truoc khi tao
+## Bước 3: Confirm với CEO trước khi tạo
 
-Noi ro: "Em se tao lich [label] chay luc [gio] gui nhom [ten nhom]. Anh xac nhan nhe?"
-CHO CEO tra loi xac nhan truoc khi goi create/delete/toggle.
+Nói rõ: "Em sẽ tạo lịch [label] chạy lúc [giờ] gửi nhóm [tên nhóm]. Anh xác nhận nhé?"
+CHỜ CEO trả lời xác nhận trước khi gọi create/delete/toggle.
 
-## Buoc 4: Goi API tao cron
+## Bước 4: Gọi API tạo cron
 
-Quy tac URL:
-- Dung `+` thay khoang trang.
-- `content` hoac `prompt` dat cuoi URL.
-- Ky tu dac biet: `&` -> `%26`, `"` -> `%22`, `%` -> `%25`.
-- Prompt agent mode phai viet tieng Viet co dau day du.
+Quy tắc URL:
+- Dùng `+` thay khoảng trắng.
+- `content` hoặc `prompt` đặt cuối URL.
+- Ký tự đặc biệt: `&` -> `%26`, `"` -> `%22`, `%` -> `%25`.
+- Prompt agent mode phải viết tiếng Việt có dấu đầy đủ.
 
-Lap lai mot nhom:
+Lặp lại một nhóm:
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Chao+sang&cronExpr=0+9+*+*+1-5&groupId=123456&content=Chao+buoi+sang!
-```
-
-Lap lai nhieu nhom:
-```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Broadcast&cronExpr=0+9+*+*+1-5&groupIds=111,222,333&content=Chao+buoi+sang!
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Chào+sáng&cronExpr=0+9+*+*+1-5&groupId=123456&content=Chào+buổi+sáng!
 ```
 
-Lich mot lan:
+Lặp lại nhiều nhóm:
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Thong+bao&oneTimeAt=2026-04-22T09:00:00&groupId=123456&content=Noi+dung!
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Broadcast&cronExpr=0+9+*+*+1-5&groupIds=111,222,333&content=Chào+buổi+sáng!
+```
+
+Lịch một lần:
+```
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo&oneTimeAt=2026-04-22T09:00:00&groupId=123456&content=Nội+dung!
 ```
 
 Agent mode:
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Bao+cao+sang&cronExpr=0+8+*+*+*&groupId=123456&mode=agent&prompt=Tong+hop+hoat+dong+hom+qua+va+gui+bao+cao+ngan+gon
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Báo+cáo+sáng&cronExpr=0+8+*+*+*&groupId=123456&mode=agent&prompt=Tổng+hợp+hoạt+động+hôm+qua+và+gửi+báo+cáo+ngắn+gọn
 ```
 
-## Xoa / tam dung / bat lai
+## Xóa / tạm dừng / bật lại
 
 ```
 web_fetch http://127.0.0.1:20200/api/cron/delete?id=<cronId>
 web_fetch http://127.0.0.1:20200/api/cron/toggle?id=<cronId>&enabled=false
 ```
 
-Moi thao tac phai confirm CEO truoc.
+Mọi thao tác phải confirm CEO trước.
 
-## Sua / thay nhieu cron
+## Sửa / thay nhiều cron
 
-KHONG xoa tung cron roi moi tao lai. Neu buoc tao lai loi, cron cu se mat.
+KHÔNG xóa từng cron rồi mới tạo lại. Nếu bước tạo lại lỗi, cron cũ sẽ mất.
 
-Dung route atomic:
+Dùng route atomic:
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/cron/replace" method=POST body="{\"deleteIds\":[\"cron_cu\"],\"creates\":[{\"label\":\"Bao cao moi\",\"cronExpr\":\"0 8 * * *\",\"groupId\":\"123456\",\"mode\":\"agent\",\"prompt\":\"Tong hop hoat dong hom qua va gui bao cao ngan gon\"}]}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/cron/replace" method=POST body="{\"deleteIds\":[\"cron_cũ\"],\"creates\":[{\"label\":\"Báo cáo mới\",\"cronExpr\":\"0 8 * * *\",\"groupId\":\"123456\",\"mode\":\"agent\",\"prompt\":\"Tổng hợp hoạt động hôm qua và gửi báo cáo ngắn gọn\"}]}" headers="{\"Content-Type\":\"application/json\"}"
 ```
 
-Chi bao da cap nhat khi response co:
+Chỉ báo đã cập nhật khi response có:
 - `success:true`
 - `transactional:true`
-- `createdIds` du so cron moi
+- `createdIds` đủ số cron mới
 
-Neu route tra loi, API tu giu nguyen cron cu va bot phai bao ro loi cho CEO.
+Nếu route trả lỗi, API tự giữ nguyên cron cũ và bot phải báo rõ lỗi cho CEO.
 
-## Luu y
+## Lưu ý
 
-- Label tieng Viet day du dau, KHONG emoji.
-- GroupId phai ton tai, API tu validate.
-- API chi bind localhost va xac thuc noi bo; Zalo customers KHONG truy cap duoc.
-- Token noi bo khong hien trong prompt, khong hardcode.
-- Write mutex: API serialize moi write.
+- Label tiếng Việt đầy đủ dấu, KHÔNG emoji.
+- GroupId phải tồn tại, API tự validate.
+- API chỉ bind localhost và xác thực nội bộ; Zalo customers KHÔNG truy cập được.
+- Token nội bộ không hiện trong prompt, không hardcode.
+- Write mutex: API serialize mọi write.

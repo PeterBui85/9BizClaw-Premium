@@ -1,15 +1,13 @@
-fix: remove runtime diacritic enforcement — bot self-enforces via AGENTS.md
+fix: split prepare-vendor job per architecture for Mac build
 
-Remove hasDiacriticVietnamese + normalizeDiacriticsVietnamese helpers from
-cron-api.js. The runtime rejection heuristic (strip diacritics + 30%
-ratio) was fragile (normalizeDiacriticsVietnamese had a wrong character
-class that dropped some Vietnamese vowels) and caused false positives on
-mixed Vietnamese/English content.
+The single "prepare-vendor" job hardcoded TARGET_ARCH=arm64, but the build
+matrix runs both arm64 and x64. The x64 build was receiving the arm64
+vendor bundle (embedding model + native binaries), producing a DMG with
+wrong-architecture vendor files.
 
-Diacritic enforcement is now purely at the instruction level:
-- AGENTS.md instructs the bot to always write Vietnamese with proper diacritics
-- Skills files reinforce this requirement
-- No runtime rejection in the API layer
+Fix by splitting into two prepare jobs:
+- prepare-vendor-arm64: TARGET_ARCH=arm64, uploads vendor-bundle-arm64
+- prepare-vendor-x64:  TARGET_ARCH=x64,  uploads vendor-bundle-x64
 
-Also: remove app/lib/session.ts (unused Next.js session config, not
-imported anywhere in the codebase).
+Each build job downloads its matching vendor-bundle-<arch> artifact. The
+build matrix runs both arm64 and x64 in parallel.

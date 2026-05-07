@@ -4,7 +4,7 @@ const path = require('path');
 const { isPathSafe, writeJsonAtomic } = require('./util');
 const { getWorkspace, getBrandAssetsDir, readFbConfig, purgeAgentSessions, auditLog, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE } = require('./workspace');
 const { _withCustomCronLock, loadCustomCrons, getCustomCronsPath, restartCronJobs } = require('./cron');
-const { sendCeoAlert, sendZaloTo, sendZaloMediaTo, sendTelegram, sendTelegramPhoto } = require('./channels');
+const { sendCeoAlert, sendZaloTo, sendZaloMediaTo, sendTelegram, sendTelegramPhoto, probeZaloReady } = require('./channels');
 const { getZcaCacheDir, sanitizeZaloUserId } = require('./zalo-memory');
 const { stripCronApiTokenFromAgents } = require('./cron-api-token');
 const mediaLibrary = require('./media-library');
@@ -17,9 +17,19 @@ let _cronApiPort = 20200;
 let _cronApiToken = '';
 const _fbPostApprovals = new Map();
 
+const FB_APPROVALS_MAX = 100;
 function cleanupFbPostApprovals(now = Date.now()) {
   for (const [nonce, entry] of _fbPostApprovals.entries()) {
     if (!entry || entry.expiresAt <= now) _fbPostApprovals.delete(nonce);
+  }
+  if (_fbPostApprovals.size > FB_APPROVALS_MAX) {
+    const excess = _fbPostApprovals.size - FB_APPROVALS_MAX;
+    let removed = 0;
+    for (const key of _fbPostApprovals.keys()) {
+      if (removed >= excess) break;
+      _fbPostApprovals.delete(key);
+      removed++;
+    }
   }
 }
 
@@ -85,6 +95,11 @@ function sanitizeMediaAssetForApi(asset) {
     localPath: _localPath,
     ...safe
   } = asset;
+  // Strip absolute paths from nested metadata object (pdfSource, knowledgeFilepath, etc.)
+  if (safe.metadata && typeof safe.metadata === 'object') {
+    const { pdfSource: _ps, knowledgeFilepath: _kf, ...safeMeta } = safe.metadata;
+    safe.metadata = safeMeta;
+  }
   return safe;
 }
 
@@ -492,6 +507,23 @@ function startCronApi() {
         auditLog('file_api_blocked', { urlPath, path: reqPath, reason: 'sensitive path' });
         return jsonResp(res, 403, { error: 'SECURITY: access to sensitive file blocked. Path matched security filter.' });
       }
+
+      // Directory allowlist: resolved path must be inside workspace subdirectories.
+      // This is defense-in-depth on top of the sensitive patterns above.
+      const fileAbs = path.resolve(String(params.path || ''));
+      const wsDir = getWorkspace();
+      const ALLOWED_DIRS = wsDir ? [
+        path.join(wsDir, 'knowledge'),
+        path.join(wsDir, 'memory'),
+        path.join(wsDir, 'brand-assets'),
+        path.join(wsDir, 'logs'),
+        wsDir,  // workspace root (last — most general)
+      ] : [];
+      const isInAllowedDir = ALLOWED_DIRS.some(dir => fileAbs === dir || fileAbs.startsWith(dir + path.sep));
+      if (!isInAllowedDir) {
+        auditLog('file_api_blocked', { urlPath, path: fileAbs, reason: 'outside workspace allowlist' });
+        return jsonResp(res, 403, { error: 'SECURITY: path must be inside the workspace directory. Access denied.' });
+      }
     }
 
     // Google Workspace routes — delegate to google-routes.js
@@ -531,23 +563,12 @@ function startCronApi() {
         }
         if (!cronExpr && !oneTimeAt) return jsonResp(res, 400, { error: 'cronExpr or oneTimeAt required' });
 
-        // If a Zalo target is provided, validate it and append delivery instructions.
-        let finalPrompt = String(agentPrompt);
+        // Validate Zalo target if provided. Delivery is handled server-side by
+        // cron.js:deliverCronResultToZalo after the agent completes — no need to
+        // inject API URLs into the prompt (which would leak internal endpoints).
+        const finalPrompt = String(agentPrompt);
         const delivery = resolveCronZaloTarget({ groupId, groupIds, groupName, targetId: rawTargetId, friendName, isGroup }, { allowMultipleGroups: false });
         if (delivery?.error) return jsonResp(res, 400, { error: delivery.error });
-        if (delivery) {
-          const deliveryParam = delivery.type === 'group'
-            ? 'groupId=' + encodeURIComponent(delivery.ids[0])
-            : 'targetId=' + encodeURIComponent(delivery.ids[0]) + '&isGroup=false';
-          const deliveryLabel = delivery.labels[0] || delivery.ids[0];
-          finalPrompt += '\n\n---\nSAU KHI HOÀN THÀNH: gửi kết quả vào ' + (delivery.type === 'group' ? 'nhóm Zalo' : 'Zalo cá nhân') + ' "' + deliveryLabel + '":\n'
-            + 'web_fetch url=http://127.0.0.1:' + (_cronApiPort || 20200) + '/api/zalo/send?' + deliveryParam + '&text=KET_QUA_DA_VIET\n'
-            + 'QUY TẮC VIẾT:\n'
-            + '- Thay KET_QUA_DA_VIET bằng nội dung cuối cùng, URL-encode đúng cách nếu cần.\n'
-            + '- Viết tiếng Việt CÓ DẤU đầy đủ.\n'
-            + '- Viết dạng đoạn văn tự nhiên như đang chat, KHÔNG dùng danh sách số (1. 2. 3.), KHÔNG dùng bullet points.\n'
-            + '- Ngắn gọn, KHÔNG dùng emoji, KHÔNG tự xưng là AI/bot/trợ lý.';
-        }
 
         const id = 'cron_' + Date.now();
         const entry = {
@@ -1423,24 +1444,23 @@ function startCronApi() {
       const cmd = String(params.command || '');
       if (!cmd) return jsonResp(res, 400, { error: 'command required' });
       if (cmd.length > 2000) return jsonResp(res, 400, { error: 'command too long (max 2000 chars)' });
-      // Block catastrophic commands that could destroy the system
-      const cmdLower = cmd.toLowerCase().replace(/\s+/g, ' ').trim();
-      const DANGEROUS_PATTERNS = [
-        /\brm\s+-rf\s+[\/\\]/i,       // rm -rf /
-        /\bformat\s+[a-z]:/i,          // format C:
-        /\bdel\s+\/[sfq]/i,            // del /s /f /q
-        /\brmdir\s+\/s/i,              // rmdir /s
-        /\brd\s+\/s/i,                 // rd /s
-        /\bmkfs\b/i,                   // mkfs
-        /\bdd\s+if=/i,                 // dd if=
-        /\b(shutdown|reboot|halt)\b/i, // system shutdown
-        /\btaskkill\s+\/f\s+\/im\s+\*/i, // kill all processes
-        /\bnet\s+user\b/i,             // user account manipulation
-        /\breg\s+(delete|add)\b/i,     // registry manipulation
+      // Allowlist: only permit commands starting with known-safe prefixes.
+      // The agent only needs these specific tools — everything else is blocked.
+      const cmdTrimmed = cmd.trimStart();
+      const ALLOWED_PREFIXES = [
+        'openzca', 'node', 'openclaw', 'git', 'npm',
+        'dir', 'ls', 'cat', 'type', 'echo', 'whoami',
       ];
-      if (DANGEROUS_PATTERNS.some(p => p.test(cmdLower))) {
-        auditLog('exec_blocked', { command: cmd, reason: 'dangerous command pattern' });
-        return jsonResp(res, 403, { error: 'SECURITY: command blocked — matches dangerous pattern. This is a safety guard.' });
+      const firstToken = cmdTrimmed.split(/[\s\/\\]/)[0].toLowerCase();
+      if (!ALLOWED_PREFIXES.includes(firstToken)) {
+        auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'command not in allowlist', firstToken });
+        return jsonResp(res, 403, { error: 'SECURITY: command blocked. Only these commands are allowed: ' + ALLOWED_PREFIXES.join(', ') + '. Got: "' + firstToken + '"' });
+      }
+      // Block shell metacharacters that enable command chaining/injection
+      const SHELL_META = /[;|&`$(){}!<>]/;
+      if (SHELL_META.test(cmdTrimmed)) {
+        auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'shell metacharacter detected' });
+        return jsonResp(res, 403, { error: 'SECURITY: command contains blocked shell metacharacters (;|&`$(){}!<>).' });
       }
       auditLog('exec_run', { command: cmd.slice(0, 200), cwd: params.cwd || '(default)' });
       const timeoutMs = Math.min(parseInt(params.timeout) || 30000, 120000);
@@ -1533,6 +1553,11 @@ function startCronApi() {
       try {
         const src = String(params.filePath || params.path || '').trim();
         if (!src) return jsonResp(res, 400, { error: 'filePath required' });
+        const ws = getWorkspace();
+        const absSrc = path.resolve(src);
+        if (!ws || !absSrc.startsWith(ws + path.sep)) {
+          return jsonResp(res, 403, { error: 'SECURITY: filePath must be inside the workspace directory.' });
+        }
         const asset = mediaLibrary.importMediaFile(src, {
           type: params.type || 'product',
           visibility: params.visibility,
@@ -1580,7 +1605,7 @@ function startCronApi() {
       const deliveryLabel = delivery.labels?.[0] || delivery.ids[0];
 
       const jobDone = new Promise((resolveJob) => {
-        imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', async (err, imgPath) => {
+        imageGen.startJob(jobId, String(prompt), brandDir, assetList, imageGen.normalizeImageSize(size), async (err, imgPath) => {
           if (err) {
             resolveJob({ status: 'gen_failed', error: err.message });
             return;
@@ -1636,7 +1661,7 @@ function startCronApi() {
         success: true,
         jobId,
         status,
-        imagePath: result.imagePath,
+        imagePath: result.imagePath ? path.relative(getWorkspace(), result.imagePath) : undefined,
         zaloDelivered: result.zaloDelivered,
         zaloError: result.zaloError || null,
         delivery: {
@@ -1647,13 +1672,16 @@ function startCronApi() {
       });
 
     } else if (urlPath === '/api/image/generate') {
-      const { prompt, assets, size, targetId, isGroup, caption } = params;
+      const { prompt, assets, size, targetId, isGroup, caption, autoSendTelegram } = params;
+      console.log(`[cron-api] /api/image/generate — assets param: ${JSON.stringify(assets)}, size: ${size}, autoSendTelegram: ${autoSendTelegram}`);
       if (!prompt) return jsonResp(res, 400, { error: 'prompt required' });
       if (String(prompt).length > 5000) return jsonResp(res, 400, { error: 'prompt too long (max 5000)' });
       const imageGen = require('./image-gen');
       const jobId = imageGen.generateJobId();
       const brandDir = getBrandAssetsDir();
+      console.log(`[cron-api] brandDir=${brandDir}, exists=${fs.existsSync(brandDir)}`);
       const assetList = Array.isArray(assets) ? assets : (assets ? String(assets).split(',').map(s => s.trim()).filter(Boolean) : []);
+      console.log(`[cron-api] parsed assetList: ${JSON.stringify(assetList)}`);
       const hasZaloTarget = !!targetId;
       const zaloTarget = hasZaloTarget ? { id: String(targetId), isGroup: isGroup === true || isGroup === 'true' } : null;
       let earlyFailureHandled = false;
@@ -1662,7 +1690,7 @@ function startCronApi() {
       // within this request — so the cron-agent gets a truthful delivery status.
       if (zaloTarget) {
         const jobDone = new Promise((resolveJob) => {
-          imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', async (err, imgPath) => {
+          imageGen.startJob(jobId, String(prompt), brandDir, assetList, imageGen.normalizeImageSize(size), async (err, imgPath) => {
             if (err) {
               resolveJob({ status: 'failed', error: err.message });
               return;
@@ -1704,20 +1732,29 @@ function startCronApi() {
         return jsonResp(res, 200, {
           jobId,
           status: result.deliveryOk ? 'done_and_delivered' : 'done_not_delivered',
-          imagePath: result.imagePath,
+          imagePath: result.imagePath ? path.relative(getWorkspace(), result.imagePath) : undefined,
           zaloTarget: { targetId: zaloTarget.id, isGroup: zaloTarget.isGroup },
           deliveryOk: !!result.deliveryOk,
           deliveryError: result.deliveryError || null,
         });
       }
 
-      // No zaloTarget: non-blocking, just generate and hand back to caller.
-      // The polling loop (skills/marketing/facebook-post-workflow.md) handles
-      // success/failure reporting — we do NOT proactively send Telegram here.
-      // image-gen.js also does NOT send Telegram on failure (fire-and-forget).
+      // No zaloTarget: non-blocking, generate and hand back to caller.
+      // Auto-send to Telegram by DEFAULT — CEO always wants to see the result.
+      // Pass autoSendTelegram=false to suppress (e.g. if caller handles delivery).
+      const shouldAutoSend = autoSendTelegram !== false && autoSendTelegram !== 'false';
       let startErr = null;
       try {
-        imageGen.startJob(jobId, String(prompt), brandDir, assetList, size || '1024x1024', () => {});
+        imageGen.startJob(jobId, String(prompt), brandDir, assetList, imageGen.normalizeImageSize(size), (err, imgPath) => {
+          if (shouldAutoSend && !err && imgPath) {
+            sendTelegramPhoto(imgPath, '').then(ok => {
+              console.log(`[image-gen] auto-send Telegram: ${ok ? 'OK' : 'FAILED'} for ${jobId}`);
+              if (!ok) sendCeoAlert(`[Tạo ảnh] Ảnh tạo xong nhưng gửi Telegram thất bại. jobId: ${jobId}`).catch(() => {});
+            }).catch(() => {});
+          } else if (shouldAutoSend && err) {
+            sendCeoAlert(`[Tạo ảnh] Thất bại: ${err.message}`).catch(() => {});
+          }
+        });
       } catch (e) {
         startErr = e;
       }
@@ -1733,7 +1770,7 @@ function startCronApi() {
       return jsonResp(res, 200, {
         jobId,
         status: earlyStatus.status || 'generating',
-        imagePath: earlyStatus.imagePath,
+        imagePath: earlyStatus.imagePath ? path.relative(getWorkspace(), earlyStatus.imagePath) : undefined,
         mediaId: earlyStatus.mediaId || null,
         zaloTarget: zaloTarget ? { targetId: zaloTarget.id, isGroup: zaloTarget.isGroup } : null,
       });
@@ -1782,6 +1819,7 @@ function startCronApi() {
         });
         const isPreview = params.preview === 'true' || params.preview === '1' || params.dryRun === 'true' || params.dryRun === '1';
         if (isPreview) {
+          cleanupFbPostApprovals();
           const nonce = crypto.randomBytes(18).toString('hex');
           const expiresAt = Date.now() + 10 * 60 * 1000;
           _fbPostApprovals.set(nonce, { fingerprint, expiresAt });
@@ -1824,14 +1862,25 @@ function startCronApi() {
         return jsonResp(res, 200, { posts });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
-    // ─── Internal: agent-mode cron delivers Zalo without token ──────
-    // The cron-agent (running as openclaw CLI via Electron main process) cannot
-    // call /api/zalo/send because it lacks the cron-api auth token that the
-    // agent knows nothing about. This internal endpoint bypasses auth so the
-    // agent can call it via web_fetch 127.0.0.1 with no token.
+    } else if (urlPath === '/api/fb/verify') {
+      const cfg = readFbConfig();
+      if (!cfg || !cfg.accessToken) return jsonResp(res, 200, { valid: false, error: 'Facebook chưa kết nối. Paste token vào Dashboard.' });
+      try {
+        const fbPub = require('./fb-publisher');
+        const result = await fbPub.verifyToken(cfg.accessToken);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 500, { valid: false, error: e.message }); }
+
+    } else if (urlPath === '/api/zalo/ready') {
+      try {
+        const result = await probeZaloReady();
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 200, { ready: false, error: e.message }); }
+
+    // ─── Internal: agent-mode cron delivers Zalo (token required) ──────
     } else if (urlPath === '/api/internal/agent-deliver-zalo') {
       const { text, targetId, isGroup, mediaId, caption } = params;
-      const tId = targetId || rawTargetId;
+      const tId = targetId;
       if (!tId) return jsonResp(res, 400, { error: 'targetId required' });
       try {
         let ok;
@@ -1839,12 +1888,18 @@ function startCronApi() {
           const mediaLibrary = require('./media-library');
           const asset = mediaLibrary.findMediaAsset(String(mediaId));
           if (!asset) return jsonResp(res, 404, { error: 'media asset not found' });
+          if (asset.visibility === 'private') {
+            auditLog('agent_deliver_zalo_blocked', { mediaId, reason: 'private asset' });
+            return jsonResp(res, 403, { error: 'SECURITY: cannot deliver private media asset via Zalo.' });
+          }
+          auditLog('agent_deliver_zalo', { targetId: tId, isGroup: !!isGroup, mediaId, hasCaption: !!caption });
           const absPath = asset.path;
           if (!fs.existsSync(absPath)) return jsonResp(res, 400, { error: 'media file not found on disk' });
           const isGrp = isGroup === true || isGroup === 'true';
           ok = await sendZaloMediaTo({ id: String(tId), isGroup: isGrp }, absPath, { caption: caption || '' });
         } else {
           if (!text) return jsonResp(res, 400, { error: 'text required when no mediaId' });
+          auditLog('agent_deliver_zalo', { targetId: tId, isGroup: !!isGroup, hasText: true });
           const isGrp = isGroup === true || isGroup === 'true';
           ok = await sendZaloTo({ id: String(tId), isGroup: isGrp }, String(text), { skipFilter: false });
         }

@@ -1,2 +1,5 @@
 .vercel
 .next/
+.env.local
+test-*.js
+.env*.local

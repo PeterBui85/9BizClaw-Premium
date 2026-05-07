@@ -1,24 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const USERS: Record<string, string> = {
-  'peterbui85': '9bizclaw#3211',
+function getUsers(): Record<string, string> {
+  const raw = process.env.AUTH_USERS
+  if (!raw) return {}
+  const users: Record<string, string> = {}
+  for (const pair of raw.split(',')) {
+    const [u, p] = pair.split(':')
+    if (u && p) users[u.trim()] = p.trim()
+  }
+  return users
 }
 
-const SESSION_SECRET = process.env.SESSION_SECRET ?? 'claw-license-mgr-secret-2026-v1'
+function getSessionSecret(): string {
+  const s = process.env.SESSION_SECRET
+  if (!s) throw new Error('SESSION_SECRET environment variable is required')
+  return s
+}
 const COOKIE_NAME = 'claw_session'
 const SESSION_TTL = 7 * 24 * 60 * 60 // 7 days
 
 function signSession(value: string): string {
   const crypto = require('crypto') as typeof import('crypto')
-  const hmac = crypto.createHmac('sha256', SESSION_SECRET)
+  const hmac = crypto.createHmac('sha256', getSessionSecret())
   hmac.update(value)
-  return value + '.' + hmac.digest('hex').slice(0, 16)
+  return value + '.' + hmac.digest('hex').slice(0, 32)
 }
 
 export async function POST(req: NextRequest) {
   try {
     const { username, password } = await req.json()
-    if (!USERS[username] || USERS[username] !== password) {
+    const users = getUsers()
+    if (!users[username] || users[username] !== password) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
     const sessionData = JSON.stringify({ username, ts: Date.now() })

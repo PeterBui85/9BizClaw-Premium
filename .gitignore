@@ -85,6 +85,14 @@ screenshot-*.png
 *.dmp
 *.py
 
+# Temp/test files — may contain credentials
+temp-*.js
+temp-*.ps1
+test-*.js
+test-*.ps1
+test-*.bat
+CLEAR-ALL*.bat
+
 # Dev scripts — not part of app
 RESET.bat
 RESET.command

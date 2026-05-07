@@ -43,10 +43,11 @@ function removeIfExists(target) {
   }
 }
 
-removeIfExists(path.join(DIST, '9BizClaw Setup 2.4.0.exe'));
+const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+removeIfExists(path.join(DIST, `9BizClaw Setup ${pkgVersion}.exe`));
 removeIfExists(path.join(DIST, 'win-unpacked'));
 
-run(npmCmd, ['run', 'prebuild:vendor']);
+run(npmCmd, ['run', 'prebuild:modoro-zalo']);
 run(npmCmd, ['run', 'smoke']);
 run(npxCmd, ['electron-builder', '--win']);
 run(process.execPath, ['scripts/fix-artifact-name.js']);

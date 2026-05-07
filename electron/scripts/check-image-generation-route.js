@@ -15,17 +15,26 @@ const t = imageGen._test || {};
 assert('exports test helpers', typeof t.buildCodexRequest === 'function', 'missing buildCodexRequest');
 assert('exports waitForJobResult', typeof imageGen.waitForJobResult === 'function', 'missing waitForJobResult');
 
-const withToolChoice = t.buildCodexRequest ? t.buildCodexRequest('make an ad', [], '1024x1024') : {};
-assert('default request forces image tool', withToolChoice.tool_choice?.type === 'image_generation', JSON.stringify(withToolChoice.tool_choice));
+const req = t.buildCodexRequest ? t.buildCodexRequest('make an ad', [], '1024x1024') : {};
+assert('request uses codex model', req.model === 'cx/gpt-5.4', 'model: ' + req.model);
+assert('request has input', Array.isArray(req.input) && req.input.length > 0, 'missing input array');
+assert('request has image_generation tool', Array.isArray(req.tools) && req.tools.some(t => t.type === 'image_generation'), 'missing image_generation tool');
 
-const withoutToolChoice = t.buildCodexRequest ? t.buildCodexRequest('make an ad', [], '1024x1024', { toolChoice: false }) : {};
-assert('fallback request removes tool_choice', !Object.prototype.hasOwnProperty.call(withoutToolChoice, 'tool_choice'), JSON.stringify(withoutToolChoice.tool_choice));
+assert('can resolve connection id', typeof t.findImageConnectionId === 'function', 'missing findImageConnectionId');
 
-assert(
-  'detects 9router tool-choice rejection',
-  t.isImageToolChoiceUnsupported?.(new Error("9router 400: Tool choice 'image_generation' not found in 'tools' parameter")) === true,
-  'unsupported image tool-choice error was not recognized'
-);
+assert('exports normalizeImageSize', typeof imageGen.normalizeImageSize === 'function', 'missing normalizeImageSize');
+if (imageGen.normalizeImageSize) {
+  assert('landscape → 1792x1024', imageGen.normalizeImageSize('landscape') === '1792x1024', imageGen.normalizeImageSize('landscape'));
+  assert('portrait → 1024x1792', imageGen.normalizeImageSize('portrait') === '1024x1792', imageGen.normalizeImageSize('portrait'));
+  assert('square → 1024x1024', imageGen.normalizeImageSize('square') === '1024x1024', imageGen.normalizeImageSize('square'));
+  assert('ngang → 1792x1024', imageGen.normalizeImageSize('ngang') === '1792x1024', imageGen.normalizeImageSize('ngang'));
+  assert('valid size passes through', imageGen.normalizeImageSize('1024x1024') === '1024x1024', imageGen.normalizeImageSize('1024x1024'));
+  assert('null → 1024x1024', imageGen.normalizeImageSize(null) === '1024x1024', imageGen.normalizeImageSize(null));
+  assert('garbage → 1024x1024', imageGen.normalizeImageSize('blah') === '1024x1024', imageGen.normalizeImageSize('blah'));
+}
+
+const reqLandscape = t.buildCodexRequest ? t.buildCodexRequest('test', [], 'landscape') : {};
+assert('buildCodexRequest normalizes landscape', reqLandscape.tools?.[0]?.size === '1792x1024', 'size: ' + reqLandscape.tools?.[0]?.size);
 
 const cronApiSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron-api.js'), 'utf8');
 assert('image route waits for immediate failure', cronApiSource.includes('waitForJobResult(jobId, 3000)'), 'image route does not wait for early job failure');
@@ -40,4 +49,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('[image-generation-route] PASS early failure handling and tool-choice fallback');
+console.log('[image-generation-route] PASS codex responses API routing and early failure handling');

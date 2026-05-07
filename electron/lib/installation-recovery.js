@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
 
@@ -172,10 +172,11 @@ async function checkAndCleanupDisk(requiredBytes = 500 * 1024 * 1024) {
         '-NoProfile', '-Command',
         '(Get-PSDrive C).Free'
       ], { timeout: 5000 });
-      freeBytes = parseInt(stdout.trim(), 10) * 1024; // PS returns KB
+      freeBytes = parseInt(stdout.trim(), 10); // PS returns bytes
     } else {
       const { stdout } = await execFilePromise('df', ['-k', '/'], { timeout: 5000 });
-      const parts = stdout.split(/\s+/);
+      const lines = stdout.trim().split('\n');
+      const parts = lines[lines.length - 1].split(/\s+/);
       freeBytes = parseInt(parts[3], 10) * 1024; // df returns 1K blocks
     }
   } catch (e) {
@@ -261,13 +262,7 @@ async function checkAndCleanupDisk(requiredBytes = 500 * 1024 * 1024) {
   return { cleaned: true, freedBytes, freeBytes: freeBytes + freedBytes };
 }
 
-function getUserDataDir() {
-  if (app && app.isPackaged) {
-    return app.getPath('userData');
-  }
-  const home = process.env.HOME || process.env.USERPROFILE || '';
-  return path.join(home, '.openclaw');
-}
+const { getUserDataDir } = require('./workspace');
 
 function estimateDirSize(dirPath) {
   let size = 0;
