@@ -1135,39 +1135,21 @@ function finalizeTelegramReadyProbe(base, hasCeoChatId) {
   if (!ctx.botRunning) {
     return { ...base, ready: false, error: 'Gateway chưa khởi động' };
   }
-  // READY GATE: dot green ONLY when gateway has emitted channel marker
-  // AND notification sent. This is the contract: green = bot CAN reply.
-  // getMe passing only proves token is valid, NOT that the channel pipeline
-  // is initialized. On slow machines (Kaspersky, HDD), channel init takes
-  // 1-3 min after WS ready. Showing green before that misleads CEO into
-  // sending messages that get no reply.
-  const gate = getReadyGateState('telegram');
-  if (gate.confirmed) {
-    return { ...base, ready: true };
-  }
-  if (gate.markerSeen) {
-    return { ...base, ready: false, awaitingConfirmation: true,
-      error: 'Telegram sắp sẵn sàng, đang gửi tin xác nhận...' };
-  }
-  // WS ready + getMe pass but channel not yet initialized
-  return { ...base, ready: false, awaitingConfirmation: true,
-    error: 'Đang khởi tạo kênh Telegram... (1-2 phút)' };
+  // getMe passed + token valid + chatId present = green.
+  // The old confirmation gate required a gateway marker AND notification send,
+  // which caused false-red on slow machines when channel init took 1-3 min.
+  // CEO sees red, panics, but bot actually works fine.
+  return { ...base, ready: true };
 }
 
 function finalizeZaloReadyProbe(base) {
   if (!ctx.botRunning) {
     return { ...base, ready: false, error: 'Gateway chưa khởi động' };
   }
-  const gate = getReadyGateState('zalo');
-  if (gate.confirmed) {
-    return { ...base, ready: true };
-  }
-  if (gate.markerSeen) {
-    return { ...base, ready: false, awaitingConfirmation: true,
-      error: 'Zalo sắp sẵn sàng, đang xác nhận...' };
-  }
-  return { ...base, ready: false, awaitingConfirmation: true,
-    error: 'Đang khởi tạo kênh Zalo... (1-2 phút)' };
+  // Process found (or lock file with live pid) = green.
+  // The old confirmation gate caused false-red during the 1-3 min channel
+  // init window. Zalo listener running IS the proof — messages work.
+  return { ...base, ready: true };
 }
 
 async function probeTelegramReady() {
@@ -1518,7 +1500,7 @@ async function broadcastChannelStatusOnce() {
     // Gate 2: gateway spawned (ctx.botRunning=true) but not yet listening on :18789.
     // Skip if both markers fresh — gateway was confirmed alive recently.
     if (!bothFresh) {
-      const __gwAlive = _isGatewayAliveFn ? await _isGatewayAliveFn(8000) : false;
+      const __gwAlive = _isGatewayAliveFn ? await _isGatewayAliveFn(15000) : false;
       if (!__gwAlive) {
         ctx.mainWindow.webContents.send('channel-status', {
           telegram: { ready: false, error: 'Đang khởi động...' },

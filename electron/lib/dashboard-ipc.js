@@ -181,6 +181,57 @@ ipcMain.handle('start-9router', async () => {
 
 ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
   try {
+    // --- ensureRunning: just start 9router, no provider setup ---
+    if (opts.ensureRunning) {
+      if (!getRouterProcess()) {
+        console.log('[setup-9router-auto] ensureRunning — starting 9router');
+        start9Router();
+      }
+      const ready = await waitFor9RouterReady(15000);
+      return { success: ready, error: ready ? undefined : '9Router không khởi động được.' };
+    }
+
+    // --- detectChatGPT: find codex provider + auto-create combo cx/gpt-5.4 ---
+    if (opts.detectChatGPT) {
+      if (!getRouterProcess()) start9Router();
+      const ready = await waitFor9RouterReady(10000);
+      if (!ready) return { success: false, error: '9Router chưa sẵn sàng. Thử lại sau vài giây.' };
+
+      const listRes = await nineRouterApi('GET', '/api/providers');
+      const providers = listRes.data?.providers || listRes.data || [];
+      const codexConn = (Array.isArray(providers) ? providers : []).find(p =>
+        p.provider === 'codex' || p.type === 'codex' || p.kind === 'codex' ||
+        String(p.provider || p.type || p.kind || '').toLowerCase().includes('chatgpt')
+      );
+      if (!codexConn) {
+        return { success: false, error: 'Chưa tìm thấy kết nối ChatGPT. Nhấn "Kết nối ChatGPT", đăng nhập trên trình duyệt, rồi quay lại nhấn "Kiểm tra kết nối".' };
+      }
+      console.log('[setup-9router-auto] found codex provider:', codexConn.id, codexConn.name || codexConn.provider);
+
+      const picked = 'cx/gpt-5.4';
+      const combosRes = await nineRouterApi('GET', '/api/combos');
+      const combos = combosRes.data?.combos || combosRes.data || [];
+      let mainCombo = (Array.isArray(combos) ? combos : []).find(c => c.name === 'main');
+      if (mainCombo) {
+        await nineRouterApi('PUT', `/api/combos/${mainCombo.id}`, { name: 'main', models: [picked] });
+      } else {
+        await nineRouterApi('POST', '/api/combos', { name: 'main', models: [picked] });
+      }
+      console.log('[setup-9router-auto] combo "main" set to:', picked);
+
+      const keysRes = await nineRouterApi('GET', '/api/keys');
+      const keys = keysRes.data?.keys || keysRes.data || [];
+      let apiKeyValue = null;
+      const activeKey = (Array.isArray(keys) ? keys : []).find(k => k.isActive !== false && k.key);
+      if (activeKey) {
+        apiKeyValue = activeKey.key;
+      } else {
+        const createKey = await nineRouterApi('POST', '/api/keys', { name: '9BizClaw' });
+        apiKeyValue = createKey.data?.key?.key || createKey.data?.key || null;
+      }
+      return { success: true, apiKey: apiKeyValue || '', selectedModel: picked };
+    }
+
     if (opts.ollamaKey) {
       const trimmedKey = String(opts.ollamaKey).trim();
       if (trimmedKey.length < 20) {

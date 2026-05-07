@@ -681,6 +681,8 @@
     .btn-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
     .btn-danger { background:var(--danger,#e74c3c); color:#fff; border-color:var(--danger,#e74c3c); }
+    .btn-danger:hover { opacity:0.9; }
+    .btn-danger:disabled { opacity:0.5; cursor:not-allowed; }
     .spinner { width:18px; height:18px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
     .ux-inline-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; width:100%; min-height:96px; padding:18px; text-align:center; color:var(--text-muted); border:1px solid var(--border); border-radius:10px; background:var(--surface); box-sizing:border-box; }
     .ux-inline-state.compact { min-height:0; padding:12px; align-items:flex-start; text-align:left; }
@@ -2883,7 +2885,7 @@
             </div>
 
             <div class="zs-section" style="border-bottom:none;margin-top:auto;padding-top:12px">
-              <button class="btn btn-small" onclick="saveTgBehavior()" style="width:100%;display:inline-flex;align-items:center;gap:6px;justify-content:center;background:#16a34a;color:#fff;font-size:12px"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
+              <button class="btn btn-primary btn-small" onclick="saveTgBehavior()" style="width:100%;display:inline-flex;align-items:center;gap:6px;justify-content:center"><span data-icon="save" data-icon-size="13"></span>Lưu cấu hình</button>
             </div>
           </div>
 
@@ -3157,7 +3159,7 @@
         <div id="visibility-migration-banner" style="display:none; padding:12px 16px; background:#fff8e1; border-left:3px solid #ffa000; margin-bottom:12px; border-radius:4px; color:#333">
           <strong>Mới v2.3.48</strong>: anh/chị đã có thể chọn file nào KHÁCH thấy, file nào CHỈ NHÂN VIÊN hoặc CHỈ CEO.
           Mặc định mọi file hiện tại = Công khai. Vào xem và đánh dấu lại các file có nội dung nhạy cảm.
-          <button onclick="dismissVisibilityBanner()" style="margin-left:12px;padding:4px 10px;background:none;border:1px solid #ffa000;border-radius:4px;cursor:pointer;color:#333">Đã hiểu</button>
+          <button class="btn btn-secondary btn-small" onclick="dismissVisibilityBanner()" style="margin-left:12px">Đã hiểu</button>
         </div>
 
         <div class="know-columns">
@@ -3318,7 +3320,7 @@
         </div>
 
         <div class="persona-actions">
-          <button class="btn-primary" onclick="savePersonaMix()">Lưu tính cách</button>
+          <button class="btn btn-primary" onclick="savePersonaMix()">Lưu tính cách</button>
           <span id="persona-save-status"></span>
         </div>
       </div>
@@ -3382,8 +3384,8 @@
         </div>
 
         <div class="state-actions">
-          <button class="btn-primary" onclick="saveShopState()">Lưu tình trạng</button>
-          <button class="btn-secondary" onclick="clearShopState()">Xoá hết (bình thường)</button>
+          <button class="btn btn-primary" onclick="saveShopState()">Lưu tình trạng</button>
+          <button class="btn btn-secondary" onclick="clearShopState()">Xoá hết (bình thường)</button>
           <span id="shop-state-save-status"></span>
         </div>
 
@@ -3537,7 +3539,7 @@
                 </div>
 
                 <div class="appt-form-actions">
-                  <button class="btn btn-primary" onclick="saveAppointment()" id="appt-save-btn">Lưu lịch hẹn</button>
+                  <button class="btn btn-primary btn-small" onclick="saveAppointment()" id="appt-save-btn">Lưu lịch hẹn</button>
                   <span id="appt-save-msg" class="appt-save-msg"></span>
                 </div>
               </div>
@@ -3607,7 +3609,7 @@
                 <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Tài sản thương hiệu</h3>
                 <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Logo, mascot và style reference dùng khi tạo ảnh hoặc đăng Facebook. Mặc định không tự gửi cho khách Zalo.</div>
               </div>
-              <button class="btn btn-secondary btn-small" onclick="uploadBrandAssets(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
+              <button class="btn btn-primary btn-small" onclick="uploadBrandAssets(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
             </div>
             <div id="brand-assets-grid" style="display:flex;flex-wrap:wrap;gap:12px">
               <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có tài sản thương hiệu.</div>
@@ -3655,9 +3657,9 @@
           <div class="card" style="margin-bottom:20px">
             <h3 style="margin:0 0 16px;font-size:15px;font-weight:600;color:var(--text)">Kết nối Fanpage</h3>
             <div id="fb-status"></div>
-            <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
-              <input type="password" id="fb-token-input" placeholder="Paste Page Access Token từ Meta Business Suite" style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
-              <button id="fb-connect-btn" class="btn btn-primary btn-small" onclick="connectFbPage()">Kết nối</button>
+            <div style="display:flex;gap:8px;align-items:stretch;margin-top:12px">
+              <input type="password" id="fb-token-input" placeholder="Paste Page Access Token từ Meta Business Suite" style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none">
+              <button id="fb-connect-btn" class="btn btn-primary btn-small" onclick="connectFbPage()" style="flex-shrink:0">Kết nối</button>
             </div>
             <details style="margin-top:14px">
               <summary style="font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;user-select:none">Hướng dẫn chi tiết lấy Page Access Token</summary>
@@ -3744,7 +3746,7 @@
           <div class="card" style="display:none">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
               <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Tài sản thương hiệu</h3>
-              <button class="btn btn-secondary btn-small" onclick="uploadBrandAssets(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
+              <button class="btn btn-primary btn-small" onclick="uploadBrandAssets(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
             </div>
             <div id="brand-assets-grid" style="display:flex;flex-wrap:wrap;gap:12px">
               <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có tài sản nào. Upload logo, ảnh sản phẩm để bot dùng khi tạo ảnh.</div>
@@ -3913,7 +3915,7 @@
         <div class="gw-panel" id="gw-drive" style="display:none">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
             <div style="display:flex;align-items:center;gap:8px;flex:1">
-              <input type="text" id="drive-search" placeholder="Tìm kiếm file..." style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')searchDriveFiles()" />
+              <input type="text" id="drive-search" placeholder="Tìm kiếm file..." style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')searchDriveFiles()" />
               <button class="btn btn-secondary btn-small" onclick="searchDriveFiles()">Tìm</button>
             </div>
             <button class="btn btn-secondary btn-small" onclick="loadDriveFiles()">Làm mới</button>
@@ -3975,7 +3977,7 @@
         <div class="gw-panel" id="gw-contacts" style="display:none">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
             <div style="display:flex;align-items:center;gap:8px;flex:1">
-              <input type="text" id="contacts-search" placeholder="Tìm liên hệ..." style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')searchContacts()" />
+              <input type="text" id="contacts-search" placeholder="Tìm liên hệ..." style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')searchContacts()" />
               <button class="btn btn-secondary btn-small" onclick="searchContacts()">Tìm</button>
             </div>
             <button class="btn btn-primary btn-small" onclick="showAddContactModal()">Thêm liên hệ</button>
@@ -4129,9 +4131,9 @@
                 </div>
                 <div style="margin-bottom:4px">
                   <label style="font-size:13px;font-weight:500;color:var(--text);display:block;margin-bottom:6px">2. Email Google cần kết nối</label>
-                  <div style="display:flex;gap:8px">
-                    <input type="email" id="gw-email" placeholder="ceo@company.com" style="flex:1;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" />
-                    <button class="btn btn-primary btn-small" onclick="connectGoogle()">Kết nối</button>
+                  <div style="display:flex;gap:8px;align-items:stretch">
+                    <input type="email" id="gw-email" placeholder="ceo@company.com" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none" />
+                    <button class="btn btn-primary btn-small" onclick="connectGoogle()" style="flex-shrink:0">Kết nối</button>
                   </div>
                   <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:8px">Khi bấm Kết nối, trình duyệt sẽ mở trang đăng nhập Google. Chọn cùng email đã nhập, cho phép quyền truy cập, rồi quay lại app.</div>
                 </div>
@@ -4183,7 +4185,7 @@
   <div class="support-menu" id="support-menu" style="display:none">
     <div class="support-menu-item" onclick="window.claw.openExternal('https://t.me/modoro_9bizclaw')">
       <span data-icon="message-circle" data-icon-size="16"></span>
-      Liên hệ 9Biz / Mua membership
+      Liên hệ 9Biz
     </div>
     <div class="support-menu-item" onclick="replayWalkthrough()">
       <span data-icon="play-circle" data-icon-size="16"></span>
@@ -4231,7 +4233,7 @@
       <div style="font-size: 12px; color: var(--zs-muted); margin-top: 6px; margin-bottom: 16px;">Gõ "xóa" (hoặc "xoa" nếu không gõ được dấu)</div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-secondary btn-small" onclick="hideFactoryResetModal()">Hủy</button>
-        <button class="btn btn-small" id="factory-reset-confirm-btn" onclick="doFactoryReset()" disabled style="background:#e06666;color:#fff;opacity:0.5;cursor:not-allowed">Xóa sạch</button>
+        <button class="btn btn-danger btn-small" id="factory-reset-confirm-btn" onclick="doFactoryReset()" disabled>Xóa sạch</button>
       </div>
     </div>
   </div>
@@ -5049,7 +5051,7 @@
               '<span class="media-badge media-status-ready">Sẵn sàng</span>' +
             '</div>' +
             '<div class="media-card-desc">' + esc(a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+' MB' : Math.round(a.size/1024)+' KB') + '</div>' +
-            '<button class="btn-sm" data-delete-asset="' + escAttr(a.name) + '" style="margin-top:auto;font-size:10px;padding:3px 8px;color:var(--danger);background:transparent;border:1px solid var(--danger);border-radius:4px;cursor:pointer">Xóa</button>' +
+            '<button class="btn btn-danger btn-small" data-delete-asset="' + escAttr(a.name) + '" style="margin-top:auto;align-self:flex-start;font-size:10px;padding:3px 8px">Xóa</button>' +
           '</div>';
         }).join('');
         mountIcons();
@@ -5119,7 +5121,7 @@
           '<span class="media-badge ' + escAttr(statusMeta.cls) + '">' + esc(statusMeta.label) + '</span>' +
           '</div>' +
           '<div class="media-card-desc">' + esc(desc || 'Chưa có mô tả vision') + '</div>' +
-          '<button class="btn-sm" data-delete-media="' + escAttr(a.id) + '" data-media-title="' + escAttr(a.title || a.filename || a.id || '') + '" style="margin-top:auto;font-size:10px;padding:3px 8px;color:var(--danger);background:transparent;border:1px solid var(--danger);border-radius:4px;cursor:pointer">Xóa</button>' +
+          '<button class="btn btn-danger btn-small" data-delete-media="' + escAttr(a.id) + '" data-media-title="' + escAttr(a.title || a.filename || a.id || '') + '" style="margin-top:auto;align-self:flex-start;font-size:10px;padding:3px 8px">Xóa</button>' +
         '</div>';
       }).join('');
       mountIcons();

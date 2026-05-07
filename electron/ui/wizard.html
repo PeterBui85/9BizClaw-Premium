@@ -237,9 +237,9 @@
     .wz-field-secure .wz-input { flex:1; }
     .wz-toggle-vis {
       width:44px; flex-shrink:0; border:1px solid var(--border); border-radius:10px;
-      background:var(--surface); cursor:pointer; display:inline-flex; align-items:center;
+      background:var(--surface); cursor:pointer; display:flex; align-items:center;
       justify-content:center; color:var(--text-muted); transition:border-color 0.15s, color 0.15s;
-      box-sizing:border-box;
+      box-sizing:border-box; padding:0;
     }
     .wz-toggle-vis:hover { border-color:var(--border-strong); color:var(--text); }
     .wz-toggle-vis svg { width:18px; height:18px; }
@@ -915,7 +915,7 @@
       </button>
 
       <div class="wz-brand-mark">
-        <img src="mascot-removebg.png" alt="9BizClaw" class="wz-brand-logo-img" onerror="this.style.display='none'">
+        <img src="9bizclaw-mascot.png" alt="9BizClaw" class="wz-brand-logo-img" onerror="this.style.display='none'">
         <div>
           <div class="wz-brand-name">9BizClaw</div>
           <div class="wz-brand-tag">Trợ Lý AI Cho Doanh Nghiệp</div>
@@ -1084,23 +1084,24 @@
             </div>
           </section>
 
-          <!-- ============ STEP 2: AI router (Ollama) ============ -->
+          <!-- ============ STEP 2: AI router (ChatGPT via 9Router) ============ -->
           <section class="wz-step" id="step-2">
             <h2>Kết nối trí tuệ nhân tạo</h2>
-            <p class="wz-step-desc">Trợ lý cần kết nối với một model AI để hoạt động. Hướng dẫn anh/chị lấy API key miễn phí từ Ollama ở bên dưới.</p>
+            <p class="wz-step-desc">Trợ lý cần kết nối với ChatGPT để hoạt động. Anh/chị cần có tài khoản ChatGPT Plus.</p>
 
             <div class="wz-instruction">
               <div class="wz-instruction-head">
                 <div class="wz-instruction-num">1</div>
-                <div class="wz-instruction-title">Đăng ký tài khoản Ollama (miễn phí)</div>
+                <div class="wz-instruction-title">Đăng nhập ChatGPT</div>
               </div>
               <div class="wz-instruction-body">
-                <p>Nhấn nút bên dưới — trang đăng ký Ollama sẽ mở ra.</p>
-                <p>Chọn <strong>Continue with Google</strong> hoặc <strong>Continue with GitHub</strong> để tạo tài khoản / đăng nhập.</p>
+                <p>Nhấn nút bên dưới — trang kết nối AI sẽ mở ra trong trình duyệt.</p>
+                <p>Nếu được hỏi mật khẩu, nhập: <strong style="font-family:monospace;letter-spacing:0.5px;user-select:all">123456</strong></p>
+                <p>Sau đó nhấn <strong>Connect</strong> bên cạnh <strong>ChatGPT</strong> và đăng nhập bằng tài khoản ChatGPT Plus.</p>
               </div>
               <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-secondary" onclick="openOllama()" type="button">
-                  <span data-icon="user-plus" data-icon-size="14"></span> Đăng ký / Đăng nhập Ollama
+                <button class="wz-btn wz-btn-primary" onclick="openChatGPTConnect()" id="open-chatgpt-btn" type="button">
+                  Kết nối ChatGPT
                 </button>
               </div>
             </div>
@@ -1108,40 +1109,14 @@
             <div class="wz-instruction">
               <div class="wz-instruction-head">
                 <div class="wz-instruction-num">2</div>
-                <div class="wz-instruction-title">Lấy API key</div>
+                <div class="wz-instruction-title">Xác nhận kết nối</div>
               </div>
               <div class="wz-instruction-body">
-                <p>Sau khi đăng nhập, mở trang API Keys và nhấn <span class="wz-kbd">New API Key</span>.</p>
-                <p>Đặt tên gì cũng được, nhấn <strong>Create</strong>, rồi copy dòng key vừa tạo.</p>
+                <p>Sau khi đăng nhập ChatGPT xong trên trình duyệt, quay lại đây và nhấn nút bên dưới.</p>
               </div>
               <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-secondary" onclick="openOllamaKeys()" type="button">
-                  <span data-icon="settings" data-icon-size="14"></span> Mở trang API Keys
-                </button>
-              </div>
-            </div>
-
-            <div class="wz-field">
-              <label class="wz-label">Dán Ollama API key vào đây</label>
-              <div class="wz-field-secure">
-                <input type="password" class="wz-input" id="ollama-api-key" placeholder="Paste API key (Ctrl + V)" autocomplete="off">
-                <button class="wz-toggle-vis" onclick="toggleWzVis('ollama-api-key', this)" type="button" title="Hiện / ẩn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-
-            <div class="wz-instruction">
-              <div class="wz-instruction-head">
-                <div class="wz-instruction-num">3</div>
-                <div class="wz-instruction-title">Hoàn tất thiết lập AI</div>
-              </div>
-              <div class="wz-instruction-body">
-                <p>Hệ thống sẽ tự động kết nối Ollama và tạo combo fallback.</p>
-              </div>
-              <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-primary" onclick="autoSetup9Router()" id="auto-9router-btn" type="button">
-                  Thiết lập AI
+                <button class="wz-btn wz-btn-secondary" onclick="verifyChatGPTConnection()" id="verify-chatgpt-btn" type="button">
+                  Kiểm tra kết nối
                 </button>
                 <div id="router-auto-result" class="wz-hidden" style="margin-top:12px"></div>
               </div>
@@ -1452,8 +1427,7 @@
         if (!document.getElementById('ceo-title').value.trim()) { markFieldError('ceo-title'); return showError('Vui lòng nhập cách trợ lý gọi anh/chị.'); }
       }
       if (currentStep === 2) {
-        if (!document.getElementById('router-api-key').value.trim()) return showError('Chưa thiết lập AI. Nhấn "Thiết lập AI" ở trên trước.');
-        if (!window._aiModelReady) return showError('Combo AI "main" chưa có model. Nhấn "Thiết lập AI" lại, hoặc vào tab 9Router (sau khi xong wizard) để cấu hình thủ công trước khi demo.');
+        if (!window._aiModelReady) return showError('Chưa kết nối ChatGPT. Nhấn "Kết nối ChatGPT" rồi "Kiểm tra kết nối" ở trên.');
       }
       if (currentStep === 3) {
         const t = document.getElementById('tg-token').value.trim();
@@ -1662,8 +1636,17 @@
     }
 
     // ===== Step 2: AI setup =====
-    function openOllama() { window.claw.openExternal('https://ollama.com/signin'); }
-    function openOllamaKeys() { window.claw.openExternal('https://ollama.com/settings/keys'); }
+    async function openChatGPTConnect() {
+      const btn = document.getElementById('open-chatgpt-btn');
+      btn.disabled = true; btn.classList.add('loading');
+      try {
+        await window.claw.setup9RouterAuto({ ensureRunning: true });
+        window.claw.openExternal('http://127.0.0.1:20128/dashboard/providers/codex');
+      } catch (e) {
+        showError('Không khởi động được 9Router: ' + (e.message || e));
+      }
+      btn.disabled = false; btn.classList.remove('loading');
+    }
     // tg://resolve?domain=X opens Telegram native app directly on Win/Mac if
     // installed; the protocol is registered system-wide by the Telegram
     // installer. If somehow not installed, the user couldn't create a bot
@@ -1685,45 +1668,25 @@
     // version. Keeps CEO unblocked on fresh Win machine without Telegram.
     function openBotFatherWeb() { window.claw.openExternal('https://t.me/BotFather'); }
     function openUserInfoBotWeb() { window.claw.openExternal('https://t.me/userinfobot'); }
-    async function autoSetup9Router() {
-      const ollamaKey = document.getElementById('ollama-api-key').value.trim();
-      if (!ollamaKey) return showError('Vui lòng dán Ollama API key trước.');
-      const btn = document.getElementById('auto-9router-btn');
+    async function verifyChatGPTConnection() {
+      const btn = document.getElementById('verify-chatgpt-btn');
       const result = document.getElementById('router-auto-result');
       btn.disabled = true; btn.classList.add('loading');
       result.classList.remove('wz-hidden');
-      // Fast path uses 9router HTTP API (POST /api/providers + test endpoint)
-      // — usually completes in 3-5 seconds
       result.className = 'wz-alert';
-      result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang kiểm tra Ollama API key qua 9Router...</strong><br>(thường mất 5-20 giây)</div>`;
-      const res = await window.claw.setup9RouterAuto({ ollamaKey });
+      result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang kiểm tra kết nối ChatGPT...</strong></div>`;
+      const res = await window.claw.setup9RouterAuto({ detectChatGPT: true });
       btn.disabled = false; btn.classList.remove('loading');
-      if (res.success) {
-        document.getElementById('router-api-key').value = res.apiKey;
-        if (res.selectedModel) {
-          // Auto-detect picked a real model from the connected provider
-          window._aiModelReady = true;
-          result.className = 'wz-alert success';
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div><strong>Thiết lập thành công.</strong> Ollama API key hợp lệ, đã tự động chọn model <code>${esc(res.selectedModel)}</code> cho combo <code>main</code>. Có thể đổi model trong tab <strong>9Router</strong> của Dashboard sau này nếu muốn.</div>`;
-        } else {
-          // Key verified OK by Ollama (else we'd have errored earlier), but
-          // 9router didn't return any models. Means 9router config issue, not
-          // an Ollama issue. Hard block until fixed.
-          window._aiModelReady = false;
-          const errDetail = res.autoDetectError ? ' (' + esc(res.autoDetectError) + ')' : '';
-          result.className = 'wz-alert error';
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Ollama key OK nhưng 9Router không detect được model</strong>${errDetail}<br><br>Có thể 9Router chưa khởi động kịp. Đợi 30 giây rồi nhấn <strong>"Thiết lập AI"</strong> lại để thử. Wizard sẽ không cho qua bước này đến khi combo AI có ít nhất 1 model — để tránh bot 404 lúc demo.<br><small style="opacity:0.65;margin-top:6px;display:block">Dev: <a href="#" onclick="window.claw.openLogFolder();return false;" style="color:inherit;text-decoration:underline">Mở thư mục log</a> → xem <code>9router.log</code></small></div>`;
-        }
+      if (res.success && res.selectedModel) {
+        window._aiModelReady = true;
+        document.getElementById('router-api-key').value = res.apiKey || '';
+        result.className = 'wz-alert success';
+        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div><strong>ChatGPT đã kết nối.</strong> Model <code>${esc(res.selectedModel)}</code> sẵn sàng.</div>`;
       } else {
         window._aiModelReady = false;
+        const errMsg = res.error || 'Chưa tìm thấy kết nối ChatGPT. Nhấn "Kết nối ChatGPT" ở trên, đăng nhập trên trình duyệt, rồi quay lại nhấn "Kiểm tra kết nối".';
         result.className = 'wz-alert error';
-        // If validationFailed flag is set, the error came from direct Ollama
-        // validation — show the precise error message (key sai, mạng, etc.)
-        if (res.validationFailed) {
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div><strong>Ollama API key không hoạt động</strong><br><br>${esc(res.error)}<br><br>Sửa lỗi rồi nhấn <strong>"Thiết lập AI"</strong> lại.</div>`;
-        } else {
-          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>Lỗi: ${esc(res.error || 'Không xác định')}<br><small style="opacity:0.65;margin-top:6px;display:block">Dev: <a href="#" onclick="window.claw.openLogFolder();return false;" style="color:inherit;text-decoration:underline">Mở thư mục log</a> → xem <code>9router.log</code></small></div>`;
-        }
+        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>${esc(errMsg)}</div>`;
       }
     }
 

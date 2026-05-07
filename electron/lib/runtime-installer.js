@@ -56,10 +56,9 @@ const NPM_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 // Old installations with a mismatched layout version will trigger a clean re-install.
 const LAYOUT_VERSION = '1';
 
-// SHA256 checksums for the bundled Node.js binary.
+// SHA256 checksums for the Node.js download ARCHIVES (zip/tar.gz).
 // Sources: https://nodejs.org/dist/v22.22.2/SHASUMS256.txt
-// Used to verify the downloaded/extracted node binary is not corrupted or locked.
-// Corporate locked-file scenario: extraction exits 0 but some files are corrupted.
+// Verified AFTER download, BEFORE extraction — catches corrupt/truncated downloads.
 // If the runtime install layout changes (e.g., different Node version), bump
 // LAYOUT_VERSION and update these checksums accordingly.
 const NODE_SHA256 = {
@@ -175,24 +174,6 @@ let _installStatus = null;
 let _installInProgress = false;
 
 const { getUserDataDir, copyDirRecursive: _copyDir } = require('./workspace');
-
-/**
- * Check if bundled vendor exists at resourcesPath (macOS bundled model).
- * This is distinct from userData/vendor/ (runtime install model).
- * On macOS, electron-builder extraResources places vendor/ inside
- * Contents/Resources/vendor/, not in userData.
- */
-function checkBundledVendorAtResources() {
-  if (!app || !app.isPackaged) return false;
-  if (process.platform !== 'darwin') return false;
-  try {
-    const resourcesVendor = path.join(process.resourcesPath, 'vendor');
-    const nodeBin = path.join(resourcesVendor, 'node', 'bin', 'node');
-    return fs.existsSync(nodeBin);
-  } catch {
-    return false;
-  }
-}
 
 function getRuntimeNodeDir() {
   // For runtime install (v2.4.0+), packages live in:
@@ -438,7 +419,9 @@ async function downloadFile(url, destPath, onProgress) {
     // Use native fetch if available (Node 18+)
     let client;
     if (typeof fetch !== 'undefined') {
-      fetch(url).then(async (response) => {
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+      fetch(url, { signal: controller.signal }).then(async (response) => {
         if (!response.ok) {
           const body = await response.text().catch(() => '');
           reject(attachHint(new Error(`HTTP ${response.status} ${response.statusText}: ${body.slice(0, 200)}`)));
@@ -462,8 +445,9 @@ async function downloadFile(url, destPath, onProgress) {
         const blob = new Blob(chunks);
         const arrayBuffer = await blob.arrayBuffer();
         fs.writeFileSync(destPath, Buffer.from(arrayBuffer));
+        clearTimeout(fetchTimeout);
         resolve();
-      }).catch((e) => { reject(attachHint(e)); });
+      }).catch((e) => { clearTimeout(fetchTimeout); reject(attachHint(e)); });
       return;
     } else if (isWin) {
       // Windows: use PowerShell with 10-minute timeout to match download progress bar
@@ -510,16 +494,41 @@ async function installNode(targetVersion, onProgress) {
   // Ensure directory exists
   fs.mkdirSync(vendorDir, { recursive: true });
 
-  // Download
-  try {
-    await downloadFile(url, downloadPath, (p) => {
-      if (onProgress) onProgress({ step: 'node', percent: p.percent * 0.8, message: `Đang tải Node.js...` });
-    });
-  } catch (e) {
-    throw new Error(`Không tải được Node.js: ${e.message}`);
+  // Download + verify archive SHA256 BEFORE extraction
+  const shaKey = getNodeShaKey();
+  const expectedArchiveHash = shaKey ? NODE_SHA256[shaKey] : null;
+
+  for (let dlAttempt = 0; dlAttempt < 2; dlAttempt++) {
+    try {
+      await downloadFile(url, downloadPath, (p) => {
+        if (onProgress) {
+          const sizeMB = p.total > 0 ? (p.total / 1024 / 1024).toFixed(0) : '';
+          const dlMB = p.downloaded > 0 ? (p.downloaded / 1024 / 1024).toFixed(1) : '';
+          const sizeStr = sizeMB ? ` (${dlMB}/${sizeMB} MB)` : '';
+          onProgress({ step: 'node', percent: p.percent * 0.8, message: `Đang tải Node.js ${targetVersion}${sizeStr}` });
+        }
+      });
+    } catch (e) {
+      throw new Error(`Không tải được Node.js: ${e.message}`);
+    }
+
+    if (expectedArchiveHash) {
+      if (verifySha256(downloadPath, expectedArchiveHash)) {
+        console.log('[runtime-installer] Archive SHA256 verified OK');
+        break;
+      }
+      if (dlAttempt === 0) {
+        console.warn('[runtime-installer] Archive SHA256 mismatch — re-downloading...');
+        try { fs.unlinkSync(downloadPath); } catch {}
+        continue;
+      }
+      try { fs.unlinkSync(downloadPath); } catch {}
+      throw new Error('Node.js archive SHA256 không khớp sau 2 lần tải. Kiểm tra kết nối mạng hoặc proxy.');
+    }
+    break;
   }
 
-  if (onProgress) onProgress({ step: 'node', percent: 80, message: 'Đang giải nén Node.js...' });
+  if (onProgress) onProgress({ step: 'node', percent: 80, message: 'Đang giải nén Node.js...', subStep: 'Expand-Archive' });
 
   // Extract
   const isWin = process.platform === 'win32';
@@ -528,26 +537,35 @@ async function installNode(targetVersion, onProgress) {
   try {
     fs.mkdirSync(extractDir, { recursive: true });
 
-    if (type === 'zip') {
-      // Windows: use PowerShell Expand-Archive
-      await new Promise((resolve, reject) => {
-        const ps = spawn('powershell', [
-          '-NoProfile',
-          '-Command',
-          `Expand-Archive -Path '${downloadPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
-        ], { stdio: 'pipe' });
-        let stderr = '';
-        ps.stderr?.on('data', d => { stderr += String(d); });
-        ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Expand-Archive failed (${code}): ${stderr}`)));
-        ps.on('error', reject);
-      });
-    } else {
-      // Unix: use tar
-      await new Promise((resolve, reject) => {
-        const tar = spawn('tar', ['-xzf', downloadPath, '-C', extractDir], { stdio: 'pipe' });
-        tar.on('close', (code) => code === 0 ? resolve() : reject(new Error(`tar failed: ${code}`)));
-        tar.on('error', reject);
-      });
+    // Heartbeat during extraction so splash doesn't look stuck
+    let extractTick = 80;
+    const extractTimer = setInterval(() => {
+      if (extractTick < 94) extractTick += 1;
+      if (onProgress) onProgress({ step: 'node', percent: extractTick, message: 'Đang giải nén Node.js...', subStep: `${extractTick - 80}s` });
+    }, 1000);
+
+    try {
+      if (type === 'zip') {
+        await new Promise((resolve, reject) => {
+          const ps = spawn('powershell', [
+            '-NoProfile',
+            '-Command',
+            `Expand-Archive -Path '${downloadPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
+          ], { stdio: 'pipe' });
+          let stderr = '';
+          ps.stderr?.on('data', d => { stderr += String(d); });
+          ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Expand-Archive failed (${code}): ${stderr}`)));
+          ps.on('error', reject);
+        });
+      } else {
+        await new Promise((resolve, reject) => {
+          const tar = spawn('tar', ['-xzf', downloadPath, '-C', extractDir], { stdio: 'pipe' });
+          tar.on('close', (code) => code === 0 ? resolve() : reject(new Error(`tar failed: ${code}`)));
+          tar.on('error', reject);
+        });
+      }
+    } finally {
+      clearInterval(extractTimer);
     }
 
     // Find the actual extracted directory (may be nested like node-v22.14.0-win-x64/)
@@ -594,7 +612,7 @@ async function installNode(targetVersion, onProgress) {
       }
     }
 
-    // Cleanup extract dir (keep downloadPath for SHA256 retry)
+    // Cleanup extract dir
     fs.rmSync(extractDir, { recursive: true, force: true });
 
   } catch (e) {
@@ -604,92 +622,13 @@ async function installNode(targetVersion, onProgress) {
     throw new Error(`Không giải nén được Node.js: ${e.message}`);
   }
 
-// Verify
+  // Verify extracted binary exists
   const nodeBin = getRuntimeNodeBinPath();
   if (!fs.existsSync(nodeBin)) {
     throw new Error(`Node.js installation failed: binary not found at ${nodeBin}`);
   }
 
-  // Verify node binary with SHA256 — catches locked-file corruption and partial extraction.
-  // Corporate locked-file scenario: extraction exits 0 but some files are corrupted.
-  const shaKey = getNodeShaKey();
-  if (shaKey && NODE_SHA256[shaKey]) {
-    if (!fs.existsSync(nodeBin)) {
-      throw new Error(`Node.js binary not found at expected path: ${nodeBin}`);
-    }
-    if (!verifySha256(nodeBin, NODE_SHA256[shaKey])) {
-      // Hash mismatch — corrupted or locked file. Re-extract once before giving up.
-      console.warn('[runtime-installer] node.exe SHA256 mismatch — re-extracting...');
-      // Delete corrupted binary and re-extract
-      try { fs.unlinkSync(nodeBin); } catch {}
-      // Re-run extraction
-      const tmpExtractDir = path.join(vendorDir, 'temp-node-retry-' + Date.now());
-      fs.mkdirSync(tmpExtractDir, { recursive: true });
-      try {
-        if (type === 'zip') {
-          const ps = spawn('powershell', [
-            '-NoProfile', '-Command',
-            `Expand-Archive -Path '${downloadPath.replace(/'/g, "''")}' -DestinationPath '${tmpExtractDir.replace(/'/g, "''")}' -Force`
-          ], { stdio: 'pipe' });
-          let stderr = '';
-          ps.stderr?.on('data', d => { stderr += String(d); });
-          await new Promise((resolve, reject) => {
-            ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Expand-Archive retry failed (${code}): ${stderr}`)));
-            ps.on('error', reject);
-          });
-        } else {
-          const tar = spawn('tar', ['xzf', downloadPath, '-C', tmpExtractDir], { stdio: 'pipe' });
-          let stderr = '';
-          tar.stderr?.on('data', d => { stderr += String(d); });
-          await new Promise((resolve, reject) => {
-            tar.on('close', (code) => code === 0 ? resolve() : reject(new Error(`tar retry failed (${code}): ${stderr}`)));
-            tar.on('error', reject);
-          });
-        }
-        // Find and move
-        const entries = fs.readdirSync(tmpExtractDir);
-        let extractedRoot = null;
-        for (const entry of entries) {
-          const entryPath = path.join(tmpExtractDir, entry);
-          if (fs.statSync(entryPath).isDirectory()) {
-            const check = process.platform === 'win32'
-              ? path.join(entryPath, 'node.exe')
-              : path.join(entryPath, 'bin', 'node');
-            if (fs.existsSync(check)) extractedRoot = entryPath;
-          }
-        }
-        if (!extractedRoot) extractedRoot = path.join(tmpExtractDir, entries[0]);
-        try { fs.rmSync(nodeDir, { recursive: true, force: true }); } catch {}
-        fs.mkdirSync(path.dirname(nodeDir), { recursive: true });
-        try {
-          fs.renameSync(extractedRoot, nodeDir);
-        } catch (e) {
-          if (e.code === 'EXDEV') {
-            copyDirRecursive(extractedRoot, nodeDir);
-            fs.rmSync(extractedRoot, { recursive: true, force: true });
-          } else {
-            throw e;
-          }
-        }
-        fs.rmSync(tmpExtractDir, { recursive: true, force: true });
-      } catch (retryErr) {
-        try { fs.rmSync(tmpExtractDir, { recursive: true, force: true }); } catch {}
-        throw new Error(`Không giải nén được Node.js sau khi thử lại: ${retryErr.message}`);
-      }
-      // Verify again
-      if (!fs.existsSync(nodeBin)) {
-        throw new Error(`Node.js binary still missing after retry: ${nodeBin}`);
-      }
-      if (!verifySha256(nodeBin, NODE_SHA256[shaKey])) {
-        throw new Error(`Node.js binary SHA256 vẫn không khớp sau retry — file có thể bị khóa bởi process khác (Defender, antivirus). Thử khởi động lại máy.`);
-      }
-      console.log('[runtime-installer] node.exe verified OK after retry');
-    } else {
-      console.log('[runtime-installer] node.exe SHA256 verified OK');
-    }
-  }
-
-  // Cleanup download archive after successful verification
+  // Cleanup download archive (already verified before extraction)
   try { fs.unlinkSync(downloadPath); } catch {}
 
   if (onProgress) onProgress({ step: 'node', percent: 100, message: 'Node.js đã sẵn sàng' });
@@ -788,7 +727,6 @@ async function installNpmPackages(versions, onProgress) {
   fs.mkdirSync(nodeModulesDir, { recursive: true });
 
   // Create a temporary package.json to define the local package scope
-  // This allows `npm install <pkg>@<ver>` to install into our custom directory
   const pkgJsonPath = path.join(vendorDir, 'package.json');
   let pkgJson = { name: 'modoro-runtime', version: '1.0.0', private: true };
   try {
@@ -798,107 +736,141 @@ async function installNpmPackages(versions, onProgress) {
   } catch {}
   fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2));
 
-  // Install packages
-  for (let i = 0; i < PACKAGES.length; i++) {
-    const pkg = PACKAGES[i];
+  // Determine which packages need installing
+  const toInstall = [];
+  for (const pkg of PACKAGES) {
     const version = versions[pkg.name] || pkg.version;
-    const targetVersion = `${pkg.name}@${version}`;
-
-    if (onProgress) {
-      const basePercent = 10 + Math.floor((i / PACKAGES.length) * 60);
-      onProgress({
-        step: 'packages',
-        percent: basePercent,
-        message: `Đang cài ${pkg.name} ${version}...`,
-        subStep: `${pkg.name}@${version}`,
-      });
-    }
-
-    // Verify NOT already installed with correct version first
     const existingPath = path.join(nodeModulesDir, pkg.name, 'package.json');
-    if (fs.existsSync(existingPath)) {
-      try {
+    try {
+      if (fs.existsSync(existingPath)) {
         const existing = JSON.parse(fs.readFileSync(existingPath, 'utf8'));
         if (existing.version === version) {
           console.log('[runtime-installer]', pkg.name, 'already at', version, '- skipping');
           continue;
         }
-      } catch {}
-    }
+      }
+    } catch {}
+    toInstall.push({ name: pkg.name, version, spec: `${pkg.name}@${version}` });
+  }
 
-    // Install using npm --prefix (correct approach).
-    // Wrap each package install with retry for transient errors (network, disk, npm cert issues).
-    let installed = false;
-    let lastError = null;
+  if (toInstall.length === 0) {
+    if (onProgress) onProgress({ step: 'packages', percent: 80, message: 'Packages đã có sẵn' });
+    return await getInstalledPackages();
+  }
 
-    const npmInstallOp = async () => {
-      const npm = getRuntimeNpmCommand(nodeBin);
-      await execFilePromise(
+  if (onProgress) {
+    onProgress({
+      step: 'packages',
+      percent: 10,
+      message: `Đang cài ${toInstall.map(p => p.name).join(', ')}...`,
+      subStep: toInstall.map(p => p.spec).join(' '),
+    });
+  }
+
+  // Install ALL packages in a single npm command to prevent npm 10+ from
+  // pruning previously installed packages during sequential installs.
+  // Use spawn (not execFile) to stream stdout and report progress to splash.
+  const npmInstallOp = async () => {
+    const npm = getRuntimeNpmCommand(nodeBin);
+    const specs = toInstall.map(p => p.spec);
+    console.log('[runtime-installer] npm install (batch):', specs.join(' '));
+    await new Promise((resolve, reject) => {
+      const child = spawn(
         npm.command,
-        [...npm.argsPrefix, 'install', '--prefix', vendorDir, targetVersion, '--save', '--no-fund', '--no-audit'],
+        [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit'],
         { timeout: NPM_INSTALL_TIMEOUT_MS, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell }
       );
-
-      // Verify installation
-      const verifyPath = path.join(nodeModulesDir, pkg.name, 'package.json');
-      if (!fs.existsSync(verifyPath)) {
-        throw new Error('Package directory not created');
-      }
-      const verify = JSON.parse(fs.readFileSync(verifyPath, 'utf8'));
-      if (verify.version !== version) {
-        throw new Error(`Version mismatch: expected ${version}, got ${verify.version}`);
-      }
-    };
-
-    try {
-      if (withRetry) {
-        await withRetry(npmInstallOp, {
-          maxRetries: 2,
-          baseDelay: 5000,
-          maxDelay: 30000,
-          onRetry: ({ attempt, maxRetries, error, delay }) => {
-            console.log(`[runtime-installer] Retry ${attempt}/${maxRetries} for ${pkg.name} after ${delay}ms: ${error?.message}`);
-            if (onProgress) {
-              onProgress({ step: 'packages', message: `Đang thử lại ${pkg.name} (lần ${attempt + 1})...`, subStep: pkg.name });
-            }
-          },
-        });
-        installed = true;
-      } else {
-        // Fallback: 3-attempt loop for environments where installation-recovery isn't loaded
-        for (let attempt = 0; attempt < 3; attempt++) {
-          if (attempt > 0) {
-            await new Promise(r => setTimeout(r, 5000 * attempt));
-            console.log('[runtime-installer] Retry', attempt + 1, 'for', pkg.name);
+      let stderr = '';
+      let lastSubStep = '';
+      // Parse npm output lines for package-level progress
+      const parseNpmLine = (line) => {
+        const trimmed = String(line).trim();
+        if (!trimmed) return;
+        // npm outputs "added N packages in Xs" at the end
+        const addedMatch = trimmed.match(/added (\d+) packages? in/i);
+        if (addedMatch) {
+          lastSubStep = `${addedMatch[1]} packages installed`;
+          if (onProgress) onProgress({ step: 'packages', percent: 75, message: `Hoàn tất ${lastSubStep}`, subStep: lastSubStep });
+          return;
+        }
+        // npm progress: "npm warn", "npm http fetch GET", package names
+        const httpMatch = trimmed.match(/http fetch (?:GET|POST)\s+\d+\s+(https?:\/\/[^\s]+)/i);
+        if (httpMatch) {
+          const pkgUrl = httpMatch[1];
+          const pkgName = pkgUrl.split('/').pop()?.replace(/\.tgz$/, '') || '';
+          if (pkgName) {
+            lastSubStep = pkgName;
+            if (onProgress) onProgress({ step: 'packages', message: `Đang tải ${pkgName}`, subStep: pkgName });
           }
-          try {
-            await npmInstallOp();
-            installed = true;
-            break;
-          } catch (e) {
-            lastError = e;
-            // If version matched after error, npm actually succeeded
-            const verifyPath = path.join(nodeModulesDir, pkg.name, 'package.json');
-            if (fs.existsSync(verifyPath)) {
-              const verify = JSON.parse(fs.readFileSync(verifyPath, 'utf8'));
-              if (verify.version === version) {
-                console.log('[runtime-installer] Package verified after install error:', pkg.name, '@', verify.version);
-                installed = true;
-                break;
-              }
-            }
+          return;
+        }
+      };
+      child.stdout?.on('data', (d) => { String(d).split('\n').forEach(parseNpmLine); });
+      child.stderr?.on('data', (d) => {
+        const chunk = String(d);
+        stderr += chunk;
+        chunk.split('\n').forEach(parseNpmLine);
+      });
+      // Heartbeat so splash doesn't look stuck during long npm resolves
+      let npmTick = 10;
+      const npmTimer = setInterval(() => {
+        npmTick = Math.min(npmTick + 2, 70);
+        if (onProgress) {
+          const elapsed = Math.round((Date.now() - npmStartTime) / 1000);
+          const msg = lastSubStep ? `Đang cài: ${lastSubStep}` : `Đang cài packages... (${elapsed}s)`;
+          onProgress({ step: 'packages', percent: npmTick, message: msg, subStep: lastSubStep || `${elapsed}s` });
+        }
+      }, 3000);
+      const npmStartTime = Date.now();
+      child.on('error', (e) => { clearInterval(npmTimer); reject(e); });
+      child.on('close', (code) => {
+        clearInterval(npmTimer);
+        if (code === 0) resolve();
+        else reject(new Error(`npm install exited ${code}: ${stderr.slice(-500)}`));
+      });
+    });
+  };
+
+  let lastError = null;
+  let installed = false;
+
+  try {
+    if (withRetry) {
+      await withRetry(npmInstallOp, {
+        maxRetries: 2,
+        baseDelay: 5000,
+        maxDelay: 30000,
+        onRetry: ({ attempt, maxRetries, error, delay }) => {
+          console.log(`[runtime-installer] Retry ${attempt}/${maxRetries} for npm install after ${delay}ms: ${error?.message}`);
+          if (onProgress) {
+            onProgress({ step: 'packages', message: `Đang thử lại (lần ${attempt + 1})...`, subStep: 'retry' });
           }
+        },
+      });
+      installed = true;
+    } else {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 5000 * attempt));
+          console.log('[runtime-installer] Retry', attempt + 1, 'for npm install');
+        }
+        try {
+          await npmInstallOp();
+          installed = true;
+          break;
+        } catch (e) {
+          lastError = e;
         }
       }
-    } catch (e) {
-      lastError = e;
     }
+  } catch (e) {
+    lastError = e;
+  }
 
-    if (!installed) {
-      const hint = getInstallErrorHint(lastError);
-      const hintMsg = hint ? '\n' + hint : '';
-      throw new Error(`Không cài được ${pkg.name}@${version}: ${lastError?.message || 'Unknown error'}${hintMsg}`);
-    }
+  if (!installed) {
+    const hint = getInstallErrorHint(lastError);
+    const hintMsg = hint ? '\n' + hint : '';
+    throw new Error(`Không cài được packages: ${lastError?.message || 'Unknown error'}${hintMsg}`);
   }
 
   if (onProgress) {
@@ -906,17 +878,17 @@ async function installNpmPackages(versions, onProgress) {
   }
 
   // Verify all installations
-  const installed = await getInstalledPackages();
-  console.log('[runtime-installer] Installed packages:', installed);
+  const result = await getInstalledPackages();
+  console.log('[runtime-installer] Installed packages:', result);
 
-  // Final verification
   for (const pkg of PACKAGES) {
-    if (!installed[pkg.name] || installed[pkg.name] !== pkg.version) {
-      throw new Error(`Verification failed for ${pkg.name}: expected ${pkg.version}, got ${installed[pkg.name] || 'not installed'}`);
+    const expected = versions[pkg.name] || pkg.version;
+    if (!result[pkg.name] || result[pkg.name] !== expected) {
+      throw new Error(`Verification failed for ${pkg.name}: expected ${expected}, got ${result[pkg.name] || 'not installed'}`);
     }
   }
 
-  return installed;
+  return result;
 }
 
 // =====================================================================
@@ -941,7 +913,7 @@ function getBundledModoroZaloPath() {
 async function ensureModoroZaloPlugin(onProgress) {
   console.log('[runtime-installer] Ensuring modoro-zalo plugin...');
 
-  if (onProgress) onProgress({ step: 'plugin', percent: 0, message: 'Đang cài plugin Zalo...' });
+  if (onProgress) onProgress({ step: 'plugin', percent: 0, message: 'Đang cài plugin Zalo...', subStep: 'modoro-zalo' });
 
   const srcPath = getBundledModoroZaloPath();
   const destPath = path.join(getRuntimeNodeModulesDir(), 'modoro-zalo');
@@ -1145,14 +1117,12 @@ async function runInstallation({ onProgress } = {}) {
 
     // Step 1: Install Node.js if needed
     if (status.needsNodeInstall) {
-      // Use the pinned Node version from versions.json — must match the SHA256
-      // checksums in NODE_SHA256 above. MIN_NODE_VERSION is only used for the
-      // "minimum acceptable" check in detectNodeInstallation, not for downloads.
       const stableVersion = SHARED_VERSIONS.node;
       await installNode(stableVersion, onProgress);
     } else {
       if (onProgress) onProgress({ step: 'node', percent: 100, message: 'Node.js đã có sẵn' });
     }
+    if (onProgress) onProgress({ step: 'node-done' });
 
     // Step 2: Install npm packages
     if (status.needsPackageInstall) {
@@ -1160,20 +1130,23 @@ async function runInstallation({ onProgress } = {}) {
     } else {
       if (onProgress) onProgress({ step: 'packages', percent: 80, message: 'Packages đã có sẵn' });
     }
+    if (onProgress) onProgress({ step: 'packages-done' });
 
     // Step 3: Ensure modoro-zalo plugin
     if (status.needsModoroZaloInstall) {
       await ensureModoroZaloPlugin(onProgress);
     } else {
-      if (onProgress) onProgress({ step: 'plugin', percent: 100, message: 'Plugin Zalo da co san' });
+      if (onProgress) onProgress({ step: 'plugin', percent: 100, message: 'Plugin Zalo đã có sẵn' });
     }
+    if (onProgress) onProgress({ step: 'plugin-done' });
 
     // Step 4: Install gogcli (Google Workspace CLI) if not already present
     if (status.needsGogInstall) {
       await ensureGogCli(onProgress);
     } else {
-      if (onProgress) onProgress({ step: 'gog', percent: 100, message: 'gogcli da co san' });
+      if (onProgress) onProgress({ step: 'gog', percent: 100, message: 'gogcli đã có sẵn' });
     }
+    if (onProgress) onProgress({ step: 'gog-done' });
 
     // Step 5: Write version + layout markers
     writeInstalledVersion('2.4.0');
@@ -1230,7 +1203,7 @@ async function ensureGogCli(onProgress) {
   const isMac = process.platform === 'darwin';
   if (!isWin && !isMac) return; // Linux: skip for now
 
-  if (onProgress) onProgress({ step: 'gog', percent: 0, message: 'Đang cài gogcli...' });
+  if (onProgress) onProgress({ step: 'gog', percent: 0, message: 'Đang kiểm tra gogcli...', subStep: 'Google Workspace CLI' });
 
   const gogDir = path.join(getRuntimeNodeDir(), 'gog');
   const gogBin = isWin
@@ -1279,7 +1252,7 @@ async function ensureGogCli(onProgress) {
 
   // Step 2: Fallback download from GitHub
   if (!installed) {
-    await installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValue);
+    await installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValue, onProgress);
   }
 
   if (!(await checkGogCliReady())) {
@@ -1296,7 +1269,7 @@ function getBundledGogPath() {
   return fs.existsSync(p) ? p : null;
 }
 
-async function installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValue) {
+async function installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValue, onProgress) {
   const archMap = { x64: 'amd64', arm64: 'arm64' };
   const platMap = { win32: 'windows', darwin: 'darwin' };
   const ver = GOG_VERSION.replace(/^v/, '');
@@ -1306,22 +1279,30 @@ async function installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValu
   const assetName = `gogcli_${ver}_${platform}_${archMap[arch]}${ext}`;
   const url = `https://github.com/steipete/gogcli/releases/download/${GOG_VERSION}/${assetName}`;
 
+  const gogProgress = (p) => {
+    if (onProgress) {
+      const sizeMB = p.total > 0 ? (p.total / 1024 / 1024).toFixed(0) : '';
+      const dlMB = p.downloaded > 0 ? (p.downloaded / 1024 / 1024).toFixed(1) : '';
+      const sizeStr = sizeMB ? ` (${dlMB}/${sizeMB} MB)` : '';
+      onProgress({ step: 'gog', percent: p.percent * 0.7, message: `Đang tải gogcli${sizeStr}`, subStep: assetName });
+    }
+  };
+
   let downloaded = false;
   let lastError = null;
   let tmp = path.join(require('os').tmpdir(), `gogcli-dl-${Date.now()}${ext}`);
 
   try {
-    await downloadFile(url, tmp, null);
+    await downloadFile(url, tmp, gogProgress);
     verifyDownloadedGogArchive(tmp);
     downloaded = true;
   } catch (e) {
     lastError = e;
-    // Try alternate naming (some releases use different format)
     const altName = `gogcli_${ver}_${platMap[process.platform]}_${arch}.${isWin ? 'zip' : 'tar.gz'}`;
     const altUrl = `https://github.com/steipete/gogcli/releases/download/${GOG_VERSION}/${altName}`;
     try {
       const tmp2 = path.join(require('os').tmpdir(), `gogcli-alt-${Date.now()}.${isWin ? 'zip' : 'tar.gz'}`);
-      await downloadFile(altUrl, tmp2, null);
+      await downloadFile(altUrl, tmp2, gogProgress);
       verifyDownloadedGogArchive(tmp2);
       tmp = tmp2;
       downloaded = true;
@@ -1334,6 +1315,7 @@ async function installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValu
     throw new Error(`Không tải được gogcli. Kiểm tra kết nối mạng. (${lastError?.message || 'unknown'})`);
   }
 
+  if (onProgress) onProgress({ step: 'gog', percent: 75, message: 'Đang giải nén gogcli...', subStep: 'Extracting' });
   fs.mkdirSync(gogDir, { recursive: true });
   const extractDir = path.join(gogDir, 'temp-' + Date.now());
   fs.mkdirSync(extractDir, { recursive: true });

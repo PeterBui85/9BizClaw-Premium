@@ -601,6 +601,7 @@ app.whenReady().then(async () => {
   // - No bundled vendor tar in EXE — runtime installer downloads everything on first launch.
   // - userData/vendor/ holds runtime-installed Node + npm packages.
   // - gogcli is optional (Google Workspace CLI) — never blocks boot.
+  let splashWindow;
   try {
     const runtimeInstaller = require('./lib/runtime-installer');
     const migration = require('./lib/migration');
@@ -628,10 +629,12 @@ app.whenReady().then(async () => {
 
     // Check if we need work BEFORE showing splash (fast subsequent launches = no splash)
     const preCheck = await runtimeInstaller.checkInstallation();
-    const needsWork = !preCheck.ready || (migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
+    const isMacBundled = preCheck.node && preCheck.node.type === 'bundled';
+    // Mac bundled model: migration runs silently (no downloads, just backup + cleanup).
+    // Only show splash for real runtime install work (Windows).
+    const needsWork = !preCheck.ready || (!isMacBundled && migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
 
     // Show splash window ONLY if we have real work to do
-    let splashWindow;
     if (needsWork) {
       global._splashActive = true;
       splashWindow = new BrowserWindow({
@@ -741,7 +744,8 @@ app.whenReady().then(async () => {
       const { dialog } = require('electron');
       dialog.showErrorBox('Lỗi khởi tạo', 'Không thể cài đặt 9BizClaw.\n\n' + String(e?.message || e));
     } catch {}
-    return;
+    // Fall through to createWindow() so user isn't stuck with no UI.
+    // Dashboard will still load — some features may be degraded.
   }
 
   // Initialize knowledge embedder after ctx.userDataDir update.
