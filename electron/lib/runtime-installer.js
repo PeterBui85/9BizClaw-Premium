@@ -320,6 +320,7 @@ async function detectNodeInstallation() {
     const nodeBin = getRuntimeNodeBinPath();
     if (!isNodeInstallComplete()) {
       console.warn('[runtime-installer] node.exe exists but npm-cli missing — incomplete extraction, forcing re-install');
+      killOrphanVendorNodeProcesses();
       try { fs.rmSync(getRuntimeNodeHomeDir(), { recursive: true, force: true }); } catch {}
       return { type: 'none', path: null, version: null, satisfiesMin: false, isSystem: false };
     }
@@ -547,17 +548,35 @@ async function installNode(targetVersion, onProgress) {
 
     try {
       if (type === 'zip') {
-        await new Promise((resolve, reject) => {
-          const ps = spawn('powershell', [
-            '-NoProfile',
-            '-Command',
-            `Expand-Archive -Path '${downloadPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
-          ], { stdio: 'pipe' });
-          let stderr = '';
-          ps.stderr?.on('data', d => { stderr += String(d); });
-          ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Expand-Archive failed (${code}): ${stderr}`)));
-          ps.on('error', reject);
-        });
+        // Use native tar (bsdtar, built into Windows 10+) — faster than
+        // PowerShell Expand-Archive and avoids .NET MAX_PATH edge cases.
+        // Falls back to Expand-Archive only if tar fails.
+        let extracted = false;
+        try {
+          await new Promise((resolve, reject) => {
+            const t = spawn('tar', ['-xf', downloadPath, '-C', extractDir], { stdio: 'pipe' });
+            let stderr = '';
+            t.stderr?.on('data', d => { stderr += String(d); });
+            t.on('close', (code) => code === 0 ? resolve() : reject(new Error(`tar -xf zip failed (${code}): ${stderr}`)));
+            t.on('error', reject);
+          });
+          extracted = true;
+        } catch (tarErr) {
+          console.warn('[runtime-installer] tar -xf zip failed, falling back to Expand-Archive:', tarErr.message);
+        }
+        if (!extracted) {
+          await new Promise((resolve, reject) => {
+            const ps = spawn('powershell', [
+              '-NoProfile',
+              '-Command',
+              `Expand-Archive -Path '${downloadPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
+            ], { stdio: 'pipe' });
+            let stderr = '';
+            ps.stderr?.on('data', d => { stderr += String(d); });
+            ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Expand-Archive failed (${code}): ${stderr}`)));
+            ps.on('error', reject);
+          });
+        }
       } else {
         await new Promise((resolve, reject) => {
           const tar = spawn('tar', ['-xzf', downloadPath, '-C', extractDir], { stdio: 'pipe' });
@@ -597,6 +616,8 @@ async function installNode(targetVersion, onProgress) {
       throw new Error('Could not find extracted Node.js directory');
     }
 
+    // Kill any process using vendor/node/node.exe before replacing it
+    killOrphanVendorNodeProcesses();
     // Move extracted Node root to vendor/node, preserving vendor/node_modules.
     try { fs.rmSync(nodeDir, { recursive: true, force: true }); } catch {}
     fs.mkdirSync(path.dirname(nodeDir), { recursive: true });
@@ -732,6 +753,27 @@ function getRuntimeNpmCommand(nodeBin = null) {
 
   console.error('[runtime-installer] WARN: no npm-cli found in any tier — falling back to bare npm');
   return { command: isWin ? 'npm.cmd' : 'npm', argsPrefix: [], shell: isWin };
+}
+
+function killOrphanVendorNodeProcesses() {
+  if (process.platform !== 'win32') return;
+  try {
+    const nodeHome = getRuntimeNodeHomeDir();
+    const nodeBin = path.join(nodeHome, 'node.exe');
+    if (!fs.existsSync(nodeBin)) return;
+    const escaped = nodeBin.replace(/\\/g, '\\\\');
+    const out = execSync(
+      `wmic process where "ExecutablePath='${escaped}'" get ProcessId /format:list`,
+      { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'] }
+    );
+    const pids = out.match(/ProcessId=(\d+)/g)?.map(m => m.split('=')[1]) || [];
+    const myPid = String(process.pid);
+    for (const pid of pids) {
+      if (pid === myPid) continue;
+      try { execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 }); } catch {}
+    }
+    if (pids.length) console.log('[runtime-installer] killed orphan vendor node process(es):', pids.filter(p => p !== myPid).join(', '));
+  } catch {}
 }
 
 function killOrphan9RouterProcesses() {
