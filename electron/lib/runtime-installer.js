@@ -295,6 +295,21 @@ function getRuntimeNodeBinPath() {
     : path.join(nodeDir, 'bin', 'node');
 }
 
+function findNpmCliIn(dir) {
+  const npmBinDir = path.join(dir, 'node_modules', 'npm', 'bin');
+  for (const name of ['npm-cli.js', 'npm-cli.cjs', 'npm-cli.mjs']) {
+    const p = path.join(npmBinDir, name);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function isNodeInstallComplete() {
+  const nodeBin = getRuntimeNodeBinPath();
+  if (!fs.existsSync(nodeBin)) return false;
+  return !!findNpmCliIn(getRuntimeNodeHomeDir());
+}
+
 async function detectNodeInstallation() {
   // Priority: runtime-installed (userData/vendor/) > system Node
   // Both Mac and Windows use runtime install model (v2.4.0+).
@@ -303,6 +318,11 @@ async function detectNodeInstallation() {
   const runtimeVersion = await getRuntimeNodeVersion();
   if (runtimeVersion) {
     const nodeBin = getRuntimeNodeBinPath();
+    if (!isNodeInstallComplete()) {
+      console.warn('[runtime-installer] node.exe exists but npm-cli missing — incomplete extraction, forcing re-install');
+      try { fs.rmSync(getRuntimeNodeHomeDir(), { recursive: true, force: true }); } catch {}
+      return { type: 'none', path: null, version: null, satisfiesMin: false, isSystem: false };
+    }
     console.log('[runtime-installer] Found runtime Node:', runtimeVersion, 'at', nodeBin);
     return {
       type: 'runtime',
@@ -603,11 +623,18 @@ async function installNode(targetVersion, onProgress) {
     throw new Error(`Không giải nén được Node.js: ${e.message}`);
   }
 
-  // Verify extracted binary exists
+  // Verify extracted binary AND npm-cli exist (catch partial extractions)
   const nodeBin = getRuntimeNodeBinPath();
   if (!fs.existsSync(nodeBin)) {
     throw new Error(`Node.js installation failed: binary not found at ${nodeBin}`);
   }
+  const npmCliPath = findNpmCliIn(getRuntimeNodeHomeDir());
+  if (!npmCliPath) {
+    console.error('[runtime-installer] node.exe OK but npm-cli missing — extraction incomplete');
+    try { fs.rmSync(getRuntimeNodeHomeDir(), { recursive: true, force: true }); } catch {}
+    throw new Error('Node.js extraction incomplete: npm not found. Will retry on next launch.');
+  }
+  console.log('[runtime-installer] npm-cli verified at', npmCliPath);
 
   // Cleanup download archive (already verified before extraction)
   try { fs.unlinkSync(downloadPath); } catch {}
@@ -665,32 +692,34 @@ async function getWorkingNodeBin() {
 
 function getRuntimeNpmCommand(nodeBin = null) {
   const runtimeNode = nodeBin || getRuntimeNodeBinPath();
-  const npmCli = path.join(getRuntimeNodeHomeDir(), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  if (runtimeNode && fs.existsSync(runtimeNode) && fs.existsSync(npmCli)) {
-    return { command: runtimeNode, argsPrefix: [npmCli], shell: false };
+
+  // Tier 1: runtime node + npm-cli from node home (covers .js/.cjs/.mjs)
+  const nodeHomeCli = findNpmCliIn(getRuntimeNodeHomeDir());
+  if (runtimeNode && fs.existsSync(runtimeNode) && nodeHomeCli) {
+    return { command: runtimeNode, argsPrefix: [nodeHomeCli], shell: false };
   }
 
+  // Tier 2: node binary sibling npm-cli (when nodeBin is external e.g. system node)
   if (runtimeNode && fs.existsSync(runtimeNode)) {
-    const siblingNpmCli = path.join(path.dirname(runtimeNode), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-    if (fs.existsSync(siblingNpmCli)) {
-      return { command: runtimeNode, argsPrefix: [siblingNpmCli], shell: false };
+    const siblingCli = findNpmCliIn(path.dirname(runtimeNode));
+    if (siblingCli) {
+      return { command: runtimeNode, argsPrefix: [siblingCli], shell: false };
     }
   }
 
+  // Tier 3: system npm (where npm.cmd / command -v npm)
   const isWin = process.platform === 'win32';
   try {
     const cmd = isWin ? 'where npm.cmd' : 'command -v npm';
     const out = execSync(cmd, { encoding: 'utf-8', timeout: 5000, shell: !isWin }).trim();
     const npmPath = out.split(/\r?\n/)[0]?.trim();
     if (npmPath) {
-      // On Windows, npm.cmd with spaces in path breaks shell:true spawn.
-      // Resolve to node.exe + npm-cli.js instead (shell:false, space-safe).
       if (isWin && npmPath.toLowerCase().endsWith('.cmd')) {
         const npmDir = path.dirname(npmPath);
-        const npmCliJs = path.join(npmDir, 'node_modules', 'npm', 'bin', 'npm-cli.js');
         const nodeExe = path.join(npmDir, 'node.exe');
-        if (fs.existsSync(npmCliJs) && fs.existsSync(nodeExe)) {
-          return { command: nodeExe, argsPrefix: [npmCliJs], shell: false };
+        const cliFromDir = findNpmCliIn(npmDir);
+        if (cliFromDir && fs.existsSync(nodeExe)) {
+          return { command: nodeExe, argsPrefix: [cliFromDir], shell: false };
         }
       }
       return {
@@ -701,6 +730,7 @@ function getRuntimeNpmCommand(nodeBin = null) {
     }
   } catch {}
 
+  console.error('[runtime-installer] WARN: no npm-cli found in any tier — falling back to bare npm');
   return { command: isWin ? 'npm.cmd' : 'npm', argsPrefix: [], shell: isWin };
 }
 
@@ -1389,6 +1419,8 @@ module.exports = {
   getRuntimeNodeModulesDir,
   getRuntimeNodeBinPath,
   getRuntimeNpmCommand,
+  isNodeInstallComplete,
+  findNpmCliIn,
   getRuntimeVendorDir,
   findRuntimeNodeBin,
   findRuntimeOpenClawCliJs,
