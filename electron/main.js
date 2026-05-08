@@ -597,6 +597,23 @@ app.whenReady().then(async () => {
     } catch (e) { console.warn('[mac-xattr] strip failed:', e.message); }
   }
 
+  // Mac: auto-eject installer DMG after drag-to-Applications.
+  // Without this, the mounted DMG volume causes a duplicate Launchpad icon
+  // (one from /Applications, one from /Volumes/9BizClaw*). Eject is safe —
+  // the app is already copied to /Applications at this point.
+  if (process.platform === 'darwin' && app.isPackaged && !app.getAppPath().startsWith('/Volumes/')) {
+    try {
+      const volumes = fs.readdirSync('/Volumes').filter(v => /^9BizClaw/i.test(v));
+      for (const vol of volumes) {
+        const mountPoint = path.join('/Volumes', vol);
+        console.log('[mac-dmg-eject] ejecting installer volume:', mountPoint);
+        require('child_process').spawn('hdiutil', ['detach', mountPoint, '-quiet'], {
+          stdio: 'ignore', detached: true,
+        }).unref();
+      }
+    } catch {}
+  }
+
     // v2.4.0+ pure runtime install model:
   // - No bundled vendor tar in EXE — runtime installer downloads everything on first launch.
   // - userData/vendor/ holds runtime-installed Node + npm packages.
