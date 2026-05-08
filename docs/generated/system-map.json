@@ -2347,12 +2347,12 @@
       "bytes": 33786
     },
     {
-      "path": "electron/lib/google-api.js",
-      "bytes": 29327
+      "path": "electron/lib/media-library.js",
+      "bytes": 30188
     },
     {
-      "path": "electron/lib/media-library.js",
-      "bytes": 26688
+      "path": "electron/lib/google-api.js",
+      "bytes": 29327
     },
     {
       "path": "electron/lib/conversation.js",

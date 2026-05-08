@@ -375,6 +375,68 @@ function extractDctImagesFromPdf(pdfPath, maxImages = Infinity) {
   return images;
 }
 
+async function extractFlateImagesFromPdf(pdfPath, maxImages = Infinity) {
+  let sharp;
+  try { sharp = require('sharp'); } catch { return []; }
+  const buf = fs.readFileSync(pdfPath);
+  const streamToken = Buffer.from('stream', 'latin1');
+  const endToken = Buffer.from('endstream', 'latin1');
+  const objToken = Buffer.from(' obj', 'latin1');
+  const candidates = [];
+  const candidateCap = Math.min(maxImages === Infinity ? 300 : maxImages * 3, 300);
+  let pos = 0;
+  while (candidates.length < candidateCap) {
+    const streamAt = buf.indexOf(streamToken, pos);
+    if (streamAt < 0) break;
+    const endAt = buf.indexOf(endToken, streamAt + streamToken.length);
+    if (endAt < 0) break;
+    const objMarkerAt = buf.lastIndexOf(objToken, streamAt);
+    let objStart = objMarkerAt;
+    while (objStart > 0 && buf[objStart] !== 0x0a && buf[objStart] !== 0x0d) objStart--;
+    const dict = buf.slice(Math.max(0, objStart), streamAt).toString('latin1');
+    const isImage = /\/Subtype\s*\/Image/.test(dict);
+    const isJpeg = /\/DCTDecode/.test(dict);
+    const isFlate = /\/FlateDecode/.test(dict);
+    if (isImage && isFlate && !isJpeg) {
+      const wMatch = dict.match(/\/Width\s+(\d+)/);
+      const hMatch = dict.match(/\/Height\s+(\d+)/);
+      const bpcMatch = dict.match(/\/BitsPerComponent\s+(\d+)/);
+      if (wMatch && hMatch) {
+        const width = parseInt(wMatch[1], 10);
+        const height = parseInt(hMatch[1], 10);
+        const bpc = bpcMatch ? parseInt(bpcMatch[1], 10) : 8;
+        if (width >= 32 && height >= 32 && bpc === 8) {
+          let channels = 3;
+          if (/\/DeviceGray/.test(dict)) channels = 1;
+          else if (/\/DeviceCMYK/.test(dict)) channels = 4;
+          else if (/\/ICCBased/.test(dict) && /\/N\s+4/.test(dict)) channels = 4;
+          else if (/\/ICCBased/.test(dict) && /\/N\s+1/.test(dict)) channels = 1;
+          candidates.push({ streamAt, endAt, width, height, channels });
+        }
+      }
+    }
+    pos = endAt + endToken.length;
+  }
+  const images = [];
+  for (const c of candidates) {
+    if (images.length >= maxImages) break;
+    try {
+      const [dataStart, dataEnd] = stripPdfStreamNewline(buf, c.streamAt + streamToken.length, c.endAt);
+      let raw;
+      try { raw = zlib.inflateSync(buf.slice(dataStart, dataEnd)); }
+      catch { raw = zlib.inflateRawSync(buf.slice(dataStart, dataEnd)); }
+      const expected = c.width * c.height * c.channels;
+      if (raw.length < expected) continue;
+      if (raw.length > expected) raw = raw.slice(0, expected);
+      const pngBuf = await sharp(raw, { raw: { width: c.width, height: c.height, channels: c.channels } }).png().toBuffer();
+      if (pngBuf.length > 2048) {
+        images.push({ buffer: pngBuf, index: images.length + 1, width: c.width, height: c.height, source: 'flate' });
+      }
+    } catch { /* skip unrecoverable */ }
+  }
+  return images;
+}
+
 function scoreAsset(queryTerms, asset) {
   const haystack = assetSearchHaystack(asset);
   if (!haystack) return 0;
@@ -606,19 +668,29 @@ async function renderPdfPagesToMedia(pdfPath, options = {}) {
     }
   }
 
-  const embeddedImages = extractDctImagesFromPdf(pdfPath, options.maxPages === Infinity ? Infinity : Math.max(1, parseInt(options.maxPages || 9999, 10) || 9999));
+  const maxPagesLimit = options.maxPages === Infinity ? Infinity : Math.max(1, parseInt(options.maxPages || 9999, 10) || 9999);
+  let embeddedImages = extractDctImagesFromPdf(pdfPath, maxPagesLimit);
   if (embeddedImages.length === 0) {
-    throw new Error(`${PDF_RENDER_ERROR_VI}. Không tìm thấy ảnh JPEG nhúng trong PDF để dùng làm fallback.`);
+    const flateImages = await extractFlateImagesFromPdf(pdfPath, maxPagesLimit);
+    if (flateImages.length > 0) {
+      console.log(`[media] found ${flateImages.length} Flate-encoded image(s) in PDF`);
+      embeddedImages = flateImages;
+    } else {
+      throw new Error(`${PDF_RENDER_ERROR_VI}. Không tìm thấy ảnh nhúng (JPEG hoặc PNG) trong PDF để dùng làm fallback.`);
+    }
   }
 
   const assets = [];
   const totalPages = embeddedImages.length;
   for (const img of embeddedImages) {
     const basePageName = `page-${String(img.index).padStart(4, '0')}`;
-    let fileName = `${basePageName}.jpg`;
+    const isFlateSource = img.source === 'flate';
+    let fileName = isFlateSource ? `${basePageName}.png` : `${basePageName}.jpg`;
     let outPath = path.join(outDir, fileName);
-    let renderMethod = 'embedded_jpeg';
-    if (sharp) {
+    let renderMethod = isFlateSource ? 'embedded_flate_png' : 'embedded_jpeg';
+    if (isFlateSource) {
+      fs.writeFileSync(outPath, img.buffer);
+    } else if (sharp) {
       try {
         fileName = `${basePageName}.png`;
         outPath = path.join(outDir, fileName);
@@ -658,7 +730,8 @@ async function renderPdfPagesToMedia(pdfPath, options = {}) {
       }
     }
   }
-  return { pages: totalPages, processed: assets.length, assets, method: 'embedded_jpeg' };
+  const usedMethod = embeddedImages.some(i => i.source === 'flate') ? 'embedded_flate_png' : 'embedded_jpeg';
+  return { pages: totalPages, processed: assets.length, assets, method: usedMethod };
 }
 
 function backfillLegacyBrandAssets() {
