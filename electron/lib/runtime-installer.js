@@ -683,6 +683,16 @@ function getRuntimeNpmCommand(nodeBin = null) {
     const out = execSync(cmd, { encoding: 'utf-8', timeout: 5000, shell: !isWin }).trim();
     const npmPath = out.split(/\r?\n/)[0]?.trim();
     if (npmPath) {
+      // On Windows, npm.cmd with spaces in path breaks shell:true spawn.
+      // Resolve to node.exe + npm-cli.js instead (shell:false, space-safe).
+      if (isWin && npmPath.toLowerCase().endsWith('.cmd')) {
+        const npmDir = path.dirname(npmPath);
+        const npmCliJs = path.join(npmDir, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+        const nodeExe = path.join(npmDir, 'node.exe');
+        if (fs.existsSync(npmCliJs) && fs.existsSync(nodeExe)) {
+          return { command: nodeExe, argsPrefix: [npmCliJs], shell: false };
+        }
+      }
       return {
         command: npmPath,
         argsPrefix: [],
