@@ -2316,7 +2316,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 49605
+      "bytes": 50166
     },
     {
       "path": "electron/lib/workspace.js",
