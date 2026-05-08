@@ -482,6 +482,49 @@ function startCronApi() {
       } catch (e) {
         return jsonResp(res, 500, { error: 'config read error' });
       }
+    } else if (urlPath === '/api/capabilities') {
+      try {
+        let capDir = path.join(__dirname, '..', '..', 'capabilities');
+        if (!fs.existsSync(capDir)) {
+          try { capDir = path.join(process.resourcesPath, 'workspace-templates', 'capabilities'); } catch {}
+        }
+        if (!fs.existsSync(capDir)) {
+          return jsonResp(res, 500, { error: 'Capabilities directory not found (dev or packaged)' });
+        }
+        const files = fs.readdirSync(capDir).filter(f => f.endsWith('.contract.json'));
+        const domainMap = {
+          'brand-image': 'image',
+          'facebook-post': 'facebook',
+          'google-sheets': 'google',
+          'google-gmail': 'google',
+          'zalo-cron': 'zalo'
+        };
+        const domains = {};
+        for (const file of files) {
+          try {
+            const contract = JSON.parse(fs.readFileSync(path.join(capDir, file), 'utf-8'));
+            const domain = domainMap[contract.id] || contract.id.split('-')[0];
+            if (!domains[domain]) domains[domain] = { capabilities: [] };
+            domains[domain].capabilities.push({
+              id: contract.id,
+              title: contract.title,
+              allowedChannels: contract.allowedChannels,
+              requiresConfirmation: contract.requiresConfirmation || false,
+              sideEffects: contract.sideEffects || [],
+              apiCalls: contract.apiCalls
+            });
+          } catch (parseErr) {
+            console.error('[capabilities] skipping malformed contract ' + file + ': ' + parseErr.message);
+          }
+        }
+        return jsonResp(res, 200, {
+          version: '1',
+          baseUrl: 'http://127.0.0.1:' + _cronApiPort,
+          domains
+        });
+      } catch (e) {
+        return jsonResp(res, 500, { error: 'Failed to load capabilities: ' + e.message });
+      }
     }
 
     // Path sandboxing: block reads/writes to sensitive files regardless of token.
@@ -503,6 +546,11 @@ function startCronApi() {
         /\.ssh\//i,
         /\.gnupg\//i,
         /client_secret\.json/i,
+        /agents\.md$/i,
+        /bootstrap\.md$/i,
+        /identity\.md$/i,
+        /soul\.md$/i,
+        /openclaw\.json$/i,
       ];
       if (SENSITIVE_PATTERNS.some(p => p.test(reqPath))) {
         auditLog('file_api_blocked', { urlPath, path: reqPath, reason: 'sensitive path' });
@@ -548,8 +596,6 @@ function startCronApi() {
         const agentPrompt = rawPrompt || content;
         if (!agentPrompt) return jsonResp(res, 400, { error: 'prompt (or content) required for mode=agent' });
         if (String(agentPrompt).length > 2000) return jsonResp(res, 400, { error: 'prompt too long (max 2000 chars)' });
-        const existingCrons = loadCustomCrons();
-        if (existingCrons.length >= 20) return jsonResp(res, 400, { error: 'too many crons (max 20). Delete some first.' });
         if (cronExpr) {
           const normalized = String(cronExpr).trim().replace(/\s+/g, ' ');
           if (!nodeCron.validate(normalized)) return jsonResp(res, 400, { error: 'invalid cronExpr: ' + cronExpr });
@@ -576,7 +622,7 @@ function startCronApi() {
         const delivery = resolveCronZaloTarget({ groupId, groupIds, groupName, targetId: rawTargetId, friendName, isGroup }, { allowMultipleGroups: false });
         if (delivery?.error) return jsonResp(res, 400, { error: delivery.error });
 
-        const id = 'cron_' + Date.now();
+        const id = 'cron_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex');
         const entry = {
           id,
           label: label || ('Agent cron ' + new Date().toISOString().slice(0, 16)),
@@ -600,6 +646,7 @@ function startCronApi() {
         try {
           return await withWriteLock(async () => {
             const crons = loadCustomCrons();
+            if (crons.length >= 20) return jsonResp(res, 400, { error: 'too many crons (max 20). Delete some first.' });
             crons.push(entry);
             writeJsonAtomic(getCustomCronsPath(), crons);
             try { restartCronJobs(); } catch {}
@@ -622,8 +669,6 @@ function startCronApi() {
       const resolvedIds = targets.map(t => byName[t.toLowerCase()] || t);
       const invalidIds = resolvedIds.filter(id => !(id in byId));
       if (invalidIds.length > 0) return jsonResp(res, 400, { error: 'unknown groupId(s): ' + invalidIds.join(', ') + '. Available: ' + Object.entries(byId).map(([id, name]) => `${name} (${id})`).join(', ') });
-      const existingCrons = loadCustomCrons();
-      if (existingCrons.length >= 20) return jsonResp(res, 400, { error: 'too many crons (max 20). Delete some first.' });
       if (cronExpr) {
         const normalized = String(cronExpr).trim().replace(/\s+/g, ' ');
         if (!nodeCron.validate(normalized)) return jsonResp(res, 400, { error: 'invalid cronExpr: ' + cronExpr });
@@ -641,7 +686,7 @@ function startCronApi() {
       }
       if (!cronExpr && !oneTimeAt) return jsonResp(res, 400, { error: 'cronExpr or oneTimeAt required' });
       const targetStr = resolvedIds.join(',');
-      const id = 'cron_' + Date.now();
+      const id = 'cron_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex');
       const entry = {
         id,
         label: label || ('Cron ' + new Date().toISOString().slice(0, 16)),
@@ -654,6 +699,7 @@ function startCronApi() {
       try {
         return await withWriteLock(async () => {
           const crons = loadCustomCrons();
+          if (crons.length >= 20) return jsonResp(res, 400, { error: 'too many crons (max 20). Delete some first.' });
           crons.push(entry);
           writeJsonAtomic(getCustomCronsPath(), crons);
           try { restartCronJobs(); } catch {}
@@ -1397,6 +1443,12 @@ function startCronApi() {
       if (!url) return jsonResp(res, 400, { error: 'url required' });
       if (!saveTo) return jsonResp(res, 400, { error: 'path required (where to save the file)' });
       if (!/^https?:\/\//i.test(url)) return jsonResp(res, 400, { error: 'SECURITY: only http/https URLs allowed' });
+      const urlHost = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+      const BLOCKED_HOSTS = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.|localhost|::1|\[::)/i;
+      if (BLOCKED_HOSTS.test(urlHost)) {
+        auditLog('file_download_blocked', { url, reason: 'internal/private IP' });
+        return jsonResp(res, 403, { error: 'SECURITY: downloads from internal/private IPs are blocked' });
+      }
       const abs = path.resolve(saveTo);
       if (fs.existsSync(abs)) return jsonResp(res, 409, { error: 'destination already exists: ' + abs, warning: 'SECURITY: will not overwrite. Delete first if intentional.' });
       auditLog('file_download', { url, saveTo: abs });
@@ -1454,7 +1506,7 @@ function startCronApi() {
       // The agent only needs these specific tools — everything else is blocked.
       const cmdTrimmed = cmd.trimStart();
       const ALLOWED_PREFIXES = [
-        'openzca', 'node', 'openclaw', 'git', 'npm',
+        'openzca', 'openclaw', 'git', 'npm',
         'dir', 'ls', 'cat', 'type', 'echo', 'whoami',
       ];
       const firstToken = cmdTrimmed.split(/[\s\/\\]/)[0].toLowerCase();
@@ -1462,11 +1514,13 @@ function startCronApi() {
         auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'command not in allowlist', firstToken });
         return jsonResp(res, 403, { error: 'SECURITY: command blocked. Only these commands are allowed: ' + ALLOWED_PREFIXES.join(', ') + '. Got: "' + firstToken + '"' });
       }
-      // Block shell metacharacters that enable command chaining/injection
-      const SHELL_META = /[;|&`$(){}!<>]/;
+      // Block shell metacharacters that enable command chaining/injection.
+      // Includes \n \r (command separators in both cmd.exe and /bin/sh)
+      // and ^ (cmd.exe escape character that can unblock & | etc.)
+      const SHELL_META = /[;|&`$(){}!<>\n\r^]/;
       if (SHELL_META.test(cmdTrimmed)) {
         auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'shell metacharacter detected' });
-        return jsonResp(res, 403, { error: 'SECURITY: command contains blocked shell metacharacters (;|&`$(){}!<>).' });
+        return jsonResp(res, 403, { error: 'SECURITY: command contains blocked shell metacharacters.' });
       }
       auditLog('exec_run', { command: cmd.slice(0, 200), cwd: params.cwd || '(default)' });
       const timeoutMs = Math.min(parseInt(params.timeout) || 30000, 120000);

@@ -71,15 +71,16 @@ const PINNED = {
 };
 
 // =========================================================================
-// TEST 1: Vendor packages exist at pinned versions (Mac builds only)
+// TEST 1: Vendor packages exist at pinned versions (dev prebuild only)
 // =========================================================================
 section('Vendor packages');
-// Build artifacts differ per platform as of 2026-04-08:
-//   - Mac DMG: ships vendor/ directory directly (APFS fast drag-drop copy)
-//   - Win EXE: ships vendor-bundle.tar + vendor-meta.json (one-big-file NSIS install)
+// Build artifacts (v2.4.0+ pure runtime install):
+//   - Both Mac DMG and Win EXE: ship only modoro-zalo plugin (~2 MB).
+//     Node.js + npm packages downloaded on first launch.
+//   - Win builds may still produce vendor-bundle.tar for potential future use.
 //
-// If either layout is present, prebuild has run and we verify.
-// If neither is present, this is a standalone smoke run — skip silently.
+// If vendor dir or tar is present (dev prebuild or Windows tar), we verify.
+// If neither is present, this is a standalone/CI smoke run — skip silently.
 const hasVendorDir = fs.existsSync(VENDOR_NM);
 const hasVendorTar = fs.existsSync(VENDOR_TAR) && fs.existsSync(VENDOR_META);
 const isBundledBuild = hasVendorDir || hasVendorTar;
@@ -584,8 +585,10 @@ function checkPatchAnchorContent(name, content, anchorRegex, patchMarker, hint) 
   fail(name, `neither anchor regex NOR patch marker "${patchMarker}" found. ${hint}`);
 }
 
-// Look for modoro-zalo source in vendor first, then user-installed extensions
+// Look for modoro-zalo source: packages/ (repo), dist/ (prebuild output), vendor, user-installed
 const modoroZaloSrcCandidates = [
+  path.join(ROOT, 'packages', 'modoro-zalo', 'src'),
+  path.join(ROOT, 'dist', 'modoro-zalo', 'src'),
   path.join(VENDOR_NM, 'modoro-zalo', 'src'),
   path.join(process.env.USERPROFILE || process.env.HOME || '', '.openclaw', 'extensions', 'modoro-zalo', 'src'),
 ];
@@ -599,16 +602,16 @@ const modoroZaloTarSrc = !!(
   && tarContents.has('vendor/node_modules/modoro-zalo/src/inbound.ts')
 );
 
-// In CI Mac builds the vendor MUST contain modoro-zalo (no user-installed
-// fallback exists in CI). Fail loudly if vendor is empty so the build doesn't
-// silently ship a DMG with no plugin patches applied at runtime.
+// In CI builds, modoro-zalo source MUST be found somewhere (packages/, dist/, vendor, or tar).
+// v2.4.0+: Mac uses runtime install model — vendor dir won't exist on Mac CI.
+// The plugin is shipped via dist/modoro-zalo (prebuild:modoro-zalo step).
 const isCiBuild = !!process.env.CI || !!process.env.GITHUB_ACTIONS;
-if (!modoroZaloSrc && !modoroZaloTarSrc && isCiBuild && process.platform === 'darwin') {
-  fail('modoro-zalo vendor source', 'CI Mac build requires vendor/node_modules/modoro-zalo/src — prebuild-vendor failed silently');
+if (!modoroZaloSrc && !modoroZaloTarSrc && isCiBuild) {
+  fail('modoro-zalo source', 'CI build has no modoro-zalo source in packages/, dist/, vendor, or tar — prebuild:modoro-zalo may have failed');
 }
 
-if (!modoroZaloSrc && modoroZaloTarSrc && isCiBuild && process.platform === 'darwin') {
-  pass('modoro-zalo vendor source present in vendor-bundle.tar');
+if (!modoroZaloSrc && modoroZaloTarSrc && isCiBuild) {
+  pass('modoro-zalo source present in vendor-bundle.tar');
 }
 
 if (modoroZaloSrc) {
@@ -819,7 +822,7 @@ function findOpenclawSessionUtils() {
 }
 const sessionUtilsFiles = findOpenclawSessionUtils();
 if (!sessionUtilsFiles) {
-  warn('vision-patch anchor', 'openclaw session-utils not found in vendor or node_modules — skip (run prebuild:vendor first)');
+  warn('vision-patch anchor', 'openclaw session-utils not found — expected in runtime-only model (openclaw downloaded on first launch)');
 } else {
   const FUNC_SIG = 'async function resolveGatewayModelSupportsImages(params) {';
   let anchorFound = false;
@@ -858,7 +861,7 @@ function findOpenclawModelCatalog() {
 }
 const modelCatalogFiles = findOpenclawModelCatalog();
 if (!modelCatalogFiles) {
-  warn('vision-catalog-patch anchor', 'openclaw model-catalog not found in vendor or node_modules — skip (run prebuild:vendor first)');
+  warn('vision-catalog-patch anchor', 'openclaw model-catalog not found — expected in runtime-only model (openclaw downloaded on first launch)');
 } else {
   const FUNC_SIG_CATALOG = 'function modelSupportsVision(entry) {';
   let anchorFoundCatalog = false;
@@ -908,7 +911,7 @@ const serializationTargets = [
 let serializationDistFound = false;
 for (const dir of visionSerializationDirs) if (fs.existsSync(dir)) { serializationDistFound = true; break; }
 if (!serializationDistFound) {
-  warn('vision-serialization anchors', 'openclaw dist not found in vendor or node_modules — skip (run prebuild:vendor first)');
+  warn('vision-serialization anchors', 'openclaw dist not found — expected in runtime-only model (openclaw downloaded on first launch)');
 } else {
   for (const target of serializationTargets) {
     const hit = findFileWithFuncSig(visionSerializationDirs, target.prefix, target.sig);
@@ -2216,21 +2219,12 @@ try {
   } else {
     pass('mac release workflow gates smoke, signing, notarization, and DMG arch');
   }
-  const macResources = pkg.build?.mac?.extraResources || [];
   const topResources = pkg.build?.extraResources || [];
-  const runtimeBuild = (pkg.scripts?.['build:mac:arm'] || '').includes('prebuild:modoro-zalo')
-    && !(pkg.scripts?.['build:mac:arm'] || '').includes('prebuild:vendor');
-  if (runtimeBuild) {
-    const hasPlugin = [...topResources, ...macResources].some(r => r && r.from === 'dist/modoro-zalo' && r.to === 'modoro-zalo');
-    if (!hasPlugin) {
-      fail('mac runtime plugin resource', 'runtime-install builds must package dist/modoro-zalo for OpenClaw channel startup');
-    } else {
-      pass('mac runtime plugin resource packaged');
-    }
-  } else if (!macResources.some(r => r && r.from === 'vendor-meta.json' && r.to === 'vendor-meta.json')) {
-    fail('mac vendor metadata', 'mac.extraResources must package vendor-meta.json for model integrity checks');
+  const hasPlugin = topResources.some(r => r && r.from === 'dist/modoro-zalo' && r.to === 'modoro-zalo');
+  if (!hasPlugin) {
+    fail('mac runtime plugin resource', 'runtime-install builds must package dist/modoro-zalo for OpenClaw channel startup');
   } else {
-    pass('mac vendor metadata packaged');
+    pass('mac runtime plugin resource packaged');
   }
   const extraResources = topResources;
   if (!extraResources.some(r => r && r.from === '../knowledge/9bizclaw' && r.to === 'knowledge/9bizclaw')) {

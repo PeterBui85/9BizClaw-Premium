@@ -461,15 +461,16 @@ async function runMigration(options = {}) {
 
     // Step 5: Clean up old bundled files (userData)
     const cleaned = cleanupOldBundledFiles();
-    // Check if the critical vendor/ directory was actually cleaned.
-    // If it still exists (rename failed, file locked, etc.), the cleanup
-    // is incomplete and should be retried on next boot.
+    // Check if cleanup ran successfully. We look for vendor.stale-* dirs
+    // (meaning rename succeeded) rather than checking vendor/ absence,
+    // because the runtime installer creates a NEW vendor/ directory
+    // which would cause a false "cleanup failed" detection.
     const userData = getUserDataDir();
-    const vendorStillExists = fs.existsSync(path.join(userData, 'vendor'));
-    const cleanupComplete = !vendorStillExists;
+    const hasStaleVendor = (() => { try { return fs.readdirSync(userData).some(e => e.startsWith('vendor.stale-')); } catch { return false; } })();
+    const cleanupComplete = cleaned.length > 0 || !hasStaleVendor;
     steps.push({ step: 'cleanup', success: cleanupComplete, cleaned });
     if (!cleanupComplete) {
-      console.warn('[migration] vendor/ directory still exists after cleanup — will retry on next boot');
+      console.warn('[migration] vendor cleanup incomplete — will retry on next boot');
     }
 
     // Step 5b: Delete bundled tar from EXE resources (frees ~2 GB)

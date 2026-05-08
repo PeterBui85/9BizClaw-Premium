@@ -178,7 +178,7 @@ const { getUserDataDir, copyDirRecursive: _copyDir } = require('./workspace');
 function getRuntimeNodeDir() {
   // For runtime install (v2.4.0+), packages live in:
   //   Windows: %APPDATA%\9bizclaw\vendor\
-  // This matches getBundledVendorDir() so boot.js can find them.
+  //   Mac: ~/Library/Application Support/9bizclaw/vendor/
   return path.join(getUserDataDir(), 'vendor');
 }
 
@@ -269,9 +269,7 @@ function satisfiesMinVersion(version) {
 
 async function getSystemNodeVersion() {
   try {
-    const isWin = process.platform === 'win32';
-    const cmd = isWin ? 'node' : 'node';
-    const { stdout } = await execFilePromise(cmd, ['--version'], { timeout: 5000 });
+    const { stdout } = await execFilePromise('node', ['--version'], { timeout: 5000 });
     return stdout.trim();
   } catch {
     return null;
@@ -298,27 +296,8 @@ function getRuntimeNodeBinPath() {
 }
 
 async function detectNodeInstallation() {
-  // Priority: bundled-at-resources (macOS) > runtime-installed > system Node
-
-  // 0. Bundled vendor at resourcesPath (macOS DMG bundled model).
-  //    Check this BEFORE userData/vendor/ so macOS bundled builds short-circuit.
-  if (app && app.isPackaged && process.platform === 'darwin') {
-    try {
-      const resourcesNodeBin = path.join(process.resourcesPath, 'vendor', 'node', 'bin', 'node');
-      if (fs.existsSync(resourcesNodeBin)) {
-        const { stdout } = await execFilePromise(resourcesNodeBin, ['--version'], { timeout: 5000 });
-        const runtimeVersion = stdout.trim();
-        console.log('[runtime-installer] Found bundled vendor Node (resources):', runtimeVersion);
-        return {
-          type: 'bundled',
-          path: resourcesNodeBin,
-          version: runtimeVersion,
-          satisfiesMin: satisfiesMinVersion(runtimeVersion),
-          isSystem: false,
-        };
-      }
-    } catch {}
-  }
+  // Priority: runtime-installed (userData/vendor/) > system Node
+  // Both Mac and Windows use runtime install model (v2.4.0+).
 
   // 1. Runtime-installed Node at userData/vendor/
   const runtimeVersion = await getRuntimeNodeVersion();
@@ -351,11 +330,9 @@ async function detectNodeInstallation() {
   const systemVersion = await getSystemNodeVersion();
   if (systemVersion) {
     try {
-      const { stdout } = await execFilePromise(
-        process.platform === 'win32' ? 'where' : 'command -v',
-        process.platform === 'win32' ? ['node.exe'] : ['node'],
-        { timeout: 5000 }
-      );
+      const { stdout } = process.platform === 'win32'
+        ? await execFilePromise('where', ['node.exe'], { timeout: 5000 })
+        : await execFilePromise('/bin/sh', ['-c', 'command -v node'], { timeout: 5000 });
       const nodePath = process.platform === 'win32'
         ? stdout.trim().split('\n')[0].trim()
         : stdout.trim();
@@ -430,21 +407,25 @@ async function downloadFile(url, destPath, onProgress) {
         const total = parseInt(response.headers.get('content-length') || '0', 10);
         let downloaded = 0;
         const reader = response.body.getReader();
-        const chunks = [];
+        const ws = fs.createWriteStream(destPath);
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          downloaded += value.length;
-          if (total > 0 && onProgress) {
-            onProgress({ percent: Math.floor((downloaded / total) * 100), downloaded, total });
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            ws.write(Buffer.from(value));
+            downloaded += value.length;
+            if (total > 0 && onProgress) {
+              onProgress({ percent: Math.floor((downloaded / total) * 100), downloaded, total });
+            }
           }
+          ws.end();
+          await new Promise((res, rej) => { ws.on('finish', res); ws.on('error', rej); });
+        } catch (streamErr) {
+          ws.destroy();
+          try { fs.unlinkSync(destPath); } catch {}
+          throw streamErr;
         }
-
-        const blob = new Blob(chunks);
-        const arrayBuffer = await blob.arrayBuffer();
-        fs.writeFileSync(destPath, Buffer.from(arrayBuffer));
         clearTimeout(fetchTimeout);
         resolve();
       }).catch((e) => { clearTimeout(fetchTimeout); reject(attachHint(e)); });
@@ -944,17 +925,7 @@ async function ensureModoroZaloPlugin(onProgress) {
 }
 
 function checkModoroZaloReady() {
-  // Check both install model locations:
-  //   macOS bundled: resourcesPath/vendor/node_modules/modoro-zalo/
-  //   runtime (Win/Dev): userData/vendor/node_modules/modoro-zalo/
   const locations = [];
-
-  if (app && app.isPackaged && process.platform === 'darwin') {
-    try {
-      locations.push(path.join(process.resourcesPath, 'vendor', 'node_modules', 'modoro-zalo', 'openclaw.plugin.json'));
-    } catch {}
-  }
-
   try {
     locations.push(path.join(getRuntimeNodeModulesDir(), 'modoro-zalo', 'openclaw.plugin.json'));
   } catch {}
@@ -979,54 +950,24 @@ async function checkInstallation() {
   const runtimeVersion = getInstalledVersion();
   const zaloReady = checkModoroZaloReady();
 
-  // macOS bundled model: vendor lives at resourcesPath/vendor/ (not userData/vendor/).
-  // The bundled vendor is already pre-installed by the build process — no runtime
-  // install marker files exist. Treat the bundled model as "ready" if:
-  //   (a) nodeStatus.type === 'bundled' (node found at resourcesPath/vendor/node/)
-  //   (b) vendor packages exist at the correct location for the install model
   let layoutVersionOk = true;
   try {
     const lvPath = path.join(getUserDataDir(), 'layout-version.txt');
     if (fs.existsSync(lvPath)) {
       layoutVersionOk = fs.readFileSync(lvPath, 'utf8').trim() === LAYOUT_VERSION;
     } else {
-      // No marker — v1 layout is the first, treat as OK.
-      // On macOS bundled model, userData has no layout-version.txt (runtime-only marker).
       layoutVersionOk = true;
     }
   } catch { layoutVersionOk = true; }
 
-  // Determine packages-ready based on install model:
-  //   Bundled (macOS): packages are at resourcesPath/vendor/node_modules/
-  //   Runtime (Win/Dev): packages are at userData/vendor/node_modules/
-  let allPackagesInstalled;
-  if (nodeStatus.type === 'bundled') {
-    // macOS bundled model: check packages at resourcesPath/vendor/node_modules/
-    allPackagesInstalled = PACKAGES.every(pkg => {
-      const pkgPath = path.join(process.resourcesPath, 'vendor', 'node_modules', pkg.name, 'package.json');
-      try {
-        if (!fs.existsSync(pkgPath)) return false;
-        const pkgJson = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        return pkgJson.version === pkg.version;
-      } catch { return false; }
-    });
-  } else {
-    allPackagesInstalled = PACKAGES.every(pkg => {
-      const installed = installedPackages[pkg.name];
-      if (!installed) return false;
-      return installed === pkg.version;
-    });
-  }
+  const allPackagesInstalled = PACKAGES.every(pkg => {
+    const installed = installedPackages[pkg.name];
+    if (!installed) return false;
+    return installed === pkg.version;
+  });
 
-  // gogcli (Google Workspace CLI) is OPTIONAL — do NOT include it in filesReady.
-  // It is only needed when CEO uses Google Workspace features. The bot must still
-  // boot and run even if gogcli is absent.
   const filesReady = nodeStatus.satisfiesMin && allPackagesInstalled && zaloReady && layoutVersionOk;
-
-  // macOS bundled model: no runtimeVersion marker file exists — use nodeStatus.type
-  // as the indicator that installation is complete.
-  const isBundledModel = nodeStatus.type === 'bundled';
-  const ready = filesReady && (isBundledModel || (runtimeVersion === '2.4.0' && layoutVersionOk));
+  const ready = filesReady && runtimeVersion === '2.4.0' && layoutVersionOk;
   const gogReady = await checkGogCliReady();
 
   return {
@@ -1036,17 +977,7 @@ async function checkInstallation() {
     node: nodeStatus,
     packages: installedPackages,
     missingPackages: PACKAGES.filter(pkg => {
-      if (nodeStatus.type === 'bundled') {
-        // macOS bundled model: check resourcesPath/vendor/node_modules/
-        const pkgPath = path.join(process.resourcesPath, 'vendor', 'node_modules', pkg.name, 'package.json');
-        try {
-          if (!fs.existsSync(pkgPath)) return true;
-          const pkgJson = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-          return pkgJson.version !== pkg.version;
-        } catch { return true; }
-      } else {
-        return (installedPackages[pkg.name] || '') !== pkg.version;
-      }
+      return (installedPackages[pkg.name] || '') !== pkg.version;
     }).map(p => p.name),
     needsNodeInstall: !nodeStatus.satisfiesMin,
     needsPackageInstall: !allPackagesInstalled,
@@ -1081,23 +1012,12 @@ async function runInstallation({ onProgress } = {}) {
       return status;
     }
 
-    // On macOS bundled model, userData has no runtime-version.txt (the bundled
-    // vendor at resourcesPath/vendor/ is already pre-installed). Skip the version-marker
-    // path since there's nothing to write.
-    const isBundledModel = status.node && status.node.type === 'bundled';
-    if (status.filesReady && status.runtimeVersion !== '2.4.0' && !isBundledModel) {
+    if (status.filesReady && status.runtimeVersion !== '2.4.0') {
       writeInstalledVersion('2.4.0');
-      writeLayoutVersion(); // Both markers must be written to avoid unnecessary re-migration on next boot
+      writeLayoutVersion();
       _installStatus = await checkInstallation();
       if (onProgress) onProgress({ step: 'complete', percent: 100, message: 'Đã sẵn sàng!' });
       return _installStatus;
-    }
-
-    // macOS bundled model: vendor is pre-installed at resourcesPath/vendor/.
-    // No further installation steps needed.
-    if (isBundledModel && status.filesReady) {
-      if (onProgress) onProgress({ step: 'complete', percent: 100, message: 'Bundled vendor ready!' });
-      return status;
     }
 
     // Layout migration: if LAYOUT_VERSION changed, trigger a clean re-install.
@@ -1265,8 +1185,11 @@ async function ensureGogCli(onProgress) {
 function getBundledGogPath() {
   if (!app || !app.isPackaged) return null;
   const isWin = process.platform === 'win32';
-  const p = path.join(process.resourcesPath, 'vendor', 'gog', isWin ? 'gog.exe' : 'gog');
-  return fs.existsSync(p) ? p : null;
+  try {
+    const vendorGog = path.join(app.getPath('userData'), 'vendor', 'gog', isWin ? 'gog.exe' : 'gog');
+    if (fs.existsSync(vendorGog)) return vendorGog;
+  } catch {}
+  return null;
 }
 
 async function installGogCliDownload(gogDir, gogBin, isWin, stampFile, stampValue, onProgress) {

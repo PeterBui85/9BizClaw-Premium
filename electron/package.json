@@ -35,10 +35,10 @@
     "prebuild:vendor": "node scripts/prebuild-vendor.js",
     "prebuild:modoro-zalo": "node scripts/prebuild-modoro-zalo.js",
     "build:win": "node scripts/build-win.js",
-    "build:mac": "npm run prebuild:modoro-zalo && npm run prebuild:vendor && npm run smoke && electron-builder --mac",
-    "build:mac:arm": "npm run prebuild:modoro-zalo && TARGET_ARCH=arm64 TARGET_PLATFORM=darwin npm run prebuild:vendor && npm run smoke && electron-builder --mac --arm64 && node scripts/fix-artifact-name.js",
-    "build:mac:intel": "npm run prebuild:modoro-zalo && TARGET_ARCH=x64 TARGET_PLATFORM=darwin npm run prebuild:vendor && npm run smoke && electron-builder --mac --x64 && node scripts/fix-artifact-name.js",
-    "build:mac:universal": "node scripts/build-mac-universal.js && npm run prebuild:vendor && npm run smoke && electron-builder --mac --universal && node scripts/fix-artifact-name.js"
+    "build:mac": "npm run prebuild:modoro-zalo && npm run smoke && electron-builder --mac",
+    "build:mac:arm": "TARGET_ARCH=arm64 npm run prebuild:modoro-zalo && TARGET_ARCH=arm64 npm run smoke && electron-builder --mac --arm64 && node scripts/fix-artifact-name.js",
+    "build:mac:intel": "TARGET_ARCH=x64 npm run prebuild:modoro-zalo && TARGET_ARCH=x64 npm run smoke && electron-builder --mac --x64 && node scripts/fix-artifact-name.js",
+    "build:mac:universal": "node scripts/build-mac-universal.js && npm run smoke && electron-builder --mac --universal && node scripts/fix-artifact-name.js"
   },
   "build": {
     "appId": "vn.9biz.claw",
@@ -181,6 +181,10 @@
         "to": "knowledge/9bizclaw"
       },
       {
+        "from": "../capabilities",
+        "to": "workspace-templates/capabilities"
+      },
+      {
         "from": "dist/modoro-zalo",
         "to": "modoro-zalo"
       }
@@ -208,16 +212,6 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "type": "distribution",
-      "extraResources": [
-        {
-          "from": "vendor-meta.json",
-          "to": "vendor-meta.json"
-        },
-        {
-          "from": "vendor",
-          "to": "vendor"
-        }
-      ],
       "extendInfo": {
         "NSHighResolutionCapable": true,
         "LSMinimumSystemVersion": "11.0.0",

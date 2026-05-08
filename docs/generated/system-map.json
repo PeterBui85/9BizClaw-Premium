@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 91,
+    "apiRoutes": 92,
     "ipcHandlers": 155,
     "preloadBridges": 147,
     "dashboardPages": 14,
@@ -28,6 +28,15 @@
     },
     {
       "path": "/api/brand-assets/save",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/capabilities",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -2279,7 +2288,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 230227
+      "bytes": 230253
     },
     {
       "path": "electron/lib/cron.js",
@@ -2287,11 +2296,11 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 99472
+      "bytes": 102018
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 85070
+      "bytes": 86358
     },
     {
       "path": "electron/lib/channels.js",
@@ -2303,27 +2312,23 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 66322
+      "bytes": 66243
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 53557
+      "bytes": 49605
+    },
+    {
+      "path": "electron/lib/workspace.js",
+      "bytes": 44415
     },
     {
       "path": "electron/lib/config.js",
       "bytes": 44187
     },
     {
-      "path": "electron/lib/workspace.js",
-      "bytes": 44067
-    },
-    {
       "path": "electron/lib/nine-router.js",
       "bytes": 38508
-    },
-    {
-      "path": "electron/lib/boot.js",
-      "bytes": 37951
     },
     {
       "path": "electron/lib/fb-schedule.js",
@@ -2331,7 +2336,11 @@
     },
     {
       "path": "electron/lib/zalo-plugin.js",
-      "bytes": 34970
+      "bytes": 35090
+    },
+    {
+      "path": "electron/lib/boot.js",
+      "bytes": 34637
     },
     {
       "path": "electron/lib/vendor-patches.js",

@@ -23,6 +23,11 @@ function run(cmd, args) {
 }
 
 console.log(`[build:mac] Safe build for host arch: ${arch}`);
-run(process.execPath, [path.join(root, 'scripts', 'prebuild-vendor.js')]);
+run(process.execPath, [path.join(root, 'scripts', 'prebuild-modoro-zalo.js')]);
 run(process.execPath, [path.join(root, 'scripts', 'smoke-test.js')]);
+run(process.execPath, [path.join(root, 'scripts', 'smoke-context-injection.js')]);
+run(process.execPath, [path.join(root, 'scripts', 'smoke-zalo-followup.js')]);
+run(process.execPath, [path.join(root, 'scripts', 'smoke-visibility.js')]);
+const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+run(npmBin, ['run', 'guard:architecture']);
 run(path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder'), ['--mac', arch === 'arm64' ? '--arm64' : '--x64']);

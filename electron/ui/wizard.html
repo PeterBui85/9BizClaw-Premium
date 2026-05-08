@@ -1087,17 +1087,32 @@
           <!-- ============ STEP 2: AI router (ChatGPT via 9Router) ============ -->
           <section class="wz-step" id="step-2">
             <h2>Kết nối trí tuệ nhân tạo</h2>
-            <p class="wz-step-desc">Trợ lý cần kết nối với ChatGPT để hoạt động. Anh/chị cần có tài khoản ChatGPT Plus.</p>
+            <p class="wz-step-desc">Trợ lý cần kết nối với ChatGPT. Tài khoản miễn phí hoặc Plus đều dùng được.</p>
 
             <div class="wz-instruction">
               <div class="wz-instruction-head">
                 <div class="wz-instruction-num">1</div>
-                <div class="wz-instruction-title">Đăng nhập ChatGPT</div>
+                <div class="wz-instruction-title">Đăng nhập 9Router</div>
               </div>
               <div class="wz-instruction-body">
-                <p>Nhấn nút bên dưới — trang kết nối AI sẽ mở ra trong trình duyệt.</p>
+                <p>Nhấn nút bên dưới — trang quản lý AI sẽ mở ra trong trình duyệt.</p>
                 <p>Nếu được hỏi mật khẩu, nhập: <strong style="font-family:monospace;letter-spacing:0.5px;user-select:all">123456</strong></p>
-                <p>Sau đó nhấn <strong>Connect</strong> bên cạnh <strong>ChatGPT</strong> và đăng nhập bằng tài khoản ChatGPT Plus.</p>
+              </div>
+              <div style="margin-top:14px;padding-left:40px">
+                <button class="wz-btn wz-btn-secondary" onclick="open9RouterLogin()" id="open-9router-btn" type="button">
+                  Mở trang 9Router
+                </button>
+              </div>
+            </div>
+
+            <div class="wz-instruction">
+              <div class="wz-instruction-head">
+                <div class="wz-instruction-num">2</div>
+                <div class="wz-instruction-title">Kết nối ChatGPT</div>
+              </div>
+              <div class="wz-instruction-body">
+                <p>Sau khi đăng nhập 9Router, nhấn nút bên dưới để mở trang kết nối ChatGPT.</p>
+                <p>Nhấn <strong>Connect</strong> bên cạnh <strong>ChatGPT</strong> và đăng nhập bằng tài khoản ChatGPT của anh/chị.</p>
               </div>
               <div style="margin-top:14px;padding-left:40px">
                 <button class="wz-btn wz-btn-primary" onclick="openChatGPTConnect()" id="open-chatgpt-btn" type="button">
@@ -1108,7 +1123,7 @@
 
             <div class="wz-instruction">
               <div class="wz-instruction-head">
-                <div class="wz-instruction-num">2</div>
+                <div class="wz-instruction-num">3</div>
                 <div class="wz-instruction-title">Xác nhận kết nối</div>
               </div>
               <div class="wz-instruction-body">
@@ -1365,7 +1380,7 @@
     const STEP_META = {
       1:    { eyebrow: 'Bước 1 / 6', headline: 'Chào mừng đến với 9BizClaw', subhead: 'Trợ lý AI 1-click giúp anh/chị quản lý khách hàng Zalo, Telegram và báo cáo doanh nghiệp tự động. Hướng dẫn cài đặt hoàn tất trong vài phút.' },
       '1b': { eyebrow: 'Bước 2 / 6', headline: 'Cá nhân hóa theo ngành', subhead: 'Trợ lý được tối ưu kỹ năng khác nhau cho mỗi ngành — F&B, bất động sản, công nghệ, giáo dục… Chọn đúng ngành để trợ lý hiểu khách hàng của anh/chị tốt hơn.' },
-      2:    { eyebrow: 'Bước 3 / 6', headline: 'Kết nối trí tuệ nhân tạo', subhead: 'Trợ lý cần một AI model để hoạt động. Ollama cho miễn phí, chỉ mất 2 phút lấy API key.' },
+      2:    { eyebrow: 'Bước 3 / 6', headline: 'Kết nối trí tuệ nhân tạo', subhead: 'Trợ lý cần kết nối ChatGPT để hoạt động. Tài khoản miễn phí hoặc Plus đều dùng được.' },
       3:    { eyebrow: 'Bước 4 / 6', headline: 'Kết nối Telegram', subhead: 'Telegram là kênh anh/chị nhận thông báo, ra lệnh, và đọc báo cáo. Hướng dẫn tạo bot từ BotFather ở bên dưới.' },
       4:    { eyebrow: 'Bước 5 / 6 · Tùy chọn', headline: 'Kết nối Zalo', subhead: 'Bước này không bắt buộc. Anh/chị có thể bỏ qua và thiết lập Zalo sau trong Dashboard. Nếu dùng Zalo: đăng nhập QR — không cần mật khẩu, không cần API.' },
       5:    { eyebrow: 'Hoàn tất', headline: 'Trợ lý đã sẵn sàng', subhead: 'Tất cả đã được thiết lập. Anh/chị có thể mở Dashboard và bắt đầu sử dụng 9BizClaw ngay bây giờ.' },
@@ -1636,6 +1651,10 @@
     }
 
     // ===== Step 2: AI setup =====
+    function open9RouterLogin() {
+      window.claw.openExternal('http://127.0.0.1:20128');
+    }
+
     async function openChatGPTConnect() {
       const btn = document.getElementById('open-chatgpt-btn');
       btn.disabled = true; btn.classList.add('loading');
@@ -1744,7 +1763,9 @@
         if (attempts > 30) clearInterval(poll);
       }, 1000);
     }
+    let _zaloPollInterval = null;
     async function setupZalo() {
+      if (_zaloPollInterval) { clearInterval(_zaloPollInterval); _zaloPollInterval = null; }
       const btn = document.getElementById('zalo-btn');
       btn.disabled = true; btn.classList.add('loading');
       const status = document.getElementById('zalo-status');
@@ -1756,7 +1777,7 @@
       if (result.success) {
         let qrFound = false;
         let attempts = 0;
-        const poll = setInterval(async () => {
+        _zaloPollInterval = setInterval(async () => {
           attempts++;
           if (!qrFound) {
             const qrPath = await window.claw.findZaloQR();
@@ -1770,7 +1791,7 @@
           if (qrFound) {
             const st = await window.claw.checkZaloLogin();
             if (st.loggedIn) {
-              clearInterval(poll);
+              clearInterval(_zaloPollInterval); _zaloPollInterval = null;
               document.getElementById('zalo-qr-container').classList.add('wz-hidden');
               document.getElementById('zalo-step-guide').style.display = 'none';
               document.getElementById('zalo-step-body').style.display = 'none';
@@ -1778,7 +1799,7 @@
               document.getElementById('zalo-login-success').classList.remove('wz-hidden');
             }
           }
-          if (attempts > 120) clearInterval(poll);
+          if (attempts > 120) { clearInterval(_zaloPollInterval); _zaloPollInterval = null; }
         }, 1000);
       }
     }
@@ -1851,11 +1872,15 @@
         const personResult = await withTimeout(window.claw.savePersonalization({ industry, tone: selectedTone, pronouns: selectedPronouns, ceoTitle, botName, personaMix }));
         if (personResult && personResult.success === false) {
           showError('Lưu cá nhân hóa thất bại: ' + (personResult.error || 'không rõ lỗi'));
+          finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
+          return;
         }
 
         await withTimeout(window.claw.saveZaloMode(zaloMode));
       } catch (err) {
         showError('Lỗi khi hoàn tất setup: ' + (err?.message || String(err)));
+        finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
+        return;
       }
 
       finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');

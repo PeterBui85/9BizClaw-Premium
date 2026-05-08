@@ -128,7 +128,8 @@ function computeSeal(data) {
 
 function verifySeal(data) {
   if (!data || !data.seal) return false;
-  if (data.machineId && data.machineId !== getMachineId()) return false;
+  if (!data.machineId) return false;
+  if (data.machineId !== getMachineId()) return false;
   const expected = computeSeal(data);
   const a = Buffer.from(data.seal || '', 'hex');
   const b = Buffer.from(expected, 'hex');

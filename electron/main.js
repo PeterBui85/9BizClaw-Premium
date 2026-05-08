@@ -629,10 +629,7 @@ app.whenReady().then(async () => {
 
     // Check if we need work BEFORE showing splash (fast subsequent launches = no splash)
     const preCheck = await runtimeInstaller.checkInstallation();
-    const isMacBundled = preCheck.node && preCheck.node.type === 'bundled';
-    // Mac bundled model: migration runs silently (no downloads, just backup + cleanup).
-    // Only show splash for real runtime install work (Windows).
-    const needsWork = !preCheck.ready || (!isMacBundled && migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
+    const needsWork = !preCheck.ready || (migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
 
     // Show splash window ONLY if we have real work to do
     if (needsWork) {

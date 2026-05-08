@@ -198,8 +198,8 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
       if (!ready) return { success: false, error: '9Router chưa sẵn sàng. Thử lại sau vài giây.' };
 
       const listRes = await nineRouterApi('GET', '/api/providers');
-      const providers = listRes.data?.providers || listRes.data || [];
-      const codexConn = (Array.isArray(providers) ? providers : []).find(p =>
+      const conns = listRes.data?.connections || listRes.data?.providers || listRes.data || [];
+      const codexConn = (Array.isArray(conns) ? conns : []).find(p =>
         p.provider === 'codex' || p.type === 'codex' || p.kind === 'codex' ||
         String(p.provider || p.type || p.kind || '').toLowerCase().includes('chatgpt')
       );
@@ -2295,6 +2295,8 @@ ipcMain.handle('delete-openclaw-cron', async (_event, jobId) => {
 
 ipcMain.handle('save-schedules', async (_event, schedules) => {
   try {
+    if (!schedules || typeof schedules !== 'object') return { success: false, error: 'invalid schedules data' };
+    if (Array.isArray(schedules)) return { success: false, error: 'schedules must be an object, not array' };
     writeJsonAtomic(getSchedulesPath(), schedules);
     restartCronJobs(); // Re-schedule with new settings
     return { success: true };
@@ -4103,11 +4105,9 @@ ipcMain.handle('install-openclaw', async (event) => {
 
   const send = (msg) => sender.send('install-progress', msg);
 
-  // SHORT-CIRCUIT: if app is packaged AND vendor/ ships with bundled Node + plugins,
-  // skip npm install entirely. The wizard's "Đang khởi tạo npm..." step is a no-op
-  // for full-bundled builds (Mac DMG + Win EXE 436MB) — everything is already
-  // pre-extracted to resources/vendor/ by prebuild-vendor.js. Verifying the bundled
-  // openclaw + 9router + openzca + modoro-zalo all exist is enough.
+  // SHORT-CIRCUIT: if runtime-installed vendor already has all packages,
+  // skip npm install. Verifying openclaw + 9router + openzca + modoro-zalo
+  // all exist in userData/vendor/ is enough.
   try {
     const vendorDir = getBundledVendorDir();
     if (vendorDir) {

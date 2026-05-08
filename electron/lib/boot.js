@@ -18,40 +18,14 @@ let _bootDiagState = { ts: null, lines: [] };
 let splashWindow = null;
 
 // =====================================================================
-//  BUNDLED VENDOR (Mac packaged .app only)
-// =====================================================================
-// In packaged mode the .app ships with EVERYTHING the user needs:
-//   - Real Node.js binary at vendor/node/bin/node
-//   - openclaw  at vendor/node_modules/openclaw/openclaw.mjs
-//   - 9router   at vendor/node_modules/9router/...
-// User installs ZERO things on their Mac. No Homebrew, no system Node,
-// no `npm install -g`, no sudo. Just drag .app to Applications and run.
-//
-// `electron/scripts/prebuild-vendor.js` populates `electron/vendor/` before
-// `electron-builder --mac` runs. `package.json -> build.extraResources`
-// copies that dir into Resources/vendor/ inside the .app.
-//
-// Returns null in dev mode → callers fall back to system Node + global
-// openclaw, exactly as before.
-//
-// Platform layout (as of 2026-04-08):
-//   Mac DMG (packaged): resources/vendor/                    — ships directly
-//   Win EXE (packaged): userData/vendor/                     — extracted from tar on first launch
-//                       resources/vendor-bundle.tar          — source archive
-//                       resources/vendor-meta.json           — integrity + file count
-//   Dev (both):         electron/vendor/                     — local prebuild output
-//
-// The Windows indirection exists because shipping ~50k loose files through
-// NSIS is pathologically slow. See CLAUDE.md "Vendor tar-and-extract" section.
-// =====================================================================
 //  VENDOR PATH (v2.4.0+ pure runtime install)
 // =====================================================================
 // v2.4.0+ ships NO bundled vendor in EXE/DMG. The runtime installer
 // downloads Node + packages on first launch into userData/vendor/.
 //
 // Layout:
-//   Win/Mac (packaged): %APPDATA%/9bizclaw/vendor/
-//     vendor/node/node.exe           ← runtime-installed Node
+//   Win/Mac (packaged): userData/vendor/
+//     vendor/node/node.exe (or bin/node on Mac)
 //     vendor/node_modules/openclaw/openclaw.mjs
 //     vendor/node_modules/9router/
 //     vendor/node_modules/modoro-zalo/
@@ -59,32 +33,11 @@ let splashWindow = null;
 // Dev mode: null → callers fall back to system Node + global packages.
 
 function getBundledVendorDir() {
-  // Returns the path where bundled vendor packages live.
-  //
-  // Layout differences by platform + install model:
-  //
-  //   macOS bundled (DMG):   Contents/Resources/vendor/
-  //                           (electron-builder extraResources copies electron/vendor/
-  //                            → app/Contents/Resources/vendor/)
-  //
-  //   Windows bundled (EXE):  userData/vendor/
-  //                           (runtime installer downloads on first launch; previously
-  //                            extracted from vendor-bundle.tar in resources/)
-  //
-  //   Dev mode (both):        electron/vendor/ (local prebuild output) — NOT userData
-  //
-  // getBundledVendorDir() is called in PACKAGED mode only, so we check both
-  // the macOS (resourcesPath) and Windows (userData) locations.
+  // Both Mac and Windows use runtime install model (v2.4.0+).
+  // Vendor lives at userData/vendor/ (downloaded on first launch).
+  // Dev mode: null → callers fall back to system Node + global packages.
   if (!app || !app.isPackaged) return null;
 
-  // macOS: extraResources go into Contents/Resources/vendor/
-  // Check this FIRST so bundled Mac builds use the correct path.
-  try {
-    const resourcesVendor = path.join(process.resourcesPath, 'vendor');
-    if (fs.existsSync(resourcesVendor)) return resourcesVendor;
-  } catch {}
-
-  // Windows runtime install: userData/vendor/
   try {
     const userDataVendor = path.join(app.getPath('userData'), 'vendor');
     if (fs.existsSync(userDataVendor)) return userDataVendor;
@@ -105,29 +58,16 @@ async function ensureVendorExtracted({ onProgress } = {}) {
 // For v2.4.0 pure runtime: userData/vendor/node/ (win32: node.exe, darwin: bin/node)
 // For dev mode: null (falls back to system Node via findNodeBin)
 function getBundledNodeBin() {
-  // Returns the bundled Node binary path.
-  //
-  // Layout:
-  //   macOS bundled: Contents/Resources/vendor/node/bin/node
-  //   Windows bundled: userData/vendor/node/node.exe
-  //   Dev mode:       null (falls back to system Node)
-  //
-  // Uses the same two-location strategy as getBundledVendorDir().
+  // Both Mac and Windows: userData/vendor/node/ (runtime install model).
   if (!app || !app.isPackaged) return null;
 
-  // macOS: extraResources vendor is in Contents/Resources/vendor/
-  if (process.platform === 'darwin') {
-    try {
-      const macNode = path.join(process.resourcesPath, 'vendor', 'node', 'bin', 'node');
-      if (fs.existsSync(macNode)) return macNode;
-    } catch {}
-  } else if (process.platform === 'win32') {
-    // Windows: userData/vendor/node/node.exe
-    try {
-      const winNode = path.join(app.getPath('userData'), 'vendor', 'node', 'node.exe');
-      if (fs.existsSync(winNode)) return winNode;
-    } catch {}
-  }
+  const isWin = process.platform === 'win32';
+  try {
+    const nodeBin = isWin
+      ? path.join(app.getPath('userData'), 'vendor', 'node', 'node.exe')
+      : path.join(app.getPath('userData'), 'vendor', 'node', 'bin', 'node');
+    if (fs.existsSync(nodeBin)) return nodeBin;
+  } catch {}
 
   return null;
 }
@@ -339,9 +279,8 @@ function initPathAugmentation() {
     const extra = enumerateNodeManagerBinDirs();
     process.env.PATH = extra.join(':') + ':' + (process.env.PATH || '');
   }
-  // Packaged Mac .app: prepend bundled vendor/node/bin so child processes
-  // (openclaw plugins, 9router) find a real `node` binary even on a Mac
-  // with zero Node installed.
+  // Packaged app: prepend runtime-installed vendor/node/bin so child processes
+  // (openclaw plugins, 9router) find a real `node` binary.
   try { augmentPathWithBundledNode(); } catch {}
 }
 
@@ -386,12 +325,8 @@ async function findOpenClawBin() {
 
   const isWin = process.platform === 'win32';
 
-  // 0. Bundled vendor (full-bundled Mac DMG + Win EXE) — check FIRST so
+  // 0. Runtime-installed vendor (userData/vendor/) — check FIRST so
   //    packaged builds never depend on user's system openclaw / system Node.
-  //    Trust file existence: SHA256 verify ran during tar extract. We used
-  //    to spawn `node openclaw.mjs --version` here, but on slow SSDs the
-  //    cold-load of openclaw (500+ deps) exceeded the 8s timeout → detection
-  //    fell through → no-openclaw.html shown → user sees install-code loop.
   const bundledMjs = findBundledOpenClawMjs();
   const bundledNode = getBundledNodeBin();
   if (bundledMjs && bundledNode) {
@@ -506,11 +441,11 @@ async function runOpenClaw(args, timeout = 10000) {
 function findNodeBin() {
   if (_cachedNodeBin !== null) return _cachedNodeBin || null;
 
-  // Packaged Mac .app: bundled Node always wins. User has zero Node setup.
+  // Runtime-installed vendor Node always wins over system Node.
   const bundled = getBundledNodeBin();
   if (bundled) {
     _cachedNodeBin = bundled;
-    console.log('[findNodeBin] using bundled vendor node:', bundled);
+    console.log('[findNodeBin] using vendor node:', bundled);
     return bundled;
   }
 
@@ -556,11 +491,11 @@ function getBundledOpenClawCliJs() {
 function findOpenClawCliJs() {
   if (_cachedOpenClawCliJs !== null) return _cachedOpenClawCliJs || null;
 
-  // Packaged Mac .app: bundled vendor openclaw always wins.
+  // Runtime-installed vendor openclaw always wins over system openclaw.
   const bundled = getBundledOpenClawCliJs();
   if (bundled) {
     _cachedOpenClawCliJs = bundled;
-    console.log('[findOpenClawCliJs] using bundled vendor openclaw:', bundled);
+    console.log('[findOpenClawCliJs] using vendor openclaw:', bundled);
     return bundled;
   }
 

@@ -1,17 +1,15 @@
 ### Runtime Install Architecture (v2.4.0+)
 
-**macOS (DMG): bundled vendor model.** The DMG ships the full vendor bundle (~400MB) inside `Contents/Resources/vendor/` via electron-builder `extraResources`. User installs ZERO things on first run. APFS drag-drop is fast enough that bundling is not a UX pain point.
+**Both macOS (DMG) and Windows (EXE): pure runtime install model.** The installer ships only the `modoro-zalo` plugin (~2MB). Node.js + npm packages are downloaded on first run (~165MB) into `userData/vendor/`. DMG ~140MB, EXE ~50-80MB.
 
-**Windows (EXE): runtime install model.** The EXE only bundles `modoro-zalo` plugin (~2MB). Node.js + npm packages are downloaded on first run (~165MB). This keeps the EXE small (~50-80MB) and avoids the NSIS small-file write bottleneck on slow SSDs.
+**RAG model:** Downloaded lazily when Knowledge tab opened (~600MB).
 
-**Both:** RAG model downloaded lazily when Knowledge tab opened (~600MB).
+**Build scripts:** macOS: `build:mac:arm`/`build:mac:intel` -> `prebuild-modoro-zalo` -> `smoke` -> `electron-builder --mac`. Win: `build:win` -> `prebuild-modoro-zalo` -> `smoke` -> `electron-builder --win`.
 
-**Build scripts:** macOS: `build:mac:arm`/`build:mac:intel` -> `prebuild-modoro-zalo` -> `prebuild-vendor` -> `smoke` -> `electron-builder --mac`. Win: `build:win` -> `prebuild-modoro-zalo` -> `smoke` -> `electron-builder --win` (runtime install on first launch).
-
-**Critical path macOS:** `boot.js:getBundledVendorDir()` checks `process.resourcesPath/vendor/` (from `extraResources`) FIRST -> found = bundled Mac build. Falls back to `userData/vendor/` for Win runtime model. `runtime-installer.js:detectNodeInstallation()` returns `type: 'bundled'` for darwin when vendor found at resourcesPath.
+**Critical path:** `boot.js:getBundledVendorDir()` checks `userData/vendor/` — returns null on first launch (triggers splash screen + runtime installer). After install, returns `userData/vendor/`. `runtime-installer.js:detectNodeInstallation()` returns `type: 'runtime'` when vendor found at userData, `type: 'none'` on first launch.
 
 **Key files:**
-- `electron/lib/runtime-installer.js` - core install logic (handles both bundled + runtime models)
+- `electron/lib/runtime-installer.js` - core install logic (downloads Node + packages to userData/vendor/)
 - `electron/lib/conflict-detector.js` - version conflict detection
 - `electron/lib/model-downloader.js` - RAG model lazy download
 - `electron/lib/migration.js` - v2.3.x -> v2.4.0 migration
@@ -72,31 +70,20 @@
 **Fix:** Inject platform-aware path resolution mirroring `getWorkspace()` (darwin/win32/linux branches), PLUS `process.env.MODORO_WORKSPACE` env var as highest-priority lookup (set bởi main.js gateway spawn). Auto-strip OLD broken patch on upgrade qua version-pin `ZALO-OWNER-PATCH-V2` trong patch BLOCK (không scan whole-file fingerprint vì sẽ false-positive với content của patch khác như friend-check).
 **Plus:** `build-mac.yml` workflow giờ pass `TARGET_ARCH`/`npm_config_arch`/`npm_config_target_arch`/`npm_config_target_platform` cho `npm install` step. Trước đó npm install chạy không có arch hint → postinstall `fix-better-sqlite3.js` fetch HOST arch (arm64) cho cả x64 build → x64 .dmg ship arm64 binary → "Bad CPU type" trên Intel Mac. Add explicit Mach-O CPU verification step in CI.
 
-### Windows Pure-Runtime Install (v2.4.0+) vs Mac Bundled
+### Unified Pure-Runtime Install (v2.4.0+)
 
-**Windows EXE: pure runtime model** (no bundled vendor shipped in EXE):
-- `build:win` chain: `prebuild:modoro-zalo → smoke → electron-builder --win`
-- `prebuild:vendor` is NOT called for win builds
-- EXE ships only `modoro-zalo` plugin (~2 MB) via `extraResources`
-- On first launch: downloads Node v22.22.2 (~20 MB) + npm packages (~145 MB) + gogcli (~5 MB)
-- Total first-launch download: ~170 MB, EXE size: ~50-80 MB
-- `getBundledVendorDir()` on Windows returns `userData/vendor/` (runtime-installed, NOT shipped)
+**Both Mac DMG and Windows EXE: pure runtime model** (no bundled vendor shipped):
+- Build chain (both): `prebuild:modoro-zalo → smoke → electron-builder`
+- Ships only `modoro-zalo` plugin (~2 MB) via `extraResources`
+- On first launch: splash screen downloads Node v22.22.2 (~20 MB) + npm packages (~145 MB) + gogcli (~5 MB)
+- Total first-launch download: ~170 MB. DMG ~140 MB, EXE ~50-80 MB
+- `getBundledVendorDir()` returns `userData/vendor/` (runtime-installed) or null (first launch)
 - `ensureVendorExtracted()` in boot.js is a no-op stub (`{ skipped: true, reason: 'pure_runtime' }`)
-- NSIS installer comment: "Pure runtime install model (v2.4.0+). No bundled vendor tar to manage."
 
-**Mac DMG: bundled model** (full vendor shipped in DMG):
-- `build:mac` chain: `prebuild:modoro-zalo → prebuild:vendor → smoke → electron-builder --mac`
-- `prebuild:vendor` creates `vendor/` with Node + all npm packages
-- electron-builder copies `electron/vendor/` → `Contents/Resources/vendor/` via `extraResources`
-- First launch: instant (no download), no splash shown
-- `getBundledVendorDir()` on Mac returns `process.resourcesPath/vendor/` (never touches userData for vendor)
-
-**Orphaned `vendor-bundle.tar` on Windows:**
-- `prebuild-vendor.js` still creates `vendor-bundle.tar` + `vendor-meta.json` on Windows (for potential future use)
-- These are build artifacts only — NOT shipped in EXE, NOT extracted at runtime
-- The CLAUDE.md section "Vendor tar-and-extract-on-first-launch" describes the **planned** architecture that was not shipped in v2.4.0
-- `package.json` `build:win` does NOT include `vendor-bundle.tar` in `extraResources` or `files`
-- If you want to enable the bundled model on Windows, add `vendor-bundle.tar` + `vendor-meta.json` to `extraResources` and implement extraction in `ensureVendorExtracted()`
+**`prebuild-vendor.js` (dev/Windows tar only):**
+- Still exists for local development and Windows tar generation
+- NOT called in any Mac or Windows build chain
+- Creates `vendor-bundle.tar` + `vendor-meta.json` as build artifacts only — NOT shipped
 
 ### Boot latency: bot không reply 2-3 phút sau startup (9router cold-start race)
 **Bug:** Sau khi mở MODOROClaw, Telegram + Zalo nhận được tin nhưng KHÔNG reply trong 2-3 phút. Sidebar dot xanh từ giây đầu (sai). Zalo tệ hơn Telegram.

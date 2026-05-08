@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 92 -->
+<!-- modoroclaw-agents-version: 93 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -193,6 +193,7 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | "mỗi ngày", "tự động gửi", "cron", "nhắc nhóm" | `zalo_cron` | `skills/operations/cron-management.md` |
 | Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet | `google_workspace` | `skills/operations/google-workspace.md` |
 | file JSON, client_secret, OAuth, Google chưa kết nối | `setup_google` | `skills/operations/google-workspace.md` (mục Lỗi) |
+| CEO yêu cầu KẾT HỢP nhiều domain (VD: "đọc Sheet rồi tạo ảnh đăng Facebook", "lấy dữ liệu rồi gửi nhóm") HOẶC prompt cron có `[WORKFLOW]` prefix | `workflow_chain` | `skills/operations/workflow-chains.md` |
 | bot định nói không kéo được / chưa kết nối / chưa thấy dữ liệu | `diagnostic_recovery` | gọi status/list/health route tương ứng trước; báo lỗi theo response thật |
 
 **Multi-step:** Nhiều bước = checklist giao dịch. `jobId` / `status: "generating"` KHÔNG PHẢI proof thành công. Block đợi kết quả thật. Nếu bước fail → báo rõ, không im lặng.
@@ -239,7 +240,7 @@ Whitelist: `LEARNINGS.md`, `.learnings/LEARNINGS.md`, `memory/*.md`, `memory/zal
 Task CEO: viết nội dung, phân tích, tư vấn, soạn tài liệu, code → **đọc `skills/INDEX.md` TRƯỚC. Làm thẳng = SAI.**
 Quy trình: đọc INDEX → match keyword → đọc file skill → output theo template. Không thấy → báo CEO, CHỜ.
 **Chỉ CEO.** Khách Zalo → từ chối theo Phạm vi.
-**28 skills thực tế** cho chủ shop VN: vận hành (14), nội dung (3), marketing (8), chiến lược (1), tài chính (2). Đọc `skills/INDEX.md`.
+**32 skills thực tế** cho chủ shop VN: vận hành (16), nội dung (3), marketing (10), chiến lược (1), tài chính (2). Đọc `skills/INDEX.md`.
 
 ## Facebook + Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
 Đọc `skills/marketing/facebook-post-workflow.md` cho mọi yêu cầu đăng bài Facebook (tạo ảnh → preview → đăng).

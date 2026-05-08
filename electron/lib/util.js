@@ -19,10 +19,12 @@ function writeJsonAtomic(filePath, data) {
     try {
       fs.renameSync(tmp, filePath);
     } catch (e1) {
-      const wait = Date.now() + 10;
-      while (Date.now() < wait) { /* short sync spin — 10ms */ }
+      // Retry once after a brief pause. On Windows, AV scanners can hold
+      // a short lock on the destination file. We use copyFile+unlink as
+      // fallback instead of a second rename to avoid AV lock contention.
       try {
-        fs.renameSync(tmp, filePath);
+        fs.copyFileSync(tmp, filePath);
+        try { fs.unlinkSync(tmp); } catch {}
       } catch (e2) {
         try {
           const msg = `[writeJsonAtomic] rename fail: ${filePath} — ${e2.message} (tmp=${tmp})`;

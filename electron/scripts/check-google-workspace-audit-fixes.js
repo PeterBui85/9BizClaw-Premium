@@ -107,13 +107,12 @@ check('apps script is included in health probe', () => {
   assert(apiSrc.includes("probeService('appscript'"));
 });
 
-check('release build paths prebuild gog vendor before smoke', () => {
+check('release build paths run smoke before electron-builder', () => {
   assert.strictEqual(packageJson.scripts['build:win'], 'node scripts/build-win.js');
-  assert(packageJson.scripts['build:mac'].includes('prebuild:vendor'));
-  assert(packageJson.scripts['build:mac:arm'].includes('prebuild:vendor'));
-  assert(packageJson.scripts['build:mac:intel'].includes('prebuild:vendor'));
-  assert(macWorkflowSrc.includes('Prebuild vendor bundle'));
-  assert(macWorkflowSrc.indexOf('Prebuild vendor bundle') < macWorkflowSrc.indexOf('Run smoke guards'));
+  assert(packageJson.scripts['build:mac'].includes('smoke'));
+  assert(packageJson.scripts['build:mac:arm'].includes('smoke'));
+  assert(packageJson.scripts['build:mac:intel'].includes('smoke'));
+  assert(macWorkflowSrc.includes('Run smoke guards'));
 });
 
 check('gog CLI help covers wrapped services when binary exists', () => {

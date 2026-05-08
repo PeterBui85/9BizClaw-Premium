@@ -355,10 +355,6 @@ function findOpenzcaCliJs() {
         }
       }
     } catch {}
-    try {
-      const vendorCli = path.join(process.resourcesPath || '', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js');
-      candidates.push(vendorCli);
-    } catch {}
   }
   for (const p of candidates) {
     try { if (fs.existsSync(p)) { _cachedOpenzcaCliJs = p; return p; } } catch {}
@@ -395,16 +391,18 @@ async function seedGroupHistorySummary(groupId, threadName) {
     if (!nodeBin) return { ok: false, reason: 'node-not-found' };
     // Fetch last 30 messages from Zalo's live history for this group.
     const stdout = await new Promise((resolve) => {
-      let out = '', err = '';
+      let out = '', err = '', settled = false;
       const child = spawn(nodeBin, [cliJs, '--profile', 'default', 'msg', 'recent', groupId, '-g', '-n', '30', '--source', 'live', '-j'], {
         shell: false,
         windowsHide: true,
-        timeout: 15000,
       });
+      const killTimer = setTimeout(() => {
+        if (!settled) { settled = true; try { child.kill(); } catch {} resolve({ out: '', err: 'timeout (15s)' }); }
+      }, 15000);
       child.stdout.on('data', d => out += d.toString());
       child.stderr.on('data', d => err += d.toString());
-      child.on('error', () => resolve({ out: '', err: 'spawn-error' }));
-      child.on('exit', (code) => resolve({ out, err, code }));
+      child.on('error', () => { if (!settled) { settled = true; clearTimeout(killTimer); resolve({ out: '', err: 'spawn-error' }); } });
+      child.on('exit', (code) => { if (!settled) { settled = true; clearTimeout(killTimer); resolve({ out, err, code }); } });
     });
     if (!stdout || !stdout.out) return { ok: false, reason: 'no-stdout' };
     // openzca returns rate-limit error on stderr occasionally. Bail this run.

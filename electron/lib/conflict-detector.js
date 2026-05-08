@@ -36,7 +36,8 @@ async function wouldNeedSudo() {
   if (isWin) {
     // Windows: check if npm global install to Program Files
     try {
-      const out = execSync('npm config get prefix', { encoding: 'utf-8', timeout: 5000 }).trim();
+      const npmCmd = isWin ? 'npm.cmd' : 'npm';
+      const out = execSync(npmCmd + ' config get prefix', { encoding: 'utf-8', timeout: 5000, shell: true }).trim();
       // If prefix contains Program Files, would need admin
       return out.includes('Program Files');
     } catch {
@@ -137,10 +138,11 @@ function hasOtherNodeProjects() {
 async function getPackageConflict(pkgName) {
   try {
     const isWin = process.platform === 'win32';
+    const npmBin = isWin ? 'npm.cmd' : 'npm';
     const { stdout } = await execFilePromise(
-      'npm',
+      npmBin,
       ['view', pkgName, 'version'],
-      { timeout: 10000, encoding: 'utf-8' }
+      { timeout: 10000, encoding: 'utf-8', shell: isWin }
     );
     const latestVersion = stdout.trim();
 
@@ -148,9 +150,9 @@ async function getPackageConflict(pkgName) {
     let installedVersion = null;
     try {
       const { stdout: lsOut } = await execFilePromise(
-        'npm',
+        npmBin,
         ['list', '-g', pkgName, '--depth=0', '--json'],
-        { timeout: 10000, encoding: 'utf-8' }
+        { timeout: 10000, encoding: 'utf-8', shell: isWin }
       );
       const info = JSON.parse(lsOut);
       installedVersion = info[pkgName]?.version || null;

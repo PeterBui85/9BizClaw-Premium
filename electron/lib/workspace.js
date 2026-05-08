@@ -795,10 +795,16 @@ function enforceRetentionPolicies() {
     try {
       const dbPath = path.join(workspace, 'memory.db');
       if (fs.existsSync(dbPath)) {
-        const Database = require('better-sqlite3');
-        const db = new Database(dbPath);
-        db.pragma('wal_checkpoint(TRUNCATE)');
-        db.close();
+        let db = null;
+        try {
+          const Database = require('better-sqlite3');
+          db = new Database(dbPath);
+          db.pragma('wal_checkpoint(TRUNCATE)');
+        } catch (abiErr) {
+          if (String(abiErr?.message).includes('NODE_MODULE_VERSION')) {
+            console.warn('[retention] WAL checkpoint skipped — better-sqlite3 ABI mismatch (will auto-fix on next knowledge access)');
+          } else { throw abiErr; }
+        } finally { try { if (db) db.close(); } catch {} }
       }
     } catch (e) { console.warn('[retention] WAL checkpoint failed:', e?.message); }
 

@@ -609,11 +609,6 @@ async function _startOpenClawImpl(opts = {}) {
           }
         }
       } catch {}
-      // Packaged Mac .app vendor bundle
-      try {
-        const vendorCli = path.join(process.resourcesPath || '', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js');
-        ozCliCandidates.push(vendorCli);
-      } catch {}
     }
     let foundOzCli = null;
     for (const p of ozCliCandidates) {
@@ -635,8 +630,7 @@ async function _startOpenClawImpl(opts = {}) {
     shell: gwSpawnShell,
     windowsHide: true,
   });
-  ctx.botRunning = true;
-  if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) ctx.mainWindow.webContents.send('bot-status', { running: true });
+  ctx.botRunning = false;
   if (_createTray) _createTray();
 
   // CRITICAL: wait for the gateway WebSocket to actually be listening on
@@ -685,6 +679,8 @@ async function _startOpenClawImpl(opts = {}) {
   if (gwReady) {
     const elapsedMs = Date.now() - gwStartMs;
     console.log(`[startOpenClaw] gateway WS ready on :18789 after ${elapsedMs}ms (${probeAttempts} probes)`);
+    ctx.botRunning = true;
+    if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) ctx.mainWindow.webContents.send('bot-status', { running: true });
     global._gatewayStartedAt = Date.now(); // fast watchdog skips first 360s
     auditLog('gateway_ready', { elapsedMs, probeAttempts });
   } else {
@@ -702,6 +698,8 @@ async function _startOpenClawImpl(opts = {}) {
           if (await isGatewayAlive(3000)) {
             const totalMs = Date.now() - gwStartMs;
             console.log(`[startOpenClaw] gateway finally ready after ${totalMs}ms (bg probe #${bgProbes})`);
+            ctx.botRunning = true;
+            if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) ctx.mainWindow.webContents.send('bot-status', { running: true });
             global._gatewayStartedAt = Date.now();
             auditLog('gateway_ready_late', { totalMs, bgProbes });
             return;
@@ -827,7 +825,6 @@ async function _startOpenClawImpl(opts = {}) {
     st.lastError = '';
     _saveBootPingTs(channel);
   };
-  const readinessBuf = { tg: '', zl: '' };
   const scanForReadiness = (chunk) => {
     try {
       const text = chunk.toString('utf8');

@@ -7,7 +7,7 @@ Bot TU DONG doc INDEX nay va chon skill phu hop MOI KHI CEO yeu cau.
 2. Bot doc INDEX → match keyword → doc SKILL.md tuong ung
 3. Bot follow quy trinh trong skill → output chat luong cao
 
-## Van hanh bot (9 skills) — `skills/operations/`
+## Van hanh bot (16 skills) — `skills/operations/`
 | Skill | File | Khi nao dung |
 |---|---|---|
 | Quan ly lich tu dong | `cron-management.md` | Tao/sua/xoa cron, len lich gui tin |
@@ -25,6 +25,7 @@ Bot TU DONG doc INDEX nay va chon skill phu hop MOI KHI CEO yeu cau.
 | Facebook + Tao anh | `facebook-image.md` | Tao anh AI, dang Facebook, brand assets |
 | Compact hoi thoai | `compact.md` | Compact session, tom tat cuoc tro chuyen, giu ngon ngu |
 | Doc Google Sheet | `google-sheet.md` | Doc du lieu tu Google Sheet cong khai |
+| Chuoi workflow | `workflow-chains.md` | Ket hop nhieu API thanh chuoi tu dong (Sheet+anh+Facebook) |
 
 ## Noi dung & Thuong hieu (3 skills) — `skills/content/`
 | Skill | File | Khi nao dung |
@@ -59,5 +60,5 @@ Bot TU DONG doc INDEX nay va chon skill phu hop MOI KHI CEO yeu cau.
 | Quan ly dong tien | `finance-lead.md` | Runway, burn rate, P&L co ban |
 
 ---
-**Tong: 30 skills thuc te** cho chu shop Viet Nam.
+**Tong: 32 skills thuc te** cho chu shop Viet Nam.
 Skills cu (advisory, board, SOC2, Twitter, v.v.) da chuyen vao `skills/_archived/` — van truy cap duoc neu can.
