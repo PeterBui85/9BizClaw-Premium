@@ -868,8 +868,11 @@ async function installNpmPackages(versions, onProgress) {
     await new Promise((resolve, reject) => {
       const child = spawn(
         npm.command,
-        [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts'],
-        { timeout: NPM_INSTALL_TIMEOUT_MS, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell }
+        [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts', '--omit=optional'],
+        {
+          timeout: NPM_INSTALL_TIMEOUT_MS, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' },
+        }
       );
       let stderr = '';
       let lastSubStep = '';
