@@ -615,6 +615,17 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
       { name: "fake-payment-received", re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
       { name: "gateway-restart-msg", re: /gateway\s+is\s+restart/i },
       { name: "gateway-abort-msg", re: /(?:aborted.{0,20}restart|please\s+wait.*try\s+again)/i },
+      // --- Layer J: raw API/HTTP errors ---
+      { name: "http-error-code", re: /\b[45]\d{2}\s*[\[({:]/ },
+      { name: "json-error-object", re: /[{[\s]*"error"\s*[:{]/i },
+      { name: "api-model-name", re: /\b(?:codex|gpt-\d|gpt-[a-z]|claude-\d|anthropic|openai|deepseek|gemini-|llama-|mistral-|o[134]-)/i },
+      { name: "auth-token-error", re: /(?:authentication|auth)\s*(?:token|key|credential).*(?:expired|invalid|failed|missing)|token\s+(?:is\s+)?expired|unauthorized\b/i },
+      { name: "nodejs-error-type", re: /\b(?:TypeError|ReferenceError|SyntaxError|RangeError|URIError|EvalError)\s*:/ },
+      { name: "nodejs-stack-trace", re: /\bat\s+(?:Object\.|Module\.|Function\.|process\.|new\s|async\s|node:)/ },
+      { name: "nodejs-conn-error", re: /\bE(?:CONNREFUSED|CONNRESET|ETIMEDOUT|ENOTFOUND|EPIPE|NOENT|BUSY|ACCES|ADDRINUSE)\b/ },
+      { name: "generic-error-prefix", re: /^(?:Error|error|ERROR):\s/m },
+      { name: "signing-reset-prompt", re: /(?:try\s+signing\s+i|sign\s*(?:ing)?\s*(?:in|up)\s+(?:again|to\s+reset))/i },
+      { name: "http-status-bracket", re: /\[\d{3}\]\s*[:{]/ },
     ];
     let __ofBlocked: string | null = null;
     for (const __ofP of __ofBlockPatterns) {
