@@ -210,9 +210,24 @@ function findGitBin() {
 
 function getGitEnvPath() {
   const gitDir = path.join(getPortableGitDir(), 'cmd');
-  const current = process.env.PATH || '';
+  const current = process.env.PATH || process.env.Path || '';
   if (fs.existsSync(gitDir)) return gitDir + path.delimiter + current;
   return current;
+}
+
+// Build env object for child process with correct PATH on Windows.
+// Windows env vars are case-insensitive but JS objects aren't — spreading
+// process.env copies the original key (usually "Path" on Windows). Adding
+// a separate "PATH" key creates a duplicate; CreateProcess uses the FIRST
+// occurrence, ignoring our override. Fix: delete all PATH variants first.
+function buildEnvWithGitPath(extra) {
+  const env = { ...process.env, ...extra };
+  const gitPath = getGitEnvPath();
+  delete env.PATH;
+  delete env.Path;
+  delete env.path;
+  env.PATH = gitPath;
+  return env;
 }
 
 async function ensurePortableGit(onProgress) {
@@ -935,7 +950,7 @@ async function installNpmPackages(versions, onProgress) {
         [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts', '--omit=optional'],
         {
           timeout: NPM_INSTALL_TIMEOUT_MS, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
-          env: { ...process.env, PATH: getGitEnvPath(), GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' },
+          env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' }),
         }
       );
       let stderr = '';
@@ -992,15 +1007,26 @@ async function installNpmPackages(versions, onProgress) {
   let lastError = null;
   let installed = false;
 
+  // If npm fails with git ENOENT, try downloading MinGit before retrying
+  const maybeFixGit = async (error) => {
+    const msg = String(error?.message || '');
+    if (msg.includes('spawn git') || (msg.includes('git') && msg.includes('ENOENT'))) {
+      console.log('[runtime-installer] npm failed due to missing git — attempting MinGit download...');
+      if (onProgress) onProgress({ step: 'packages', message: 'Đang tải Git (cần cho npm)...', subStep: 'MinGit' });
+      await ensurePortableGit(onProgress);
+    }
+  };
+
   try {
     if (withRetry) {
       await withRetry(npmInstallOp, {
         maxRetries: 2,
         baseDelay: 5000,
         maxDelay: 30000,
-        onRetry: ({ attempt, maxRetries, error, delay }) => {
+        onRetry: async ({ attempt, maxRetries, error, delay }) => {
           console.log(`[runtime-installer] Retry ${attempt}/${maxRetries} for npm install after ${delay}ms: ${error?.message}`);
           if (error?.message?.includes('EBUSY')) killOrphan9RouterProcesses();
+          await maybeFixGit(error);
           if (onProgress) {
             onProgress({ step: 'packages', message: `Đang thử lại (lần ${attempt + 1})...`, subStep: 'retry' });
           }
@@ -1011,6 +1037,7 @@ async function installNpmPackages(versions, onProgress) {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) {
           if (lastError?.message?.includes('EBUSY')) killOrphan9RouterProcesses();
+          await maybeFixGit(lastError);
           await new Promise(r => setTimeout(r, 5000 * attempt));
           console.log('[runtime-installer] Retry', attempt + 1, 'for npm install');
         }

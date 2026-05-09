@@ -649,6 +649,8 @@ app.whenReady().then(async () => {
     const needsWork = !preCheck.ready || (migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
 
     // Show splash window ONLY if we have real work to do
+    let _splashCancelRequested = false;
+    let _splashCancelTimer = null;
     if (needsWork) {
       global._splashActive = true;
       splashWindow = new BrowserWindow({
@@ -673,15 +675,24 @@ app.whenReady().then(async () => {
       const { ipcMain } = require('electron');
       ipcMain.on('splash-minimize', () => { try { splashWindow.minimize(); } catch {} });
       ipcMain.on('splash-cancel', () => {
+        _splashCancelRequested = true;
         try {
           splashWindow.webContents.send('splash-error', 'Cài đặt bị hủy. Thoát ứng dụng để thử lại.');
-          new Promise(r => setTimeout(r, 3000)).then(() => { try { app.exit(0); } catch {} });
+          _splashCancelTimer = setTimeout(() => { try { app.exit(0); } catch {} }, 3000);
         } catch {}
       });
       splashWindow.setMenuBarVisibility(false);
-      await splashWindow.loadFile(path.join(__dirname, 'ui', 'splash.html'));
-      splashWindow.show();
-      splashWindow.focus();
+      try {
+        await splashWindow.loadFile(path.join(__dirname, 'ui', 'splash.html'));
+      } catch (loadErr) {
+        console.error('[boot] Splash HTML failed to load:', loadErr?.message);
+        try { splashWindow.destroy(); } catch {}
+        splashWindow = null;
+      }
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.show();
+        splashWindow.focus();
+      }
     }
 
     const sendSplashProgress = (data) => {
@@ -724,7 +735,7 @@ app.whenReady().then(async () => {
           installedStatus?.needsModoroZaloInstall ? 'modoro-zalo' : null,
         ].filter(Boolean);
         if (installedStatus?.gogReady === false) {
-          console.warn('[boot] gogcli unavailable — Google Workspace CLI optional (non-fatal)');
+          console.warn('[boot] gogcli unavailable — Google Workspace CLI not installed');
         }
         throw new Error('Runtime install incomplete' + (missing.length ? ': ' + missing.join(', ') : ''));
       }
@@ -748,7 +759,14 @@ app.whenReady().then(async () => {
   } catch (e) {
     console.error('[boot] Runtime installation/migration failed:', e);
     global._splashActive = false;
+    // If user already clicked cancel, don't show retry/quit — cancel's 3s exit timer is running
+    if (_splashCancelRequested) {
+      console.log('[boot] Install error after cancel — letting cancel timer handle exit');
+      return;
+    }
     if (splashWindow && !splashWindow.isDestroyed()) {
+      // Clear any pending cancel timer so it doesn't exit under the user
+      if (_splashCancelTimer) { clearTimeout(_splashCancelTimer); _splashCancelTimer = null; }
       try {
         splashWindow.webContents.send('splash-error', String(e?.message || e));
       } catch {}
