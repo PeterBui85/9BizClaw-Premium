@@ -1810,6 +1810,45 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
     fallback: message.messageId,
   });
 
+  // === 9BizClaw INBOUND-AUDIT PATCH v1 ===
+  // Write message_inbound event to audit.jsonl for analytics aggregation.
+  // Placed after ALL early-return filters so we only count messages that reach the agent.
+  try {
+    const __iaFs = require("node:fs");
+    const __iaPath = require("node:path");
+    const __iaHome = require("node:os").homedir();
+    const __iaAppDir = "9bizclaw";
+    let __iaWsDir: string;
+    if (process.env['9BIZ_WORKSPACE']) {
+      __iaWsDir = process.env['9BIZ_WORKSPACE'];
+    } else if (process.platform === "darwin") {
+      __iaWsDir = __iaPath.join(__iaHome, "Library", "Application Support", __iaAppDir);
+    } else if (process.platform === "win32") {
+      const __iaAppData = process.env.APPDATA || __iaPath.join(__iaHome, "AppData", "Roaming");
+      __iaWsDir = __iaPath.join(__iaAppData, __iaAppDir);
+    } else {
+      const __iaConfig = process.env.XDG_CONFIG_HOME || __iaPath.join(__iaHome, ".config");
+      __iaWsDir = __iaPath.join(__iaConfig, __iaAppDir);
+    }
+    const __iaLogDir = __iaPath.join(__iaWsDir, "logs");
+    __iaFs.mkdirSync(__iaLogDir, { recursive: true });
+    __iaFs.appendFileSync(
+      __iaPath.join(__iaLogDir, "audit.jsonl"),
+      JSON.stringify({
+        t: new Date().toISOString(),
+        event: "message_inbound",
+        pid: process.pid,
+        channel: "zalo",
+        senderId: message.senderId,
+        isGroup: !!message.isGroup,
+      }) + "\n",
+      "utf-8",
+    );
+  } catch (__iaErr) {
+    runtime.log?.("modoro-zalo: inbound audit write error: " + String(__iaErr));
+  }
+  // === END 9BizClaw INBOUND-AUDIT PATCH v1 ===
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
     BodyForAgent: rawBody,

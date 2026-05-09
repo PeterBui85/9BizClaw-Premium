@@ -751,15 +751,35 @@ app.whenReady().then(async () => {
     if (splashWindow && !splashWindow.isDestroyed()) {
       try {
         splashWindow.webContents.send('splash-error', String(e?.message || e));
-        new Promise(r => setTimeout(r, 5000)).then(() => { try { splashWindow.close(); } catch {} });
       } catch {}
+      const { ipcMain } = require('electron');
+      await new Promise((resolve) => {
+        ipcMain.once('splash-retry', () => {
+          console.log('[boot] User requested retry — restarting app...');
+          try { app.relaunch(); } catch {}
+          app.exit(0);
+        });
+        ipcMain.once('splash-quit', () => {
+          console.log('[boot] User quit after install failure');
+          app.exit(1);
+        });
+        splashWindow.once('closed', () => {
+          console.log('[boot] Splash window closed externally — exiting');
+          app.exit(1);
+        });
+        setTimeout(() => {
+          console.log('[boot] Splash error timeout (10min) — exiting');
+          app.exit(1);
+        }, 10 * 60 * 1000);
+      });
+      return;
     }
     try {
       const { dialog } = require('electron');
-      dialog.showErrorBox('Lỗi khởi tạo', 'Không thể cài đặt 9BizClaw.\n\n' + String(e?.message || e));
+      dialog.showErrorBox('Lỗi cài đặt', 'Không thể cài đặt 9BizClaw.\n\n' + String(e?.message || e));
     } catch {}
-    // Fall through to createWindow() so user isn't stuck with no UI.
-    // Dashboard will still load — some features may be degraded.
+    app.exit(1);
+    return;
   }
 
   // Initialize knowledge embedder after ctx.userDataDir update.

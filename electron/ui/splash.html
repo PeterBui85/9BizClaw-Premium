@@ -510,6 +510,14 @@
       steps.packages.desc.textContent = 'Đang cài openclaw, 9router, openzca...';
       animateTo(20);
     }
+    else if (data.step === 'git') {
+      setStepActive('packages');
+      steps.packages.desc.textContent = data.label || 'Đang tải Git...';
+      if (typeof data.pct === 'number') animateTo(18 + data.pct * 0.02);
+    }
+    else if (data.step === 'git-done') {
+      steps.packages.desc.textContent = data.label || 'Git đã sẵn sàng';
+    }
     else if (data.step === 'packages') {
       setStepActive('packages');
       steps.packages.desc.textContent = data.subStep || data.message || 'Đang cài packages...';
@@ -573,16 +581,39 @@
   window.splash.onError((message) => {
     title.textContent = 'Lỗi cài đặt';
     title.style.color = '#f87171';
-    subtitle.textContent = 'Quá trình bị gián đoạn. Thử khởi động lại ứng dụng.';
+    subtitle.textContent = 'Quá trình bị gián đoạn.';
     progressLabel.textContent = 'Lỗi';
     percentEl.textContent = '!';
     percentEl.classList.add('error');
     fill.style.width = '100%';
     fill.style.background = 'linear-gradient(90deg, #f87171, #fca5a5)';
     logo.classList.remove('pulsing');
+    substepEl.style.whiteSpace = 'pre-wrap';
+    substepEl.style.wordBreak = 'break-word';
+    substepEl.style.maxHeight = '120px';
+    substepEl.style.overflowY = 'auto';
+    substepEl.style.fontSize = '11px';
     substepEl.textContent = message || '';
     document.getElementById('btn-minimize').style.display = 'none';
     document.getElementById('btn-close').style.display = 'none';
+    // Show retry/quit buttons
+    let actions = document.getElementById('error-actions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.id = 'error-actions';
+      actions.style.cssText = 'display:flex;gap:12px;justify-content:center;margin-top:16px;';
+      const retryBtn = document.createElement('button');
+      retryBtn.textContent = 'Thử lại';
+      retryBtn.style.cssText = 'padding:8px 24px;border-radius:8px;border:none;background:#3b82f6;color:#fff;cursor:pointer;font-size:13px;font-weight:600;';
+      retryBtn.onclick = () => window.splash.retry();
+      const quitBtn = document.createElement('button');
+      quitBtn.textContent = 'Thoát';
+      quitBtn.style.cssText = 'padding:8px 24px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.7);cursor:pointer;font-size:13px;';
+      quitBtn.onclick = () => window.splash.quit();
+      actions.appendChild(retryBtn);
+      actions.appendChild(quitBtn);
+      substepEl.parentElement.appendChild(actions);
+    }
   });
 </script>
 </body>

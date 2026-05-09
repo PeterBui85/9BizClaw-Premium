@@ -350,13 +350,22 @@ jobs:
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
 
+      - name: Read version from package.json
+        id: pkg
+        working-directory: electron
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Fix artifact filename
+        working-directory: electron
+        run: node scripts/fix-artifact-name.js || true
+
       - name: List dist output
         run: ls -lh dist/ || true
 
       - name: Upload .dmg artifact
         uses: actions/upload-artifact@v5
         with:
-          name: 9BizClaw-mac-${{ matrix.arch }}
+          name: 9BizClaw-${{ steps.pkg.outputs.version }}-mac-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.dmg.blockmap

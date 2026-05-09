@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('splash', {
   onError:    (cb) => ipcRenderer.on('splash-error',    (_event, msg)   => cb(msg)),
   minimize:       () => ipcRenderer.send('splash-minimize'),
   cancelInstall:  () => ipcRenderer.send('splash-cancel'),
+  retry:          () => ipcRenderer.send('splash-retry'),
+  quit:           () => ipcRenderer.send('splash-quit'),
 });

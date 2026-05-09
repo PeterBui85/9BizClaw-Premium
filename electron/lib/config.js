@@ -77,6 +77,13 @@ function parseUnrecognizedKeyErrors(stderr) {
     // Without a path, we can't know which parent. Push as unscoped marker.
     out.push({ path: null, key: m[1] });
   }
+  // Format #4: "unknown channel id: <id>" — openclaw rejects plugin-defined
+  // channels when the plugin isn't loaded (e.g. agent CLI mode, or plugin
+  // not installed after failed runtime install). Delete the channel block.
+  const unknownChan = /channels[.\['"]*([a-z0-9-]+)['\]]*:\s*unknown channel id/gi;
+  while ((m = unknownChan.exec(stderr)) !== null) {
+    out.push({ path: ['channels'], key: m[1] });
+  }
   return out;
 }
 
@@ -421,34 +428,47 @@ async function ensureDefaultConfig() {
     // even remove the key altogether. Always create + heal so the block is
     // never undefined/empty after this function.
     if (!config.channels) config.channels = {};
+    // Guard: only create/migrate channels['modoro-zalo'] if the plugin is
+    // actually installed on disk. Without the plugin, openclaw CLI rejects
+    // the channel ID with "unknown channel id: modoro-zalo" — breaking ALL
+    // cron agent spawns.
+    const _mzManifestPath = path.join(ctx.HOME, '.openclaw', 'extensions', 'modoro-zalo', 'openclaw.plugin.json');
+    const _mzPluginInstalled = fs.existsSync(_mzManifestPath);
+    if (!_mzPluginInstalled) {
+      console.log('[config] modoro-zalo plugin not installed at', _mzManifestPath, '— skipping channel config to avoid "unknown channel id" rejection');
+    }
     // --- modoro-zalo migration from v2.3.49 ---
-    if (config.channels && config.channels.openzalo && !config.channels['modoro-zalo']) {
-      config.channels['modoro-zalo'] = JSON.parse(JSON.stringify(config.channels.openzalo));
-      changed = true;
-      console.log('[config] migrated channels.openzalo → channels["modoro-zalo"]');
-    }
-    if (config.channels && config.channels.openzalo) {
-      delete config.channels.openzalo;
-      changed = true;
-    }
-    if (config.plugins && config.plugins.entries) {
-      if (config.plugins.entries.openzalo && !config.plugins.entries['modoro-zalo']) {
+    // Always clean up legacy openzalo references regardless of plugin state
+    if (config.plugins && config.plugins.entries && config.plugins.entries.openzalo) {
+      if (_mzPluginInstalled && !config.plugins.entries['modoro-zalo']) {
         config.plugins.entries['modoro-zalo'] = config.plugins.entries.openzalo;
-        changed = true;
       }
-      if (config.plugins.entries.openzalo) {
-        delete config.plugins.entries.openzalo;
-        changed = true;
-      }
+      delete config.plugins.entries.openzalo;
+      changed = true;
     }
     if (Array.isArray(config.plugins && config.plugins.allow)) {
       const idx = config.plugins.allow.indexOf('openzalo');
-      if (idx !== -1) { config.plugins.allow[idx] = 'modoro-zalo'; changed = true; }
+      if (idx !== -1) {
+        if (_mzPluginInstalled) { config.plugins.allow[idx] = 'modoro-zalo'; }
+        else { config.plugins.allow.splice(idx, 1); }
+        changed = true;
+      }
       config.plugins.allow = [...new Set(config.plugins.allow)];
     }
-    // --- end migration ---
-    if (!config.channels['modoro-zalo'] || typeof config.channels['modoro-zalo'] !== 'object') {
-      config.channels['modoro-zalo'] = {};
+    if (_mzPluginInstalled) {
+      if (config.channels.openzalo && !config.channels['modoro-zalo']) {
+        config.channels['modoro-zalo'] = JSON.parse(JSON.stringify(config.channels.openzalo));
+        changed = true;
+        console.log('[config] migrated channels.openzalo → channels["modoro-zalo"]');
+      }
+      if (!config.channels['modoro-zalo'] || typeof config.channels['modoro-zalo'] !== 'object') {
+        config.channels['modoro-zalo'] = {};
+        changed = true;
+      }
+    }
+    // Always remove legacy openzalo channel — openclaw 2026.4.14 doesn't know it
+    if (config.channels.openzalo) {
+      delete config.channels.openzalo;
       changed = true;
     }
     // ALSO: if the modoro-zalo plugin files exist at ~/.openclaw/extensions/modoro-zalo/

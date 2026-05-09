@@ -68,6 +68,15 @@ const NODE_SHA256 = {
   'darwin-arm64': 'db4b275b83736df67533529a18cc55de2549a8329ace6c7bcc68f8d22d3c9000',
 };
 
+// MinGit — portable git for Windows (~30 MB). Needed when system git is absent
+// and npm needs git for transitive dependency resolution.
+const MINGIT_VERSION = '2.47.1.2';
+const MINGIT_TAG = 'v2.47.1.windows.2';
+const MINGIT_URL = {
+  x64: `https://github.com/git-for-windows/git/releases/download/${MINGIT_TAG}/MinGit-${MINGIT_VERSION}-64-bit.zip`,
+  arm64: `https://github.com/git-for-windows/git/releases/download/${MINGIT_TAG}/MinGit-${MINGIT_VERSION}-arm64.zip`,
+};
+
 const GOG_ARCHIVE_SHA256 = {
   'win32-x64':    '30836d03f66769ef38a65dd4b81ae2864e2159941d9751b6fdec6ea86be8726f',
   'win32-arm64':  '23c72facae6f2a8963a2a7dca87f3dadb1d9400912d832d263f611f3df15a9c3',
@@ -90,6 +99,7 @@ const ERROR_HINTS = {
   EACCES: 'Không có quyền ghi vào thư mục. Thử chạy với quyền Administrator.',
   NPM_CERT_ERROR: 'npm không xác thực được chứng chỉ — có thể do proxy corporate. Thử: npm config set strict-ssl false',
   NPM_ECONNRESET: 'npm bị reset kết nối — proxy hoặc mạng không ổn định. Thử lại.',
+  GIT_ENOENT: 'Máy chưa có git — 9BizClaw sẽ tự tải MinGit portable. Thử lại.',
 };
 
 // Detect if a corporate proxy is likely active by checking common env vars.
@@ -116,6 +126,7 @@ function classifyInstallError(error) {
   if (code === 'EACCES') return 'EACCES';
   if (msg.includes('npm') && (msg.includes('cert') || msg.includes('ssl'))) return 'NPM_CERT_ERROR';
   if (msg.includes('npm') && (msg.includes('connect') || msg.includes('reset'))) return 'NPM_ECONNRESET';
+  if (msg.includes('git error') && (msg.includes('enoent') || msg.includes('errno -4058'))) return 'GIT_ENOENT';
   return null;
 }
 
@@ -180,6 +191,59 @@ function getRuntimeNodeDir() {
   //   Windows: %APPDATA%\9bizclaw\vendor\
   //   Mac: ~/Library/Application Support/9bizclaw/vendor/
   return path.join(getUserDataDir(), 'vendor');
+}
+
+function getPortableGitDir() {
+  return path.join(getRuntimeNodeDir(), 'git');
+}
+
+function findGitBin() {
+  const portable = path.join(getPortableGitDir(), 'cmd', 'git.exe');
+  if (fs.existsSync(portable)) return portable;
+  if (process.platform !== 'win32') return 'git';
+  try {
+    const out = execSync('where git.exe', { encoding: 'utf8', timeout: 5000 }).trim();
+    if (out) return out.split(/\r?\n/)[0];
+  } catch {}
+  return null;
+}
+
+function getGitEnvPath() {
+  const gitDir = path.join(getPortableGitDir(), 'cmd');
+  const current = process.env.PATH || '';
+  if (fs.existsSync(gitDir)) return gitDir + path.delimiter + current;
+  return current;
+}
+
+async function ensurePortableGit(onProgress) {
+  if (process.platform !== 'win32') return;
+  if (findGitBin()) {
+    console.log('[runtime-installer] git found:', findGitBin());
+    return;
+  }
+  console.log('[runtime-installer] git not found — downloading MinGit...');
+  if (onProgress) onProgress({ step: 'git', pct: 0, label: 'Đang tải Git...' });
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const url = MINGIT_URL[arch];
+  const dest = getPortableGitDir();
+  const zipPath = path.join(dest, 'mingit.zip');
+  fs.mkdirSync(dest, { recursive: true });
+  try {
+    await downloadFile(url, zipPath, (pct) => {
+      if (onProgress) onProgress({ step: 'git', pct, label: 'Đang tải Git...' });
+    });
+    try {
+      execSync(`tar -xf "${zipPath}" -C "${dest}"`, { timeout: 120000 });
+    } catch {
+      execSync(`powershell -NoProfile -Command "Expand-Archive -Force -Path '${zipPath}' -DestinationPath '${dest}'"`, { timeout: 120000 });
+    }
+    try { fs.unlinkSync(zipPath); } catch {}
+    if (onProgress) onProgress({ step: 'git-done', pct: 100, label: 'Git đã sẵn sàng' });
+    console.log('[runtime-installer] MinGit installed to', dest);
+  } catch (e) {
+    console.warn('[runtime-installer] MinGit download failed (non-fatal):', e?.message);
+    if (onProgress) onProgress({ step: 'git-done', pct: 100, label: 'Git — bỏ qua' });
+  }
 }
 
 function getRuntimeNodeHomeDir() {
@@ -871,7 +935,7 @@ async function installNpmPackages(versions, onProgress) {
         [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts', '--omit=optional'],
         {
           timeout: NPM_INSTALL_TIMEOUT_MS, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
-          env: { ...process.env, GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' },
+          env: { ...process.env, PATH: getGitEnvPath(), GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' },
         }
       );
       let stderr = '';
@@ -1226,6 +1290,9 @@ async function runInstallation({ onProgress } = {}) {
     }
     if (onProgress) onProgress({ step: 'node-done' });
 
+    // Step 1.5: Ensure portable git on Windows (non-fatal)
+    await ensurePortableGit(onProgress);
+
     // Step 2: Install npm packages
     if (status.needsPackageInstall) {
       await installNpmPackages({}, onProgress);
@@ -1543,6 +1610,10 @@ module.exports = {
   getRuntimeVendorDir,
   findRuntimeNodeBin,
   findRuntimeOpenClawCliJs,
+
+  // Git helpers
+  findGitBin,
+  ensurePortableGit,
 
   // Version helpers
   getInstalledVersion,

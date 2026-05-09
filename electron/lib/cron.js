@@ -30,6 +30,7 @@ function getGateway() {
 let _agentFlagProfile = null;   // 'full' | 'medium' | 'minimal'
 let _agentCliHealthy = false;
 let _agentCliVersionOk = false; // true only when --version call succeeds
+let _selfTestAlertSent = false;
 let _selfTestPromise = null;
 
 function cronJournalPath() {
@@ -1572,7 +1573,8 @@ function _startCronJobsInner() {
 
   selfTestOpenClawAgent()
     .then(async () => {
-      if (!_agentCliVersionOk) {
+      if (!_agentCliVersionOk && !_selfTestAlertSent) {
+        _selfTestAlertSent = true;
         const msg = '[Cảnh báo cron] Không chạy được openclaw CLI khi khởi động. ' +
           'Cron job sáng/tối có thể không chạy được. Kiểm tra Dashboard → console để biết chi tiết.';
         try { await sendCeoAlert(msg); } catch {}

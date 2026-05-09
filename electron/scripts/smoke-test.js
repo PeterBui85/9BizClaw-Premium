@@ -677,7 +677,7 @@ const modoroZaloPkgSrc = path.join(__dirname, '..', 'packages', 'modoro-zalo', '
 const pkgChecks = [
   {
     file: 'inbound.ts',
-    markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH', 'COMMAND-BLOCK PATCH', 'RATE-LIMIT', 'BOT-LOOP-BREAKER'],
+    markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH', 'COMMAND-BLOCK PATCH', 'RATE-LIMIT', 'BOT-LOOP-BREAKER', 'INBOUND-AUDIT PATCH'],
   },
   {
     file: 'send.ts',
@@ -2078,6 +2078,7 @@ try {
     { name: 'bot-loop breaker', marker: 'BOT-LOOP-BREAKER' },
     { name: 'RAG injection', marker: 'RAG' },
     { name: 'deliver coalesce', marker: 'DELIVER-COALESCE' },
+    { name: 'inbound audit', marker: 'INBOUND-AUDIT PATCH' },
   ];
   for (const d of defenses) {
     if (!inboundTs.includes(d.marker)) {
