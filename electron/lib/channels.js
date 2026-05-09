@@ -380,6 +380,10 @@ const _outputFilterPatterns = [
   { name: 'fake-discount-percent', re: /(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
   { name: 'fake-booking-confirmed', re: /(?:đã\s*(?:đặt|book|giữ|xác\s*nhận))\s*(?:lịch|bàn|phòng|chỗ|slot|lịch\s*hẹn|cuộc\s*hẹn)/i },
   { name: 'fake-payment-received', re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
+  // Layer I: gateway system messages — internal restart/abort notices must never
+  // reach customers. The gateway emits these when a config reload triggers SIGUSR1.
+  { name: 'gateway-restart-msg', re: /gateway\s+is\s+restart/i },
+  { name: 'gateway-abort-msg', re: /(?:aborted.{0,20}restart|please\s+wait.*try\s+again)/i },
 ];
 
 const _outputFilterSafeMsgs = [

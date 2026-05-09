@@ -787,7 +787,7 @@ async function describePdfScanForKnowledge(pdfPath, filename, options = {}) {
 // ---------------------------------------------------------------------------
 async function summarizeKnowledgeContent(content, filename) {
   const fallback = () => {
-    return `(tom tat chua san sang cho ${filename} — 9Router offline, file da luu)`;
+    return `(tóm tắt chưa sẵn sàng cho ${filename} — 9Router offline, file đã lưu)`;
   };
   if (!content || content.length < 30) return fallback();
   const truncated = content.length > 4000 ? content.substring(0, 4000) + '...' : content;

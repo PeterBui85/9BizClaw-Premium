@@ -365,19 +365,19 @@ async function activateLicense(key) {
     return {
       success: false,
       error: 'offline_activation_blocked',
-      detail: 'Khong ket noi duoc may chu kiem tra ban quyen. Vui long thu lai khi co mang.',
+      detail: 'Không kết nối được máy chủ kiểm tra bản quyền. Vui lòng thử lại khi có mạng.',
     };
   }
 
   if (registry.revoked) {
-    return { success: false, error: 'revoked', detail: 'Key da bi thu hoi. Lien he tech@modoro.com.vn.' };
+    return { success: false, error: 'revoked', detail: 'Key đã bị thu hồi. Liên hệ tech@modoro.com.vn.' };
   }
 
   if (registry.activation && registry.activation.machine_id && registry.activation.machine_id !== machineId) {
     return {
       success: false,
       error: 'already_activated',
-      detail: 'Key da duoc kich hoat tren may khac. Lien he tech@modoro.com.vn de chuyen may.',
+      detail: 'Key đã được kích hoạt trên máy khác. Liên hệ tech@modoro.com.vn để chuyển máy.',
     };
   }
 
@@ -391,7 +391,7 @@ async function activateLicense(key) {
     return {
       success: false,
       error: 'already_activated',
-      detail: 'Key da duoc kich hoat tren may khac. Lien he tech@modoro.com.vn de chuyen may.',
+      detail: 'Key đã được kích hoạt trên máy khác. Liên hệ tech@modoro.com.vn để chuyển máy.',
     };
   }
 

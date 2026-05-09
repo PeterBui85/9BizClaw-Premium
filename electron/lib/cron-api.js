@@ -771,7 +771,7 @@ function startCronApi() {
           const createdIds = entries.map(e => e.id);
           console.log('[cron-api] replace transaction:', { deleted: deleteIds, created: createdIds });
           try {
-            sendCeoAlert('[Cron] Da thay doi atomic: xoa ' + deleteIds.length + ', tao ' + createdIds.length + '.');
+            sendCeoAlert('[Cron] Đã thay đổi atomic: xóa ' + deleteIds.length + ', tạo ' + createdIds.length + '.');
           } catch {}
           return jsonResp(res, 200, {
             success: true,

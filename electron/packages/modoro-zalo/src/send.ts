@@ -613,6 +613,8 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
       { name: "fake-discount-percent", re: /(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
       { name: "fake-booking-confirmed", re: /(?:đã\s*(?:đặt|book|giữ|xác\s*nhận))\s*(?:lịch|bàn|phòng|chỗ|slot|lịch\s*hẹn|cuộc\s*hẹn)/i },
       { name: "fake-payment-received", re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
+      { name: "gateway-restart-msg", re: /gateway\s+is\s+restart/i },
+      { name: "gateway-abort-msg", re: /(?:aborted.{0,20}restart|please\s+wait.*try\s+again)/i },
     ];
     let __ofBlocked: string | null = null;
     for (const __ofP of __ofBlockPatterns) {

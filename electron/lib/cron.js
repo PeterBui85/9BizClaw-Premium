@@ -946,17 +946,17 @@ function collectZaloMemoryStats(ws) {
       if (msgCount > 0) activeUsers++;
       if (msgCount > 0 && samples.length < 5) samples.push(`${name} msgCount=${msgCount}${lastSeen ? ` lastSeen=${lastSeen}` : ''}`);
     }
-    lines.push(`Zalo users: ${userFiles.length} profile(s), ${activeUsers} co msgCount > 0`);
-    if (samples.length) lines.push('Mau user co tuong tac: ' + samples.join('; '));
+    lines.push(`Zalo users: ${userFiles.length} profile(s), ${activeUsers} có msgCount > 0`);
+    if (samples.length) lines.push('Mẫu user có tương tác: ' + samples.join('; '));
   } catch {
-    lines.push('Zalo users: khong doc duoc thong ke');
+    lines.push('Zalo users: không đọc được thống kê');
   }
 
   try {
     const groupFiles = fs.existsSync(groupsDir) ? fs.readdirSync(groupsDir).filter(f => f.endsWith('.md')) : [];
     lines.push(`Zalo groups: ${groupFiles.length} profile(s)`);
   } catch {
-    lines.push('Zalo groups: khong doc duoc thong ke');
+    lines.push('Zalo groups: không đọc được thống kê');
   }
 
   return lines.join('\n');
@@ -964,23 +964,23 @@ function collectZaloMemoryStats(ws) {
 
 function collectMeditationContext() {
   const ws = getWorkspace();
-  if (!ws) return 'Workspace chua san sang, khong co du lieu noi bo de review.';
+  if (!ws) return 'Workspace chưa sẵn sàng, không có dữ liệu nội bộ để review.';
 
   const parts = [];
   const learnings = readTextSnippet(path.join(ws, '.learnings', 'LEARNINGS.md'), 7000)
     || readTextSnippet(path.join(ws, 'LEARNINGS.md'), 7000);
-  parts.push(`--- LEARNINGS.md GAN DAY ---\n${learnings || '(Chua co learning nao.)'}`);
+  parts.push(`--- LEARNINGS.md GẦN ĐÂY ---\n${learnings || '(Chưa có learning nào.)'}`);
 
   const memDir = path.join(ws, 'memory');
   const recentMemoryFiles = listRecentFiles(memDir, name => name.endsWith('.md'), 8);
   const memoryBlocks = recentMemoryFiles.map(entry => {
     const content = readTextSnippet(entry.fullPath, 1800);
-    return `### memory/${entry.name}\n${content || '(rong)'}`;
+    return `### memory/${entry.name}\n${content || '(rỗng)'}`;
   });
-  parts.push(`--- MEMORY JOURNAL GAN DAY ---\n${memoryBlocks.length ? memoryBlocks.join('\n\n') : '(Khong co journal memory gan day.)'}`);
+  parts.push(`--- MEMORY JOURNAL GẦN ĐÂY ---\n${memoryBlocks.length ? memoryBlocks.join('\n\n') : '(Không có journal memory gần đây.)'}`);
 
   const weeklyFiles = listRecentFiles(memDir, name => /^week-.*-summary\.md$/i.test(name) || /weekly-digest\.md$/i.test(name), 4);
-  const weeklyBlocks = weeklyFiles.map(entry => `### memory/${entry.name}\n${readTextSnippet(entry.fullPath, 1600) || '(rong)'}`);
+  const weeklyBlocks = weeklyFiles.map(entry => `### memory/${entry.name}\n${readTextSnippet(entry.fullPath, 1600) || '(rỗng)'}`);
   if (weeklyBlocks.length) parts.push(`--- WEEKLY DIGEST / SUMMARY ---\n${weeklyBlocks.join('\n\n')}`);
 
   parts.push(`--- ZALO MEMORY STATS ---\n${collectZaloMemoryStats(ws)}`);
@@ -994,20 +994,20 @@ function collectMeditationContext() {
 function buildMeditationPrompt() {
   const contextBlock = collectMeditationContext();
   return (
-    `Bay gio la 01:00 sang. Day la phien TOI UU BAN DEM.\n\n` +
-    `He thong da doc san du lieu can thiet ben duoi. KHONG tu bao thieu quyen doc workspace neu block du lieu da co san.\n` +
-    `Chi goi API /api/workspace/append?path=.learnings/LEARNINGS.md neu that su co learning moi dang ghi nhan.\n\n` +
-    `Nhiem vu:\n` +
-    `1. Dem uoc luong learning entries da review tu block LEARNINGS.\n` +
-    `2. Tim pattern lap lai/impact cao tu LEARNINGS, memory journal, Zalo memory stats va cron tail.\n` +
-    `3. Neu co pattern moi dang ghi nhan: append vao .learnings/LEARNINGS.md voi ma L-XXX tiep theo, noi dung ngan duoi 2000 bytes.\n` +
-    `4. Gui CEO bao cao ngan bang tieng Viet co dau:\n` +
-    `**TOI UU BAN DEM**\n` +
-    `- Da review N learning entries\n` +
-    `- Pattern moi phat hien: [bullet neu co, hoac "Khong co gi moi"]\n` +
-    `- Diem can cai thien: [1-2 bullet ngan]\n\n` +
-    `KHONG dung emoji. KHONG hoi lai CEO. KHONG sua AGENTS.md. KHONG noi ve duong dan file trong cau tra loi.\n\n` +
-    `--- DU LIEU NOI BO DA DOC SAN ---\n${contextBlock}\n--- HET DU LIEU NOI BO ---`
+    `Bây giờ là 01:00 sáng. Đây là phiên TỐI ƯU BAN ĐÊM.\n\n` +
+    `Hệ thống đã đọc sẵn dữ liệu cần thiết bên dưới. KHÔNG tự báo thiếu quyền đọc workspace nếu block dữ liệu đã có sẵn.\n` +
+    `Chỉ gọi API /api/workspace/append?path=.learnings/LEARNINGS.md nếu thật sự có learning mới đáng ghi nhận.\n\n` +
+    `Nhiệm vụ:\n` +
+    `1. Đếm ước lượng learning entries đã review từ block LEARNINGS.\n` +
+    `2. Tìm pattern lặp lại/impact cao từ LEARNINGS, memory journal, Zalo memory stats và cron tail.\n` +
+    `3. Nếu có pattern mới đáng ghi nhận: append vào .learnings/LEARNINGS.md với mã L-XXX tiếp theo, nội dung ngắn dưới 2000 bytes.\n` +
+    `4. Gửi CEO báo cáo ngắn bằng tiếng Việt có dấu:\n` +
+    `**TỐI ƯU BAN ĐÊM**\n` +
+    `- Đã review N learning entries\n` +
+    `- Pattern mới phát hiện: [bullet nếu có, hoặc "Không có gì mới"]\n` +
+    `- Điểm cần cải thiện: [1-2 bullet ngắn]\n\n` +
+    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. KHÔNG sửa AGENTS.md. KHÔNG nói về đường dẫn file trong câu trả lời.\n\n` +
+    `--- DỮ LIỆU NỘI BỘ ĐÃ ĐỌC SẴN ---\n${contextBlock}\n--- HẾT DỮ LIỆU NỘI BỘ ---`
   );
 }
 

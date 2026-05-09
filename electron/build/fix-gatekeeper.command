@@ -7,17 +7,17 @@ echo ""
 APP_PATH="/Applications/9BizClaw.app"
 
 if [ ! -d "$APP_PATH" ]; then
-  echo "Chua tim thay $APP_PATH"
-  echo "Hay keo 9BizClaw.app vao thu muc Applications truoc, roi chay lai file nay."
+  echo "Chưa tìm thấy $APP_PATH"
+  echo "Hãy kéo 9BizClaw.app vào thư mục Applications trước, rồi chạy lại file này."
   echo ""
-  read -p "Nhan Enter de dong..." _
+  read -p "Nhấn Enter để đóng..." _
   exit 1
 fi
 
-echo "Dang go chan Gatekeeper cho 9BizClaw..."
+echo "Đang gỡ chặn Gatekeeper cho 9BizClaw..."
 xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null
 
-echo "Xong! Dang mo 9BizClaw..."
+echo "Xong! Đang mở 9BizClaw..."
 echo ""
 open "$APP_PATH"
 exit 0

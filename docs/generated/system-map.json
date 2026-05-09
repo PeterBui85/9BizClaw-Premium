@@ -2292,11 +2292,11 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 105194
+      "bytes": 105482
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 102018
+      "bytes": 102026
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2304,11 +2304,11 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 81873
+      "bytes": 82202
     },
     {
       "path": "electron/lib/knowledge.js",
-      "bytes": 74902
+      "bytes": 74912
     },
     {
       "path": "electron/lib/gateway.js",
