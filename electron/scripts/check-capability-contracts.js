@@ -99,7 +99,7 @@ if (!cronApi.includes('/^memory\\/[^\\/]+\\.md$/') || !cronApi.includes('/^memor
 }
 
 const cronJs = readText('electron/lib/cron.js');
-if (!cronJs.includes('collectMeditationContext') || !cronJs.includes('DU LIEU NOI BO DA DOC SAN')) {
+if (!cronJs.includes('collectMeditationContext') || !cronJs.includes('DỮ LIỆU NỘI BỘ ĐÃ ĐỌC SẴN')) {
   fail('electron/lib/cron.js', 'night meditation cron must preload workspace context instead of making the agent discover raw paths');
 }
 if (!cronJs.includes('repairJsonControlCharsInStrings') || !cronJs.includes('custom-crons.json auto-repaired')) {
