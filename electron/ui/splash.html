@@ -416,8 +416,15 @@
           <div class="step-desc" id="desc-gog">Google Calendar, Gmail, Drive...</div>
         </div>
       </div>
+      <div class="step" id="step-model">
+        <div class="step-icon" id="icon-model">5</div>
+        <div class="step-content">
+          <div class="step-title">Mô hình AI</div>
+          <div class="step-desc" id="desc-model">Embedding model (~450 MB)</div>
+        </div>
+      </div>
       <div class="step" id="step-complete">
-        <div class="step-icon" id="icon-complete">5</div>
+        <div class="step-icon" id="icon-complete">6</div>
         <div class="step-content">
           <div class="step-title">Hoàn tất</div>
           <div class="step-desc" id="desc-complete">Sẵn sàng sử dụng</div>
@@ -443,6 +450,7 @@
     packages: { el: document.getElementById('step-packages'), icon: document.getElementById('icon-packages'), desc: document.getElementById('desc-packages') },
     plugin:   { el: document.getElementById('step-plugin'),   icon: document.getElementById('icon-plugin'),   desc: document.getElementById('desc-plugin') },
     gog:      { el: document.getElementById('step-gog'),      icon: document.getElementById('icon-gog'),      desc: document.getElementById('desc-gog') },
+    model:    { el: document.getElementById('step-model'),    icon: document.getElementById('icon-model'),    desc: document.getElementById('desc-model') },
     complete: { el: document.getElementById('step-complete'), icon: document.getElementById('icon-complete'), desc: document.getElementById('desc-complete') },
   };
 
@@ -508,12 +516,12 @@
       setStepDone('node');
       setStepActive('packages');
       steps.packages.desc.textContent = 'Đang cài openclaw, 9router, openzca...';
-      animateTo(20);
+      animateTo(15);
     }
     else if (data.step === 'git') {
       setStepActive('packages');
       steps.packages.desc.textContent = data.label || 'Đang tải Git...';
-      if (typeof data.pct === 'number') animateTo(18 + data.pct * 0.02);
+      if (typeof data.pct === 'number') animateTo(13 + data.pct * 0.02);
     }
     else if (data.step === 'git-done') {
       steps.packages.desc.textContent = data.label || 'Git đã sẵn sàng';
@@ -521,30 +529,40 @@
     else if (data.step === 'packages') {
       setStepActive('packages');
       steps.packages.desc.textContent = data.subStep || data.message || 'Đang cài packages...';
-      if (typeof data.percent === 'number') animateTo(20 + data.percent * 0.5);
+      if (typeof data.percent === 'number') animateTo(15 + data.percent * 0.4);
     }
     else if (data.step === 'packages-done') {
       setStepDone('packages');
       setStepActive('plugin');
-      animateTo(70);
+      animateTo(55);
     }
     else if (data.step === 'plugin') {
       setStepActive('plugin');
       steps.plugin.desc.textContent = data.message || 'Đang cài plugin Zalo...';
-      if (typeof data.percent === 'number') animateTo(70 + data.percent * 0.15);
+      if (typeof data.percent === 'number') animateTo(55 + data.percent * 0.1);
     }
     else if (data.step === 'plugin-done') {
       setStepDone('plugin');
       setStepActive('gog');
-      animateTo(85);
+      animateTo(65);
     }
     else if (data.step === 'gog') {
       setStepActive('gog');
       steps.gog.desc.textContent = data.message || 'Đang cài gogcli...';
-      if (typeof data.percent === 'number') animateTo(85 + data.percent * 0.15);
+      if (typeof data.percent === 'number') animateTo(65 + data.percent * 0.1);
     }
     else if (data.step === 'gog-done') {
       setStepDone('gog');
+      setStepActive('model');
+      animateTo(75);
+    }
+    else if (data.step === 'model') {
+      setStepActive('model');
+      steps.model.desc.textContent = data.message || 'Đang tải mô hình AI...';
+      if (typeof data.percent === 'number') animateTo(75 + data.percent * 0.23);
+    }
+    else if (data.step === 'model-done') {
+      setStepDone('model');
       setStepActive('complete');
       animateTo(99);
     }

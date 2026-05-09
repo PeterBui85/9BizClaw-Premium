@@ -1199,10 +1199,43 @@ async function probeTelegramReady() {
 // This is the AUTHORITATIVE check — listener-owner.json is just a lock file
 // which can be missing during the brief window between process spawn and
 // `acquireListenerOwnerLock()`. The process itself is the source of truth.
-function findOpenzcaListenerPid() {
+//
+// PERF: PowerShell Get-CimInstance takes 1-5s per call. On the 45s broadcast
+// cadence that's fine, but on loaded machines PowerShell can timeout (5s) →
+// false red dot. Cache the found PID for 30s; within the window, verify the
+// cached PID is still alive via a fast kill(pid,0) / tasklist check instead
+// of re-running the full PowerShell scan.
+let _cachedListenerPid = null;
+let _cachedListenerPidAt = 0;
+const _LISTENER_PID_CACHE_MS = 30000;
+
+function _isPidAliveQuick(pid) {
   try {
     if (process.platform === 'win32') {
-      // PowerShell primary (wmic deprecated/removed on Win11 24H2+).
+      require('child_process').execSync(
+        `tasklist /FI "PID eq ${pid}" /NH`,
+        { encoding: 'utf-8', timeout: 2000, windowsHide: true, stdio: 'pipe' }
+      );
+      return true;
+    } else {
+      process.kill(pid, 0);
+      return true;
+    }
+  } catch { return false; }
+}
+
+function findOpenzcaListenerPid() {
+  if (_cachedListenerPid && (Date.now() - _cachedListenerPidAt) < _LISTENER_PID_CACHE_MS) {
+    if (_isPidAliveQuick(_cachedListenerPid)) return _cachedListenerPid;
+    _cachedListenerPid = null;
+  }
+  const _cacheAndReturn = (pid) => {
+    _cachedListenerPid = pid;
+    _cachedListenerPidAt = Date.now();
+    return pid;
+  };
+  try {
+    if (process.platform === 'win32') {
       let wmicOut = null;
       try {
         wmicOut = require('child_process').execSync(
@@ -1216,11 +1249,10 @@ function findOpenzcaListenerPid() {
           const trimmed = line.trim();
           if (!trimmed || trimmed.toLowerCase().startsWith('node')) continue;
           const pid = parseInt(trimmed, 10);
-          if (Number.isFinite(pid) && pid >= 100) return pid;
+          if (Number.isFinite(pid) && pid >= 100) return _cacheAndReturn(pid);
         }
       }
 
-      // PowerShell fallback (works even when wmic is disabled)
       try {
         const psOut = require('child_process').execSync(
           `powershell -NoProfile -Command "Get-WmiObject Win32_Process -Filter \\"name='node.exe'\\" | Where-Object { $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId"`,
@@ -1228,24 +1260,23 @@ function findOpenzcaListenerPid() {
         );
         for (const line of psOut.trim().split('\n')) {
           const pid = parseInt(line.trim(), 10);
-          if (Number.isFinite(pid) && pid >= 100) return pid;
+          if (Number.isFinite(pid) && pid >= 100) return _cacheAndReturn(pid);
         }
       } catch {}
     } else {
-      // Mac/Linux: pgrep -f matches command line. Returns one PID per line.
-      // pgrep exit 1 = no matches → empty string. Iterate to be safe.
       const out = require('child_process').execSync(
         `pgrep -f "openzca.*listen" 2>/dev/null || true`,
         { encoding: 'utf-8', timeout: 3000, shell: '/bin/sh' }
       );
       for (const line of out.trim().split('\n')) {
         const pid = parseInt(line.trim(), 10);
-        if (Number.isFinite(pid) && pid >= 100) return pid;
+        if (Number.isFinite(pid) && pid >= 100) return _cacheAndReturn(pid);
       }
     }
   } catch (e) {
     if (process.env.BIZCLAW_DEBUG) console.error('[findOpenzcaListenerPid]', e.message);
   }
+  _cachedListenerPid = null;
   return null;
 }
 
@@ -1489,22 +1520,28 @@ async function broadcastChannelStatusOnce() {
       });
       return;
     }
-    // Marker cache: if gateway confirmed alive within 5 min, skip the alive
-    // probe entirely. This MUST run before isGatewayAlive() — the old order
-    // (alive check first, marker check second) caused false-negative gray dots
-    // when gateway was busy serving an AI completion and didn't respond to the
-    // 2s health check. The marker IS proof the gateway is alive.
+    // Per-channel marker cache: if a channel was confirmed alive within 5 min,
+    // skip the gateway alive probe for THAT channel. Previously we required
+    // BOTH markers fresh before skipping → if Zalo was disabled/slow, the
+    // alive check ran every 45s. When gateway was busy serving an AI reply
+    // (>15s), the probe timed out → BOTH dots went red even though Telegram
+    // was fine. Fix: per-channel gating. Each channel with a fresh marker
+    // skips the alive check independently.
     const MARKER_FRESH_MS = 5 * 60 * 1000;
     const notifyState = global._readyNotifyState || null;
     const now = Date.now();
     const tgFresh = notifyState?.telegram?.markerSeenAt && (now - notifyState.telegram.markerSeenAt) < MARKER_FRESH_MS;
     const zlFresh = notifyState?.zalo?.markerSeenAt && (now - notifyState.zalo.markerSeenAt) < MARKER_FRESH_MS;
-    const bothFresh = tgFresh && zlFresh;
-    // Gate 2: gateway spawned (ctx.botRunning=true) but not yet listening on :18789.
-    // Skip if both markers fresh — gateway was confirmed alive recently.
-    if (!bothFresh) {
-      const __gwAlive = _isGatewayAliveFn ? await _isGatewayAliveFn(15000) : false;
-      if (!__gwAlive) {
+    const anyStale = !tgFresh || !zlFresh;
+    // Gate 2: only run alive check when at least one channel's marker is stale.
+    // If alive check fails but ctx.botRunning is true (we spawned the process),
+    // DON'T blank both channels — let per-channel probes run. The gateway may
+    // be busy serving a long AI completion (30-60s) and unable to respond to
+    // the health check, but channels are still working fine.
+    let gwAlive = true;
+    if (anyStale) {
+      gwAlive = _isGatewayAliveFn ? await _isGatewayAliveFn(15000) : false;
+      if (!gwAlive && !ctx.botRunning) {
         ctx.mainWindow.webContents.send('channel-status', {
           telegram: { ready: false, error: 'Đang khởi động...' },
           zalo: { ready: false, error: 'Đang khởi động...' },

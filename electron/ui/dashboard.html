@@ -5706,9 +5706,7 @@
       if (!silent) addActivity('Đã mở ' + label + ' trong app');
     }
     function prewarmChatEmbed() {
-      setTimeout(function() {
-        try { ensureEmbedLoaded('chat', { silent: true }); } catch (e) { console.warn('[embed] chat prewarm failed:', e); }
-      }, 2200);
+      try { ensureEmbedLoaded('chat', { silent: true }); } catch (e) { console.warn('[embed] chat prewarm failed:', e); }
     }
     function retryEmbed(name) {
       var wrap = document.getElementById('embed-wrap-' + name);
@@ -6948,9 +6946,15 @@
     // Init
     mountIcons(); // Render static data-icon elements
     setThemeMode(getThemeMode());
-    prewarmChatEmbed();
     window.claw.onBotStatus((data) => {
       updateBotStatus(data.running, data.error);
+      if (data.running && currentPage === 'chat') {
+        if (!embedLoaded['chat']) ensureEmbedLoaded('chat', { silent: true });
+        else {
+          var chatWv = document.getElementById('iframe-chat');
+          if (chatWv && chatWv.style.visibility === 'hidden') retryEmbed('chat');
+        }
+      }
     });
 
     // ============================================

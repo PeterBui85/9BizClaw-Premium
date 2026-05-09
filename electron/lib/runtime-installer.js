@@ -16,6 +16,11 @@ try {
   ({ withRetry } = require('./installation-recovery'));
 } catch {}
 
+let isModelDownloaded, downloadModels;
+try {
+  ({ isModelDownloaded, downloadModels } = require('./model-downloader'));
+} catch {}
+
 // Pinned versions — loaded from a single canonical source so runtime-installer.js
 // and prebuild-vendor.js always agree. PINNING.md is the human-readable source.
 const SHARED_VERSIONS = (() => {
@@ -200,12 +205,34 @@ function getPortableGitDir() {
 function findGitBin() {
   const portable = path.join(getPortableGitDir(), 'cmd', 'git.exe');
   if (fs.existsSync(portable)) return portable;
-  if (process.platform !== 'win32') return 'git';
+  if (process.platform !== 'win32') {
+    if (process.platform === 'darwin' && !macHasXcodeCLT()) return null;
+    return 'git';
+  }
   try {
     const out = execSync('where git.exe', { encoding: 'utf8', timeout: 5000 }).trim();
     if (out) return out.split(/\r?\n/)[0];
   } catch {}
   return null;
+}
+
+// On macOS without Xcode CLT, /usr/bin/git is a shim that triggers a system
+// dialog asking to install developer tools. This blocks the npm process and
+// eventually fails. Detect this BEFORE npm runs so we can neutralize it.
+let _macCLTChecked = false;
+let _macHasCLT = true;
+function macHasXcodeCLT() {
+  if (process.platform !== 'darwin') return true;
+  if (_macCLTChecked) return _macHasCLT;
+  _macCLTChecked = true;
+  try {
+    execSync('xcode-select -p', { timeout: 5000, stdio: 'pipe' });
+    _macHasCLT = true;
+  } catch {
+    _macHasCLT = false;
+    console.log('[runtime-installer] Mac: Xcode CLT not installed — will neutralize git shim');
+  }
+  return _macHasCLT;
 }
 
 function getGitEnvPath() {
@@ -227,11 +254,23 @@ function buildEnvWithGitPath(extra) {
   delete env.Path;
   delete env.path;
   env.PATH = gitPath;
+  // On Mac without Xcode CLT, /usr/bin/git is a shim that pops up a system
+  // dialog (xcode-select) instead of running git. Tell npm to use /usr/bin/false
+  // (POSIX, always exits 1) so git-hosted deps fail instantly — no dialog.
+  // Combined with --omit=optional, optional git deps are silently skipped.
+  if (!macHasXcodeCLT()) {
+    env.npm_config_git = '/usr/bin/false';
+  }
   return env;
 }
 
 async function ensurePortableGit(onProgress) {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32') {
+    if (process.platform === 'darwin' && !macHasXcodeCLT()) {
+      console.log('[runtime-installer] Mac: no CLT — git shim neutralized via npm_config_git=/usr/bin/false');
+    }
+    return;
+  }
   if (findGitBin()) {
     console.log('[runtime-installer] git found:', findGitBin());
     return;
@@ -1007,13 +1046,20 @@ async function installNpmPackages(versions, onProgress) {
   let lastError = null;
   let installed = false;
 
-  // If npm fails with git ENOENT, try downloading MinGit before retrying
+  // If npm fails with git-related error, try downloading MinGit (Windows) or
+  // log diagnostic (Mac — no portable git available, but shim is neutralized).
   const maybeFixGit = async (error) => {
     const msg = String(error?.message || '');
-    if (msg.includes('spawn git') || (msg.includes('git') && msg.includes('ENOENT'))) {
-      console.log('[runtime-installer] npm failed due to missing git — attempting MinGit download...');
-      if (onProgress) onProgress({ step: 'packages', message: 'Đang tải Git (cần cho npm)...', subStep: 'MinGit' });
-      await ensurePortableGit(onProgress);
+    const isGitError = msg.includes('spawn git') ||
+      (msg.includes('git') && msg.includes('ENOENT')) ||
+      msg.includes('xcode-select') ||
+      msg.includes('.git');
+    if (isGitError) {
+      console.log('[runtime-installer] npm failed with git-related error:', msg.slice(-200));
+      if (process.platform === 'win32') {
+        if (onProgress) onProgress({ step: 'packages', message: 'Đang tải Git (cần cho npm)...', subStep: 'MinGit' });
+        await ensurePortableGit(onProgress);
+      }
     }
   };
 
@@ -1117,6 +1163,7 @@ async function fixRuntimeNativeModules(nodeBin, nodeModulesDir, onProgress) {
       'prebuild-install', '--no-save', '--no-fund', '--no-audit', '--ignore-scripts'];
     require('child_process').execFileSync(npm.command, installArgs, {
       timeout: 60000, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
+      env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' }),
     });
   } catch (e) {
     console.warn('[runtime-installer] failed to install prebuild-install:', e.message);
@@ -1129,7 +1176,7 @@ async function fixRuntimeNativeModules(nodeBin, nodeModulesDir, onProgress) {
       require('child_process').execFileSync(nodeBin,
         [prebuildJs, '-r', 'node', '-t', nodeVer, '--arch', arch],
         { cwd: bsqlDir, timeout: 60000, shell: false,
-          env: { ...process.env, npm_config_arch: arch } });
+          env: buildEnvWithGitPath({ npm_config_arch: arch, npm_config_node_gyp: 'echo' }) });
       if (fs.existsSync(bsqlBin)) {
         console.log('[runtime-installer] ✓ better-sqlite3 prebuilt fetched');
         try { fs.rmSync(tmpNm, { recursive: true, force: true }); } catch {}
@@ -1336,15 +1383,41 @@ async function runInstallation({ onProgress } = {}) {
     }
     if (onProgress) onProgress({ step: 'plugin-done' });
 
-    // Step 4: Install gogcli (Google Workspace CLI) if not already present
+    // Step 4: Install gogcli (Google Workspace CLI) — non-fatal, Google features degrade gracefully
     if (status.needsGogInstall) {
-      await ensureGogCli(onProgress);
+      try {
+        await ensureGogCli(onProgress);
+      } catch (e) {
+        console.warn('[runtime-installer] gogcli install failed (non-fatal):', e.message);
+        if (onProgress) onProgress({ step: 'gog', percent: 100, message: 'gogcli — bỏ qua (sẽ tải sau)' });
+      }
     } else {
       if (onProgress) onProgress({ step: 'gog', percent: 100, message: 'gogcli đã có sẵn' });
     }
     if (onProgress) onProgress({ step: 'gog-done' });
 
-    // Step 5: Write version + layout markers
+    // Step 5: Download embedding model (non-fatal — grep fallback exists)
+    if (isModelDownloaded && downloadModels) {
+      if (!isModelDownloaded()) {
+        try {
+          if (onProgress) onProgress({ step: 'model', percent: 0, message: 'Đang tải mô hình AI...' });
+          await downloadModels({
+            onProgress: (p) => {
+              if (onProgress) onProgress({ step: 'model', percent: p.percent, message: p.message });
+            },
+          });
+          if (onProgress) onProgress({ step: 'model', percent: 100, message: 'Mô hình AI đã sẵn sàng' });
+        } catch (e) {
+          console.warn('[runtime-installer] Model download failed (non-fatal):', e.message);
+          if (onProgress) onProgress({ step: 'model', percent: 100, message: 'Mô hình AI — bỏ qua (sẽ tải sau)' });
+        }
+      } else {
+        if (onProgress) onProgress({ step: 'model', percent: 100, message: 'Mô hình AI đã có sẵn' });
+      }
+    }
+    if (onProgress) onProgress({ step: 'model-done' });
+
+    // Step 6: Write version + layout markers
     writeInstalledVersion('2.4.0');
     writeLayoutVersion();
 

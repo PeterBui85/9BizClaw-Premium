@@ -930,6 +930,38 @@ async function _startOpenClawImpl(opts = {}) {
       }
     } catch (e) { /* never break on observer */ }
   };
+
+  let _gatewayConnectFailRestarted = false;
+  const scanForConnectFailure = (chunk) => {
+    if (_gatewayConnectFailRestarted) return;
+    try {
+      const text = chunk.toString('utf8');
+      if (text.includes('gateway connect failed')) {
+        _gatewayConnectFailRestarted = true;
+        console.warn('[restart-guard] detected "gateway connect failed" — channel plugin connection broken, scheduling restart in 10s');
+        if (notifyState.telegram) {
+          notifyState.telegram.confirmedAt = 0;
+          notifyState.telegram.lastError = 'Kênh Telegram bị lỗi kết nối nội bộ — đang khởi động lại...';
+        }
+        setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
+        setTimeout(() => {
+          if (ctx.startOpenClawInFlight || ctx.gatewayRestartInFlight) {
+            console.log('[restart-guard] connect-fail recovery skipped — another start in progress');
+            return;
+          }
+          console.log('[restart-guard] restarting gateway to recover from channel connect failure');
+          stopOpenClaw().then(() => {
+            setTimeout(() => startOpenClaw({ silent: true }), 3000);
+          }).catch(() => {
+            try { killPort(18789); } catch {}
+            try { killAllOpenClawProcesses(); } catch {}
+            setTimeout(() => startOpenClaw({ silent: true }), 5000);
+          });
+        }, 10000);
+      }
+    } catch {}
+  };
+
   // Guard: if an external stopOpenClaw() killed the process mid-spawn, the
   // reference here is null — attaching .on() would throw and break the
   // spawn path permanently (observed: wizard-complete race with resume-zalo
@@ -940,6 +972,8 @@ async function _startOpenClawImpl(opts = {}) {
   }
   ctx.openclawProcess.stdout.on('data', scanForReadiness);
   ctx.openclawProcess.stderr.on('data', scanForReadiness);
+  ctx.openclawProcess.stdout.on('data', scanForConnectFailure);
+  ctx.openclawProcess.stderr.on('data', scanForConnectFailure);
 
   ctx.openclawProcess.on('exit', (code) => {
     ctx.botRunning = false;
@@ -955,6 +989,16 @@ async function _startOpenClawImpl(opts = {}) {
     }
 
     const isRestart = lastError?.includes('restart') || lastError?.includes('SIGUSR1');
+    // Gateway self-restart failure: gateway detected config change, tried to
+    // restart itself, but port 18789 was still held → "gateway already running
+    // (pid X); lock timeout after 5000ms" + "Port 18789 is already in use" →
+    // process exits. Without this detection, exit handler treats it as a normal
+    // exit and does NOT auto-restart → gateway stays dead permanently.
+    // Customer-observed: config-reload fires ~107s after boot (gateway normalizes
+    // plugin entries), restart fails, gateway dies, bot never recovers.
+    const isSelfRestartFailure =
+      (lastError?.includes('already running') && lastError?.includes('lock timeout')) ||
+      (lastError?.includes('already in use') && code !== 0);
     const isBonjourConflict = lastError?.includes('bonjour') && lastError?.includes('non-announced');
 
     if (isBonjourConflict) {
@@ -986,6 +1030,23 @@ async function _startOpenClawImpl(opts = {}) {
     if (isTransientNetwork && !isBonjourConflict) {
       global._networkCooldownUntil = Date.now() + 60_000;
       console.log('[restart-guard] transient network exit — waiting 60s before restart');
+    }
+
+    if (isSelfRestartFailure) {
+      console.warn('[restart-guard] gateway self-restart failed (port/lock conflict) — killing port + relaunching in 5s');
+      if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+        ctx.mainWindow.webContents.send('bot-status', { running: false, error: 'Bot đang tự khởi động lại...' });
+      }
+      try { killPort(18789); } catch {}
+      try { killAllOpenClawProcesses(); } catch {}
+      setTimeout(() => {
+        if (ctx.botRunning || ctx.startOpenClawInFlight || ctx.gatewayRestartInFlight) {
+          console.log('[restart-guard] self-restart-recovery skipped — another start in progress');
+          return;
+        }
+        startOpenClaw({ silent: true });
+      }, 5000);
+      return;
     }
 
     if (isRestart) {
