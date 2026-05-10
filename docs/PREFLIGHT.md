@@ -53,7 +53,7 @@
   ```bash
   wc -c AGENTS.md
   ```
-- [ ] Kiểm tra tổng 8 file < 150K (bootstrap total limit)
+- [ ] Kiểm tra tổng 7 file < 150K (bootstrap total limit)
   ```bash
   wc -c AGENTS.md SOUL.md TOOLS.md IDENTITY.md USER.md BOOTSTRAP.md MEMORY.md
   ```

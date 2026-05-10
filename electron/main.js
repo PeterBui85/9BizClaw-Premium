@@ -832,6 +832,9 @@ app.whenReady().then(async () => {
       console.error('[boot] CRITICAL preflight failures:\n' + failMsgs);
       try { auditLog('preflight_critical_failure', { failures: pf.criticalFailures }); } catch {}
     }
+    if (pf.warnings.length) {
+      try { auditLog('preflight_warnings', { warnings: pf.warnings }); } catch {}
+    }
   } catch (e) {
     console.warn('[boot] preflight error (non-fatal):', e?.message || e);
   }

@@ -1662,7 +1662,7 @@
         await window.claw.setup9RouterAuto({ ensureRunning: true });
         window.claw.openExternal('http://127.0.0.1:20128/dashboard/providers/codex');
       } catch (e) {
-        showError('Không khởi động được 9Router: ' + (e.message || e));
+        showError('Thiết lập chưa hoàn tất — máy chưa sẵn sàng khởi động 9Router. Vui lòng kiểm tra kết nối mạng và thử lại. Chi tiết: ' + (e.message || e));
       }
       btn.disabled = false; btn.classList.remove('loading');
     }
@@ -1871,14 +1871,14 @@
         personaMix.customer = pronounsToCustomer[selectedPronouns] || 'anh-chi';
         const personResult = await withTimeout(window.claw.savePersonalization({ industry, tone: selectedTone, pronouns: selectedPronouns, ceoTitle, botName, personaMix }));
         if (personResult && personResult.success === false) {
-          showError('Lưu cá nhân hóa thất bại: ' + (personResult.error || 'không rõ lỗi'));
+          showError('Thiết lập chưa hoàn tất — không lưu được cá nhân hóa. Vui lòng thử lại. Chi tiết: ' + (personResult.error || 'không rõ lỗi'));
           finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
           return;
         }
 
         await withTimeout(window.claw.saveZaloMode(zaloMode));
       } catch (err) {
-        showError('Lỗi khi hoàn tất setup: ' + (err?.message || String(err)));
+        showError('Thiết lập chưa hoàn tất — môi trường chưa sẵn sàng. Vui lòng kiểm tra kết nối mạng và thử lại. Chi tiết: ' + (err?.message || String(err)));
         finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
         return;
       }

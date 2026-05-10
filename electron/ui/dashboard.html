@@ -9409,6 +9409,7 @@
     function formatGoogleErrorMessage(message, service) {
       const raw = String(message || '').trim();
       if (/not connected|chưa kết nối|not authenticated/i.test(raw)) return 'Google Workspace chưa kết nối. Mở tab Cài đặt để kết nối lại.';
+      if (/invalid_grant|token.*expired|token.*revoked/i.test(raw)) return 'Phiên Google đã hết hạn. Mở tab Cài đặt > Google Workspace > Kết nối lại để cấp quyền mới.';
       if (/has not been used|accessNotConfigured|API has not been used/i.test(raw)) return 'Google API cho ' + service + ' chưa được bật trong Google Cloud.';
       if (/permission|insufficient|forbidden|403/i.test(raw)) return 'Tài khoản Google chưa có quyền cho thao tác này hoặc OAuth thiếu scope.';
       return raw || 'Lỗi không xác định từ Google.';

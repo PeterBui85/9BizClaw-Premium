@@ -373,7 +373,7 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
       console.log(`[cron-agent] "${niceLabel}" done in ${durMs}ms, reply length=${replyText ? replyText.length : 0} chars`);
       // Deliver to Zalo if this cron has a zaloTarget
       let zaloOk = true;
-      if (zaloTarget && replyText && !zaloTarget.isGroup) {
+      if (zaloTarget && replyText) {
         zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
       }
       journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
@@ -1035,6 +1035,8 @@ async function runCronViaSessionOrFallback(prompt, opts = {}) {
     const ok = await sendToGatewaySession(sessionKey, prompt);
     if (ok) {
       journalCronRun({ phase: 'ok', label: opts.label || 'cron', mode: 'session-send' });
+      // Zalo delivery skipped here — session-send only has the raw prompt, not the agent reply.
+      // The fallback path (runCronAgentPrompt) handles Zalo delivery with actual reply text.
       return true;
     }
     console.log('[cron] sessions.send failed, falling back to runCronAgentPrompt');
@@ -1937,6 +1939,7 @@ function _startCronJobsInner() {
 
   // Facebook scheduled posts (2-phase: generate + publish)
   try {
+    fbSchedule.setOnScheduleChanged(() => restartCronJobs());
     const fbJobs = fbSchedule.getScheduledCronJobs();
     for (const fj of fbJobs) {
       try {

@@ -134,7 +134,7 @@ Large Source Files
 - electron/lib/channels.js: 83900 bytes
 - electron/lib/knowledge.js: 74912 bytes
 - electron/lib/gateway.js: 69976 bytes
-- electron/lib/runtime-installer.js: 65140 bytes
+- electron/lib/runtime-installer.js: 68748 bytes
 - electron/lib/config.js: 45610 bytes
 - electron/lib/workspace.js: 45092 bytes
 - electron/lib/fb-schedule.js: 39478 bytes
@@ -144,5 +144,5 @@ Large Source Files
 - electron/lib/vendor-patches.js: 33786 bytes
 - electron/lib/media-library.js: 30376 bytes
 - electron/lib/google-api.js: 29327 bytes
-- electron/ui/splash.html: 24601 bytes
+- electron/ui/splash.html: 24709 bytes
 - electron/lib/conversation.js: 22020 bytes

@@ -115,7 +115,7 @@ function isGatewayAlive(timeoutMs = 15000) {
   // Generous timeout (15s default) — gateway can be busy serving a cloud-model
   // AI completion cold-start and not return the index page in time. An 8s
   // timeout used to false-positive for cloud-model first-token latency, and a
-  // 2s timeout used to false-positive every few minutes, causing the heartbeat
+  // 2s timeout used to false-positive every few minutes, causing the
   // watchdog to kill+respawn a healthy gateway → looked like an endless
   // restart loop. Any 2xx/3xx/4xx status counts as alive (the connection
   // itself is what we care about).
@@ -194,7 +194,7 @@ let _gatewayIntentionalStopDepth = 0;
 async function startOpenClaw(opts = {}) {
   if (ctx.botRunning) return;
   // Prevent re-entrant start while a previous start is still spawning. Without
-  // this guard, heartbeat + UI button + boot sequence can race and spawn 2-3
+  // this guard, watchdog + UI button + boot sequence can race and spawn 2-3
   // gateway processes that fight over port 18789.
   if (ctx.startOpenClawInFlight) {
     console.log('[startOpenClaw] already in progress — concurrent caller will wait');
@@ -257,7 +257,7 @@ async function startOpenClaw(opts = {}) {
 }
 
 async function _startOpenClawImpl(opts = {}) {
-  // When called from auto-restart contexts (heartbeat, weekly cron, watchdog),
+  // When called from auto-restart contexts (weekly cron, watchdog),
   // opts.silent === true suppresses "Telegram đã sẵn sàng" / "Zalo đã sẵn sàng"
   // boot pings so CEO doesn't get woken at 3:30 AM or spammed on auto-recovery.
   // Flag persists until next non-silent start (normal app boot / wizard-complete).
@@ -356,7 +356,7 @@ async function _startOpenClawImpl(opts = {}) {
     }
     global._coldBootDone = true;
   } else {
-    // Steady-state restart (e.g. heartbeat): adoption is fine
+    // Steady-state restart (e.g. watchdog): adoption is fine
     const alreadyRunning = await isGatewayAlive();
     if (alreadyRunning) {
       console.log('Gateway already running on :18789 — adopting (steady-state restart)');
@@ -795,7 +795,7 @@ async function _startOpenClawImpl(opts = {}) {
   }
   // H1 throttle: if a readiness notification was already sent within the
   // last 10 minutes, suppress re-notify on subsequent gateway restarts (e.g.
-  // mid-demo Stop/Start, heartbeat watchdog fire). CEO shouldn't see the
+  // mid-demo Stop/Start, watchdog fire). CEO shouldn't see the
   // "Telegram đã sẵn sàng" message twice in the same session. The watchdog
   // recovery path still works silently — channel is ready, just no duplicate
   // notification. A fresh boot after >10min gap (app restart next day) still
@@ -1323,11 +1323,21 @@ async function fastWatchdogTick() {
           if (!zlPid) {
             _fwZaloMissCount++;
             if (_fwZaloMissCount === 3) {
-              // Track timestamp so heartbeat watchdog skips duplicate alert (dedup fix).
               global._zaloListenerAlertSentAt = Date.now();
-              console.warn('[fast-watchdog] Zalo listener not running (3 checks) — NOT restarting gateway. Zalo may need QR re-login.');
-              // Alert CEO once, don't spam
+              console.warn('[fast-watchdog] Zalo listener not running (3 checks) — alerting CEO');
               sendCeoAlert('Zalo listener không chạy. Nếu Zalo không nhận tin, vào tab Zalo bấm "Đổi tài khoản" để quét QR lại.').catch(() => {});
+            }
+            if (_fwZaloMissCount === 6) {
+              // Intentional mtime bump to trigger gateway config reloader → openzalo plugin reload
+              console.warn('[fast-watchdog] Zalo listener still dead after 6 checks — touching config for plugin reload');
+              try {
+                const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+                const raw = fs.readFileSync(cfgPath, 'utf-8');
+                fs.writeFileSync(cfgPath, raw, 'utf-8');
+              } catch (e) { console.warn('[fast-watchdog] config touch for Zalo reload failed:', e?.message); }
+            }
+            if (_fwZaloMissCount > 0 && _fwZaloMissCount % 15 === 0 && _fwZaloMissCount <= 60) {
+              sendCeoAlert('Zalo listener vẫn không chạy. Vào tab Zalo kiểm tra hoặc khởi động lại ứng dụng.').catch(() => {});
             }
           } else {
             _fwZaloMissCount = 0;

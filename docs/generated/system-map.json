@@ -2325,7 +2325,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 65140
+      "bytes": 68748
     },
     {
       "path": "electron/lib/config.js",
@@ -2365,7 +2365,7 @@
     },
     {
       "path": "electron/ui/splash.html",
-      "bytes": 24601
+      "bytes": 24709
     },
     {
       "path": "electron/lib/conversation.js",

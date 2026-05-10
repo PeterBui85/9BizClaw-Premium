@@ -106,7 +106,8 @@ function checkConfig() {
       const backupPath = configPath + '.corrupt.' + Date.now();
       fs.copyFileSync(configPath, backupPath);
       fs.unlinkSync(configPath);
-      return { pass: true, message: 'Config was corrupt JSON — backed up and removed for re-creation' };
+      console.error('[preflight] corrupt openclaw.json backed up to', backupPath);
+      return { pass: false, message: 'Config was corrupt JSON — backed up to ' + backupPath + ' and removed for re-creation' };
     } catch (backupErr) {
       return { pass: false, message: 'Config is corrupt JSON and backup failed: ' + backupErr.message };
     }
@@ -140,7 +141,9 @@ function checkNative() {
         const { autoFixBetterSqlite3 } = require('./knowledge');
         const fixed = autoFixBetterSqlite3();
         if (fixed) return { pass: true, message: 'better-sqlite3 ABI auto-fixed' };
-      } catch {}
+      } catch (fixErr) {
+        console.warn('[preflight] better-sqlite3 auto-fix failed:', fixErr?.message);
+      }
     }
     return { pass: false, message: 'better-sqlite3: ' + e.message };
   }

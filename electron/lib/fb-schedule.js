@@ -17,6 +17,10 @@ const path = require('path');
 const { getWorkspace, getBrandAssetsDir, readFbConfig, auditLog } = require('./workspace');
 const { sendTelegram: _sendTelegram, sendTelegramPhoto: _sendTelegramPhoto } = require('./channels');
 
+// ─── Callbacks ────────────────────────────────────────────────────
+let _onScheduleChanged = null;
+function setOnScheduleChanged(cb) { _onScheduleChanged = cb; }
+
 // ─── Constants ─────────────────────────────────────────────────────
 const SCHEDULES_FILE = 'fb-scheduled-posts.json';
 const PENDING_DIR = 'fb-pending';
@@ -122,6 +126,9 @@ function saveSchedules(schedules) {
   try {
     const p = getSchedulesPath();
     fs.writeFileSync(p, JSON.stringify(schedules, null, 2), 'utf-8');
+    if (_onScheduleChanged) {
+      try { _onScheduleChanged(); } catch (e) { console.warn('[fb-schedule] onScheduleChanged error:', e?.message); }
+    }
     return true;
   } catch (e) {
     console.error('[fb-schedule] saveSchedules failed:', e.message);
@@ -859,6 +866,19 @@ function handleRoute(urlPath, params, jsonResp, res) {
     return true;
   }
 
+  if (urlPath === '/api/fb/schedule/telegram-command') {
+    const { text } = params;
+    if (!text) { jsonResp(res, 400, { success: false, error: 'text required' }); return true; }
+    const cmd = parseTelegramCommand(text);
+    if (!cmd) { jsonResp(res, 200, { success: true, handled: false }); return true; }
+    handleTelegramCommand(cmd).then(result => {
+      jsonResp(res, 200, { success: true, ...result });
+    }).catch(err => {
+      jsonResp(res, 500, { success: false, error: err.message });
+    });
+    return true;
+  }
+
   return false;
 }
 
@@ -1060,4 +1080,7 @@ module.exports = {
 
   // Cleanup
   cleanupOldPending,
+
+  // Callback registration
+  setOnScheduleChanged,
 };

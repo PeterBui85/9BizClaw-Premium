@@ -1545,7 +1545,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     // startOpenClaw alone is a no-op when ctx.botRunning=true, so we MUST stop first.
     //
     // [restart-guard A1] Set ctx.gatewayRestartInFlight BEFORE the IIFE starts so
-    // the heartbeat watchdog (which also polls every N minutes) will skip its
+    // the fast watchdog (which also polls every 20s) will skip its
     // own restart attempt if it fires while we're mid-sequence. Clear in the
     // IIFE's finally only.
     if (enabledChanged) {
@@ -2349,9 +2349,6 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
         const prompt = buildEveningSummaryPrompt(s.time);
         const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — evening-summary' });
         return { success: ok, sent: ok };
-      } else if (id === 'heartbeat') {
-        const sent = await sendTelegram(`*Heartbeat*\n\nHệ thống đang hoạt động bình thường.`);
-        return { success: sent === true, sent };
       } else if (id === 'meditation') {
         const prompt = buildMeditationPrompt();
         const ok = await runCronAgentPrompt(prompt, { label: 'TEST — meditation' });
@@ -2787,7 +2784,7 @@ ipcMain.handle('resume-zalo', async () => {
               await new Promise(r => setTimeout(r, 5000));
               try { await startOpenClaw({ ignoreCooldown: true }); } catch (e2) { console.warn('[resume-zalo] start failed:', e2?.message); }
               // [zalo-watchdog rearm] Post-restart: wipe any pre-restart miss
-              // streak so next heartbeat miss doesn't immediately re-trip cap.
+              // streak so next watchdog miss doesn't immediately re-trip cap.
               global._zaloListenerMissStreak = 0;
               console.log('[restart-guard] resume-zalo: hard-restart end');
             } finally {

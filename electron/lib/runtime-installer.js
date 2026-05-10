@@ -105,6 +105,7 @@ const ERROR_HINTS = {
   NPM_CERT_ERROR: 'npm không xác thực được chứng chỉ — có thể do proxy corporate. Thử: npm config set strict-ssl false',
   NPM_ECONNRESET: 'npm bị reset kết nối — proxy hoặc mạng không ổn định. Thử lại.',
   GIT_ENOENT: 'Máy chưa có git — 9BizClaw sẽ tự tải MinGit portable. Thử lại.',
+  XCODE_SELECT: 'Mac chưa có Xcode Command Line Tools. 9BizClaw sẽ tự bỏ qua git — thử lại.',
 };
 
 // Detect if a corporate proxy is likely active by checking common env vars.
@@ -131,6 +132,7 @@ function classifyInstallError(error) {
   if (code === 'EACCES') return 'EACCES';
   if (msg.includes('npm') && (msg.includes('cert') || msg.includes('ssl'))) return 'NPM_CERT_ERROR';
   if (msg.includes('npm') && (msg.includes('connect') || msg.includes('reset'))) return 'NPM_ECONNRESET';
+  if (msg.includes('xcode-select') || msg.includes('xcode_select')) return 'XCODE_SELECT';
   if (msg.includes('git error') && (msg.includes('enoent') || msg.includes('errno -4058'))) return 'GIT_ENOENT';
   return null;
 }
@@ -206,7 +208,26 @@ function findGitBin() {
   const portable = path.join(getPortableGitDir(), 'cmd', 'git.exe');
   if (fs.existsSync(portable)) return portable;
   if (process.platform !== 'win32') {
-    if (process.platform === 'darwin' && !macHasXcodeCLT()) return null;
+    if (process.platform === 'darwin') {
+      if (!macHasXcodeCLT()) {
+        // Check common non-CLT git paths before giving up
+        const macGitPaths = [
+          '/opt/homebrew/bin/git',
+          '/usr/local/bin/git',
+          '/opt/local/bin/git',
+        ];
+        for (const p of macGitPaths) {
+          if (fs.existsSync(p)) {
+            console.log('[runtime-installer] Mac: found git outside CLT at', p);
+            return p;
+          }
+        }
+        // Create curl-based git shim as last resort
+        const shim = ensureMacGitShim();
+        if (shim) return shim;
+        return null;
+      }
+    }
     return 'git';
   }
   try {
@@ -215,6 +236,68 @@ function findGitBin() {
   } catch {}
   return null;
 }
+
+function ensureMacGitShim() {
+  const shimDir = path.join(getRuntimeNodeDir(), 'tools');
+  const shimPath = path.join(shimDir, 'git-shim.sh');
+  if (fs.existsSync(shimPath)) return shimPath;
+  try {
+    fs.mkdirSync(shimDir, { recursive: true });
+    fs.writeFileSync(shimPath, MAC_GIT_SHIM, { mode: 0o755 });
+    console.log('[runtime-installer] Mac: created git shim at', shimPath);
+    return shimPath;
+  } catch (e) {
+    console.error('[runtime-installer] Mac: failed to create git shim:', e.message);
+    return null;
+  }
+}
+
+const MAC_GIT_SHIM = [
+  '#!/bin/sh',
+  '# Git shim for macOS without Xcode CLT.',
+  '# Handles git+https GitHub URLs via curl tarball download.',
+  '# Only supports the subset of git commands npm needs.',
+  'case "$1" in',
+  '  clone)',
+  '    shift',
+  '    URL="" DIR=""',
+  '    while [ $# -gt 0 ]; do',
+  '      case "$1" in',
+  '        --depth|--branch|-b) shift; shift;;',
+  '        -q|--recurse-submodules|--single-branch|--no-tags|--progress) shift;;',
+  '        --*) shift;;',
+  '        *) if [ -z "$URL" ]; then URL="$1"; else DIR="$1"; fi; shift;;',
+  '      esac',
+  '    done',
+  '    [ -z "$DIR" ] && DIR=$(basename "$URL" .git)',
+  '    CLEAN=$(echo "$URL" | sed \'s|^git+||;s|\\.git$||\')',
+  '    mkdir -p "$DIR"',
+  '    /usr/bin/curl -fsSL "${CLEAN}/archive/HEAD.tar.gz" | /usr/bin/tar xz -C "$DIR" --strip-components=1',
+  '    RC=$?',
+  '    if [ $RC -eq 0 ]; then',
+  '      mkdir -p "$DIR/.git"',
+  '      echo "ref: refs/heads/master" > "$DIR/.git/HEAD"',
+  '    fi',
+  '    exit $RC',
+  '    ;;',
+  '  ls-remote)',
+  '    # npm uses ls-remote to get commit hash — return a stable fake hash.',
+  '    # printf ensures tab character (echo \\t is unreliable across shells).',
+  '    printf "%s\\tHEAD\\n" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+  '    printf "%s\\trefs/heads/master\\n" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+  '    exit 0',
+  '    ;;',
+  '  checkout|rev-parse|fetch|reset|init)',
+  '    if [ "$1" = "rev-parse" ]; then',
+  '      echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+  '    fi',
+  '    exit 0',
+  '    ;;',
+  '  *)',
+  '    exit 0',
+  '    ;;',
+  'esac',
+].join('\n') + '\n';
 
 // On macOS without Xcode CLT, /usr/bin/git is a shim that triggers a system
 // dialog asking to install developer tools. This blocks the npm process and
@@ -226,13 +309,25 @@ function macHasXcodeCLT() {
   if (_macCLTChecked) return _macHasCLT;
   _macCLTChecked = true;
   try {
-    execSync('xcode-select -p', { timeout: 5000, stdio: 'pipe' });
+    const cltPath = execSync('xcode-select -p', { timeout: 5000, stdio: 'pipe', encoding: 'utf-8' }).trim();
+    // xcode-select -p can return a path even when CLT is partially installed.
+    // Verify the actual git binary exists inside the CLT directory.
+    const gitBin = path.join(cltPath, 'usr', 'bin', 'git');
+    if (!fs.existsSync(gitBin)) {
+      throw new Error('CLT path exists but git binary missing at ' + gitBin);
+    }
     _macHasCLT = true;
   } catch {
     _macHasCLT = false;
     console.log('[runtime-installer] Mac: Xcode CLT not installed — will neutralize git shim');
   }
   return _macHasCLT;
+}
+
+function forceNeutralizeGitShim() {
+  _macCLTChecked = true;
+  _macHasCLT = false;
+  console.log('[runtime-installer] Mac: force-neutralizing git shim after xcode-select error');
 }
 
 function getGitEnvPath() {
@@ -255,11 +350,12 @@ function buildEnvWithGitPath(extra) {
   delete env.path;
   env.PATH = gitPath;
   // On Mac without Xcode CLT, /usr/bin/git is a shim that pops up a system
-  // dialog (xcode-select) instead of running git. Tell npm to use /usr/bin/false
-  // (POSIX, always exits 1) so git-hosted deps fail instantly — no dialog.
-  // Combined with --omit=optional, optional git deps are silently skipped.
+  // dialog (xcode-select) instead of running git. Use our curl-based git shim
+  // if available, otherwise fall back to /usr/bin/false (fails git deps but
+  // prevents the dialog).
   if (!macHasXcodeCLT()) {
-    env.npm_config_git = '/usr/bin/false';
+    const shimGit = findGitBin();
+    env.npm_config_git = shimGit || '/usr/bin/false';
   }
   return env;
 }
@@ -267,7 +363,8 @@ function buildEnvWithGitPath(extra) {
 async function ensurePortableGit(onProgress) {
   if (process.platform !== 'win32') {
     if (process.platform === 'darwin' && !macHasXcodeCLT()) {
-      console.log('[runtime-installer] Mac: no CLT — git shim neutralized via npm_config_git=/usr/bin/false');
+      const shim = ensureMacGitShim();
+      console.log('[runtime-installer] Mac: no CLT — using', shim ? 'curl-based git shim' : '/usr/bin/false fallback');
     }
     return;
   }
@@ -1059,6 +1156,8 @@ async function installNpmPackages(versions, onProgress) {
       if (process.platform === 'win32') {
         if (onProgress) onProgress({ step: 'packages', message: 'Đang tải Git (cần cho npm)...', subStep: 'MinGit' });
         await ensurePortableGit(onProgress);
+      } else if (process.platform === 'darwin') {
+        forceNeutralizeGitShim();
       }
     }
   };

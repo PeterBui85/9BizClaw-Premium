@@ -75,7 +75,7 @@ function resolveAssetPath(brandAssetsDir, name) {
     if (asset?.path && IMAGE_ASSET_TYPES.has(asset.type) && fs.existsSync(asset.path) && isSupportedAssetImage(asset.path)) {
       return asset.path;
     }
-  } catch {}
+  } catch (e) { console.warn('[image-gen] media-library lookup error:', e?.message || e); }
   return null;
 }
 
@@ -247,6 +247,7 @@ function findConnectionIdsViaApi() {
 
 function parseSSEForImage(rawData) {
   const lines = rawData.split('\n');
+  let errorDetail = null;
   for (const line of lines) {
     if (!line.startsWith('data: ')) continue;
     try {
@@ -256,10 +257,21 @@ function parseSSEForImage(rawData) {
           evt.item?.result) {
         return Buffer.from(evt.item.result, 'base64');
       }
+      if (evt.type === 'response.failed' || evt.type === 'error') {
+        errorDetail = evt.error?.message || evt.message || JSON.stringify(evt).slice(0, 300);
+      }
+      if (evt.type === 'response.completed' && evt.response?.status === 'incomplete') {
+        errorDetail = errorDetail || evt.response?.status_details?.reason || 'response incomplete';
+      }
     } catch {}
   }
   const match = rawData.match(/"result":"(iVBOR[A-Za-z0-9+/=]+)"/);
   if (match) return Buffer.from(match[1], 'base64');
+  if (errorDetail) {
+    const err = new Error(`Image generation failed: ${errorDetail}`);
+    err._isContentPolicy = /content.?policy|safety|moderation|blocked/i.test(errorDetail);
+    throw err;
+  }
   return null;
 }
 
@@ -285,9 +297,13 @@ function callCodexAPI(requestBody, connectionId) {
       res.on('data', c => data += c);
       res.on('end', () => {
         if (res.statusCode !== 200) return reject(new Error(`9router ${res.statusCode}: ${data.slice(0, 300)}`));
-        const imgBuf = parseSSEForImage(data);
-        if (!imgBuf) return reject(new Error('No image in response'));
-        resolve(imgBuf);
+        try {
+          const imgBuf = parseSSEForImage(data);
+          if (!imgBuf) return reject(new Error('No image in response'));
+          resolve(imgBuf);
+        } catch (parseErr) {
+          reject(parseErr);
+        }
       });
     });
     req.on('error', reject);
@@ -317,11 +333,19 @@ async function callCodexAPIWithFallback(prompt, assets, size) {
       return await callCodexAPI(body, connId);
     } catch (err) {
       lastErr = err;
+      if (err._isContentPolicy) throw err;
+      if (/40[013]|unauthorized|invalid.*key/i.test(err.message) && !isImageToolChoiceUnsupported(err)) {
+        console.warn(`[image-gen] connection ${connId.slice(0, 8)}… non-transient error: ${err.message}`);
+        continue;
+      }
       if (isImageToolChoiceUnsupported(err)) {
         try {
           const noTc = buildCodexRequest(prompt, assets, size, { toolChoice: false });
           return await callCodexAPI(noTc, connId);
-        } catch (e2) { lastErr = e2; }
+        } catch (e2) {
+          lastErr = e2;
+          if (e2._isContentPolicy) throw e2;
+        }
       }
       console.warn(`[image-gen] connection ${connId.slice(0, 8)}… failed: ${err.message}, trying next`);
       continue;

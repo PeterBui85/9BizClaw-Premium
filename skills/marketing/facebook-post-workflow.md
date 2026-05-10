@@ -152,14 +152,30 @@ Sau đó báo CEO:
 
 **CHỈ khi CEO xác nhận "ok" / "đăng đi" / "gửi đi".**
 
+### Bước 4.1 — Lấy approvalNonce (BẮT BUỘC trước khi đăng)
+
 ```
 GET http://127.0.0.1:20200/api/fb/post
-  ?imagePath=<relative-path>
+  ?preview=true
+  &imagePath=<relative-path>
+  &message=<URL-encoded caption>
+```
+
+Response: `{ "approvalNonce": "abc123...", "expiresAt": "...", "pageId": "...", "pageName": "..." }`
+
+### Bước 4.2 — Đăng bài với nonce
+
+```
+GET http://127.0.0.1:20200/api/fb/post
+  ?approvalNonce=<nonce-tu-buoc-4.1>
+  &imagePath=<relative-path>
   &message=<URL-encoded caption>
 ```
 
 - `imagePath` — **PHẢI là path TƯƠNG ĐỐI** từ workspace (VD: `brand-assets/generated/img_xxx.png`)
 - `message` — **PHẢI là param CUỐI CÙNG**
+- `imagePath` + `message` PHẢI GIỐNG CHÍNH XÁC bước 4.1 (server so khớp fingerprint)
+- Nếu thiếu `approvalNonce` hoặc nonce sai/hết hạn → HTTP 403
 
 ### Đọc response body — BẮT BUỘC
 
@@ -205,7 +221,7 @@ Nếu response báo token lỗi:
 | "tạo ảnh khác" / "thử ảnh khác" | Tạo ảnh mới → preview → chờ "ok" |
 | "đổi ảnh" / "không phải ảnh đó" | Tạo ảnh mới → preview → chờ "ok" |
 | "hủy" / "thôi" / "không đăng nữa" | Dừng, không làm gì |
-| "đăng đi" / "ok" / "gửi đi" | Gọi `/api/fb/post` → báo kết quả |
+| "đăng đi" / "ok" / "gửi đi" | Gọi `/api/fb/post?preview=true` → lấy nonce → gọi `/api/fb/post?approvalNonce=...` → báo kết quả |
 
 ---
 

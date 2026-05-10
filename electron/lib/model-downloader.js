@@ -68,8 +68,10 @@ function getModelFilePath(filename) {
   const dir = getModelDir();
   const full = path.join(dir, filename);
   try {
-    const { guardPath } = require('./preflight');
-    guardPath('getModelFilePath', full, dir);
+    if (app && app.isPackaged) {
+      const { guardPath } = require('./preflight');
+      guardPath('getModelFilePath', full, dir);
+    }
   } catch (e) {
     console.error(e.message);
   }

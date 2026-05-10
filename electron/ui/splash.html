@@ -329,6 +329,88 @@
   /* ── Error state ── */
   .progress-label-right.error { color: #f87171; }
   .step.error-state .step-icon { background: #f87171; color: white; }
+
+  /* ── Environment error panel ── */
+  .env-error-panel {
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: var(--surface-raised);
+    border: 1px solid rgba(248, 113, 113, 0.2);
+    border-radius: 10px;
+  }
+  .env-error-headline {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f87171;
+    margin-bottom: 4px;
+  }
+  .env-error-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .env-checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .env-checklist li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .env-checklist li .chk {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .env-checklist li .chk.ok {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+  }
+  .env-checklist li .chk.fail {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+  }
+  .env-detail-toggle {
+    margin-top: 10px;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .env-detail-toggle:hover { color: var(--text-secondary); }
+  .env-detail-toggle .arrow { transition: transform 150ms; }
+  .env-detail-toggle .arrow.open { transform: rotate(90deg); }
+  .env-detail-box {
+    display: none;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    font-size: 10px;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    color: var(--text-tertiary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 100px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+  .env-detail-box.open { display: block; }
 </style>
 </head>
 <body>
@@ -596,25 +678,62 @@
     }
   });
 
+  function diagnoseError(msg) {
+    const m = (msg || '').toLowerCase();
+    return [
+      { label: 'Kết nối Internet',        fail: /enotfound|enetunreach|etimedout|network|fetch failed|socket hang up|getaddrinfo/i.test(m) },
+      { label: 'Quyền ghi thư mục',       fail: /eperm|eacces|permission denied|access is denied/i.test(m) },
+      { label: 'Dung lượng ổ đĩa',        fail: /enospc|no space|disk full/i.test(m) },
+      { label: 'Node.js runtime',          fail: /node.*not found|enoent.*node|spawn.*node|cannot find.*node/i.test(m) },
+      { label: 'Phần mềm diệt virus',     fail: /ebusy|locked|being used by another|resource busy/i.test(m) },
+      { label: 'Tường lửa / Proxy',        fail: /econnrefused|econnreset|ssl|certificate|proxy|407|403.*forbidden/i.test(m) },
+      { label: 'Xcode Command Line Tools', fail: /xcode-select|xcode_select|no developer tools/i.test(m) },
+    ];
+  }
+
   window.splash.onError((message) => {
-    title.textContent = 'Lỗi cài đặt';
+    title.textContent = 'Môi trường cài đặt chưa sẵn sàng';
     title.style.color = '#f87171';
-    subtitle.textContent = 'Quá trình bị gián đoạn.';
+    subtitle.textContent = 'Máy tính của bạn cần một số điều kiện để chạy 9BizClaw.';
     progressLabel.textContent = 'Lỗi';
     percentEl.textContent = '!';
     percentEl.classList.add('error');
     fill.style.width = '100%';
     fill.style.background = 'linear-gradient(90deg, #f87171, #fca5a5)';
     logo.classList.remove('pulsing');
-    substepEl.style.whiteSpace = 'pre-wrap';
-    substepEl.style.wordBreak = 'break-word';
-    substepEl.style.maxHeight = '120px';
-    substepEl.style.overflowY = 'auto';
-    substepEl.style.fontSize = '11px';
-    substepEl.textContent = message || '';
+    substepEl.textContent = '';
     document.getElementById('btn-minimize').style.display = 'none';
     document.getElementById('btn-close').style.display = 'none';
-    // Show retry/quit buttons
+
+    // Hide steps list — replace with env checklist
+    document.querySelector('.steps').style.display = 'none';
+
+    const checks = diagnoseError(message);
+    const hasKnownCause = checks.some(c => c.fail);
+
+    let panel = document.getElementById('env-error-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'env-error-panel';
+      panel.className = 'env-error-panel';
+      substepEl.parentElement.appendChild(panel);
+    }
+
+    panel.innerHTML = '<div class="env-error-headline">' +
+      (hasKnownCause ? 'Lỗi: Môi trường cài đặt không tương thích' : 'Lỗi: Quá trình cài đặt bị gián đoạn') +
+      '</div>' +
+      '<div class="env-error-sub">Vui lòng kiểm tra các mục bên dưới và thử lại.</div>' +
+      '<ul class="env-checklist">' +
+      checks.map(c =>
+        '<li><span class="chk ' + (c.fail ? 'fail' : 'ok') + '">' + (c.fail ? '✗' : '✓') + '</span>' + c.label + '</li>'
+      ).join('') +
+      '</ul>' +
+      '<div class="env-detail-toggle" onclick="var b=this.nextElementSibling;var a=this.querySelector(\'.arrow\');if(b.classList.contains(\'open\')){b.classList.remove(\'open\');a.classList.remove(\'open\')}else{b.classList.add(\'open\');a.classList.add(\'open\')}">' +
+        '<span class="arrow">&#9654;</span> Xem chi tiết kỹ thuật' +
+      '</div>' +
+      '<div class="env-detail-box">' + (message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+
+    // Retry / Quit buttons
     let actions = document.getElementById('error-actions');
     if (!actions) {
       actions = document.createElement('div');
@@ -630,7 +749,7 @@
       quitBtn.onclick = () => window.splash.quit();
       actions.appendChild(retryBtn);
       actions.appendChild(quitBtn);
-      substepEl.parentElement.appendChild(actions);
+      panel.appendChild(actions);
     }
   });
 </script>

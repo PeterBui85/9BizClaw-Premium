@@ -89,7 +89,14 @@ function graphMultipartPhoto(pageId, token, message, imageBuffer, imagePath) {
         clearTimeout(bodyTimer);
         try {
           const parsed = JSON.parse(d);
-          if (parsed.error) return reject(new Error(parsed.error.message));
+          if (parsed.error) {
+            const err = new Error(parsed.error.message || 'Graph API photo upload error');
+            err._httpStatus = res.statusCode;
+            if (res.statusCode === 401 || parsed.error.code === 190 || /expired|invalid.*token/i.test(parsed.error.message || '')) {
+              err._isTokenExpired = true;
+            }
+            return reject(err);
+          }
           resolve(parsed);
         } catch { reject(new Error('Invalid response')); }
       });
