@@ -2284,7 +2284,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 519138
+      "bytes": 521291
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -2296,15 +2296,15 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 102026
+      "bytes": 101999
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 86519
+      "bytes": 86567
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 83625
+      "bytes": 83900
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -2324,7 +2324,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 44415
+      "bytes": 44748
     },
     {
       "path": "electron/lib/nine-router.js",
@@ -2332,7 +2332,7 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 37304
+      "bytes": 38463
     },
     {
       "path": "electron/lib/zalo-plugin.js",
