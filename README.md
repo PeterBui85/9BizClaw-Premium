@@ -4,7 +4,7 @@
 
 Desktop app bundle sẵn mọi thứ. Tải file cài, chạy wizard, có ngay trợ lý AI 24/7. Không cần biết code, không cần cài Node.js hay bất kỳ thứ gì.
 
-**v2.3.48** · Windows 10+ · macOS 11+ (Apple Silicon + Intel)
+**v2.4.2** · Windows 10+ · macOS 11+ (Apple Silicon + Intel)
 
 ---
 
