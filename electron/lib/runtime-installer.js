@@ -256,6 +256,8 @@ const MAC_GIT_SHIM = [
   '# Git shim for macOS without Xcode CLT.',
   '# Handles git+https GitHub URLs via curl tarball download.',
   '# Only supports the subset of git commands npm needs.',
+  '# npm passes -c key=value before the subcommand — skip them',
+  'while [ "$1" = "-c" ] && [ $# -ge 2 ]; do shift; shift; done',
   'case "$1" in',
   '  clone)',
   '    shift',
@@ -1547,11 +1549,6 @@ async function runInstallation({ onProgress } = {}) {
 
     // Step 1.5: Ensure portable git on Windows (non-fatal)
     await ensurePortableGit(onProgress);
-
-    // Step 1.6: Ensure Xcode CLT on Mac (required for npm git dependencies)
-    if (process.platform === 'darwin' && !macHasXcodeCLT()) {
-      await ensureXcodeCLT(onProgress);
-    }
 
     // Step 2: Install npm packages
     if (status.needsPackageInstall) {
