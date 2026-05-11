@@ -330,7 +330,6 @@ async function backfillKnowledgeEmbeddings() {
     console.warn('[knowledge-backfill] error:', e.message);
   } finally {
     _backfillInProgress = false;
-    try { db.close(); } catch {}
   }
 }
 
@@ -440,8 +439,6 @@ async function backfillDocumentChunks() {
     if (indexed > 0) console.log(`[knowledge] backfill chunks: indexed ${indexed} docs, ${totalChunks} chunks`);
   } catch (e) {
     console.error('[knowledge] backfillDocumentChunks error:', e.message);
-  } finally {
-    try { db.close(); } catch {}
   }
 }
 
@@ -514,50 +511,56 @@ function ensureDocumentsSchema(db) {
   try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_cat_vis ON documents(category, visibility)`); } catch {}
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_filename_cat ON documents(filename, category)`); } catch {}
   try { ensureKnowledgeChunksSchema(db); } catch (e) {
     console.warn('[documents] chunk schema init failed:', e.message);
   }
 }
 
 // ---------------------------------------------------------------------------
-//  getDocumentsDb
+//  getDocumentsDb — singleton connection (callers MUST NOT call db.close())
 // ---------------------------------------------------------------------------
+let _documentsDbSingleton = null;
+function _openDocumentsDb() {
+  const Database = require('better-sqlite3');
+  const ws = getWorkspace();
+  try { fs.mkdirSync(ws, { recursive: true }); } catch {}
+  const dbPath = path.join(ws, 'memory.db');
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
+  if (!_documentsDbSchemaReady) {
+    ensureDocumentsSchema(db);
+    try {
+      const cols = db.prepare("PRAGMA table_info(documents_chunks)").all();
+      const hasEmbedding = cols.some(c => c.name === 'embedding');
+      const hasEmbeddingModel = cols.some(c => c.name === 'embedding_model');
+      if (hasEmbedding && hasEmbeddingModel) {
+        _documentsDbSchemaReady = true;
+      } else {
+        console.warn('[documents] schema incomplete — embedding columns missing, will retry next open');
+      }
+    } catch {}
+  }
+  return db;
+}
+
 function getDocumentsDb() {
+  if (_documentsDbSingleton) {
+    try { _documentsDbSingleton.prepare('SELECT 1').get(); return _documentsDbSingleton; } catch { _documentsDbSingleton = null; }
+  }
   try {
-    const Database = require('better-sqlite3');
-    const ws = getWorkspace();
-    try { fs.mkdirSync(ws, { recursive: true }); } catch {}
-    const dbPath = path.join(ws, 'memory.db');
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('busy_timeout = 5000');
-    if (!_documentsDbSchemaReady) {
-      ensureDocumentsSchema(db);
-      try {
-        const cols = db.prepare("PRAGMA table_info(documents_chunks)").all();
-        const hasEmbedding = cols.some(c => c.name === 'embedding');
-        const hasEmbeddingModel = cols.some(c => c.name === 'embedding_model');
-        if (hasEmbedding && hasEmbeddingModel) {
-          _documentsDbSchemaReady = true;
-        } else {
-          console.warn('[documents] schema incomplete — embedding columns missing, will retry next open');
-        }
-      } catch {}
-    }
-    return db;
+    _documentsDbSingleton = _openDocumentsDb();
+    return _documentsDbSingleton;
   } catch (e) {
     if (/NODE_MODULE_VERSION|incompatible architecture|mach-o.*arch|invalid ELF header|dlopen.*Mach-O/i.test(e.message) && !_documentsDbAutoFixAttempted) {
       console.error('[documents] DB error (ABI mismatch):', e.message);
       const fixed = autoFixBetterSqlite3();
       if (fixed) {
         try {
-          const Database = require('better-sqlite3');
-          const ws = getWorkspace();
-          const dbPath = path.join(ws, 'memory.db');
-          const db = new Database(dbPath);
-          ensureDocumentsSchema(db);
+          _documentsDbSingleton = _openDocumentsDb();
           console.log('[documents] DB now working after auto-fix');
-          return db;
+          return _documentsDbSingleton;
         } catch (e2) {
           console.error('[documents] DB still broken after auto-fix:', e2.message);
         }
@@ -573,6 +576,13 @@ function getDocumentsDb() {
       _documentsDbLastErrorAt = now;
     }
     return null;
+  }
+}
+
+function closeDocumentsDb() {
+  if (_documentsDbSingleton) {
+    try { _documentsDbSingleton.close(); } catch {}
+    _documentsDbSingleton = null;
   }
 }
 
@@ -684,17 +694,16 @@ async function backfillKnowledgeFromDisk() {
       }
       const wordCount = content ? content.split(/\s+/).length : 0;
       try {
-        insertDocumentRow(db, {
-          filename: entry.name, filepath: fp, content,
-          filetype, filesize: stat.size, wordCount,
-          category: cat, summary: null, visibility: 'public'
-        });
-        try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
-        inserted++;
+        const result = db.prepare(
+          'INSERT OR IGNORE INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null, 'public');
+        if (result.changes > 0) {
+          try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
+          inserted++;
+        }
       } catch (e) { console.error('[knowledge] backfill insert err:', entry.name, e.message); }
     }
   }
-  try { db.close(); } catch {}
   if (inserted > 0) {
     console.log('[knowledge] backfilled', inserted, 'file(s) from disk into DB');
     for (const cat of getKnowledgeCategories()) rewriteKnowledgeIndex(cat);
@@ -831,7 +840,6 @@ function rewriteKnowledgeIndex(category) {
       const npRows = db.prepare("SELECT filename FROM documents WHERE category = ? AND visibility != 'public'").all(category);
       nonPublicSet = new Set(npRows.map(r => r.filename));
     } catch {}
-    try { db.close(); } catch {}
   }
   const dbNames = new Set(rows.map(r => r.filename));
   for (const f of listKnowledgeFilesFromDisk(category)) {
@@ -960,6 +968,36 @@ function expandSynonyms(normalizedQuery) {
 }
 
 // ---------------------------------------------------------------------------
+//  FTS5 corruption recovery — drop + rebuild from documents table
+// ---------------------------------------------------------------------------
+let _fts5RebuildAttempted = false;
+function _rebuildFTS5IfCorrupt(db, errMsg) {
+  if (!errMsg || !/(malformed|corrupt|disk image)/i.test(errMsg)) return false;
+  if (_fts5RebuildAttempted) return false;
+  _fts5RebuildAttempted = true;
+  console.warn('[knowledge] FTS5 corruption detected — rebuilding documents_fts');
+  try {
+    db.exec('DROP TABLE IF EXISTS documents_fts');
+    db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(filename, content, tokenize='unicode61')");
+    const rows = db.prepare('SELECT filename, content FROM documents').all();
+    const ins = db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)');
+    const tx = db.transaction(() => { for (const r of rows) ins.run(r.filename, r.content || ''); });
+    tx();
+    console.log('[knowledge] FTS5 documents_fts rebuilt with', rows.length, 'rows');
+  } catch (re) { console.error('[knowledge] FTS5 rebuild failed:', re.message); }
+  try {
+    db.exec('DROP TABLE IF EXISTS documents_chunks_fts');
+    db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS documents_chunks_fts USING fts5(content, content_plain, tokens, tokenize = \"unicode61 remove_diacritics 2\")");
+    const chunkRows = db.prepare('SELECT id, content, content_plain, tokens FROM documents_chunks').all();
+    const ins2 = db.prepare('INSERT INTO documents_chunks_fts (rowid, content, content_plain, tokens) VALUES (?, ?, ?, ?)');
+    const tx2 = db.transaction(() => { for (const r of chunkRows) ins2.run(r.id, r.content || '', r.content_plain || '', r.tokens || ''); });
+    tx2();
+    console.log('[knowledge] FTS5 documents_chunks_fts rebuilt with', chunkRows.length, 'rows');
+  } catch (re) { console.error('[knowledge] FTS5 chunks rebuild failed:', re.message); }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 //  searchKnowledgeFTS5
 // ---------------------------------------------------------------------------
 function searchKnowledgeFTS5(opts, sharedDb) {
@@ -1013,7 +1051,10 @@ function searchKnowledgeFTS5(opts, sharedDb) {
   if (matchExpr) {
     try { results = tryMatch(matchExpr); } catch (e) {
       console.warn('[knowledge-search] tier1 MATCH failed:', e.message);
-      results = [];
+      if (_rebuildFTS5IfCorrupt(db, e.message)) {
+        try { results = tryMatch(matchExpr); } catch {}
+      }
+      if (!results) results = [];
     }
   }
 
@@ -1058,9 +1099,6 @@ function searchKnowledgeFTS5(opts, sharedDb) {
     }
   }
 
-  if (!sharedDb) {
-    try { db.close(); } catch {}
-  }
   try {
     console.log(`[knowledge-search] query="${String(query).slice(0, 80)}" expanded="${String(usedExpr).slice(0, 120)}" results=${results.length}`);
   } catch {}
@@ -1249,11 +1287,8 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
   let _priceFilterDropAll = false;
 
   if (_backfillInProgress) {
-    try {
-      const fts = searchKnowledgeFTS5({ query, category, limit, audience }, db);
-      return mergeMediaSearchResults(query, fts, { limit, audience });
-    }
-    finally { try { db.close(); } catch {} }
+    const fts = searchKnowledgeFTS5({ query, category, limit, audience }, db);
+    return mergeMediaSearchResults(query, fts, { limit, audience });
   }
 
   try {
@@ -1468,7 +1503,6 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
 
     return mergeMediaSearchResults(query, scored.slice(0, limit), { limit, audience });
   } finally {
-    try { db.close(); } catch {}
     try {
       auditLog('rag_search', {
         queryHash: _queryHash,
@@ -1574,7 +1608,7 @@ function startKnowledgeSearchServer() {
                 "SELECT COUNT(*) AS total, COUNT(embedding) AS embedded FROM documents_chunks"
               ).get();
               coverage = { total: row.total, embedded: row.embedded, pct: row.total ? Math.round(row.embedded / row.total * 100) : 100 };
-            } finally { try { db2.close(); } catch {} }
+            } catch {}
           }
         } catch {}
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -1769,6 +1803,7 @@ module.exports = {
 
   // DB
   getDocumentsDb,
+  closeDocumentsDb,
   autoFixBetterSqlite3,
 
   // Categories

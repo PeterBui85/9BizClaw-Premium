@@ -325,7 +325,13 @@ function seedWorkspace() {
               } else {
                 const srcFile = path.join(srcDir, entry.name);
                 const dstFile = path.join(dstDir, entry.name);
-                try { fs.copyFileSync(srcFile, dstFile); refreshed++; } catch {}
+                try {
+                  fs.copyFileSync(srcFile, dstFile); refreshed++;
+                } catch (cpErr) {
+                  if (process.platform === 'win32' && cpErr?.code === 'EBUSY') {
+                    try { const { execSync } = require('child_process'); execSync('ping -n 2 127.0.0.1 >nul', { windowsHide: true }); fs.copyFileSync(srcFile, dstFile); refreshed++; } catch { console.warn('[seedWorkspace] EBUSY retry failed:', entry.name); }
+                  }
+                }
               }
             }
           };

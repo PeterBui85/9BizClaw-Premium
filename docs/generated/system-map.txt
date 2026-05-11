@@ -135,10 +135,10 @@ Large Source Files
 - electron/ui/dashboard.html: 524791 bytes
 - electron/lib/dashboard-ipc.js: 231855 bytes
 - electron/lib/cron-api.js: 106362 bytes
-- electron/lib/cron.js: 100374 bytes
+- electron/lib/cron.js: 100403 bytes
 - electron/ui/wizard.html: 87052 bytes
-- electron/lib/channels.js: 84542 bytes
-- electron/lib/knowledge.js: 74912 bytes
+- electron/lib/channels.js: 84587 bytes
+- electron/lib/knowledge.js: 74937 bytes
 - electron/lib/runtime-installer.js: 73846 bytes
 - electron/lib/gateway.js: 69976 bytes
 - electron/lib/config.js: 45610 bytes

@@ -298,7 +298,7 @@ const _outputFilterPatterns = [
   { name: 'api-key-sk', re: /\bsk-[a-zA-Z0-9_\-]{16,}/i },
   { name: 'bearer-token', re: /\bBearer\s+[a-zA-Z0-9_\-.]{20,}/i },
   { name: 'hex-token-48', re: /\b[a-f0-9]{48}\b/i },
-  { name: 'hex-token-partial', re: /\b[a-f0-9]{16,47}\b/i },
+  { name: 'hex-token-partial', re: /\b[a-f0-9]{32,47}\b/i },
   { name: 'botToken-field', re: /\bbotToken\b/i },
   { name: 'apiKey-field', re: /\bapiKey\b/i },
   // Layer A1.7: PII masking — bot MUST NOT echo sensitive customer data
@@ -1241,11 +1241,11 @@ const _LISTENER_PID_CACHE_MS = 30000;
 function _isPidAliveQuick(pid) {
   try {
     if (process.platform === 'win32') {
-      require('child_process').execSync(
-        `tasklist /FI "PID eq ${pid}" /NH`,
+      const out = require('child_process').execSync(
+        `tasklist /FI "PID eq ${pid}" /FO CSV /NH`,
         { encoding: 'utf-8', timeout: 2000, windowsHide: true, stdio: 'pipe' }
       );
-      return true;
+      return out.includes('"' + pid + '"');
     } else {
       process.kill(pid, 0);
       return true;

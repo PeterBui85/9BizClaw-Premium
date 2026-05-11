@@ -207,7 +207,8 @@ function isTransientErr(stderr) {
   const s = (stderr || '').toLowerCase();
   return s.includes('econnrefused')
       || s.includes('etimedout')
-      || s.includes('gateway') && s.includes('not')
+      || s.includes('gateway not running')
+      || s.includes('gateway is not')
       || s.includes('temporarily')
       || s.includes('timeout');
 }

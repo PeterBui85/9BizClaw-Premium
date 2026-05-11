@@ -500,7 +500,7 @@ async function ensureDefaultConfig() {
         }
       }
     } catch (e) { console.warn('[config] plugin entry heal failed:', e?.message); }
-    {
+    if (config.channels && config.channels['modoro-zalo']) {
       const oz = config.channels['modoro-zalo'];
       // Default OFF on fresh install — CEO must enable from Settings > Zalo.
       // If field already exists (any value), preserve it so disabling from
@@ -578,7 +578,7 @@ async function ensureDefaultConfig() {
     // the gateway should not load modoro-zalo at all.
     try {
       const modoroZaloPluginManifest2 = path.join(ctx.HOME, '.openclaw', 'extensions', 'modoro-zalo', 'openclaw.plugin.json');
-      if (fs.existsSync(modoroZaloPluginManifest2)) {
+      if (fs.existsSync(modoroZaloPluginManifest2) && config.channels && config.channels['modoro-zalo']) {
         if (!config.plugins) config.plugins = {};
         if (!config.plugins.entries) config.plugins.entries = {};
         const wantZaloEnabled = config.channels['modoro-zalo'].enabled !== false;

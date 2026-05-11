@@ -934,6 +934,7 @@ async function _startOpenClawImpl(opts = {}) {
   let _gatewayConnectFailRestarted = false;
   const scanForConnectFailure = (chunk) => {
     if (_gatewayConnectFailRestarted) return;
+    if (_gatewayIntentionalStopDepth > 0) return;
     try {
       const text = chunk.toString('utf8');
       if (text.includes('gateway connect failed')) {
@@ -945,8 +946,8 @@ async function _startOpenClawImpl(opts = {}) {
         }
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         setTimeout(() => {
-          if (ctx.startOpenClawInFlight || ctx.gatewayRestartInFlight) {
-            console.log('[restart-guard] connect-fail recovery skipped — another start in progress');
+          if (ctx.startOpenClawInFlight || ctx.gatewayRestartInFlight || _gatewayIntentionalStopDepth > 0) {
+            console.log('[restart-guard] connect-fail recovery skipped — another start in progress or intentional stop');
             return;
           }
           console.log('[restart-guard] restarting gateway to recover from channel connect failure');
@@ -1265,7 +1266,9 @@ async function fastWatchdogTick() {
     }
 
     // --- Gateway watchdog ---
-    // Timeout 30s — gateway busy with AI completion can take 5-8s to respond.
+    // Timeout 10s — gateway busy with AI completion can take 5-8s to respond.
+    // 10s gives headroom without blocking the tick for 30+s (old value caused
+    // each failed tick to take ~63s, defeating the 20s interval design).
     // Skip if gateway started <360s ago (slow SSDs + Defender + cloud model
     // cold start can push boot to 5+ minutes on customer machines).
     // Boot grace 360s — LINH-BABY observed 5:21 from launch to fully usable
@@ -1277,13 +1280,13 @@ async function fastWatchdogTick() {
       _fwGatewayFailCount = 0;
       return;
     }
-    const gwAlive = await isGatewayAlive(30000);
+    const gwAlive = await isGatewayAlive(10000);
     if (!gwAlive) {
       _fwGatewayFailCount++;
       if (_fwGatewayFailCount === 1) {
         // First fail — recheck after 3s
         await new Promise(r => setTimeout(r, FW_RECHECK_MS));
-        const gwAlive2 = await isGatewayAlive(30000);
+        const gwAlive2 = await isGatewayAlive(10000);
         if (gwAlive2) {
           _fwGatewayFailCount = 0;
           return;

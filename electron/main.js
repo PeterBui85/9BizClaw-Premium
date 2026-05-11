@@ -1035,6 +1035,7 @@ function _beforeQuitCleanup() {
   try { cleanupNudgeTimers(); } catch (e2) { console.warn('[before-quit] cleanupNudgeTimers:', e2?.message); }
   try { cleanupCeoMemoryTimers(); } catch (e2) { console.warn('[before-quit] cleanupCeoMemoryTimers:', e2?.message); }
   try { cleanupKnowledgeServer(); } catch (e2) { console.warn('[before-quit] cleanupKnowledgeServer:', e2?.message); }
+  try { require('./lib/knowledge').closeDocumentsDb(); } catch (e2) { console.warn('[before-quit] closeDocumentsDb:', e2?.message); }
 
   // (2) Stop all cron jobs + watchers + pollers
   try { cleanupCronTimers(); } catch (e2) { console.warn('[before-quit] cleanupCronTimers:', e2?.message); }
