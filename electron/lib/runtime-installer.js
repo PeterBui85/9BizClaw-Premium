@@ -240,7 +240,6 @@ function findGitBin() {
 function ensureMacGitShim() {
   const shimDir = path.join(getRuntimeNodeDir(), 'tools');
   const shimPath = path.join(shimDir, 'git-shim.sh');
-  if (fs.existsSync(shimPath)) return shimPath;
   try {
     fs.mkdirSync(shimDir, { recursive: true });
     fs.writeFileSync(shimPath, MAC_GIT_SHIM, { mode: 0o755 });
@@ -272,11 +271,25 @@ const MAC_GIT_SHIM = [
   '    [ -z "$DIR" ] && DIR=$(basename "$URL" .git)',
   '    CLEAN=$(echo "$URL" | sed \'s|^git+||;s|\\.git$||\')',
   '    mkdir -p "$DIR"',
-  '    /usr/bin/curl -fsSL "${CLEAN}/archive/HEAD.tar.gz" | /usr/bin/tar xz -C "$DIR" --strip-components=1',
+  '    TMPTAR=$(mktemp /tmp/git-shim-XXXXXX.tar.gz)',
+  '    /usr/bin/curl -fsSL --connect-timeout 15 --max-time 120 -o "$TMPTAR" "${CLEAN}/archive/HEAD.tar.gz" 2>/dev/null',
   '    RC=$?',
-  '    if [ $RC -eq 0 ]; then',
+  '    if [ $RC -ne 0 ] || [ ! -s "$TMPTAR" ]; then',
+  '      /usr/bin/curl -fsSL --connect-timeout 15 --max-time 120 -o "$TMPTAR" "${CLEAN}/archive/refs/heads/main.tar.gz" 2>/dev/null',
+  '      RC=$?',
+  '    fi',
+  '    if [ $RC -eq 0 ] && [ -s "$TMPTAR" ]; then',
+  '      /usr/bin/tar xzf "$TMPTAR" -C "$DIR" --strip-components=1',
+  '      RC=$?',
+  '    else',
+  '      RC=1',
+  '    fi',
+  '    rm -f "$TMPTAR"',
+  '    if [ $RC -eq 0 ] && [ -f "$DIR/package.json" ]; then',
   '      mkdir -p "$DIR/.git"',
   '      echo "ref: refs/heads/master" > "$DIR/.git/HEAD"',
+  '    elif [ $RC -eq 0 ]; then',
+  '      RC=1',
   '    fi',
   '    exit $RC',
   '    ;;',
