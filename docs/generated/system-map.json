@@ -2454,12 +2454,12 @@
       "bytes": 29327
     },
     {
-      "path": "electron/ui/splash.html",
-      "bytes": 24709
+      "path": "electron/lib/conversation.js",
+      "bytes": 25838
     },
     {
-      "path": "electron/lib/conversation.js",
-      "bytes": 24023
+      "path": "electron/ui/splash.html",
+      "bytes": 24709
     }
   ]
 }
