@@ -47,7 +47,7 @@ function _ensureSchema(db) {
   try {
     db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS ceo_memory_fts USING fts5(content, tokenize='unicode61')`);
   } catch (e) {
-    if (!String(e?.message).includes('already exists')) throw e;
+    console.warn('[ceo-memory] FTS5 unavailable, search will use embeddings only:', e?.message);
   }
 }
 
