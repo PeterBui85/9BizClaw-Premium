@@ -1,9 +1,9 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 93,
-    "ipcHandlers": 155,
-    "preloadBridges": 147,
+    "apiRoutes": 96,
+    "ipcHandlers": 157,
+    "preloadBridges": 149,
     "dashboardPages": 14,
     "capabilityContracts": 5
   },
@@ -765,6 +765,33 @@
       ]
     },
     {
+      "path": "/api/memory/delete",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/memory/search",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/memory/write",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/system/info",
       "sources": [
         "electron/lib/cron-api.js"
@@ -916,6 +943,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "delete-ceo-memory",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "delete-document",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -969,6 +1000,10 @@
     },
     {
       "channel": "get-bot-status",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-ceo-memories",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1540,6 +1575,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "deleteCeoMemory",
+      "channel": "delete-ceo-memory",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "deleteDocument",
       "channel": "delete-document",
       "source": "electron/preload.js"
@@ -1607,6 +1647,11 @@
     {
       "name": "getBotStatus",
       "channel": "get-bot-status",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getCeoMemories",
+      "channel": "get-ceo-memories",
       "source": "electron/preload.js"
     },
     {
@@ -2293,27 +2338,27 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 521488
+      "bytes": 524791
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 230043
+      "bytes": 230957
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 101999
+      "bytes": 104133
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 99464
+      "bytes": 100374
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 86863
+      "bytes": 87052
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 83900
+      "bytes": 84542
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -2333,7 +2378,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 45092
+      "bytes": 45406
     },
     {
       "path": "electron/lib/fb-schedule.js",
@@ -2369,7 +2414,7 @@
     },
     {
       "path": "electron/lib/conversation.js",
-      "bytes": 22020
+      "bytes": 23921
     }
   ]
 }
