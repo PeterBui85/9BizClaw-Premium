@@ -625,6 +625,8 @@ app.whenReady().then(async () => {
   // - userData/vendor/ holds runtime-installed Node + npm packages.
   // - gogcli is optional (Google Workspace CLI) — never blocks boot.
   let splashWindow;
+  let _splashCancelRequested = false;
+  let _splashCancelTimer = null;
   try {
     const runtimeInstaller = require('./lib/runtime-installer');
     const migration = require('./lib/migration');
@@ -656,8 +658,6 @@ app.whenReady().then(async () => {
     const needsWork = !preCheck.ready || needsRagModel || (migration.isUpgradeFromV23() && !migration.isMigrationCompleted());
 
     // Show splash window ONLY if we have real work to do
-    let _splashCancelRequested = false;
-    let _splashCancelTimer = null;
     if (needsWork) {
       global._splashActive = true;
       splashWindow = new BrowserWindow({

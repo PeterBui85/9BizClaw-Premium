@@ -1080,6 +1080,18 @@ async function installNpmPackages(versions, onProgress) {
   // pruning previously installed packages during sequential installs.
   // Use spawn (not execFile) to stream stdout and report progress to splash.
   const npmInstallOp = async () => {
+    // Clean stale git-clone temp dirs from npm cache — a previous failed install
+    // can leave empty dirs that cause ENOENT on package.json in the next attempt.
+    try {
+      const npmCacheTmp = path.join(require('os').homedir(), '.npm', '_cacache', 'tmp');
+      if (fs.existsSync(npmCacheTmp)) {
+        const stale = fs.readdirSync(npmCacheTmp).filter(d => d.startsWith('git-clone'));
+        for (const d of stale) {
+          fs.rmSync(path.join(npmCacheTmp, d), { recursive: true, force: true });
+        }
+        if (stale.length) console.log('[runtime-installer] cleaned', stale.length, 'stale git-clone dirs from npm cache');
+      }
+    } catch (e) { console.warn('[runtime-installer] npm cache cleanup failed (non-fatal):', e.message); }
     const npm = getRuntimeNpmCommand(nodeBin);
     const specs = toInstall.map(p => p.spec);
     console.log('[runtime-installer] npm install (batch):', specs.join(' '));
