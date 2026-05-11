@@ -434,13 +434,23 @@ async function appendPerCustomerSummaries(ws, dateStr, sinceMs) {
           `2. BOT trả lời gì — trích NGẮN câu trả lời quan trọng của bot\n` +
           `3. Outcome: đơn xong / chưa chốt / cần báo giá / cần CEO duyệt / khách quan tâm tiếp\n` +
           `4. Nếu khách hứa "mai mua" hoặc có deadline → ghi rõ ngày\n` +
-          `5. Nếu khách bực/phàn nàn → flag "!CẨN THẬN" ở đầu bullet đó\n\n` +
+          `5. Nếu khách bực/phàn nàn → flag "!CẨN THẬN" ở đầu bullet đó\n` +
+          `6. GIỚI TÍNH: nếu xác định được giới tính KHÁCH từ cuộc trò chuyện (bot hỏi "anh hay chị" và khách trả lời, hoặc khách tự xưng rõ ràng, hoặc ngữ cảnh xác nhận) → ghi dòng riêng cuối cùng: GENDER:M (nam) hoặc GENDER:F (nữ). Không chắc → bỏ qua hoàn toàn, KHÔNG đoán.\n\n` +
           `KHÔNG emoji. KHÔNG lặp lại nguyên văn — TÓM TẮT. KHÔNG bịa nếu không rõ.\n` +
           `Chỉ trả về bullet points, không intro, không kết luận.${priorBlock}\n\n` +
           `[CUỘC TRÒ CHUYỆN HÔM NAY]\n${customerHistory}`,
           { maxTokens: 350, temperature: 0.2, timeoutMs: 12000 }
         );
       } catch {}
+
+      let extractedGender = null;
+      if (summary) {
+        const genderMatch = summary.match(/^GENDER:\s*(M|F)\s*$/im);
+        if (genderMatch) {
+          extractedGender = genderMatch[1].toUpperCase();
+          summary = summary.replace(/^GENDER:\s*(M|F)\s*\n?/im, '').trim();
+        }
+      }
 
       const safeSummary = summary ? sanitizeMemorySummary(summary) : null;
       const appendContent = safeSummary
@@ -449,6 +459,24 @@ async function appendPerCustomerSummaries(ws, dateStr, sinceMs) {
 
       try {
         await _withMemoryFileLock(profilePath, () => {
+          let currentContent = '';
+          try { currentContent = fs.readFileSync(profilePath, 'utf-8'); } catch {}
+          if (extractedGender && !(/^gender:\s*(M|F)\s*$/im.test(currentContent))) {
+            const hasGenderLine = /^gender:\s*.+$/im.test(currentContent);
+            if (hasGenderLine) {
+              currentContent = currentContent.replace(/^gender:\s*.+$/im, `gender: ${extractedGender}`);
+              fs.writeFileSync(profilePath, currentContent, 'utf-8');
+              console.log(`[journal] updated gender=${extractedGender} in zalo-users/${senderId}.md`);
+            } else if (currentContent.startsWith('---')) {
+              const secondDash = currentContent.indexOf('---', 3);
+              if (secondDash > 0) {
+                const frontmatter = currentContent.slice(0, secondDash);
+                currentContent = frontmatter + `gender: ${extractedGender}\n` + currentContent.slice(secondDash);
+                fs.writeFileSync(profilePath, currentContent, 'utf-8');
+                console.log(`[journal] wrote gender=${extractedGender} to zalo-users/${senderId}.md`);
+              }
+            }
+          }
           fs.appendFileSync(profilePath, appendContent, 'utf-8');
           trimZaloMemoryFile(profilePath, 50 * 1024);
         });
