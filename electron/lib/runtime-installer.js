@@ -1085,12 +1085,22 @@ async function installNpmPackages(versions, onProgress) {
         npm.command,
         [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts', '--omit=optional'],
         {
-          timeout: NPM_INSTALL_TIMEOUT_MS, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
-          env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' }),
+          encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
+          env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_node_gyp: 'echo' }),
         }
       );
+      let settled = false;
+      const settle = (fn, arg) => { if (settled) return; settled = true; fn(arg); };
       let stderr = '';
       let lastSubStep = '';
+      // spawn() ignores the timeout option — implement manually via kill timer
+      const killTimer = setTimeout(() => {
+        console.error('[runtime-installer] npm install timed out after ' + (NPM_INSTALL_TIMEOUT_MS / 1000) + 's — killing');
+        try { child.kill('SIGTERM'); } catch {}
+        setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 3000).unref();
+        settle(reject, new Error('npm install timed out after ' + (NPM_INSTALL_TIMEOUT_MS / 1000) + 's'));
+      }, NPM_INSTALL_TIMEOUT_MS);
+      killTimer.unref();
       // Parse npm output lines for package-level progress
       const parseNpmLine = (line) => {
         const trimmed = String(line).trim();
@@ -1131,11 +1141,12 @@ async function installNpmPackages(versions, onProgress) {
         }
       }, 3000);
       const npmStartTime = Date.now();
-      child.on('error', (e) => { clearInterval(npmTimer); reject(e); });
+      child.on('error', (e) => { clearInterval(npmTimer); clearTimeout(killTimer); settle(reject, e); });
       child.on('close', (code) => {
         clearInterval(npmTimer);
-        if (code === 0) resolve();
-        else reject(new Error(`npm install exited ${code}: ${stderr.slice(-500)}`));
+        clearTimeout(killTimer);
+        if (code === 0) settle(resolve);
+        else settle(reject, new Error(`npm install exited ${code}: ${stderr.slice(-500)}`));
       });
     });
   };
@@ -1262,7 +1273,7 @@ async function fixRuntimeNativeModules(nodeBin, nodeModulesDir, onProgress) {
       'prebuild-install', '--no-save', '--no-fund', '--no-audit', '--ignore-scripts'];
     require('child_process').execFileSync(npm.command, installArgs, {
       timeout: 60000, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
-      env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', npm_config_node_gyp: 'echo' }),
+      env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_node_gyp: 'echo' }),
     });
   } catch (e) {
     console.warn('[runtime-installer] failed to install prebuild-install:', e.message);
@@ -1275,7 +1286,7 @@ async function fixRuntimeNativeModules(nodeBin, nodeModulesDir, onProgress) {
       require('child_process').execFileSync(nodeBin,
         [prebuildJs, '-r', 'node', '-t', nodeVer, '--arch', arch],
         { cwd: bsqlDir, timeout: 60000, shell: false,
-          env: buildEnvWithGitPath({ npm_config_arch: arch, npm_config_node_gyp: 'echo' }) });
+          env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_arch: arch, npm_config_node_gyp: 'echo' }) });
       if (fs.existsSync(bsqlBin)) {
         console.log('[runtime-installer] ✓ better-sqlite3 prebuilt fetched');
         try { fs.rmSync(tmpNm, { recursive: true, force: true }); } catch {}
