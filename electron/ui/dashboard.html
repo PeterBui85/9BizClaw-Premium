@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:20128 http://127.0.0.1:18789; frame-src http://127.0.0.1:18789 http://127.0.0.1:20128 http://localhost:18789 http://localhost:20128; img-src 'self' data: https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' http://127.0.0.1:20128 http://127.0.0.1:18789; frame-src http://127.0.0.1:18789 http://127.0.0.1:20128 http://localhost:18789 http://localhost:20128; img-src 'self' data: https:;">
   <title>9BizClaw</title>
   <link rel="icon" href="data:,">
   <script>
@@ -207,7 +207,9 @@
     .gw-calendar-title { margin:0; font-size:17px; font-weight:700; color:var(--text); line-height:1.25; }
     .gw-calendar-sub { font-size:12px; color:var(--text-muted); margin-top:4px; line-height:1.45; }
     .gw-calendar-shell { background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)), var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; min-height:650px; overflow:hidden; box-shadow:0 14px 40px rgba(15,23,42,.08); }
-    .gw-calendar-shell .fc { color:var(--text); font-size:12px; --fc-border-color:var(--border); --fc-page-bg-color:transparent; --fc-neutral-bg-color:var(--bg); --fc-today-bg-color:rgba(210,38,48,.08); --fc-now-indicator-color:var(--danger, #d22630); --fc-list-event-hover-bg-color:var(--bg); }
+    html[data-theme="dark"] { --fc-page-bg-color:#14141B; --fc-neutral-bg-color:#0A0A0F; --fc-border-color:rgba(255,255,255,0.08); --fc-today-bg-color:rgba(210,38,48,.08); --fc-now-indicator-color:#F87171; --fc-button-bg-color:#0A0A0F; --fc-button-border-color:rgba(255,255,255,0.08); --fc-button-text-color:#F5F5F7; --fc-button-hover-bg-color:#1C1C25; --fc-button-hover-border-color:rgba(255,255,255,0.14); --fc-button-active-bg-color:#E53935; --fc-button-active-border-color:#E53935; --fc-event-bg-color:#E53935; --fc-event-border-color:#E53935; --fc-event-text-color:#fff; --fc-list-event-hover-bg-color:#0A0A0F; --fc-non-business-color:rgba(255,255,255,.03); --fc-neutral-text-color:#A1A1A6; --fc-more-link-bg-color:#14141B; --fc-more-link-text-color:#F5F5F7; --fc-highlight-color:rgba(229,57,53,.12); --fc-bg-event-color:#E53935; --fc-bg-event-opacity:0.15; }
+    html[data-theme="light"] { --fc-page-bg-color:#FFFFFF; --fc-neutral-bg-color:#F3F3F6; --fc-border-color:#E2E2E8; --fc-today-bg-color:rgba(198,40,40,.06); --fc-now-indicator-color:#DC2626; --fc-button-bg-color:#F3F3F6; --fc-button-border-color:#E2E2E8; --fc-button-text-color:#1D1D1F; --fc-button-hover-bg-color:#F0F0F3; --fc-button-hover-border-color:#C7C7CE; --fc-button-active-bg-color:#C62828; --fc-button-active-border-color:#C62828; --fc-event-bg-color:#C62828; --fc-event-border-color:#C62828; --fc-event-text-color:#fff; --fc-list-event-hover-bg-color:#F3F3F6; --fc-non-business-color:rgba(0,0,0,.03); --fc-neutral-text-color:#6E6E73; --fc-more-link-bg-color:#FFFFFF; --fc-more-link-text-color:#1D1D1F; --fc-highlight-color:rgba(198,40,40,.08); --fc-bg-event-color:#C62828; --fc-bg-event-opacity:0.1; }
+    .gw-calendar-shell .fc { color:var(--text); font-size:12px; }
     .gw-calendar-shell .fc .fc-toolbar { gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
     .gw-calendar-shell .fc .fc-toolbar-title { font-size:22px; font-weight:800; line-height:1.15; letter-spacing:0; color:var(--text); }
     .gw-calendar-shell .fc .fc-button { background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; box-shadow:none; min-height:36px; text-transform:none; }
@@ -217,9 +219,7 @@
     .gw-calendar-shell .fc .fc-button-primary:not(:disabled).fc-button-active,
     .gw-calendar-shell .fc .fc-button-primary:not(:disabled):active { background:var(--accent); border-color:var(--accent); color:#fff; }
     .gw-calendar-shell .fc .fc-button-group { border-radius:9px; overflow:hidden; box-shadow:0 1px 0 rgba(15,23,42,.04); }
-    .gw-calendar-shell .fc .fc-icon { font-family:inherit !important; font-style:normal; font-size:16px; line-height:1; }
-    .gw-calendar-shell .fc .fc-icon-chevron-left::before { content:'\2039'; }
-    .gw-calendar-shell .fc .fc-icon-chevron-right::before { content:'\203A'; }
+    .gw-calendar-shell .fc .fc-icon { font-size:16px; line-height:1; }
     .gw-calendar-shell .fc .fc-prev-button,
     .gw-calendar-shell .fc .fc-next-button { padding:8px 10px; }
     .gw-calendar-shell .fc .fc-col-header-cell-cushion,
@@ -234,7 +234,8 @@
     .gw-calendar-shell .fc .fc-scrollgrid th { border-color:var(--border); }
     .gw-calendar-shell .fc .fc-timegrid-col,
     .gw-calendar-shell .fc .fc-daygrid-day { background:transparent; }
-    .gw-calendar-shell .fc .fc-day-today { background:rgba(210,38,48,.07) !important; }
+    .gw-calendar-shell .fc .fc-timegrid-col.fc-day-today,
+    .gw-calendar-shell .fc .fc-daygrid-day.fc-day-today { background-color:rgba(210,38,48,.07) !important; }
     .gw-calendar-shell .fc .fc-timegrid-now-indicator-line { border-color:var(--danger, #d22630); border-width:2px 0 0; }
     .gw-calendar-shell .fc .fc-event { border-radius:8px; border:0; padding:4px 6px; overflow:hidden; box-shadow:0 8px 22px rgba(210,38,48,.22); }
     .gw-calendar-shell .fc .fc-event-title { font-weight:700; line-height:1.3; }

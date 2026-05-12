@@ -2401,7 +2401,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 528002
+      "bytes": 529345
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
