@@ -6,7 +6,7 @@ const ctx = require('./context');
 let app, shell;
 try { ({ app, shell } = require('electron')); } catch {}
 
-const UPDATE_REPO = 'huybt-peter/9BizClaw-Premium';
+const UPDATE_REPO = 'PeterBui85/9BizClaw-Premium';
 let _latestRelease = null; // cached { version, body, html_url, assets }
 let _updateDownloadInFlight = false; // H1: concurrency guard
 

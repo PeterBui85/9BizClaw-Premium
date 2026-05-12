@@ -16,21 +16,21 @@ const PUBLIC_KEY_PEM = require('fs').readFileSync(
 );
 const PUBLIC_KEY = crypto.createPublicKey(PUBLIC_KEY_PEM);
 
-// ---- Supabase config ----
-// anon key is safe to embed — RLS enforces read-only on activations + revoked_keys
-const SUPABASE_URL = 'https://ndssbmedzbjutnfznale.supabase.co';
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kc3NibWVkemJqdXRuZnpuYWxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4ODI4MDMsImV4cCI6MjA5MzQ1ODgwM30.T2xw-TnIt371maqBEuJ5Yxj7CBpFEPQRT9MgwjiYVuA';
+// ---- remote registry ----
+const _rHost = ['ndssbm','edzbjut','nfznale'].join('');
+const _rUrl = 'https://' + _rHost + '.supabase.co';
+const _rKey = ['eyJhbGciOiJIUzI1NiIsInR5cCI6Ik','pXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIs','InJlZiI6Im5kc3NibWVkemJqdXRuZnpu','YWxlIiwicm9sZSI6ImFub24iLCJpYXQi','OjE3Nzc4ODI4MDMsImV4cCI6MjA5MzQ1','ODgwM30.T2xw-TnIt371maqBEuJ5Yxj7C','BpFEPQRT9MgwjiYVuA'].join('');
 
 function sbFetch(path, method, body, extraHeaders) {
   return new Promise((resolve) => {
     const bodyStr = body ? JSON.stringify(body) : null;
     const opts = {
-      hostname: 'ndssbmedzbjutnfznale.supabase.co',
+      hostname: _rHost + '.supabase.co',
       path: '/rest/v1/' + path,
       method: method || 'GET',
       headers: {
-        'apikey': ANON_KEY,
-        'Authorization': `Bearer ${ANON_KEY}`,
+        'apikey': _rKey,
+        'Authorization': 'Bearer ' + _rKey,
         'Content-Type': 'application/json',
         'Prefer': 'return=minimal',
         ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
@@ -54,12 +54,11 @@ function sbFetch(path, method, body, extraHeaders) {
   });
 }
 
-// ---- seal key (obfuscated fragments, concat at runtime) ----
-const _s1 = 'mdc-seal';
-const _s2 = '-v2-';
-const _s3 = '2026q2';
+// ---- integrity binding ----
+const _k = [55,62,57,119,41,63,59,54,119,44,104,119,104,106,104,108,43,104];
 function _sealSecret(machineId) {
-  return crypto.createHash('sha256').update(_s1 + _s2 + _s3 + machineId).digest('hex');
+  const s = _k.map(c => String.fromCharCode(c ^ 0x5A)).join('');
+  return crypto.createHash('sha256').update(s + machineId).digest('hex');
 }
 
 // ---- machine fingerprint ----
@@ -476,6 +475,4 @@ async function clearLicense() {
 module.exports = {
   getMachineId, checkLicenseStatus, activateLicense,
   revalidateLicense, clearLicense, maskKey, verifyLicenseKey,
-  // Expose for license-manager.js (runs as standalone Node process)
-  SUPABASE_URL, ANON_KEY,
 };

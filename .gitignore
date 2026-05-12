@@ -57,6 +57,10 @@ Thumbs.db
 *license*private*
 .claw-license-*
 
+# Build-time secrets + obfuscation backup (never commit)
+electron/.update-secrets.json
+electron/.obfuscate-backup/
+
 # Apple signing certs — NEVER commit (secrets live in GitHub Secrets only)
 mac/
 *.p12

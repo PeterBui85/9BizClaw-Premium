@@ -36,9 +36,11 @@
     "prebuild:modoro-zalo": "node scripts/prebuild-modoro-zalo.js",
     "build:win": "node scripts/build-win.js",
     "build:mac": "npm run prebuild:modoro-zalo && npm run smoke && electron-builder --mac",
-    "build:mac:arm": "TARGET_ARCH=arm64 npm run prebuild:modoro-zalo && TARGET_ARCH=arm64 npm run smoke && electron-builder --mac --arm64 && node scripts/fix-artifact-name.js",
-    "build:mac:intel": "TARGET_ARCH=x64 npm run prebuild:modoro-zalo && TARGET_ARCH=x64 npm run smoke && electron-builder --mac --x64 && node scripts/fix-artifact-name.js",
-    "build:mac:universal": "node scripts/build-mac-universal.js && npm run smoke && electron-builder --mac --universal && node scripts/fix-artifact-name.js"
+    "obfuscate": "node scripts/obfuscate.js",
+    "deobfuscate": "node scripts/obfuscate.js --restore",
+    "build:mac:arm": "TARGET_ARCH=arm64 npm run prebuild:modoro-zalo && TARGET_ARCH=arm64 npm run smoke && npm run obfuscate && electron-builder --mac --arm64; EXIT=$?; npm run deobfuscate; exit $EXIT",
+    "build:mac:intel": "TARGET_ARCH=x64 npm run prebuild:modoro-zalo && TARGET_ARCH=x64 npm run smoke && npm run obfuscate && electron-builder --mac --x64; EXIT=$?; npm run deobfuscate; exit $EXIT",
+    "build:mac:universal": "node scripts/build-mac-universal.js && npm run smoke && npm run obfuscate && electron-builder --mac --universal; EXIT=$?; npm run deobfuscate; exit $EXIT"
   },
   "build": {
     "appId": "vn.9biz.claw",
@@ -256,7 +258,8 @@
     "@electron/notarize": "2.3.2",
     "docx": "9.6.1",
     "electron": "28.3.3",
-    "electron-builder": "25.0.0"
+    "electron-builder": "25.0.0",
+    "javascript-obfuscator": "5.4.2"
   },
   "dependencies": {
     "@xenova/transformers": "2.17.2",

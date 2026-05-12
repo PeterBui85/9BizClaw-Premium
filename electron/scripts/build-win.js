@@ -49,6 +49,15 @@ removeIfExists(path.join(DIST, 'win-unpacked'));
 
 run(npmCmd, ['run', 'prebuild:modoro-zalo']);
 run(npmCmd, ['run', 'smoke']);
-run(npxCmd, ['electron-builder', '--win']);
+run(process.execPath, ['scripts/obfuscate.js']);
+try {
+  run(npxCmd, ['electron-builder', '--win']);
+} finally {
+  // Always restore originals, even if electron-builder fails
+  const restore = spawnSync(process.execPath, ['scripts/obfuscate.js', '--restore'], {
+    cwd: ROOT, env: process.env, stdio: 'inherit', shell: false,
+  });
+  if (restore.status !== 0) console.warn('[build-win] obfuscate --restore failed');
+}
 run(process.execPath, ['scripts/fix-artifact-name.js']);
 run(process.execPath, ['scripts/check-bundle-size.js', '--strict']);
