@@ -2401,7 +2401,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 522324
+      "bytes": 528002
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -2409,7 +2409,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 112191
+      "bytes": 111041
     },
     {
       "path": "electron/lib/cron.js",
@@ -2453,7 +2453,7 @@
     },
     {
       "path": "electron/lib/zalo-plugin.js",
-      "bytes": 35090
+      "bytes": 35420
     },
     {
       "path": "electron/lib/boot.js",
@@ -2477,7 +2477,7 @@
     },
     {
       "path": "electron/ui/splash.html",
-      "bytes": 24709
+      "bytes": 25078
     }
   ]
 }

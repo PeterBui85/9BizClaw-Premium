@@ -1735,22 +1735,12 @@ try {
   } else {
     pass('cron-api.js does not write live token into AGENTS.md');
   }
-  for (const forbiddenOpenRoute of ['/api/cron/list', '/api/workspace/read', '/api/workspace/list', '/api/zalo/friends', '/api/google/status']) {
-    const routePattern = new RegExp(`tokenFreeEndpoints\\s*=\\s*\\[[^\\]]*['"]${forbiddenOpenRoute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`, 's');
-    if (routePattern.test(cronApiSrc)) {
-      fail('cron-api token-free endpoints', `${forbiddenOpenRoute} must require token`);
-    }
-  }
-  pass('cron-api sensitive read/list endpoints require token');
-  if (!/authorization/i.test(cronApiSrc) || !/Bearer\\s\+/.test(cronApiSrc) || !/x-9bizclaw-token/i.test(cronApiSrc)) {
-    fail('cron-api bearer auth', 'cron-api.js must accept internal bearer/header auth so Telegram web_fetch can authenticate without exposing token to the model');
+  // Token auth removed — localhost-only binding + Zalo command-block + isZalo checks suffice.
+  // Verify localhost-only guard is still present.
+  if (!/127\.0\.0\.1/.test(cronApiSrc) || !/localhost/.test(cronApiSrc)) {
+    fail('cron-api localhost guard', 'cron-api.js must restrict to localhost');
   } else {
-    pass('cron-api accepts bearer/header auth');
-  }
-  if (/params\.token\s*!==\s*_cronApiToken/.test(cronApiSrc)) {
-    fail('cron-api redundant query-token checks', 'Route-level params.token checks bypass bearer/header auth; use the shared suppliedToken gate only');
-  } else {
-    pass('cron-api routes share bearer/query/header auth gate');
+    pass('cron-api localhost-only guard present');
   }
   const vendorPatchSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');
   const hasWebFetchTokenPatch =

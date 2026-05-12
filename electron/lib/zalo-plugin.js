@@ -277,42 +277,44 @@ memberCount: ${memberCount}
       console.log('[seedZaloCustomers] cache is empty, nothing to seed');
     }
 
-    // === Default-deny via settings (one-time, post-onboarding) ===
-    // After wizard: bot does NOT reply to anyone by default. CEO explicitly
-    // enables from Dashboard. No blocklist pollution — use settings only.
+    // === Default-deny: all friends OFF, all groups OFF ===
+    // Fresh install OR account switch → block everyone. CEO explicitly
+    // enables individual friends/groups from Dashboard.
     try {
       const seedFlagPath = path.join(workspace, 'zalo-initial-blocklist-seeded.json');
       const cacheHasContent = allFriendIds.length > 0 || allGroupIds.length > 0;
-      if (cacheHasContent && !fs.existsSync(seedFlagPath)) {
+      // Fingerprint = sorted first 10 friend IDs joined. Different account = different friends.
+      const fingerprint = allFriendIds.slice().sort().slice(0, 10).join(',');
+      let prevFingerprint = '';
+      if (fs.existsSync(seedFlagPath)) {
+        try { prevFingerprint = JSON.parse(fs.readFileSync(seedFlagPath, 'utf-8')).fingerprint || ''; } catch {}
+      }
+      const isAccountSwitch = prevFingerprint && fingerprint && prevFingerprint !== fingerprint;
+      const needsSeed = cacheHasContent && (!fs.existsSync(seedFlagPath) || isAccountSwitch);
+      if (needsSeed) {
+        if (isAccountSwitch) console.log('[seed-defaults] Zalo account switch detected — re-seeding defaults');
         // 1. Stranger policy → ignore (don't reply to unknown DMs)
         const spPath = path.join(workspace, 'zalo-stranger-policy.json');
-        if (!fs.existsSync(spPath)) {
-          fs.writeFileSync(spPath, JSON.stringify({ mode: 'ignore' }, null, 2), 'utf-8');
-        }
+        fs.writeFileSync(spPath, JSON.stringify({ mode: 'ignore' }, null, 2), 'utf-8');
         // 2. All discovered groups → off, default new group mode → off
         const gsPath = path.join(workspace, 'zalo-group-settings.json');
         let gs = {};
-        if (fs.existsSync(gsPath)) {
-          try { gs = JSON.parse(fs.readFileSync(gsPath, 'utf-8')) || {}; } catch {}
-        }
         gs.__default = { mode: 'off' };
         for (const gid of allGroupIds) {
-          if (!gs[gid]) gs[gid] = { mode: 'off' };
+          gs[gid] = { mode: 'off' };
         }
         fs.writeFileSync(gsPath, JSON.stringify(gs, null, 2), 'utf-8');
-        // 3. Empty blocklist (no group IDs, no friend IDs — settings handle deny)
+        // 3. Blocklist = ALL friend IDs (everyone OFF by default)
         const blocklistPath = path.join(workspace, 'zalo-blocklist.json');
-        if (!fs.existsSync(blocklistPath)) {
-          fs.writeFileSync(blocklistPath, '[]', 'utf-8');
-        }
+        fs.writeFileSync(blocklistPath, JSON.stringify(allFriendIds, null, 2), 'utf-8');
         fs.writeFileSync(seedFlagPath, JSON.stringify({
           seededAt: new Date().toISOString(),
+          fingerprint,
           friendCount: allFriendIds.length,
           groupCount: allGroupIds.length,
-          note: 'Settings-based deny: stranger=ignore, all groups=off, default group=off. No blocklist seeding.',
         }, null, 2), 'utf-8');
-        console.log(`[seed-defaults] stranger=ignore, ${allGroupIds.length} groups=off, default-group=off`);
-        try { auditLog('zalo_defaults_seeded', { friends: allFriendIds.length, groups: allGroupIds.length }); } catch {}
+        console.log(`[seed-defaults] ALL ${allFriendIds.length} friends OFF, ${allGroupIds.length} groups OFF, stranger=ignore`);
+        try { auditLog('zalo_defaults_seeded', { friends: allFriendIds.length, groups: allGroupIds.length, accountSwitch: isAccountSwitch }); } catch {}
       }
     } catch (e) {
       console.warn('[seed-defaults] error:', e.message);

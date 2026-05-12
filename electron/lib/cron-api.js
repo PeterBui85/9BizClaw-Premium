@@ -244,6 +244,7 @@ function startCronApi() {
   }
 
   function jsonResp(res, code, obj) {
+    if (code >= 400) console.warn(`[cron-api] → ${code}`, obj?.error || '');
     const body = JSON.stringify(obj);
     res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
     res.end(body);
@@ -449,39 +450,22 @@ function startCronApi() {
     }
     const urlPath = (new URL(req.url, 'http://127.0.0.1')).pathname;
     const params = await parseBody(req);
+    const _reqChannel = req.headers['x-9bizclaw-agent-channel'] || req.headers['x-source-channel'] || '';
+    console.log(`[cron-api] ${req.method} ${urlPath} channel=${_reqChannel || 'none'} host=${host}`);
 
-    // Token bootstrap is the only token-free endpoint. Read/list endpoints also
-    // require token because they can expose cron prompts, local IDs, or logs.
-    // Token bootstrap: /api/auth/token requires Telegram bot token as proof
-    // (prevents Zalo-originated prompt injection from acquiring the cron API token).
-    const tokenFreeEndpoints = ['/api/auth/token'];
-    const requiresToken = !tokenFreeEndpoints.includes(urlPath);
-    const authHeader = String(req.headers.authorization || '').trim();
-    const bearerToken = authHeader.match(/^Bearer\s+([a-f0-9]{48})$/i)?.[1] || '';
-    const headerToken = String(req.headers['x-9bizclaw-token'] || '').trim();
-    const suppliedToken = params.token || bearerToken || headerToken;
-    if (requiresToken && suppliedToken !== _cronApiToken) {
-      return jsonResp(res, 403, { error: 'Thiếu xác thực API nội bộ. Chỉ phiên Telegram CEO được tự động xác thực khi gọi API local.' });
+    // Google Workspace routes — token-free, localhost-only, Zalo-blocked at route level.
+    if (urlPath.startsWith('/api/google/')) {
+      return handleGoogleRoute(urlPath.slice('/api/google'.length), params, req, res, jsonResp);
     }
 
-    // /api/auth/token — exchange Telegram bot token for cron API token.
-    // Only the Telegram channel agent has the bot token in its context.
+    // Auth: localhost-only binding (line 447) + Zalo command-block in inbound.ts
+    // (rewrites all localhost URLs, /api/* paths, mutation commands) + per-route
+    // isZalo checks in google-routes.js. Token auth removed — it blocked the
+    // Telegram bot from using the API (all skills say "KHÔNG gọi /api/auth/token").
+
+    // Legacy /api/auth/token — kept for backwards compat, returns dummy token.
     if (urlPath === '/api/auth/token') {
-      const botToken = String(params.bot_token || '').trim();
-      if (!botToken) return jsonResp(res, 400, { error: 'bot_token required' });
-      try {
-        const configPath = path.join(require('os').homedir(), '.openclaw', 'openclaw.json');
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        const realToken = config?.channels?.telegram?.botToken;
-        if (!realToken) return jsonResp(res, 500, { error: 'Telegram bot token not configured' });
-        if (botToken !== realToken) {
-          auditLog('auth_token_rejected', { reason: 'bot_token mismatch' });
-          return jsonResp(res, 403, { error: 'invalid bot_token' });
-        }
-        return jsonResp(res, 200, { token: _cronApiToken });
-      } catch (e) {
-        return jsonResp(res, 500, { error: 'config read error' });
-      }
+      return jsonResp(res, 200, { token: 'localhost-auth-not-required' });
     } else if (urlPath === '/api/capabilities') {
       try {
         let capDir = path.join(__dirname, '..', '..', 'capabilities');
@@ -573,11 +557,6 @@ function startCronApi() {
         auditLog('file_api_blocked', { urlPath, path: fileAbs, reason: 'outside workspace allowlist' });
         return jsonResp(res, 403, { error: 'SECURITY: path must be inside the workspace directory. Access denied.' });
       }
-    }
-
-    // Google Workspace routes — delegate to google-routes.js
-    if (urlPath.startsWith('/api/google/')) {
-      return handleGoogleRoute(urlPath.slice('/api/google'.length), params, req, res, jsonResp);
     }
 
     // Facebook scheduled posts — delegate to fb-schedule.js

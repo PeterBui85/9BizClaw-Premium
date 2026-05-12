@@ -72,6 +72,16 @@ Agent mode:
 web_fetch http://127.0.0.1:20200/api/cron/create?label=Báo+cáo+sáng&cronExpr=0+8+*+*+*&groupId=123456&mode=agent&prompt=Tổng+hợp+hoạt+động+hôm+qua+và+gửi+báo+cáo+ngắn+gọn
 ```
 
+## Bước 5: Xác nhận cron đã tạo (BẮT BUỘC)
+
+Sau khi gọi create, PHẢI kiểm tra response:
+1. Response có `"success":true` → tiếp bước 2.
+2. Response có `"error":` → báo CEO lỗi cụ thể, KHÔNG nói "đã tạo".
+3. Gọi `web_fetch http://127.0.0.1:20200/api/cron/list` — tìm cron vừa tạo trong danh sách.
+4. CHỈ nói "đã tạo thành công" khi thấy cron trong list. Nếu không thấy → báo CEO "tạo không thành công".
+
+TUYỆT ĐỐI KHÔNG nói "đã tạo" nếu chưa verify qua /api/cron/list.
+
 ## Xóa / tạm dừng / bật lại
 
 ```

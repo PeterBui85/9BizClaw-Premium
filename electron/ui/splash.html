@@ -29,6 +29,7 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
+    overflow-y: auto;
     user-select: none;
     -webkit-user-select: none;
   }
@@ -106,6 +107,7 @@
     flex-direction: column;
     padding: 20px 24px 16px;
     overflow: hidden;
+    min-height: 0;
   }
 
   /* Logo */
@@ -228,7 +230,7 @@
     flex: 1;
     overflow-y: auto;
     margin-bottom: 12px;
-    /* subtle scroll if needed */
+    min-height: 0;
   }
   .step {
     display: flex;
@@ -337,6 +339,9 @@
     background: var(--surface-raised);
     border: 1px solid rgba(248, 113, 113, 0.2);
     border-radius: 10px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
   }
   .env-error-headline {
     font-size: 13px;
@@ -406,11 +411,17 @@
     color: var(--text-tertiary);
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 100px;
+    max-height: 160px;
     overflow-y: auto;
     line-height: 1.5;
   }
   .env-detail-box.open { display: block; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 </style>
 </head>
 <body>
