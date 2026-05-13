@@ -5139,6 +5139,79 @@ ipcMain.handle('download-and-install-update', async () => {
     }
   });
 
+  // ================================
+  // User Skills — Dashboard CRUD
+  // ================================
+
+  ipcMain.handle('list-all-skills', async () => {
+    try {
+      const sm = require('./skill-manager');
+      const shipped = sm.listShippedSkills();
+      const user = sm.listUserSkills();
+      return { shipped, user };
+    } catch (e) {
+      console.error('[list-all-skills]', e?.message);
+      return { shipped: [], user: [] };
+    }
+  });
+
+  ipcMain.handle('get-skill-detail', async (_event, id, source) => {
+    try {
+      const sm = require('./skill-manager');
+      if (source === 'shipped') return sm.getShippedSkillContent(id);
+      return sm.getUserSkillContent(id);
+    } catch (e) { return null; }
+  });
+
+  ipcMain.handle('create-user-skill', async (_event, data) => {
+    const sm = require('./skill-manager');
+    return sm.createUserSkill(data);
+  });
+
+  ipcMain.handle('update-user-skill', async (_event, id, data) => {
+    const sm = require('./skill-manager');
+    return sm.updateUserSkill(id, data);
+  });
+
+  ipcMain.handle('delete-user-skill', async (_event, id) => {
+    const sm = require('./skill-manager');
+    return sm.deleteUserSkill(id);
+  });
+
+  ipcMain.handle('toggle-user-skill', async (_event, id, enabled) => {
+    const sm = require('./skill-manager');
+    return sm.toggleUserSkill(id, enabled);
+  });
+
+  ipcMain.handle('check-skill-conflict', async (_event, data) => {
+    try {
+      const sm = require('./skill-manager');
+      const layer1 = sm.checkConflict(data);
+      let layer2 = null;
+      if (layer1.length === 0) {
+        try {
+          const http = require('http');
+          const allSkills = sm.listUserSkills().filter(s => s.enabled);
+          if (allSkills.length > 0) {
+            const prompt = `Các quy tắc hiện có:\n${allSkills.map(s => `- ${s.name}: ${s.summary}`).join('\n')}\n\nQuy tắc mới:\n${data.content}\n\nCó mâu thuẫn logic hay trùng chức năng không? Trả lời JSON: {"hasConflict":bool,"description":"..."}`;
+            const body = JSON.stringify({ model: 'gpt-5-mini', max_tokens: 200, messages: [{ role: 'user', content: prompt }] });
+            layer2 = await new Promise((resolve) => {
+              const timer = setTimeout(() => resolve(null), 15000);
+              const req = http.request({ hostname: '127.0.0.1', port: 20128, path: '/v1/chat/completions', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => {
+                let d = '';
+                res.on('data', c => { d += c; });
+                res.on('end', () => { clearTimeout(timer); try { const r = JSON.parse(d); const txt = r.choices?.[0]?.message?.content || ''; resolve(JSON.parse(txt)); } catch { resolve(null); } });
+              });
+              req.on('error', () => { clearTimeout(timer); resolve(null); });
+              req.end(body);
+            });
+          }
+        } catch {}
+      }
+      return { conflicts: layer1, semantic: layer2 };
+    } catch (e) { return { conflicts: [], semantic: null, error: e.message }; }
+  });
+
 } // end registerAllIpcHandlers
 
 module.exports = { registerAllIpcHandlers };
