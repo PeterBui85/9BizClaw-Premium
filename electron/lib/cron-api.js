@@ -9,6 +9,7 @@ const { getZcaCacheDir, sanitizeZaloUserId } = require('./zalo-memory');
 const { stripCronApiTokenFromAgents } = require('./cron-api-token');
 const mediaLibrary = require('./media-library');
 const fbSchedule = require('./fb-schedule');
+const skillManager = require('./skill-manager');
 
 let shell;
 try { shell = require('electron').shell; } catch {}
@@ -2152,8 +2153,55 @@ function startCronApi() {
         return jsonResp(res, 500, { error: String(e?.message || e).slice(0, 300) });
       }
 
+    // === User Skills API ===
+    } else if (urlPath === '/api/user-skills/list' && (req.method === 'GET' || req.method === 'POST')) {
+      try {
+        const skills = skillManager.listUserSkills();
+        return jsonResp(res, 200, { skills });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/user-skills/create' && req.method === 'POST') {
+      try {
+        const { name, type, appliesTo, trigger, content } = params;
+        if (!name || !content) return jsonResp(res, 400, { error: 'name and content required' });
+        const conflicts = skillManager.checkConflict({ content, appliesTo: appliesTo || [], trigger: trigger || '' });
+        const entry = await skillManager.createUserSkill({ name, type, appliesTo, trigger, content });
+        return jsonResp(res, 200, { success: true, entry, conflicts });
+      } catch (e) { return jsonResp(res, e.message.includes('already exists') || e.message.includes('conflicts with') ? 409 : 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/user-skills/update' && req.method === 'POST') {
+      try {
+        const { id, name, type, appliesTo, trigger, content } = params;
+        if (!id) return jsonResp(res, 400, { error: 'id required' });
+        const skill = await skillManager.updateUserSkill(id, { name, type, appliesTo, trigger, content });
+        return jsonResp(res, 200, { success: true, skill });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/user-skills/delete' && req.method === 'POST') {
+      try {
+        const { id } = params;
+        if (!id) return jsonResp(res, 400, { error: 'id required' });
+        const result = await skillManager.deleteUserSkill(id);
+        return jsonResp(res, 200, { success: true, ...result });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/user-skills/toggle' && req.method === 'POST') {
+      try {
+        const { id, enabled } = params;
+        if (!id) return jsonResp(res, 400, { error: 'id required' });
+        const skill = await skillManager.toggleUserSkill(id, enabled !== false && enabled !== 'false');
+        return jsonResp(res, 200, { success: true, skill });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/user-skills/check-conflict' && req.method === 'POST') {
+      try {
+        const { content, appliesTo, trigger } = params;
+        const conflicts = skillManager.checkConflict({ content: content || '', appliesTo: appliesTo || [], trigger: trigger || '' });
+        return jsonResp(res, 200, { conflicts });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/replace', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/customer-memory/write', '/api/ceo-rules/write', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent', '/api/image/skills'] });
+      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/replace', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/customer-memory/write', '/api/ceo-rules/write', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent', '/api/image/skills', '/api/user-skills/list', '/api/user-skills/create', '/api/user-skills/update', '/api/user-skills/delete', '/api/user-skills/toggle', '/api/user-skills/check-conflict'] });
     }
   });
 
