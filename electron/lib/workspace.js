@@ -400,6 +400,16 @@ function seedWorkspace() {
     } catch {}
   }
 
+  // Seed user-skills/ directory (custom CEO skills — never in templateDirs)
+  const userSkillsDir = path.join(ws, 'user-skills');
+  if (!fs.existsSync(userSkillsDir)) {
+    try { fs.mkdirSync(userSkillsDir, { recursive: true }); } catch {}
+  }
+  const skillRegistryPath = path.join(userSkillsDir, '_registry.json');
+  if (!fs.existsSync(skillRegistryPath)) {
+    try { fs.writeFileSync(skillRegistryPath, JSON.stringify({ version: 1, skills: [] }, null, 2), 'utf-8'); } catch {}
+  }
+
   // Seed CEO-MEMORY.md (hot tier for Hermes-style memory)
   const ceoMemPath = path.join(ws, 'CEO-MEMORY.md');
   if (!fs.existsSync(ceoMemPath)) {
@@ -964,6 +974,7 @@ function backupWorkspace(opts = {}) {
     'brand-assets',
     'media-assets',
     'documents',
+    'user-skills',
   ]) {
     copyDirIfExists(rel);
   }
