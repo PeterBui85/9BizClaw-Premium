@@ -685,6 +685,12 @@
     .sidebar-menu-item.active .badge { background:rgba(255,255,255,0.25); color:#fff; }
     .sidebar-menu-item.disabled { opacity:0.5; cursor:not-allowed; }
     .sidebar-menu-item.disabled:hover { background:transparent; }
+    .sidebar-menu-header.collapsible { cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none; }
+    .sidebar-menu-header.collapsible:hover { color:var(--text); }
+    .sidebar-chevron::after { content:'▾'; }
+    .sidebar-menu-header.collapsible.collapsed .sidebar-chevron::after { content:'▸'; }
+    .sidebar-channel-items.collapsed { display:none; }
+    .theme-tray-toggle { display:flex; align-items:center; gap:10px; padding-top:8px; margin-top:4px; border-top:1px solid var(--border); }
     /* Page system */
     .page { display:none; animation:fadeIn 0.2s ease; }
     .page.active { display:block; }
@@ -2571,52 +2577,55 @@
       <button class="btn btn-primary btn-small sidebar-btn" id="toggle-btn" onclick="toggleBot()" data-tooltip="Tạm dừng bot. Bot sẽ không trả lời khách cho đến khi bật lại">Khởi động</button>
 
       <div class="sidebar-menu">
-        <div class="sidebar-menu-header">Điều khiển</div>
         <div class="sidebar-menu-item active" data-page="overview" onclick="switchPage('overview')">
           <span class="icon" data-icon="home"></span><span class="label">Tổng quan</span>
         </div>
         <div class="sidebar-menu-item" data-page="chat" onclick="switchPage('chat')">
           <span class="icon" data-icon="messages-square"></span><span class="label">Chat</span>
         </div>
-        <div class="sidebar-menu-item" data-page="schedules" onclick="switchPage('schedules')">
-          <span class="icon" data-icon="calendar"></span><span class="label">Lịch tự động</span>
+
+        <div class="sidebar-menu-header collapsible" onclick="toggleChannelSection()">
+          Kênh
+          <span class="sidebar-chevron"></span>
         </div>
+        <div class="sidebar-channel-items" id="sidebar-channel-items">
+          <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
+            <span class="icon" data-icon="brand-telegram"></span><span class="label">Telegram</span>
+            <span class="ready-dot" id="ready-dot-telegram" data-state="checking" title="Đang kiểm tra..."></span>
+          </div>
+          <div class="sidebar-menu-item" data-page="zalo" onclick="switchPage('zalo')">
+            <span class="icon" data-icon="brand-zalo"></span><span class="label">Zalo</span>
+            <span class="ready-dot" id="ready-dot-zalo" data-state="checking" title="Đang kiểm tra..."></span>
+          </div>
+          <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
+            <span class="icon" data-icon="brand-facebook"></span><span class="label">Facebook</span>
+          </div>
+          <div class="sidebar-menu-item" data-page="google" onclick="switchPage('google')">
+            <span class="icon" data-icon="brand-google"></span><span class="label">Google</span>
+          </div>
+        </div>
+
+        <div class="sidebar-menu-header">Trợ lý AI</div>
         <div class="sidebar-menu-item" data-page="knowledge" onclick="switchPage('knowledge')">
           <span class="icon" data-icon="book-open"></span><span class="label">Tài liệu</span>
+        </div>
+        <div class="sidebar-menu-item" data-page="persona-mix" onclick="switchPage('persona-mix')">
+          <span class="icon" data-icon="sparkles"></span><span class="label">Tính cách bot</span>
         </div>
         <div class="sidebar-menu-item" data-page="image-assets" onclick="switchPage('image-assets')">
           <span class="icon" data-icon="image"></span><span class="label">Tài sản hình ảnh</span>
         </div>
-        <div class="sidebar-menu-item" data-page="persona-mix" onclick="switchPage('persona-mix')">
-          <span class="icon" data-icon="sparkles"></span>
-          <span class="label">Tính cách bot</span>
-        </div>
-        <!-- shop-state + calendar: UI hidden, backend retained -->
-
-        <div class="sidebar-menu-header">Kênh</div>
-        <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
-          <span class="icon" data-icon="brand-telegram"></span><span class="label">Telegram</span>
-          <span class="ready-dot" id="ready-dot-telegram" data-state="checking" title="Đang kiểm tra..."></span>
-        </div>
-        <div class="sidebar-menu-item" data-page="zalo" onclick="switchPage('zalo')">
-          <span class="icon" data-icon="brand-zalo"></span><span class="label">Zalo</span>
-          <span class="ready-dot" id="ready-dot-zalo" data-state="checking" title="Đang kiểm tra..."></span>
-        </div>
-        <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
-          <span class="icon" data-icon="brand-facebook"></span><span class="label">Facebook</span>
-        </div>
-        <div class="sidebar-menu-item" data-page="google" onclick="switchPage('google')">
-          <span class="icon" data-icon="brand-google"></span><span class="label">Google</span>
-        </div>
-
-        <div class="sidebar-menu-header">Cài đặt</div>
         <div class="sidebar-menu-item" data-page="9router" onclick="openAiModelsBrowser()">
           <span class="icon" data-icon="cpu"></span><span class="label">AI Models</span>
         </div>
-        <div class="sidebar-menu-item" onclick="openAdvancedSettings()">
-          <span class="icon" data-icon="settings-2"></span><span class="label">Cài đặt nâng cao</span>
+
+        <div class="sidebar-menu-header">Tự động hóa</div>
+        <div class="sidebar-menu-item" data-page="schedules" onclick="switchPage('schedules')">
+          <span class="icon" data-icon="calendar"></span><span class="label">Lịch tự động</span>
         </div>
-        <div class="sidebar-menu-item theme-mode-card" style="margin-top:2px" title="Chọn giao diện sạch cho Dashboard">
+
+        <div class="sidebar-menu-header">Cài đặt</div>
+        <div class="sidebar-menu-item theme-mode-card" title="Chọn giao diện sạch cho Dashboard">
           <div class="theme-mode-title">
             <span class="icon" id="theme-toggle-icon" data-icon="gem"></span>
             <span class="label" id="theme-toggle-label">Giao diện</span>
@@ -2626,16 +2635,18 @@
             <button type="button" class="theme-mode-option" data-theme-mode="dark" onclick="setThemeMode('dark')">Tối</button>
             <button type="button" class="theme-mode-option" data-theme-mode="system" onclick="setThemeMode('system')">Hệ thống</button>
           </div>
+          <div class="theme-tray-toggle">
+            <span style="color:var(--text-muted);font-size:12px;white-space:normal;line-height:1.3">Ẩn xuống tray khi mở</span>
+            <label class="toggle-switch" style="margin-left:auto">
+              <input type="checkbox" id="pref-start-minimized">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>
-        <div class="sidebar-menu-item" style="margin-top:2px">
-          <span class="icon" data-icon="download"></span>
-          <span class="label" style="color:var(--text-muted);font-size:12px;white-space:normal;line-height:1.3">Ẩn xuống tray khi mở</span>
-          <label class="toggle-switch" style="margin-left:auto">
-            <input type="checkbox" id="pref-start-minimized">
-            <span class="toggle-slider"></span>
-          </label>
+        <div class="sidebar-menu-item" onclick="openAdvancedSettings()">
+          <span class="icon" data-icon="settings-2"></span><span class="label">Nâng cao</span>
         </div>
-        <div class="sidebar-menu-item" onclick="manualCheckUpdate()" id="check-update-btn" style="margin-top:2px" title="Kiểm tra cập nhật">
+        <div class="sidebar-menu-item" onclick="manualCheckUpdate()" id="check-update-btn" title="Kiểm tra cập nhật">
           <span class="icon" data-icon="refresh-cw"></span>
           <span class="label" id="check-update-label">Kiểm tra cập nhật</span>
         </div>
@@ -4863,6 +4874,16 @@
     let currentPage = 'overview';
     let zaloDataLoaded = false;
 
+    function toggleChannelSection() {
+      const items = document.getElementById('sidebar-channel-items');
+      const header = document.querySelector('.sidebar-menu-header.collapsible');
+      if (!items || !header) return;
+      const collapsed = !items.classList.contains('collapsed');
+      items.classList.toggle('collapsed', collapsed);
+      header.classList.toggle('collapsed', collapsed);
+      try { localStorage.setItem('sidebar-channels-collapsed', collapsed ? '1' : ''); } catch(e) {}
+    }
+
     function switchPage(page) {
       currentPage = page;
       document.querySelectorAll('.sidebar-menu-item').forEach(it => {
@@ -5645,6 +5666,16 @@
       loadOverview();
       startOverviewAutoRefresh();
       initAppPrefsToggle();
+      // Restore sidebar channel collapse state
+      if (localStorage.getItem('sidebar-channels-collapsed') === '1') {
+        const channelPages = ['telegram', 'zalo', 'facebook', 'google'];
+        if (!channelPages.includes(currentPage)) {
+          const _ci = document.getElementById('sidebar-channel-items');
+          const _ch = document.querySelector('.sidebar-menu-header.collapsible');
+          if (_ci) _ci.classList.add('collapsed');
+          if (_ch) _ch.classList.add('collapsed');
+        }
+      }
       // Inject copy icons into legacy prompt rows (ds-prompt rows use ds-prompt-copy instead)
       document.querySelectorAll('.prompt-row:not(.ds-prompt)').forEach(row => {
         if (!row.querySelector('.prompt-copy-icon')) {

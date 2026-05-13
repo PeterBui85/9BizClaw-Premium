@@ -191,6 +191,63 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
       return { success: ready, error: ready ? undefined : '9Router không khởi động được.' };
     }
 
+    if (opts.openCodexAuthed) {
+      if (!getRouterProcess()) {
+        console.log('[setup-9router-auto] openCodexAuthed — starting 9router');
+        start9Router();
+      }
+      const ready = await waitFor9RouterReady(15000);
+      if (!ready) return { success: false, error: '9Router không khởi động được.' };
+
+      let loginFailed = false;
+      try {
+        const http = require('http');
+        const loginData = JSON.stringify({ password: '123456' });
+        const cookieValue = await new Promise((resolve, reject) => {
+          const req = http.request({
+            hostname: '127.0.0.1', port: 20128, path: '/api/auth/login',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(loginData) },
+            timeout: 5000,
+          }, (res) => {
+            const cookies = res.headers['set-cookie'] || [];
+            const authCookie = cookies.find(c => c.startsWith('auth_token='));
+            if (authCookie) {
+              const val = authCookie.split('=')[1].split(';')[0];
+              resolve(val);
+            } else {
+              reject(new Error('no auth_token cookie in response'));
+            }
+          });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('login timeout')); });
+          req.write(loginData);
+          req.end();
+        });
+
+        const { session: electronSession } = require('electron');
+        const ses = electronSession.fromPartition('persist:embed-9router');
+        await ses.cookies.set({
+          url: 'http://127.0.0.1:20128',
+          name: 'auth_token',
+          value: cookieValue,
+          path: '/',
+        });
+        console.log('[setup-9router-auto] openCodexAuthed — cookie injected');
+      } catch (loginErr) {
+        console.warn('[setup-9router-auto] openCodexAuthed — login failed:', loginErr.message);
+        loginFailed = true;
+      }
+
+      const { BrowserWindow } = require('electron');
+      const codexWin = new BrowserWindow({
+        width: 1100, height: 750,
+        webPreferences: { partition: 'persist:embed-9router' },
+      });
+      codexWin.loadURL('http://127.0.0.1:20128/dashboard/providers/codex');
+      return { success: true, windowOpened: true, loginFailed };
+    }
+
     // --- detectChatGPT: find codex provider + auto-create combo cx/gpt-5.4 ---
     if (opts.detectChatGPT) {
       if (!getRouterProcess()) start9Router();

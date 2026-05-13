@@ -233,8 +233,11 @@
     .wz-input::placeholder, .wz-textarea::placeholder {
       color: var(--text-tertiary);
     }
-    .wz-field-secure { display:flex; align-items:center; gap:8px; }
-    .wz-field-secure .wz-input { flex:1; height:48px; box-sizing:border-box; }
+    .wz-field-secure { display:flex; align-items:stretch; gap:8px; }
+    .wz-field-secure .wz-input {
+      flex:1; height:48px; box-sizing:border-box;
+      padding: 0 16px; line-height: 48px;
+    }
     .wz-toggle-vis {
       width:44px; height:48px; flex-shrink:0; border:1px solid var(--border); border-radius:10px;
       background:var(--surface); cursor:pointer; display:flex; align-items:center;
@@ -579,6 +582,159 @@
       color: var(--warning);
     }
 
+    .wz-tg-part {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+    .wz-tg-part-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .wz-tg-badge {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 12px;
+      border-radius: 99px;
+      color: white;
+      letter-spacing: 0.3px;
+    }
+    .wz-tg-badge.blue { background: #3b82f6; }
+    .wz-tg-badge.purple { background: #a855f7; }
+
+    .wz-tg-substep {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .wz-tg-substep-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .wz-tg-substep-num.blue { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .wz-tg-substep-num.purple { background: rgba(168,85,247,0.15); color: #a855f7; }
+    .wz-tg-substep-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .wz-tg-substep-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      line-height: 1.6;
+    }
+    .wz-tg-substep-action {
+      margin-left: 42px;
+      margin-top: 8px;
+      margin-bottom: 20px;
+    }
+    .wz-tg-substep-action .wz-field {
+      margin-top: 16px;
+      margin-bottom: 0;
+    }
+
+    .wz-tg-bubble {
+      background: var(--surface-hover, #1e2c3a);
+      border-radius: 12px 12px 12px 4px;
+      padding: 14px 16px;
+      max-width: 520px;
+      margin: 10px 0;
+      user-select: none;
+    }
+    html[data-theme="light"] .wz-tg-bubble {
+      background: #e8f0fe;
+    }
+    .wz-tg-bubble-sender {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .wz-tg-bubble-body {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .wz-tg-highlight {
+      display: inline-block;
+      margin: 6px 0;
+      padding: 8px 12px;
+      background: rgba(59,130,246,0.12);
+      border: 2px solid rgba(59,130,246,0.35);
+      border-radius: 8px;
+      position: relative;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 13px;
+      color: var(--accent);
+      letter-spacing: 0.3px;
+      word-break: break-all;
+    }
+    .wz-tg-highlight.purple {
+      background: rgba(168,85,247,0.12);
+      border-color: rgba(168,85,247,0.35);
+      color: #a855f7;
+    }
+    .wz-tg-highlight-badge {
+      position: absolute;
+      top: -9px;
+      right: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 99px;
+      letter-spacing: 0.3px;
+      font-family: inherit;
+    }
+    .wz-tg-highlight.purple .wz-tg-highlight-badge {
+      background: #a855f7;
+    }
+
+    .wz-tg-tasks {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+    .wz-tg-task {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 10px;
+    }
+    .wz-tg-task.blue {
+      background: rgba(59,130,246,0.06);
+      border: 1px solid rgba(59,130,246,0.18);
+    }
+    .wz-tg-task.yellow {
+      background: rgba(251,191,36,0.06);
+      border: 1px solid rgba(251,191,36,0.18);
+    }
+    .wz-tg-task-label {
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    .wz-tg-task.blue .wz-tg-task-label { color: #3b82f6; }
+    .wz-tg-task.yellow .wz-tg-task-label { color: #fbbf24; }
+    .wz-tg-task-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
     /* Field error highlight — red border + glow, auto-cleared after 4s */
     .wz-input.wz-error, .wz-textarea.wz-error, .wz-select.wz-error {
       border-color: var(--danger) !important;
@@ -688,213 +844,6 @@
     .wz-summary-label { color: var(--text-secondary); font-weight: 500; min-width: 100px; }
     .wz-summary-value { color: var(--text); font-weight: 600; }
 
-    /* ===== Persona picker ===== */
-    .wz-persona-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-    }
-    .wz-persona-card {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 16px 14px 14px;
-      background: var(--surface, #fff);
-      border: 1px solid var(--border, #e5e5ea);
-      border-radius: 12px;
-      cursor: pointer;
-      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
-      outline: none;
-      min-height: 148px;
-    }
-    .wz-persona-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-      border-color: var(--accent, #0a84ff);
-    }
-    .wz-persona-card:focus-visible {
-      box-shadow: 0 0 0 3px rgba(10,132,255,0.25);
-      border-color: var(--accent, #0a84ff);
-    }
-    .wz-persona-card.is-checked {
-      border: 2px solid var(--accent, #0a84ff);
-      background: var(--accent-soft, rgba(10,132,255,0.08));
-      padding: 15px 13px 13px;
-    }
-    .wz-persona-card.is-checked .wz-persona-check {
-      opacity: 1;
-      transform: scale(1);
-    }
-    .wz-persona-check {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: var(--accent, #0a84ff);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transform: scale(0.6);
-      transition: opacity .15s ease, transform .15s ease;
-    }
-    .wz-persona-head {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .wz-persona-avatar {
-      flex-shrink: 0;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent, #0a84ff) 0%, rgba(10,132,255,0.55) 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #fff;
-    }
-    .wz-persona-name {
-      font-size: 13.5px;
-      font-weight: 700;
-      color: var(--text, #1d1d1f);
-      line-height: 1.25;
-    }
-    .wz-persona-desc {
-      font-size: 12px;
-      color: var(--text-secondary, #555);
-      line-height: 1.4;
-    }
-    .wz-persona-industry {
-      font-size: 11px;
-      color: var(--text-tertiary, #888);
-      line-height: 1.4;
-    }
-    .wz-persona-quote {
-      margin-top: auto;
-      font-size: 11.5px;
-      font-style: italic;
-      color: var(--text-tertiary, #888);
-      line-height: 1.4;
-      max-height: 0;
-      opacity: 0;
-      overflow: hidden;
-      transition: max-height .2s ease, opacity .2s ease, margin-top .2s ease;
-      padding-top: 0;
-      border-top: 1px dashed transparent;
-    }
-    .wz-persona-card:hover .wz-persona-quote,
-    .wz-persona-card.is-checked .wz-persona-quote,
-    .wz-persona-card:focus-visible .wz-persona-quote {
-      max-height: 60px;
-      opacity: 1;
-      padding-top: 8px;
-      margin-top: 6px;
-      border-top-color: var(--border, #e5e5ea);
-    }
-    .wz-persona-skip {
-      margin-top: 12px;
-      display: flex;
-      justify-content: flex-end;
-    }
-    @media (max-width: 900px) {
-      .wz-persona-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 600px) {
-      .wz-persona-grid { grid-template-columns: 1fr; }
-    }
-
-    /* ===== Persona mix-and-match system ===== */
-    .wz-mix-section {
-      margin-top: 18px;
-      padding-top: 18px;
-      border-top: 1px solid var(--border);
-    }
-    .wz-mix-section:first-of-type {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: none;
-    }
-    .wz-mix-label {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-    .wz-mix-options {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .wz-mix-chip {
-      padding: 7px 14px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text);
-      font-size: 13px;
-      font-family: inherit;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .wz-mix-chip:hover {
-      border-color: var(--accent);
-      background: var(--surface-hover, var(--bg));
-    }
-    .wz-mix-chip.is-selected {
-      background: var(--accent-soft, rgba(124, 92, 255, 0.12));
-      border-color: var(--accent);
-      color: var(--accent);
-      font-weight: 500;
-    }
-    .wz-mix-slider-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .wz-mix-slider {
-      flex: 1;
-      accent-color: var(--accent);
-    }
-    .wz-mix-slider-label {
-      font-size: 11px;
-      color: var(--text-muted, #9ba1a8);
-      white-space: nowrap;
-    }
-    .wz-mix-custom summary {
-      cursor: pointer;
-      font-size: 13px;
-      color: var(--text-muted, #9ba1a8);
-      padding: 6px 0;
-      user-select: none;
-    }
-    .wz-mix-custom summary:hover { color: var(--text); }
-    .wz-mix-custom[open] summary { color: var(--text); }
-    .wz-mix-preview {
-      margin-top: 20px;
-      padding: 14px 16px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-    }
-    .wz-mix-preview-label {
-      font-size: 11px;
-      color: var(--text-muted, #9ba1a8);
-      font-weight: 600;
-      letter-spacing: 0.3px;
-      margin-bottom: 6px;
-    }
-    .wz-mix-preview-bubble {
-      font-size: 14px;
-      color: var(--text);
-      line-height: 1.5;
-      font-style: italic;
-    }
-
     /* ===== Responsive — collapse to single column under 1024px ===== */
     @media (max-width: 1024px) {
       .wz-shell { grid-template-columns: 1fr; }
@@ -966,122 +915,16 @@
               <input type="text" class="wz-input" id="bot-name" placeholder="Để trống = bot tự xưng 'em'. Ví dụ: Momo, Linh, Claw">
               <p class="wz-help">Đây là tên riêng của trợ lý AI. Khách Zalo sẽ thấy bot tự giới thiệu bằng tên này.</p>
             </div>
+            <div class="wz-field" style="margin-top:8px">
+              <label class="wz-label">Trợ lý gọi anh/chị là <span style="color:var(--danger)">*</span></label>
+              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
+              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram.</p>
+            </div>
 
             <p class="wz-help" style="margin-top:-4px;color:var(--text-tertiary,#888);font-size:13px;">
               Thông tin chi tiết về sản phẩm, dịch vụ, khách hàng sẽ được anh/chị tải lên qua
               <strong>Dashboard → Knowledge</strong> sau khi hoàn tất cài đặt.
             </p>
-          </section>
-
-          <!-- ============ STEP 1B: Industry & style ============ -->
-          <section class="wz-step" id="step-1b">
-            <h2>Cá nhân hóa theo ngành</h2>
-            <p class="wz-step-desc">Trợ lý sẽ được tối ưu kỹ năng theo ngành của anh/chị và điều chỉnh phong cách xưng hô phù hợp.</p>
-
-            <div class="wz-field">
-              <label class="wz-label">Trợ lý gọi anh/chị là</label>
-              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
-              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram và Zalo.</p>
-            </div>
-
-            <div class="wz-field">
-              <label class="wz-label">Lĩnh vực kinh doanh</label>
-              <select class="wz-select" id="industry">
-                <option value="">Chọn lĩnh vực</option>
-                <option value="bat-dong-san">Bất động sản</option>
-                <option value="fnb">F&amp;B / Nhà hàng / Quán cà phê</option>
-                <option value="thuong-mai">Thương mại / Bán lẻ</option>
-                <option value="dich-vu">Dịch vụ (spa, salon, phòng khám)</option>
-                <option value="giao-duc">Giáo dục / Đào tạo</option>
-                <option value="cong-nghe">Công nghệ / IT</option>
-                <option value="san-xuat">Sản xuất</option>
-                <option value="tong-quat">Khác / Tổng quát</option>
-              </select>
-            </div>
-
-            <div class="wz-field">
-              <label class="wz-label">Tính cách nhân viên của bot</label>
-              <p class="wz-help" style="margin-top:-2px;margin-bottom:12px">Chọn các đặc điểm phù hợp. Bot sẽ kết hợp thành một phong cách giao tiếp riêng — không bị khóa vào khuôn mẫu cứng.</p>
-
-              <div class="wz-mix-section">
-                <div class="wz-mix-label">Bot tự xưng + giới tính</div>
-                <div class="wz-mix-options" id="mix-voice">
-                  <button type="button" class="wz-mix-chip is-selected" data-mix="voice" data-value="em-nu-tre">Em (nữ trẻ)</button>
-                  <button type="button" class="wz-mix-chip" data-mix="voice" data-value="em-nam-tre">Em (nam trẻ)</button>
-                  <button type="button" class="wz-mix-chip" data-mix="voice" data-value="chi-trung-nien">Chị (trung niên)</button>
-                  <button type="button" class="wz-mix-chip" data-mix="voice" data-value="anh-trung-nien">Anh (trung niên)</button>
-                  <button type="button" class="wz-mix-chip" data-mix="voice" data-value="minh-trung-tinh">Mình (trung tính)</button>
-                </div>
-              </div>
-
-              <div class="wz-mix-section">
-                <div class="wz-mix-label">Tính cách (chọn 3–5 đặc điểm)</div>
-                <div class="wz-mix-options" id="mix-traits">
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="sang-tao" title="Gợi ý combo mới, kể câu chuyện sản phẩm">Sáng tạo</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="thuc-te" title="Thẳng vào vấn đề, không thêu dệt">Thực tế</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="linh-hoat" title="Điều chỉnh theo khách, không cứng nhắc">Linh hoạt</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="chin-chu" title="Kiểm tra kỹ, không miss chi tiết">Chỉn chu</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="chu-dao" title="Để ý nhu cầu ngầm, gợi ý chủ động">Chu đáo</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="kien-nhan" title="Không vội, giải thích chậm rãi">Kiên nhẫn</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="nang-dong" title="Reply nhanh, tone tươi">Năng động</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="diem-tinh" title="Bình tĩnh, tạo cảm giác yên tâm">Điềm tĩnh</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="chu-dong" title="Dẫn dắt, gợi ý trước khi khách hỏi">Chủ động</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="am-ap" title="Giọng tình cảm, như người quen">Ấm áp</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="dong-cam" title="Hiểu cảm xúc khách, đặt mình vào vị trí khách">Đồng cảm</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="thang-than" title="Nói rõ được/không, không vòng vo">Thẳng thắn</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="chuyen-nghiep" title="Formal, đúng mực">Chuyên nghiệp</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="than-thien" title="Balance formal và casual, universal">Thân thiện</button>
-                  <button type="button" class="wz-mix-chip" data-mix="trait" data-value="tinh-te" title="Xử lý khéo tình huống nhạy cảm">Tinh tế</button>
-                </div>
-              </div>
-
-              <details class="wz-mix-section wz-mix-custom">
-                <summary>Tùy chỉnh nâng cao (không bắt buộc)</summary>
-                <div style="padding-top:12px">
-                  <div class="wz-mix-label" style="margin-top:4px">Câu chào riêng</div>
-                  <input type="text" id="mix-greeting" class="wz-input" placeholder="VD: Dạ em [tên trợ lý] bên [tên công ty] xin chào anh/chị ạ">
-                  <div class="wz-mix-label" style="margin-top:12px">Câu kết riêng</div>
-                  <input type="text" id="mix-closing" class="wz-input" placeholder="VD: Anh/chị cần gì thêm cứ nhắn em nha">
-                  <div class="wz-mix-label" style="margin-top:12px">Cụm từ đặc trưng (mỗi cụm 1 dòng)</div>
-                  <textarea id="mix-phrases" class="wz-input" rows="3" placeholder="VD:&#10;Bên em làm chuẩn lắm ạ&#10;Em nhớ anh/chị như người quen nhé"></textarea>
-                </div>
-              </details>
-
-              <div class="wz-mix-preview">
-                <div class="wz-mix-preview-label">Preview reply của bot</div>
-                <div class="wz-mix-preview-bubble" id="mix-preview-bubble">Dạ em chào anh/chị ạ. Anh/chị cần em tư vấn gì không ạ?</div>
-              </div>
-            </div>
-
-            <div class="wz-field">
-              <label class="wz-label">Xưng hô với khách hàng</label>
-              <div class="wz-grid cols-3">
-                <label class="wz-choice is-checked" data-radio="pronouns">
-                  <input type="radio" name="pronouns" value="em-anh-chi" checked>
-                  <div class="wz-choice-body">
-                    <div class="wz-choice-icon"><span data-icon="user"></span></div>
-                    <div class="wz-choice-title">Em — Anh / Chị</div>
-                    <div class="wz-choice-desc">Lịch sự, phổ biến</div>
-                  </div>
-                </label>
-                <label class="wz-choice" data-radio="pronouns">
-                  <input type="radio" name="pronouns" value="toi-quy-khach">
-                  <div class="wz-choice-body">
-                    <div class="wz-choice-icon"><span data-icon="building"></span></div>
-                    <div class="wz-choice-title">Tôi — Quý khách</div>
-                    <div class="wz-choice-desc">Trang trọng, B2B</div>
-                  </div>
-                </label>
-                <label class="wz-choice" data-radio="pronouns">
-                  <input type="radio" name="pronouns" value="minh-ban">
-                  <div class="wz-choice-body">
-                    <div class="wz-choice-icon"><span data-icon="sparkles"></span></div>
-                    <div class="wz-choice-title">Mình — Bạn</div>
-                    <div class="wz-choice-desc">Thân thiện, trẻ trung</div>
-                  </div>
-                </label>
-              </div>
-            </div>
           </section>
 
           <!-- ============ STEP 2: AI router (ChatGPT via 9Router) ============ -->
@@ -1092,22 +935,6 @@
             <div class="wz-instruction">
               <div class="wz-instruction-head">
                 <div class="wz-instruction-num">1</div>
-                <div class="wz-instruction-title">Đăng nhập 9Router</div>
-              </div>
-              <div class="wz-instruction-body">
-                <p>Nhấn nút bên dưới — trang quản lý AI sẽ mở ra trong trình duyệt.</p>
-                <p>Nhập mật khẩu: <strong style="font-family:monospace;letter-spacing:0.5px;user-select:all">123456</strong> rồi đăng nhập. Sau đó quay lại đây và nhấn nút ở bước 2.</p>
-              </div>
-              <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-secondary" onclick="open9RouterLogin()" id="open-9router-btn" type="button">
-                  Mở trang 9Router
-                </button>
-              </div>
-            </div>
-
-            <div class="wz-instruction">
-              <div class="wz-instruction-head">
-                <div class="wz-instruction-num">2</div>
                 <div class="wz-instruction-title">Kết nối ChatGPT</div>
               </div>
               <div class="wz-instruction-body">
@@ -1118,12 +945,13 @@
                 <button class="wz-btn wz-btn-primary" onclick="openChatGPTConnect()" id="open-chatgpt-btn" type="button">
                   Kết nối ChatGPT
                 </button>
+                <p id="login-fallback-hint" class="wz-hidden" style="margin-top:8px;font-size:12px;color:var(--text-tertiary)">Nếu thấy trang đăng nhập, nhập mật khẩu: <strong style="font-family:monospace;user-select:all">123456</strong></p>
               </div>
             </div>
 
             <div class="wz-instruction">
               <div class="wz-instruction-head">
-                <div class="wz-instruction-num">3</div>
+                <div class="wz-instruction-num">2</div>
                 <div class="wz-instruction-title">Xác nhận kết nối</div>
               </div>
               <div class="wz-instruction-body">
@@ -1144,148 +972,138 @@
           <!-- ============ STEP 3: Telegram ============ -->
           <section class="wz-step" id="step-3">
             <h2>Kết nối Telegram</h2>
-            <p class="wz-step-desc">Telegram là kênh anh/chị nhận thông báo và điều khiển trợ lý. Hướng dẫn lấy token từ BotFather ở bên dưới.</p>
+            <p class="wz-step-desc">Telegram là kênh anh/chị nhận thông báo và điều khiển trợ lý. Làm theo 2 phần bên dưới.</p>
 
-            <div class="wz-instruction">
-              <div class="wz-instruction-head">
-                <div class="wz-instruction-num">1</div>
-                <div class="wz-instruction-title">Tạo bot trên Telegram</div>
+            <div class="wz-tg-part">
+              <div class="wz-tg-part-header">
+                <span class="wz-tg-badge blue">PART A</span>
+                <span style="font-size:16px;font-weight:700;color:var(--text)">Tạo Bot Telegram</span>
               </div>
-              <div class="wz-instruction-body">
-                <p>Nhấn nút bên dưới — Telegram tự mở thẳng chat với BotFather. Gửi <span class="wz-kbd">/newbot</span>.</p>
-                <p>Đặt tên cho bot (ví dụ: "Trợ Lý ABC"), BotFather sẽ trả về một dòng token dài (dạng 123456:ABC...). Copy toàn bộ.</p>
+
+              <div class="wz-tg-substep">
+                <div class="wz-tg-substep-num blue">1</div>
+                <div>
+                  <div class="wz-tg-substep-title">Mở @BotFather trên Telegram</div>
+                  <div class="wz-tg-substep-desc">Nhấn nút bên dưới — Telegram tự mở chat với BotFather.</div>
+                </div>
               </div>
-              <div style="margin-top:14px;padding-left:40px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div class="wz-tg-substep-action">
                 <button class="wz-btn wz-btn-secondary" onclick="openBotFather()" type="button">
-                  <span data-icon="send" data-icon-size="14"></span> Mở @BotFather trên Telegram
+                  <span data-icon="send" data-icon-size="14"></span> Mở @BotFather
                 </button>
-                <a href="#" onclick="openBotFatherWeb(); return false;" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">Không có Telegram Desktop? Mở trình duyệt</a>
+                <a href="#" onclick="openBotFatherWeb(); return false;" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer;margin-left:10px">Mở trình duyệt</a>
+              </div>
+
+              <div class="wz-tg-substep">
+                <div class="wz-tg-substep-num blue">2</div>
+                <div>
+                  <div class="wz-tg-substep-title">Gửi <span class="wz-kbd">/newbot</span> và đặt tên</div>
+                  <div class="wz-tg-substep-desc">BotFather hỏi tên bot — đặt tên bất kỳ (VD: "Trợ Lý ABC").<br>Sau đó đặt username kết thúc bằng <span style="font-family:monospace;color:var(--text)">bot</span> (VD: <span style="font-family:monospace;color:var(--text)">tro_ly_abc_bot</span>).</div>
+                </div>
+              </div>
+
+              <div class="wz-tg-substep">
+                <div class="wz-tg-substep-num blue">3</div>
+                <div>
+                  <div class="wz-tg-substep-title">Copy token và nhấn vào link bot</div>
+                  <div class="wz-tg-substep-desc">BotFather trả lời như bên dưới. Anh/chị cần làm 2 việc:</div>
+                </div>
+              </div>
+              <div class="wz-tg-substep-action">
+                <div class="wz-tg-bubble">
+                  <div class="wz-tg-bubble-sender">BotFather</div>
+                  <div class="wz-tg-bubble-body">
+                    Done! Congratulations on your new bot. You will find it at <span style="color:var(--accent);text-decoration:underline">t.me/TroLyABCbot</span>. You can now add a description, about section and profile picture for your bot...
+                    <div style="margin-top:10px">Use this token to access the HTTP API:</div>
+                    <div class="wz-tg-highlight">
+                      7104958362:BBHxR93kLmNpQwErTyUiOpAsDfGhJkLzXcV
+                      <span class="wz-tg-highlight-badge">COPY DÒNG NÀY</span>
+                    </div>
+                    <div>Keep your token <strong>secure</strong> and <strong>store it safely</strong>...</div>
+                  </div>
+                </div>
+
+                <div class="wz-tg-tasks">
+                  <div class="wz-tg-task blue">
+                    <div class="wz-tg-task-label">VIỆC 1</div>
+                    <div class="wz-tg-task-desc">Copy dòng token (được đánh dấu xanh) và dán vào ô bên dưới</div>
+                  </div>
+                  <div class="wz-tg-task yellow">
+                    <div class="wz-tg-task-label">VIỆC 2</div>
+                    <div class="wz-tg-task-desc">Nhấn vào link <strong style="color:var(--accent)">t.me/TenBotCuaBan</strong> rồi nhấn <strong>Start</strong> để kích hoạt bot</div>
+                  </div>
+                </div>
+
+                <div class="wz-field" style="margin-top:16px;margin-bottom:0">
+                  <label class="wz-label">Bot Token</label>
+                  <div class="wz-field-secure">
+                    <input type="password" class="wz-input" id="tg-token" placeholder="Dán token từ BotFather" autocomplete="off">
+                    <button class="wz-toggle-vis" onclick="toggleWzVis('tg-token', this)" type="button" title="Hiện / ẩn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="wz-field">
-              <label class="wz-label">Bot Token</label>
-              <div class="wz-field-secure">
-                <input type="password" class="wz-input" id="tg-token" placeholder="Dán token từ BotFather (dạng 123456:ABC...)" autocomplete="off">
-                <button class="wz-toggle-vis" onclick="toggleWzVis('tg-token', this)" type="button" title="Hiện / ẩn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
+            <div class="wz-tg-part">
+              <div class="wz-tg-part-header">
+                <span class="wz-tg-badge purple">PART B</span>
+                <span style="font-size:16px;font-weight:700;color:var(--text)">Lấy User ID</span>
               </div>
-            </div>
 
-            <div class="wz-instruction">
-              <div class="wz-instruction-head">
-                <div class="wz-instruction-num">2</div>
-                <div class="wz-instruction-title">Lấy User ID Telegram của anh/chị</div>
+              <div class="wz-tg-substep">
+                <div class="wz-tg-substep-num purple">1</div>
+                <div>
+                  <div class="wz-tg-substep-title">Mở @userinfobot trên Telegram</div>
+                  <div class="wz-tg-substep-desc">Nhấn nút bên dưới — Telegram mở chat với userinfobot.</div>
+                </div>
               </div>
-              <div class="wz-instruction-body">
-                <p>Nhấn nút bên dưới — Telegram tự mở @userinfobot. Gửi <span class="wz-kbd">/start</span>.</p>
-                <p>Bot trả về một dãy số (ví dụ: 123456789). Copy dãy số đó.</p>
-              </div>
-              <div style="margin-top:14px;padding-left:40px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <div class="wz-tg-substep-action">
                 <button class="wz-btn wz-btn-secondary" onclick="openUserInfoBot()" type="button">
-                  <span data-icon="user" data-icon-size="14"></span> Mở @userinfobot trên Telegram
+                  <span data-icon="user" data-icon-size="14"></span> Mở @userinfobot
                 </button>
-                <a href="#" onclick="openUserInfoBotWeb(); return false;" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer">Không có Telegram Desktop? Mở trình duyệt</a>
+                <a href="#" onclick="openUserInfoBotWeb(); return false;" style="font-size:12px;color:var(--text-muted);text-decoration:underline;cursor:pointer;margin-left:10px">Mở trình duyệt</a>
+              </div>
+
+              <div class="wz-tg-substep">
+                <div class="wz-tg-substep-num purple">2</div>
+                <div>
+                  <div class="wz-tg-substep-title">Gửi <span class="wz-kbd">/start</span> và copy dãy số ID</div>
+                  <div class="wz-tg-substep-desc">userinfobot trả lời như bên dưới — copy dãy số được đánh dấu:</div>
+                </div>
+              </div>
+              <div class="wz-tg-substep-action">
+                <div class="wz-tg-bubble">
+                  <div class="wz-tg-bubble-sender">userinfobot</div>
+                  <div class="wz-tg-bubble-body" style="line-height:1.8">
+                    @NguyenVanA<br>
+                    Id: <span class="wz-tg-highlight purple" style="display:inline;padding:1px 6px;margin:0;font-size:13px">5738291046<span class="wz-tg-highlight-badge" style="top:-8px;right:-54px">COPY SỐ NÀY</span></span><br>
+                    First: Nguyễn Văn A<br>
+                    Lang: vi
+                  </div>
+                </div>
+
+                <div class="wz-field" style="margin-top:16px;margin-bottom:0">
+                  <label class="wz-label">User ID</label>
+                  <div class="wz-field-secure">
+                    <input type="password" class="wz-input" id="tg-user-id" placeholder="Dán dãy số ID (ví dụ: 5738291046)" autocomplete="off">
+                    <button class="wz-toggle-vis" onclick="toggleWzVis('tg-user-id', this)" type="button" title="Hiện / ẩn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="wz-field">
-              <label class="wz-label">User ID</label>
-              <div class="wz-field-secure">
-                <input type="password" class="wz-input" id="tg-user-id" placeholder="Dán dãy số (ví dụ: 123456789)" autocomplete="off">
-                <button class="wz-toggle-vis" onclick="toggleWzVis('tg-user-id', this)" type="button" title="Hiện / ẩn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-
-            <div class="wz-alert warn">
-              <span data-icon="lightbulb" data-icon-size="18" style="flex-shrink:0;margin-top:1px"></span>
-              <div>
-                <strong>Quan trọng:</strong> Trước khi test, anh/chị mở Telegram, tìm bot vừa tạo, gửi <span class="wz-kbd">/start</span> cho bot đó. Sau đó quay lại đây nhấn "Test kết nối".
-              </div>
-            </div>
-
-            <button class="wz-btn wz-btn-secondary" id="test-tg-btn" onclick="testTelegram()" type="button" style="margin-bottom:16px">
+            <button class="wz-btn wz-btn-primary" id="test-tg-btn" onclick="testTelegram()" type="button" style="margin-bottom:16px">
               <span data-icon="send" data-icon-size="14"></span> Test kết nối Telegram
             </button>
             <div id="tg-test-result" class="wz-hidden"></div>
           </section>
 
-          <!-- ============ STEP 4: Zalo (Optional) ============ -->
+          <!-- ============ STEP 4: Done ============ -->
           <section class="wz-step" id="step-4">
-            <h2>Kết nối Zalo <span style="font-size:14px;font-weight:500;color:var(--text-tertiary);margin-left:8px;padding:3px 10px;border:1px solid var(--border);border-radius:999px;vertical-align:middle">Tùy chọn</span></h2>
-            <p class="wz-step-desc">Bước này <strong>không bắt buộc</strong>. Nếu anh/chị chỉ dùng Telegram, có thể nhấn <strong>Tiếp tục</strong> để bỏ qua, hoàn tất cài đặt, và thiết lập Zalo sau ở Dashboard → Zalo. Nếu muốn bot tự đọc/trả lời tin nhắn Zalo của khách hàng, đăng nhập QR bên dưới — không cần mật khẩu.</p>
-
-            <div class="wz-instruction" id="zalo-connect-card">
-              <div class="wz-instruction-head" id="zalo-step-guide">
-                <div class="wz-instruction-num">1</div>
-                <div class="wz-instruction-title">Đăng nhập bằng QR</div>
-              </div>
-              <div class="wz-instruction-body" id="zalo-step-body">
-                <p>Nhấn nút bên dưới — mã QR sẽ hiện ra.</p>
-                <p>Mở app <strong>Zalo trên điện thoại</strong>, vào <strong>Quét QR</strong>, quét mã và xác nhận đăng nhập.</p>
-              </div>
-              <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-primary" onclick="setupZalo()" id="zalo-btn" type="button">
-                  Đăng nhập Zalo
-                </button>
-                <div id="zalo-status" class="wz-hidden" style="margin-top:12px"></div>
-                <div id="zalo-qr-container" class="wz-hidden" style="margin-top:18px;text-align:center">
-                  <div class="wz-qr-frame"><img id="zalo-qr-img" alt="QR Code"></div>
-                  <p id="zalo-qr-hint" style="font-size:12px;color:var(--text-tertiary);margin-top:12px">Đang chờ anh/chị quét mã QR...</p>
-                  <button class="wz-btn wz-btn-ghost" onclick="refreshZaloQR()" id="refresh-qr-btn" type="button" style="margin-top:8px">
-                    Làm mới mã QR
-                  </button>
-                </div>
-                <div id="zalo-login-success" class="wz-hidden" style="margin-top:18px;padding:20px 24px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:12px">
-                  <div style="display:flex;align-items:center;justify-content:center;gap:14px">
-                    <div style="width:36px;height:36px;border-radius:50%;background:rgba(74,222,128,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                      <span data-icon="check" data-icon-size="20" style="color:var(--success)"></span>
-                    </div>
-                    <div style="text-align:left">
-                      <div style="font-size:14px;font-weight:600;color:var(--success)">Zalo đã kết nối thành công</div>
-                      <div style="font-size:12px;color:var(--text-tertiary);margin-top:3px">Trợ lý sẽ nhận tin nhắn từ tài khoản Zalo này.</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-
-            <div class="wz-field" style="margin-top:24px">
-              <label class="wz-label">Chế độ Zalo</label>
-              <div class="wz-grid cols-2">
-                <label class="wz-choice is-checked" data-radio="zalo-mode">
-                  <input type="radio" name="zalo-mode" value="auto" checked>
-                  <div class="wz-choice-body">
-                    <div class="wz-choice-icon"><span data-icon="bot"></span></div>
-                    <div class="wz-choice-title">Tự động trả lời</div>
-                    <div class="wz-choice-desc">Bot tự reply, vấn đề khó báo Telegram</div>
-                  </div>
-                </label>
-                <label class="wz-choice" data-radio="zalo-mode">
-                  <input type="radio" name="zalo-mode" value="read">
-                  <div class="wz-choice-body">
-                    <div class="wz-choice-icon"><span data-icon="eye"></span></div>
-                    <div class="wz-choice-title">Chỉ đọc + tóm tắt cuối ngày</div>
-                    <div class="wz-choice-desc">Đọc tin, tóm tắt cuối ngày qua Telegram, không tự trả lời</div>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <input type="hidden" id="fb-page-id" value="">
-            <input type="hidden" id="fb-token" value="">
-            <div id="setup-loading" class="wz-hidden" style="margin-top:24px;text-align:center">
-              <div class="spinner"></div>
-              <p style="font-size:13px;margin-top:14px;color:var(--text-tertiary)" id="setup-status">Đang thiết lập...</p>
-            </div>
-          </section>
-
-          <!-- ============ STEP 5: Done ============ -->
-          <section class="wz-step" id="step-5">
             <div class="wz-done-icon"><span data-icon="check" data-icon-size="32"></span></div>
             <h2>Sẵn sàng hoạt động</h2>
             <p class="wz-step-desc">Trợ lý AI đã được thiết lập xong. Anh/chị có thể bắt đầu sử dụng ngay bây giờ.</p>
@@ -1372,30 +1190,24 @@
 
     // ===== Wizard state =====
     let currentStep = 1;
-    let selectedTone = 'friendly';
-    let selectedPronouns = 'em-anh-chi';
-    let zaloMode = 'auto';
-
-    const STEP_ORDER = [1, '1b', 2, 3, 4, 5];
+    const STEP_ORDER = [1, 2, 3, 4];
     const STEP_META = {
-      1:    { eyebrow: 'Bước 1 / 6', headline: 'Chào mừng đến với 9BizClaw', subhead: 'Trợ lý AI 1-click giúp anh/chị quản lý khách hàng Zalo, Telegram và báo cáo doanh nghiệp tự động. Hướng dẫn cài đặt hoàn tất trong vài phút.' },
-      '1b': { eyebrow: 'Bước 2 / 6', headline: 'Cá nhân hóa theo ngành', subhead: 'Trợ lý được tối ưu kỹ năng khác nhau cho mỗi ngành — F&B, bất động sản, công nghệ, giáo dục… Chọn đúng ngành để trợ lý hiểu khách hàng của anh/chị tốt hơn.' },
-      2:    { eyebrow: 'Bước 3 / 6', headline: 'Kết nối trí tuệ nhân tạo', subhead: 'Trợ lý cần kết nối ChatGPT để hoạt động. Tài khoản miễn phí hoặc Plus đều dùng được.' },
-      3:    { eyebrow: 'Bước 4 / 6', headline: 'Kết nối Telegram', subhead: 'Telegram là kênh anh/chị nhận thông báo, ra lệnh, và đọc báo cáo. Hướng dẫn tạo bot từ BotFather ở bên dưới.' },
-      4:    { eyebrow: 'Bước 5 / 6 · Tùy chọn', headline: 'Kết nối Zalo', subhead: 'Bước này không bắt buộc. Anh/chị có thể bỏ qua và thiết lập Zalo sau trong Dashboard. Nếu dùng Zalo: đăng nhập QR — không cần mật khẩu, không cần API.' },
-      5:    { eyebrow: 'Hoàn tất', headline: 'Trợ lý đã sẵn sàng', subhead: 'Tất cả đã được thiết lập. Anh/chị có thể mở Dashboard và bắt đầu sử dụng 9BizClaw ngay bây giờ.' },
+      1: { eyebrow: 'Bước 1 / 4', headline: 'Chào mừng đến với 9BizClaw', subhead: 'Nhập thông tin cơ bản để cá nhân hóa trợ lý AI cho doanh nghiệp của anh/chị.' },
+      2: { eyebrow: 'Bước 2 / 4', headline: 'Kết nối trí tuệ nhân tạo', subhead: 'Trợ lý cần kết nối với ChatGPT để hoạt động. Chỉ cần 1 click.' },
+      3: { eyebrow: 'Bước 3 / 4', headline: 'Kết nối Telegram', subhead: 'Telegram là kênh anh/chị nhận thông báo và điều khiển trợ lý.' },
+      4: { eyebrow: 'Hoàn tất', headline: 'Sẵn sàng hoạt động', subhead: 'Trợ lý AI đã được thiết lập xong.' },
     };
 
     function stepIdx(s) { return STEP_ORDER.indexOf(s); }
     function setProgress(step) {
       const idx = stepIdx(step);
-      const total = STEP_ORDER.length - 1;
-      const pct = Math.round((idx / total) * 100);
+      const total = STEP_ORDER.length;
+      const pct = Math.round(((idx + 1) / total) * 100);
       const fill = document.getElementById('progress-fill');
       const stepLabel = document.getElementById('progress-step');
       const pctLabel = document.getElementById('progress-percent');
-      if (fill) fill.style.width = (pct === 0 ? 8 : pct) + '%';
-      if (stepLabel) stepLabel.textContent = `Bước ${idx + 1} trong ${STEP_ORDER.length}`;
+      if (fill) fill.style.width = (pct < 10 ? 10 : pct) + '%';
+      if (stepLabel) stepLabel.textContent = `Bước ${idx + 1} trong ${total}`;
       if (pctLabel) pctLabel.textContent = pct + '%';
 
       const meta = STEP_META[step];
@@ -1405,14 +1217,12 @@
         document.getElementById('brand-subhead').textContent = meta.subhead;
       }
 
-      // Show/hide back button
       const backBtn = document.getElementById('nav-back');
-      backBtn.style.display = idx === 0 || step === 5 ? 'none' : 'inline-flex';
+      backBtn.style.display = idx === 0 || step === 4 ? 'none' : 'inline-flex';
 
-      // Adjust next button label per step
       const nextBtn = document.getElementById('nav-next');
-      if (step === 4) nextBtn.textContent = 'Hoàn tất thiết lập';
-      else if (step === 5) nextBtn.style.display = 'none';
+      if (step === 3) nextBtn.textContent = 'Hoàn tất thiết lập';
+      else if (step === 4) nextBtn.style.display = 'none';
       else { nextBtn.textContent = 'Tiếp tục'; nextBtn.style.display = 'inline-flex'; }
     }
 
@@ -1431,15 +1241,11 @@
       const next = STEP_ORDER[ci + 1];
       if (!next) return;
 
-      // Validation per step
       if (currentStep === 1) {
         const name = document.getElementById('ceo-name').value.trim();
         if (!name) { markFieldError('ceo-name'); return showError('Vui lòng nhập họ tên của anh/chị.'); }
-        // Diacritics popup removed — user enters name however they want
-      }
-      if (currentStep === '1b') {
-        if (!document.getElementById('industry').value) { markFieldError('industry'); return showError('Vui lòng chọn lĩnh vực kinh doanh.'); }
-        if (!document.getElementById('ceo-title').value.trim()) { markFieldError('ceo-title'); return showError('Vui lòng nhập cách trợ lý gọi anh/chị.'); }
+        const title = document.getElementById('ceo-title').value.trim();
+        if (!title) { markFieldError('ceo-title'); return showError('Vui lòng nhập cách trợ lý gọi anh/chị.'); }
       }
       if (currentStep === 2) {
         if (!window._aiModelReady) return showError('Chưa kết nối ChatGPT. Nhấn "Kết nối ChatGPT" rồi "Kiểm tra kết nối" ở trên.');
@@ -1447,34 +1253,9 @@
       if (currentStep === 3) {
         const t = document.getElementById('tg-token').value.trim();
         const u = document.getElementById('tg-user-id').value.trim();
-        if (!t) { markFieldError('tg-token'); return showError('Chưa có Bot Token. Làm theo hướng dẫn 1 ở trên.'); }
-        if (!u) { markFieldError('tg-user-id'); return showError('Chưa có User ID. Làm theo hướng dẫn 2 ở trên.'); }
-        if (!/^\d{5,15}$/.test(u)) { markFieldError('tg-user-id'); return showError('User ID chỉ gồm chữ số (ví dụ: 123456789).'); }
-      }
-      if (currentStep === 4) {
-        // Gate: warn (but allow skip) if Zalo is not logged in. Without login
-        // bot can NEVER receive Zalo messages — CEO would discover only when
-        // first customer message goes silent. Confirm modal makes intent
-        // explicit instead of silent skip.
-        try {
-          const st = await withTimeout(window.claw.checkZaloLogin(), 4000);
-          const loggedIn = !!(st && st.loggedIn);
-          if (!loggedIn) {
-            const ok = window.confirm(
-              'Zalo chưa đăng nhập.\n\n' +
-              'Bot sẽ không nhận tin Zalo cho đến khi anh/chị login lại ở Dashboard → Zalo.\n\n' +
-              'Vẫn tiếp tục hoàn tất cài đặt?'
-            );
-            if (!ok) return;
-          }
-        } catch (_) {
-          // checkZaloLogin failed (timeout/IPC error) — don't block CEO, just warn
-          const ok = window.confirm(
-            'Không kiểm tra được trạng thái Zalo.\n\n' +
-            'Có thể Zalo chưa được login. Vẫn tiếp tục?'
-          );
-          if (!ok) return;
-        }
+        if (!t) { markFieldError('tg-token'); return showError('Chưa có Bot Token. Làm theo hướng dẫn Part A ở trên.'); }
+        if (!u) { markFieldError('tg-user-id'); return showError('Chưa có User ID. Làm theo hướng dẫn Part B ở trên.'); }
+        if (!/^\d{5,15}$/.test(u)) { markFieldError('tg-user-id'); return showError('User ID chỉ gồm chữ số (ví dụ: 5738291046).'); }
         finishSetup();
         return;
       }
@@ -1531,9 +1312,6 @@
           const groupName = inp.closest('.wz-choice').getAttribute('data-radio');
           document.querySelectorAll(`.wz-choice[data-radio="${groupName}"]`).forEach(c => c.classList.remove('is-checked'));
           inp.closest('.wz-choice').classList.add('is-checked');
-          if (groupName === 'tone') selectedTone = inp.value;
-          if (groupName === 'pronouns') selectedPronouns = inp.value;
-          if (groupName === 'zalo-mode') zaloMode = inp.value;
         });
       });
       // Checkboxes: on change, toggle .is-checked class on the parent card
@@ -1546,123 +1324,17 @@
       });
     }
 
-    // ===== Persona mix-and-match state =====
-    // CEO picks individual traits instead of a locked archetype. Config saved
-    // as active-persona.json on wizard submit; bot reads + applies per reply.
-    let personaMix = {
-      voice: 'em-nu-tre',
-      customer: 'anh-chi',
-      traits: ['am-ap', 'chu-dao', 'chuyen-nghiep'],
-      formality: 5,
-      greeting: '',
-      closing: '',
-      phrases: '',
-    };
-
-    function syncMixUI() {
-      // Single-select chips: voice (customer chip removed — derived from pronouns on save)
-      ['voice'].forEach(group => {
-        document.querySelectorAll(`.wz-mix-chip[data-mix="${group}"]`).forEach(chip => {
-          chip.classList.toggle('is-selected', chip.getAttribute('data-value') === personaMix[group]);
-        });
-      });
-      // Multi-select: traits
-      document.querySelectorAll('.wz-mix-chip[data-mix="trait"]').forEach(chip => {
-        chip.classList.toggle('is-selected', personaMix.traits.includes(chip.getAttribute('data-value')));
-      });
-      // Slider
-      const slider = document.getElementById('mix-formality');
-      if (slider) slider.value = personaMix.formality;
-    }
-
-    function updateGreetingPlaceholder() {
-      const el = document.getElementById('mix-greeting');
-      if (!el) return;
-      const botName = (document.getElementById('bot-name')?.value || '').trim();
-      const company = (document.getElementById('company')?.value || '').trim();
-      const namePart = botName || '[tên trợ lý]';
-      const companyPart = company ? `bên ${company} ` : '';
-      el.placeholder = `VD: Dạ em ${namePart} ${companyPart}xin chào anh/chị ạ`;
-    }
-
-    function bindMixChips() {
-      // Update greeting placeholder when company/bot-name change (those fields are on step 1)
-      ['bot-name', 'company'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('input', updateGreetingPlaceholder);
-      });
-      updateGreetingPlaceholder();
-
-      document.querySelectorAll('.wz-mix-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-          const group = chip.getAttribute('data-mix');
-          const value = chip.getAttribute('data-value');
-          if (group === 'trait') {
-            const idx = personaMix.traits.indexOf(value);
-            if (idx >= 0) personaMix.traits.splice(idx, 1);
-            else if (personaMix.traits.length < 5) personaMix.traits.push(value);
-            else return; // max 5 traits
-          } else {
-            personaMix[group] = value;
-          }
-          syncMixUI();
-          updateMixPreview();
-        });
-      });
-      const slider = document.getElementById('mix-formality');
-      if (slider) slider.addEventListener('input', () => {
-        personaMix.formality = parseInt(slider.value, 10);
-        updateMixPreview();
-      });
-      ['mix-greeting', 'mix-closing', 'mix-phrases'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('input', () => {
-          personaMix[id.replace('mix-', '')] = el.value;
-          updateMixPreview();
-        });
-      });
-    }
-
-    function updateMixPreview() {
-      const bubble = document.getElementById('mix-preview-bubble');
-      if (!bubble) return;
-      if (personaMix.greeting && personaMix.greeting.trim()) {
-        bubble.textContent = personaMix.greeting.trim();
-        return;
-      }
-      // Generate preview based on voice + customer
-      const addressMap = {
-        'anh-chi': 'anh/chị',
-        'quy-khach': 'quý khách',
-        'mình': 'mình',
-      };
-      const address = addressMap[personaMix.customer] || 'anh/chị';
-      const isFormal = personaMix.formality >= 7;
-      const isCasual = personaMix.formality <= 4;
-      let preview;
-      if (isFormal) {
-        preview = `Dạ em kính chào ${address} ạ. ${address[0].toUpperCase() + address.slice(1)} cần em hỗ trợ về sản phẩm nào ạ?`;
-      } else if (isCasual) {
-        preview = `Dạ em chào ${address} ạ, ${address} cần gì em tư vấn giúp ạ?`;
-      } else {
-        preview = `Dạ em chào ${address} ạ. ${address[0].toUpperCase() + address.slice(1)} cần em tư vấn gì không ạ?`;
-      }
-      bubble.textContent = preview;
-    }
-
     // ===== Step 2: AI setup =====
-    function open9RouterLogin() {
-      window.claw.openExternal('http://127.0.0.1:20128');
-    }
-
     async function openChatGPTConnect() {
       const btn = document.getElementById('open-chatgpt-btn');
       btn.disabled = true; btn.classList.add('loading');
       try {
-        await window.claw.setup9RouterAuto({ ensureRunning: true });
-        window.claw.openExternal('http://127.0.0.1:20128/dashboard/providers/codex');
+        const res = await window.claw.setup9RouterAuto({ openCodexAuthed: true });
+        if (res.loginFailed) {
+          document.getElementById('login-fallback-hint').classList.remove('wz-hidden');
+        }
       } catch (e) {
-        showError('Thiết lập chưa hoàn tất — máy chưa sẵn sàng khởi động 9Router. Vui lòng kiểm tra kết nối mạng và thử lại. Chi tiết: ' + (e.message || e));
+        showError('Không mở được trang kết nối. Chi tiết: ' + (e.message || e));
       }
       btn.disabled = false; btn.classList.remove('loading');
     }
@@ -1746,66 +1418,6 @@
       }
     }
 
-    // ===== Step 4: Zalo QR login =====
-    let _refreshQRPoll = null;
-    async function refreshZaloQR() {
-      if (_refreshQRPoll) { clearInterval(_refreshQRPoll); _refreshQRPoll = null; }
-      const btn = document.getElementById('refresh-qr-btn');
-      btn.disabled = true; btn.classList.add('loading');
-      await window.claw.setupZalo();
-      btn.disabled = false; btn.classList.remove('loading');
-      let attempts = 0;
-      _refreshQRPoll = setInterval(async () => {
-        attempts++;
-        const qrPath = await window.claw.findZaloQR();
-        if (qrPath) {
-          clearInterval(_refreshQRPoll); _refreshQRPoll = null;
-          document.getElementById('zalo-qr-img').src = qrPath;
-        }
-        if (attempts > 30) { clearInterval(_refreshQRPoll); _refreshQRPoll = null; }
-      }, 1000);
-    }
-    let _zaloPollInterval = null;
-    async function setupZalo() {
-      if (_zaloPollInterval) { clearInterval(_zaloPollInterval); _zaloPollInterval = null; }
-      const btn = document.getElementById('zalo-btn');
-      btn.disabled = true; btn.classList.add('loading');
-      const status = document.getElementById('zalo-status');
-      status.classList.remove('wz-hidden');
-      status.className = 'wz-alert warn';
-      status.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('clock',18)}</span><div>Đang tạo mã QR...</div>`;
-      const result = await window.claw.setupZalo();
-      btn.disabled = false; btn.classList.remove('loading');
-      if (result.success) {
-        let qrFound = false;
-        let attempts = 0;
-        _zaloPollInterval = setInterval(async () => {
-          attempts++;
-          if (!qrFound) {
-            const qrPath = await window.claw.findZaloQR();
-            if (qrPath) {
-              qrFound = true;
-              document.getElementById('zalo-qr-img').src = qrPath;
-              document.getElementById('zalo-qr-container').classList.remove('wz-hidden');
-              status.classList.add('wz-hidden');
-            }
-          }
-          if (qrFound) {
-            const st = await window.claw.checkZaloLogin();
-            if (st.loggedIn) {
-              clearInterval(_zaloPollInterval); _zaloPollInterval = null;
-              document.getElementById('zalo-qr-container').classList.add('wz-hidden');
-              document.getElementById('zalo-step-guide').style.display = 'none';
-              document.getElementById('zalo-step-body').style.display = 'none';
-              document.getElementById('zalo-btn').style.display = 'none';
-              document.getElementById('zalo-login-success').classList.remove('wz-hidden');
-            }
-          }
-          if (attempts > 120) { clearInterval(_zaloPollInterval); _zaloPollInterval = null; }
-        }, 1000);
-      }
-    }
-
     // ===== Finish setup =====
     async function finishSetup() {
       const name = document.getElementById('ceo-name').value.trim();
@@ -1814,20 +1426,18 @@
       const tgUserId = document.getElementById('tg-user-id').value.trim();
       const routerKey = document.getElementById('router-api-key').value.trim();
       const routerModel = document.getElementById('router-model').value.trim() || 'auto';
+      const ceoTitle = document.getElementById('ceo-title').value.trim() || name;
+      const botName = (document.getElementById('bot-name')?.value || '').trim();
 
       if (!name || !tgToken || !tgUserId) return showError('Thiếu thông tin. Quay lại kiểm tra các bước trước.');
       if (!/^\d{5,15}$/.test(tgUserId)) return showError('User ID Telegram không hợp lệ.');
       if (!routerKey) return showError('Thiếu API key AI. Quay lại bước AI để lấy.');
 
       const finishBtn = document.getElementById('nav-next');
-      const loading = document.getElementById('setup-loading');
-      const status = document.getElementById('setup-status');
       finishBtn.disabled = true;
       finishBtn.classList.add('loading');
-      loading.classList.remove('wz-hidden');
 
       try {
-        status.textContent = 'Đang lưu thông tin...';
         await withTimeout(window.claw.saveWizardConfig([
           { key: 'gateway.mode', value: 'local' },
           { key: 'channels.telegram.botToken', value: tgToken },
@@ -1835,7 +1445,6 @@
           { key: 'channels.telegram.dmPolicy', value: 'allowlist' },
         ]));
 
-        status.textContent = 'Đang kết nối AI...';
         await withTimeout(window.claw.setBatchConfig([{
           path: 'models.providers.ninerouter',
           value: {
@@ -1849,47 +1458,38 @@
           { key: 'agents.defaults.model', value: `ninerouter/${routerModel}` },
         ]));
 
-        status.textContent = 'Đang lưu thông tin cơ bản...';
-        // Wizard giờ chỉ gửi tên CEO + tên công ty. Mọi trường khác (sản phẩm,
-        // audience, quy mô, giờ làm việc, số mục tiêu) đã loại bỏ — CEO sẽ
-        // upload Knowledge file qua Dashboard và chỉnh giờ qua tab Schedules.
-        // Handler save-business-profile vẫn fallback default cho các field thiếu.
         await withTimeout(window.claw.saveBusinessProfile({
           companyName: company, ceoName: name,
         }));
 
-        status.textContent = 'Đang cá nhân hóa trợ lý...';
-        const industry = document.getElementById('industry').value || 'tong-quat';
-        const ceoTitle = document.getElementById('ceo-title').value.trim() || name;
-        if (!ceoTitle) {
-          finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
-          showError('Vui lòng nhập "Trợ lý gọi bạn là" ở Bước 3.');
-          showStep('1b');
-          return;
-        }
-        const botName = (document.getElementById('bot-name')?.value || '').trim();
-        // Derive personaMix.customer from pronouns (no separate chip in wizard)
-        const pronounsToCustomer = { 'em-anh-chi': 'anh-chi', 'toi-quy-khach': 'quy-khach', 'minh-ban': 'mình' };
-        personaMix.customer = pronounsToCustomer[selectedPronouns] || 'anh-chi';
-        const personResult = await withTimeout(window.claw.savePersonalization({ industry, tone: selectedTone, pronouns: selectedPronouns, ceoTitle, botName, personaMix }));
-        if (personResult && personResult.success === false) {
-          showError('Thiết lập chưa hoàn tất — không lưu được cá nhân hóa. Vui lòng thử lại. Chi tiết: ' + (personResult.error || 'không rõ lỗi'));
-          finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
-          return;
-        }
+        const personaMix = {
+          voice: 'em-nu-tre',
+          customer: 'anh-chi',
+          traits: ['am-ap', 'chu-dao', 'chuyen-nghiep'],
+          formality: 5,
+          greeting: '',
+          closing: '',
+          phrases: '',
+        };
+        await withTimeout(window.claw.savePersonalization({
+          industry: 'tong-quat',
+          tone: 'friendly',
+          pronouns: 'em-anh-chi',
+          ceoTitle,
+          botName,
+          personaMix,
+        }));
 
-        await withTimeout(window.claw.saveZaloMode(zaloMode));
+        await withTimeout(window.claw.saveZaloMode('auto'));
       } catch (err) {
-        showError('Thiết lập chưa hoàn tất — môi trường chưa sẵn sàng. Vui lòng kiểm tra kết nối mạng và thử lại. Chi tiết: ' + (err?.message || String(err)));
-        finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
+        showError('Thiết lập chưa hoàn tất. Chi tiết: ' + (err?.message || String(err)));
+        finishBtn.disabled = false; finishBtn.classList.remove('loading');
         return;
       }
 
-      finishBtn.disabled = false; finishBtn.classList.remove('loading'); loading.classList.add('wz-hidden');
+      finishBtn.disabled = false; finishBtn.classList.remove('loading');
 
-      // Build summary
       const summary = document.getElementById('summary');
-      const zaloLabel = zaloMode === 'auto' ? 'Tự động trả lời' : zaloMode === 'read' ? 'Chỉ đọc' : 'Tóm tắt cuối ngày';
       summary.innerHTML = `
         <div class="wz-summary-row">
           <div class="wz-summary-icon">${icon('user',16)}</div>
@@ -1897,17 +1497,17 @@
           <div class="wz-summary-value">${esc(name)}${company ? ' — ' + esc(company) : ''}</div>
         </div>
         <div class="wz-summary-row">
-          <div class="wz-summary-icon">${icon('send',16)}</div>
-          <div class="wz-summary-label">Telegram</div>
-          <div class="wz-summary-value">Đã kết nối</div>
+          <div class="wz-summary-icon">${icon('cpu',16)}</div>
+          <div class="wz-summary-label">AI</div>
+          <div class="wz-summary-value" style="color:var(--success)">Đã kết nối</div>
         </div>
         <div class="wz-summary-row">
-          <div class="wz-summary-icon">${icon('message-circle',16)}</div>
-          <div class="wz-summary-label">Zalo</div>
-          <div class="wz-summary-value">${esc(zaloLabel)}</div>
+          <div class="wz-summary-icon">${icon('send',16)}</div>
+          <div class="wz-summary-label">Telegram</div>
+          <div class="wz-summary-value" style="color:var(--success)">Đã kết nối</div>
         </div>
       `;
-      showStep(5);
+      showStep(4);
     }
 
     async function launchDashboard() {
@@ -1953,9 +1553,6 @@
 
       mountIcons();
       bindChoices();
-      bindMixChips();
-      syncMixUI();
-      updateMixPreview();
       setProgress(1);
 
       // Pre-start 9Router so it's ready by the time user reaches step 2
