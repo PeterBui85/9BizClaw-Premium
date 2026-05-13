@@ -106,6 +106,7 @@ const ERROR_HINTS = {
   NPM_ECONNRESET: 'npm bị reset kết nối — proxy hoặc mạng không ổn định. Thử lại.',
   GIT_ENOENT: 'Máy chưa có git — 9BizClaw sẽ tự tải MinGit portable. Thử lại.',
   XCODE_SELECT: 'Mac chưa có Xcode Command Line Tools. 9BizClaw sẽ tự bỏ qua git — thử lại.',
+  EBUSY: 'File đang bị khóa (thường do Windows Defender quét). Tắt tạm real-time protection rồi thử lại, hoặc thêm thư mục %APPDATA%\\9bizclaw vào Exclusions của Windows Security.',
 };
 
 // Detect if a corporate proxy is likely active by checking common env vars.
@@ -134,6 +135,7 @@ function classifyInstallError(error) {
   if (msg.includes('npm') && (msg.includes('connect') || msg.includes('reset'))) return 'NPM_ECONNRESET';
   if (msg.includes('xcode-select') || msg.includes('xcode_select')) return 'XCODE_SELECT';
   if (msg.includes('git error') && (msg.includes('enoent') || msg.includes('errno -4058'))) return 'GIT_ENOENT';
+  if (code === 'EBUSY' || msg.includes('ebusy') || msg.includes('resource busy')) return 'EBUSY';
   return null;
 }
 
@@ -1051,6 +1053,25 @@ function killOrphanVendorNodeProcesses() {
   } catch {}
 }
 
+// npm stages packages in dirs like `.9router-n9xAfFdg` then renames them.
+// On EBUSY (Windows Defender holds handles), these stale staging dirs block the
+// next attempt. Clean them so the retry starts fresh.
+function cleanNpmStagingDirs(nodeModulesDir) {
+  if (!nodeModulesDir || !fs.existsSync(nodeModulesDir)) return;
+  try {
+    let cleaned = 0;
+    for (const entry of fs.readdirSync(nodeModulesDir)) {
+      if (entry.startsWith('.') && entry !== '.package-lock.json' && entry !== '.cache' && entry !== '.bin') {
+        try {
+          fs.rmSync(path.join(nodeModulesDir, entry), { recursive: true, force: true, maxRetries: 2, retryDelay: 500 });
+          cleaned++;
+        } catch {}
+      }
+    }
+    if (cleaned) console.log(`[runtime-installer] cleaned ${cleaned} stale npm staging dir(s)`);
+  } catch {}
+}
+
 function killOrphan9RouterProcesses() {
   if (process.platform !== 'win32') return;
   try {
@@ -1258,13 +1279,20 @@ async function installNpmPackages(versions, onProgress) {
 
   try {
     if (withRetry) {
+      const isEbusy = (e) => e?.message?.includes('EBUSY') || e?.message?.includes('resource busy');
       await withRetry(npmInstallOp, {
-        maxRetries: 2,
+        maxRetries: 4,
         baseDelay: 5000,
-        maxDelay: 30000,
+        maxDelay: 60000,
         onRetry: async ({ attempt, maxRetries, error, delay }) => {
           console.log(`[runtime-installer] Retry ${attempt}/${maxRetries} for npm install after ${delay}ms: ${error?.message}`);
-          if (error?.message?.includes('EBUSY')) killOrphan9RouterProcesses();
+          if (isEbusy(error)) {
+            killOrphan9RouterProcesses();
+            cleanNpmStagingDirs(nodeModulesDir);
+            const ebusyDelay = Math.max(delay, 10000 * attempt);
+            console.log(`[runtime-installer] EBUSY — extra wait ${ebusyDelay}ms for file handles to release`);
+            await new Promise(r => setTimeout(r, ebusyDelay));
+          }
           await maybeFixGit(error);
           if (onProgress) {
             onProgress({ step: 'packages', message: `Đang thử lại (lần ${attempt + 1})...`, subStep: 'retry' });
@@ -1273,12 +1301,18 @@ async function installNpmPackages(versions, onProgress) {
       });
       installed = true;
     } else {
-      for (let attempt = 0; attempt < 3; attempt++) {
+      const maxAttempts = 5;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         if (attempt > 0) {
-          if (lastError?.message?.includes('EBUSY')) killOrphan9RouterProcesses();
+          const isEbusy = lastError?.message?.includes('EBUSY') || lastError?.message?.includes('resource busy');
+          if (isEbusy) {
+            killOrphan9RouterProcesses();
+            cleanNpmStagingDirs(nodeModulesDir);
+          }
           await maybeFixGit(lastError);
-          await new Promise(r => setTimeout(r, 5000 * attempt));
-          console.log('[runtime-installer] Retry', attempt + 1, 'for npm install');
+          const delay = isEbusy ? 10000 * attempt : 5000 * attempt;
+          console.log(`[runtime-installer] Retry ${attempt}/${maxAttempts - 1} for npm install (wait ${delay}ms, ebusy=${isEbusy})`);
+          await new Promise(r => setTimeout(r, delay));
         }
         try {
           await npmInstallOp();

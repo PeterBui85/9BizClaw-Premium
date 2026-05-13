@@ -626,10 +626,10 @@ export async function handleModoroZaloInbound(params: {
     runtime.log?.('modoro-zalo: sender-dedup check error: ' + String(__ddErr));
   }
   // === END 9BizClaw SENDER-DEDUP PATCH ===
-  // === 9BizClaw COMMAND-BLOCK PATCH v3 ===
+  // === 9BizClaw COMMAND-BLOCK PATCH v4 ===
   // Hard gate: rewrite rawBody when Zalo message contains admin/file/exec command patterns.
   // Agent never sees original command → cannot execute. Telegram unaffected (separate plugin).
-  // v2: skip for internal groups. v3: file ops (read/write/apply_patch/memory) + path patterns.
+  // v2: skip for internal groups. v3: file ops + path patterns. v4: web_fetch/web_search general block.
   const __cbIsInternal = (() => {
     if (!message.isGroup) return false;
     try {
@@ -688,7 +688,13 @@ export async function handleModoroZaloInbound(params: {
       /(?:dat|tao|lap|hen)\s+(?:lich|gio)\s+(?:gui|nhan|phat)/i,
       /(?:tự\s+động|tu\s+dong)\s+(?:gửi|gui|nhắn|nhan|phát|phat)/i,
       /(?:lên\s+lịch|len\s+lich)\s+(?:gửi|gui)/i,
-      /web_fetch\s+.*(?:127|localhost|0\.0\.0\.0)/i,
+      /\bweb_fetch\b/i,
+      /\bweb_search\b/i,
+      /(?:truy\s+cập|truy\s+cap|truy cập|truy cap)\s+(?:trang|web|url|link|http|api|endpoint)/i,
+      /(?:mở|mo|vào|vao|đọc|doc)\s+(?:trang\s+)?(?:web|url|link|http)/i,
+      /(?:lấy|lay|fetch|get|request)\s+(?:dữ\s+liệu|du\s+lieu|data|nội\s+dung|noi\s+dung)\s+(?:từ|tu|from)\s+/i,
+      /(?:gọi|goi|call|hit)\s+(?:api|endpoint|url|server)/i,
+      /(?:tìm|tim|search|tra\s+cứu|tra\s+cuu)\s+(?:trên\s+)?(?:google|web|internet|mạng|mang)/i,
       /(?:đọc|doc|read)\s+(?:file\s+)?cron.*token/i,
       /bot_token/i,
       // --- File/memory tool lockdown (read, write, apply_patch, memory) ---
@@ -735,7 +741,7 @@ export async function handleModoroZaloInbound(params: {
       rawBody = '[nội dung nội bộ đã được lọc]';
     }
   }
-  // === END 9BizClaw COMMAND-BLOCK PATCH v3 ===
+  // === END 9BizClaw COMMAND-BLOCK PATCH v4 ===
   // === 9BizClaw MEDIA-TYPE-FILTER PATCH v1 ===
   // Skip AI processing for media types that have no extractable text content.
   // Stickers, voice messages, GIFs, and file attachments without caption will

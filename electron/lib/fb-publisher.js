@@ -3,17 +3,42 @@
 const https = require('https');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const GRAPH_API = 'graph.facebook.com';
 const API_VERSION = 'v25.0';
 const RESPONSE_TIMEOUT_MS = 30000;
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+const MIN_POST_INTERVAL_MS = 10 * 60 * 1000;
+const JITTER_MAX_MS = 2 * 60 * 1000;
+const TIMESTAMP_FILE = path.join(process.platform === 'win32'
+  ? path.join(process.env.APPDATA || os.homedir(), '9bizclaw')
+  : path.join(os.homedir(), '.9bizclaw'), 'fb-last-post.json');
+let _lastPostAt = _loadLastPostAt();
+let _postQueue = Promise.resolve();
+
+function _loadLastPostAt() {
+  try {
+    const data = JSON.parse(fs.readFileSync(TIMESTAMP_FILE, 'utf-8'));
+    return typeof data.t === 'number' ? data.t : 0;
+  } catch { return 0; }
+}
+
+function _saveLastPostAt(ts) {
+  try {
+    const dir = path.dirname(TIMESTAMP_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(TIMESTAMP_FILE, JSON.stringify({ t: ts }));
+  } catch {}
+}
 
 function graphRequest(method, endpoint, token, body) {
   return new Promise((resolve, reject) => {
     const url = `/${API_VERSION}${endpoint}`;
     const isPost = method === 'POST';
     const payload = isPost && body ? JSON.stringify(body) : null;
-    const headers = { 'Authorization': `Bearer ${token}` };
+    const headers = { 'Authorization': `Bearer ${token}`, 'User-Agent': USER_AGENT };
     if (payload) {
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = Buffer.byteLength(payload);
@@ -78,6 +103,7 @@ function graphMultipartPhoto(pageId, token, message, imageBuffer, imagePath) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
+        'User-Agent': USER_AGENT,
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Content-Length': payload.length
       }
@@ -148,15 +174,40 @@ async function verifyToken(token) {
   }
 }
 
-async function postText(pageId, token, message) {
-  const data = await graphRequest('POST', `/${pageId}/feed`, token, { message });
-  return { postId: data.id, postUrl: formatPostUrl(data.id) };
+async function enforcePostInterval() {
+  const elapsed = Date.now() - _lastPostAt;
+  const jitter = Math.floor(Math.random() * JITTER_MAX_MS);
+  const required = MIN_POST_INTERVAL_MS + jitter;
+  if (_lastPostAt > 0 && elapsed < required) {
+    const waitMs = required - elapsed;
+    console.log(`[fb-publisher] rate limit: waiting ${Math.round(waitMs / 1000)}s before next post (jitter +${Math.round(jitter / 1000)}s)`);
+    await new Promise(r => setTimeout(r, waitMs));
+  }
 }
 
-async function postPhoto(pageId, token, message, imageBuffer, imagePath) {
-  const data = await graphMultipartPhoto(pageId, token, message, imageBuffer, imagePath);
-  const postId = data.post_id || data.id;
-  return { postId, postUrl: formatPostUrl(postId) };
+function postText(pageId, token, message) {
+  const job = _postQueue.then(async () => {
+    await enforcePostInterval();
+    const data = await graphRequest('POST', `/${pageId}/feed`, token, { message });
+    _lastPostAt = Date.now();
+    _saveLastPostAt(_lastPostAt);
+    return { postId: data.id, postUrl: formatPostUrl(data.id) };
+  });
+  _postQueue = job.catch(() => {});
+  return job;
+}
+
+function postPhoto(pageId, token, message, imageBuffer, imagePath) {
+  const job = _postQueue.then(async () => {
+    await enforcePostInterval();
+    const data = await graphMultipartPhoto(pageId, token, message, imageBuffer, imagePath);
+    _lastPostAt = Date.now();
+    _saveLastPostAt(_lastPostAt);
+    const postId = data.post_id || data.id;
+    return { postId, postUrl: formatPostUrl(postId) };
+  });
+  _postQueue = job.catch(() => {});
+  return job;
 }
 
 async function getRecentPosts(pageId, token, limit = 5) {

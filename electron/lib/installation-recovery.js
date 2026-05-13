@@ -22,7 +22,7 @@ const RECOVERY_STRATEGIES = {
   // Disk errors
   'ENOSPC': { retry: false, action: 'cleanup-disk' },
   'EACCES': { retry: false, action: 'request-permission' },
-  'EBUSY': { retry: true, retryDelay: 2000, maxRetries: 2 },
+  'EBUSY': { retry: true, retryDelay: 10000, maxRetries: 4 },
 
   // Install errors
   'NPM_INSTALL_FAILED': { retry: true, retryDelay: 3000, maxRetries: 2 },
