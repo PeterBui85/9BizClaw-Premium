@@ -5164,23 +5164,31 @@ ipcMain.handle('download-and-install-update', async () => {
   });
 
   ipcMain.handle('create-user-skill', async (_event, data) => {
-    const sm = require('./skill-manager');
-    return sm.createUserSkill(data);
+    try {
+      const sm = require('./skill-manager');
+      return sm.createUserSkill({ ...data, createdVia: 'dashboard' });
+    } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('update-user-skill', async (_event, id, data) => {
-    const sm = require('./skill-manager');
-    return sm.updateUserSkill(id, data);
+    try {
+      const sm = require('./skill-manager');
+      return sm.updateUserSkill(id, data);
+    } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('delete-user-skill', async (_event, id) => {
-    const sm = require('./skill-manager');
-    return sm.deleteUserSkill(id);
+    try {
+      const sm = require('./skill-manager');
+      return sm.deleteUserSkill(id);
+    } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('toggle-user-skill', async (_event, id, enabled) => {
-    const sm = require('./skill-manager');
-    return sm.toggleUserSkill(id, enabled);
+    try {
+      const sm = require('./skill-manager');
+      return sm.toggleUserSkill(id, enabled);
+    } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('check-skill-conflict', async (_event, data) => {

@@ -102,7 +102,7 @@ function sanitizeContent(raw) {
     .slice(0, 500);
 }
 
-async function createUserSkill({ name, type, appliesTo, trigger, content }) {
+async function createUserSkill({ name, type, appliesTo, trigger, content, createdVia }) {
   return withSkillLock(async () => {
     const registry = readRegistry();
     if (registry.skills.length >= 100) throw new Error('Too many skills (max 100). Delete some first.');
@@ -128,7 +128,7 @@ async function createUserSkill({ name, type, appliesTo, trigger, content }) {
       summary: sanitized.slice(0, 120),
       enabled: true,
       createdAt: new Date().toISOString(),
-      createdVia: 'telegram-chat',
+      createdVia: createdVia || 'telegram-chat',
     };
     registry.skills.push(entry);
     writeRegistry(registry);
@@ -262,7 +262,9 @@ function getShippedSkillContent(relPath) {
   const { getWorkspace } = require('./workspace');
   const ws = getWorkspace();
   if (!ws) return null;
-  const p = path.join(ws, 'skills', relPath + '.md');
+  const skillsDir = path.join(ws, 'skills');
+  const p = path.resolve(skillsDir, relPath + '.md');
+  if (!p.startsWith(skillsDir + path.sep) && p !== skillsDir) return null;
   try { return fs.readFileSync(p, 'utf-8'); } catch { return null; }
 }
 
