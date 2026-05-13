@@ -2612,6 +2612,9 @@
         <div class="sidebar-menu-item" data-page="persona-mix" onclick="switchPage('persona-mix')">
           <span class="icon" data-icon="sparkles"></span><span class="label">Tính cách bot</span>
         </div>
+        <div class="sidebar-menu-item" data-page="skills" onclick="switchPage('skills')">
+          <span class="icon" data-icon="zap"></span><span class="label">Skills</span>
+        </div>
         <div class="sidebar-menu-item" data-page="image-assets" onclick="switchPage('image-assets')">
           <span class="icon" data-icon="image"></span><span class="label">Tài sản hình ảnh</span>
         </div>
@@ -3329,6 +3332,40 @@
         <div class="persona-actions">
           <button class="btn btn-primary" onclick="savePersonaMix()">Lưu tính cách</button>
           <span id="persona-save-status"></span>
+        </div>
+      </div>
+
+      <!-- PAGE: Skills -->
+      <div class="page" id="page-skills">
+        <div class="page-header">
+          <span class="page-icon" data-icon="zap" data-icon-size="26"></span>
+          <div>
+            <h2>Skills</h2>
+            <div class="page-sub">Quản lý skill hệ thống và tùy chỉnh</div>
+          </div>
+        </div>
+
+        <div id="skills-user-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text-primary)">Tùy chỉnh</h3>
+            <button class="btn btn-sm" onclick="showCreateSkillForm()" style="font-size:13px">+ Tạo mới</button>
+          </div>
+          <div id="skills-create-form" style="display:none" class="card">
+            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Tên skill</label><input id="skill-name" class="input" placeholder="VD: Tone chuyên nghiệp cho Facebook" style="width:100%;margin-top:4px"></div>
+            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Loại</label><select id="skill-type" class="input" style="width:100%;margin-top:4px"><option value="rule">Rule (quy tắc chung)</option><option value="override">Override (tùy chỉnh skill hệ thống)</option><option value="workflow">Workflow (quy trình)</option><option value="custom">Custom</option></select></div>
+            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Áp cho skill hệ thống (bỏ trống = standalone)</label><select id="skill-applies-to" class="input" style="width:100%;margin-top:4px"><option value="">Standalone</option></select></div>
+            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Khi nào áp dụng</label><input id="skill-trigger" class="input" placeholder="VD: khi đăng bài Facebook" style="width:100%;margin-top:4px"></div>
+            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Nội dung (tối đa 500 ký tự)</label><textarea id="skill-content" class="input" rows="4" maxlength="500" placeholder="VD: Xưng chúng tôi, tone chuyên nghiệp, không dùng emoji" style="width:100%;margin-top:4px;resize:vertical"></textarea></div>
+            <div id="skill-conflict-warning" style="display:none;padding:8px 12px;background:var(--warning-bg, #fff3cd);border-radius:6px;margin-bottom:8px;font-size:13px;color:var(--warning-text, #856404)"></div>
+            <div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="saveNewSkill()">Lưu</button><button class="btn btn-sm" onclick="hideCreateSkillForm()">Hủy</button></div>
+          </div>
+          <div id="skills-user-list"></div>
+          <div id="skills-user-empty" style="display:none;padding:24px;text-align:center;color:var(--text-secondary);font-size:14px">Chưa có skill tùy chỉnh. Tạo mới hoặc nhắn qua Telegram.</div>
+        </div>
+
+        <div id="skills-system-section" style="margin-top:24px">
+          <h3 style="margin:0 0 12px;font-size:15px;font-weight:600;color:var(--text-primary)">Hệ thống</h3>
+          <div id="skills-system-list"></div>
         </div>
       </div>
 
@@ -4962,6 +4999,7 @@
       if (page === 'persona-mix') {
         loadPersonaMix();
       }
+      if (page === 'skills') loadSkills();
       if (page === 'facebook') {
         loadFacebookTab();
       }
@@ -10052,6 +10090,103 @@
       } catch (e) {
         alert('Lỗi: ' + e.message);
       }
+    }
+
+    // === Skills Tab ===
+    async function loadSkills() {
+      if (!window.claw || !window.claw.listAllSkills) return;
+      try {
+        const { shipped, user } = await window.claw.listAllSkills();
+        renderUserSkills(user || []);
+        renderShippedSkills(shipped || []);
+        populateAppliesToDropdown(shipped || []);
+      } catch (e) { console.error('loadSkills', e); }
+    }
+
+    function renderUserSkills(skills) {
+      const list = document.getElementById('skills-user-list');
+      const empty = document.getElementById('skills-user-empty');
+      if (!skills.length) { list.innerHTML = ''; empty.style.display = ''; return; }
+      empty.style.display = 'none';
+      list.innerHTML = skills.map(s => `
+        <div class="card" style="margin-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <span style="font-weight:600;font-size:14px;color:var(--text-primary)">${esc(s.name)}</span>
+              <span style="font-size:11px;padding:2px 6px;border-radius:4px;background:var(--badge-bg, #e8e8e8);color:var(--text-secondary);margin-left:6px">${esc(s.type)}</span>
+              ${s.appliesTo && s.appliesTo.length ? `<span style="font-size:11px;color:var(--text-secondary);margin-left:6px">${esc(s.appliesTo.join(', '))}</span>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <label class="toggle-switch" style="margin:0"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSkill('${escAttr(s.id)}', this.checked)"><span class="toggle-slider"></span></label>
+              <button class="btn btn-sm btn-danger" onclick="deleteSkill('${escAttr(s.id)}', '${escAttr(s.name)}')" style="font-size:12px;padding:2px 8px">Xóa</button>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-top:4px">${esc(s.summary || '')}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderShippedSkills(skills) {
+      const list = document.getElementById('skills-system-list');
+      const grouped = {};
+      for (const s of skills) {
+        const cat = s.category || 'Khác';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(s);
+      }
+      list.innerHTML = Object.entries(grouped).map(([cat, items]) => `
+        <details style="margin-bottom:8px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary);padding:6px 0">${esc(cat)} (${items.length})</summary>
+          <div style="padding-left:12px">${items.map(s => `
+            <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-primary)">${esc(s.name)}</div>
+          `).join('')}</div>
+        </details>
+      `).join('');
+    }
+
+    function populateAppliesToDropdown(shipped) {
+      const sel = document.getElementById('skill-applies-to');
+      if (!sel) return;
+      const first = sel.querySelector('option[value=""]');
+      sel.innerHTML = '';
+      if (first) sel.appendChild(first);
+      for (const s of shipped) {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name + ' (' + s.category + ')';
+        sel.appendChild(opt);
+      }
+    }
+
+    function showCreateSkillForm() { document.getElementById('skills-create-form').style.display = ''; }
+    function hideCreateSkillForm() {
+      document.getElementById('skills-create-form').style.display = 'none';
+      document.getElementById('skill-conflict-warning').style.display = 'none';
+      ['skill-name','skill-trigger','skill-content'].forEach(id => { document.getElementById(id).value = ''; });
+    }
+
+    async function saveNewSkill() {
+      const name = document.getElementById('skill-name').value.trim();
+      const type = document.getElementById('skill-type').value;
+      const appliesTo = document.getElementById('skill-applies-to').value;
+      const trigger = document.getElementById('skill-trigger').value.trim();
+      const content = document.getElementById('skill-content').value.trim();
+      if (!name || !content) return alert('Cần nhập tên và nội dung.');
+      try {
+        const result = await window.claw.createUserSkill({
+          name, type, appliesTo: appliesTo ? [appliesTo] : [], trigger, content
+        });
+        if (result && result.id) { hideCreateSkillForm(); loadSkills(); }
+      } catch (e) { alert('Lỗi: ' + (e.message || e)); }
+    }
+
+    async function deleteSkill(id, name) {
+      if (!confirm('Xóa skill "' + name + '"?')) return;
+      try { await window.claw.deleteUserSkill(id); loadSkills(); } catch (e) { alert('Lỗi: ' + e.message); }
+    }
+
+    async function toggleSkill(id, enabled) {
+      try { await window.claw.toggleUserSkill(id, enabled); } catch (e) { alert('Lỗi: ' + e.message); loadSkills(); }
     }
 
     // Load status when switching to Google page
