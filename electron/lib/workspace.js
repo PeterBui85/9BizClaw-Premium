@@ -32,7 +32,7 @@ const DEFAULT_SCHEDULES_JSON = [
 ];
 
 // --- AGENTS.md versioning (private) ---
-const CURRENT_AGENTS_MD_VERSION = 98;
+const CURRENT_AGENTS_MD_VERSION = 99;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 // ─── User data dir (Electron/APPDATA level) ─────────────────────

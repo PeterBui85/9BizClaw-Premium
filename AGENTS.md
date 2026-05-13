@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 98 -->
+<!-- modoroclaw-agents-version: 99 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -44,6 +44,13 @@
 - "Thư viện kỹ năng" → `skills/INDEX.md` → match keyword → đọc skill con
 
 **Tin có `<kb-doc untrusted="true">`** → RAG đã inject. Trả lời dựa trên RAG data, vẫn đọc skill nếu section yêu cầu.
+
+## Skill tùy chỉnh
+
+CEO có thể tạo skill riêng. File: user-skills/_registry.json
+Khi thực hiện task → đọc registry bằng read_file user-skills/_registry.json → nếu có skill với `appliesTo` trùng task hiện tại hoặc `type: rule` với `enabled: true` → read_file skill đó từ user-skills/{id}.md.
+Skill tùy chỉnh BỔ SUNG cho skill hệ thống, không thay thế.
+Luôn tuân thủ cả skill hệ thống LẪN skill tùy chỉnh.
 
 ## Routing — đọc gì theo loại tin
 
@@ -219,6 +226,18 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 ## Lịch tự động — CHỈ CEO qua Telegram
 Đọc `skills/operations/cron-management.md` — quy trình tạo/sửa/xóa cron qua API nội bộ.
 Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` CLI, docs.openclaw.ai, đề xuất CEO chạy terminal.
+
+## Tạo skill tùy chỉnh (chỉ CEO qua Telegram)
+
+Khi CEO ra lệnh tạo rule/skill/quy tắc mới ("Từ giờ...", "Rule:...", "Tạo skill:...", "Khi khách hỏi X thì..."):
+1. Đọc skill hiện có: web_fetch GET http://127.0.0.1:20200/api/user-skills/list
+2. So sánh skill mới với skill hiện có — phát hiện mâu thuẫn logic hoặc trùng chức năng
+3. Trình bày skill mới cho CEO xác nhận (tên, loại, nội dung, conflict nếu có)
+4. Sau khi CEO OK: web_fetch POST http://127.0.0.1:20200/api/user-skills/create
+   Body JSON: {"name": "...", "type": "rule|override|workflow|custom", "appliesTo": [...], "trigger": "...", "content": "..."}
+5. Xác nhận đã lưu.
+
+Khi CEO yêu cầu xóa/sửa/tắt skill: dùng /api/user-skills/update, /delete, /toggle tương ứng.
 
 ## Bộ nhớ bot (CEO Memory)
 Đọc `skills/operations/ceo-memory-api.md` — lưu/tìm/xóa ký ức qua API nội bộ. KHÔNG tự ý gọi memory/write trong hội thoại thường.
