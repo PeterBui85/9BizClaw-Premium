@@ -10172,6 +10172,26 @@
       const trigger = document.getElementById('skill-trigger').value.trim();
       const content = document.getElementById('skill-content').value.trim();
       if (!name || !content) return alert('Cần nhập tên và nội dung.');
+      const warnEl = document.getElementById('skill-conflict-warning');
+      try {
+        const check = await window.claw.checkSkillConflict({
+          content, appliesTo: appliesTo ? [appliesTo] : [], trigger
+        });
+        const warnings = [];
+        if (check.conflicts && check.conflicts.length) {
+          for (const c of check.conflicts) warnings.push(esc(c.skillName) + ': ' + esc(c.reasons.join(', ')));
+        }
+        if (check.semantic && check.semantic.hasConflict) {
+          warnings.push(esc(check.semantic.description || 'Mâu thuẫn logic'));
+        }
+        if (warnings.length) {
+          warnEl.innerHTML = '<b>Cảnh báo:</b> ' + warnings.join('<br>');
+          warnEl.style.display = '';
+          if (!confirm('Phát hiện xung đột. Vẫn tạo skill?')) return;
+        } else {
+          warnEl.style.display = 'none';
+        }
+      } catch (e) { warnEl.style.display = 'none'; }
       try {
         const result = await window.claw.createUserSkill({
           name, type, appliesTo: appliesTo ? [appliesTo] : [], trigger, content

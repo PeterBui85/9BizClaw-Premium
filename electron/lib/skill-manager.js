@@ -192,7 +192,8 @@ function listUserSkills() {
 function getUserSkillContent(id) {
   const dir = getUserSkillsDir();
   if (!dir) return null;
-  const p = path.join(dir, id + '.md');
+  const p = path.resolve(dir, id + '.md');
+  if (!p.startsWith(dir + path.sep) && p !== dir) return null;
   try { return fs.readFileSync(p, 'utf-8'); } catch { return null; }
 }
 
