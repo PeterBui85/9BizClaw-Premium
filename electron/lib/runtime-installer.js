@@ -130,7 +130,7 @@ function classifyInstallError(error) {
   if (msg.includes('certificate') || msg.includes('cert') || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') return 'UNABLE_TO_VERIFY_LEAF_SIGNATURE';
   if (code === 'CERT_HAS_EXPIRED') return 'CERT_HAS_EXPIRED';
   if (code === 'ENOSPC') return 'ENOSPC';
-  if (code === 'EACCES') return 'EACCES';
+  if (code === 'EACCES' || msg.includes('eacces') || msg.includes('permission denied')) return 'EACCES';
   if (msg.includes('npm') && (msg.includes('cert') || msg.includes('ssl'))) return 'NPM_CERT_ERROR';
   if (msg.includes('npm') && (msg.includes('connect') || msg.includes('reset'))) return 'NPM_ECONNRESET';
   if (msg.includes('xcode-select') || msg.includes('xcode_select')) return 'XCODE_SELECT';
@@ -412,6 +412,11 @@ function buildEnvWithGitPath(extra) {
     const shimGit = findGitBin();
     env.npm_config_git = shimGit || '/usr/bin/false';
   }
+  // Isolate npm cache from system ~/.npm — avoids EACCES when ~/.npm has
+  // root-owned files from a previous sudo npm install.
+  const { app } = require('electron');
+  const isolatedCache = path.join(app.getPath('userData'), 'vendor', '.npm-cache');
+  env.npm_config_cache = isolatedCache;
   return env;
 }
 
