@@ -217,6 +217,15 @@ contextBridge.exposeInMainWorld('claw', {
   getPersonaMix: () => ipcRenderer.invoke('get-persona-mix'),
   savePersonaMix: (mix) => ipcRenderer.invoke('save-persona-mix', mix),
 
+  // User Skills
+  listAllSkills: () => ipcRenderer.invoke('list-all-skills'),
+  getSkillDetail: (id, source) => ipcRenderer.invoke('get-skill-detail', id, source),
+  createUserSkill: (data) => ipcRenderer.invoke('create-user-skill', data),
+  updateUserSkill: (id, data) => ipcRenderer.invoke('update-user-skill', id, data),
+  deleteUserSkill: (id) => ipcRenderer.invoke('delete-user-skill', id),
+  toggleUserSkill: (id, enabled) => ipcRenderer.invoke('toggle-user-skill', id, enabled),
+  checkSkillConflict: (data) => ipcRenderer.invoke('check-skill-conflict', data),
+
   // Brand Assets
   listBrandAssets: () => ipcRenderer.invoke('list-brand-assets'),
   uploadBrandAsset: (filePath, name) => ipcRenderer.invoke('upload-brand-asset', filePath, name),
