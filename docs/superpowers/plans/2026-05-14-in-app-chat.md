@@ -159,17 +159,21 @@ git commit -m "feat(chat): wire IPC bridges and handler registration"
 
 ---
 
-## Chunk 2: Frontend — Native Chat UI
+## Chunk 2: Frontend — Native Chat UI + Cleanup
 
-### Task 3: Replace `#page-chat` with native chat UI
+### Task 3: Replace `#page-chat` with native chat UI and remove webview/prewarm code
 
 **Files:**
+- Modify: `electron/ui/dashboard.html:622` (update comment — remove "Chat")
 - Modify: `electron/ui/dashboard.html:633-640` (replace `.chat-shell` CSS with chat bubble CSS)
 - Modify: `electron/ui/dashboard.html:3595-3625` (replace page HTML)
 - Modify: `electron/ui/dashboard.html:4987-4989` (update `switchPage` handler for chat)
-- Modify: `electron/ui/dashboard.html:5825-5826` (remove `prewarmChatEmbed`)
+- Modify: `electron/ui/dashboard.html:5740` (update comment — remove "Chat")
+- Modify: `electron/ui/dashboard.html:5742-5751` (remove `chat` from embed maps)
+- Modify: `electron/ui/dashboard.html:5825-5827` (remove `prewarmChatEmbed`)
 - Modify: `electron/ui/dashboard.html:7066-7073` (remove bot-status chat embed logic)
-- Modify: `electron/ui/dashboard.html:5742-5751` (remove 'chat' from `EMBED_URLS`/`EMBED_PARTITIONS`/`embedLoaded`)
+- Modify: `electron/scripts/check-openclaw-launchers.js:16-18` (remove chat prewarm checks)
+- Modify: `electron/scripts/check-premium-theme-no-updates.js:30-31` (remove chat-shell + prewarm checks)
 
 - [ ] **Step 1: Replace `.chat-shell` CSS block (lines 633-640) with chat UI styles**
 
@@ -227,7 +231,6 @@ Remove the entire `<!-- PAGE: Chat (embedded OpenClaw chat UI) -->` block and re
   <div class="page-header">
     <span class="page-icon" data-icon="messages-square" data-icon-size="26"></span>
     <div><h2>Chat</h2><div class="page-sub">Trò chuyện trực tiếp với trợ lý AI</div></div>
-    <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start"></div>
   </div>
   <div class="chat-container">
     <div class="chat-messages" id="chat-messages"></div>
@@ -440,29 +443,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 ```
 
-- [ ] **Step 6: Commit**
-
-```bash
-git add electron/ui/dashboard.html
-git commit -m "feat(chat): native chat UI — bubbles, input, polling, empty state"
-```
-
----
-
-## Chunk 3: Cleanup
-
-### Task 4: Remove webview/prewarm code for chat
-
-**Files:**
-- Modify: `electron/ui/dashboard.html:622` (update comment — remove "Chat")
-- Modify: `electron/ui/dashboard.html:5740` (update comment — remove "Chat")
-- Modify: `electron/ui/dashboard.html:5742-5751` (remove `chat` from embed maps)
-- Modify: `electron/ui/dashboard.html:5825-5827` (remove `prewarmChatEmbed`)
-- Modify: `electron/ui/dashboard.html:7066-7073` (remove bot-status chat embed logic)
-- Modify: `electron/scripts/check-openclaw-launchers.js:16-18` (remove chat prewarm checks)
-- Modify: `electron/scripts/check-premium-theme-no-updates.js:30-31` (remove chat-shell + prewarm checks)
-
-- [ ] **Step 1: Update section comments**
+- [ ] **Step 6: Update section comments**
 
 In `dashboard.html` line 622, change:
 ```css
@@ -482,7 +463,7 @@ to:
 //  EMBEDDED WEB UI (9Router + OpenClaw)
 ```
 
-- [ ] **Step 2: Remove `chat` from embed maps**
+- [ ] **Step 7: Remove `chat` from embed maps**
 
 In `dashboard.html` around line 5742, change:
 ```javascript
@@ -511,7 +492,7 @@ const EMBED_PARTITIONS = {
 };
 ```
 
-- [ ] **Step 3: Remove `prewarmChatEmbed` function**
+- [ ] **Step 8: Remove `prewarmChatEmbed` function**
 
 Delete lines 5825-5827:
 ```javascript
@@ -522,7 +503,7 @@ function prewarmChatEmbed() {
 
 Also search for any call site of `prewarmChatEmbed()` and remove it.
 
-- [ ] **Step 4: Remove bot-status chat embed auto-load**
+- [ ] **Step 9: Remove bot-status chat embed auto-load**
 
 Around line 7066-7073, remove the chat-specific embed logic:
 ```javascript
@@ -535,7 +516,7 @@ if (data.running && currentPage === 'chat') {
 }
 ```
 
-- [ ] **Step 5: Update smoke/check scripts**
+- [ ] **Step 10: Update smoke/check scripts**
 
 In `electron/scripts/check-openclaw-launchers.js`, remove lines referencing chat prewarm (line 16-17):
 ```javascript
@@ -570,7 +551,7 @@ And add new check entries for the native chat:
 'startChatPoll',
 ```
 
-- [ ] **Step 6: Run smoke test**
+- [ ] **Step 11: Run smoke test**
 
 ```powershell
 node electron/scripts/smoke-test.js
@@ -578,18 +559,18 @@ node electron/scripts/smoke-test.js
 
 Expected: PASS. Verify no references to removed functions.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add electron/ui/dashboard.html electron/scripts/check-openclaw-launchers.js electron/scripts/check-premium-theme-no-updates.js
-git commit -m "refactor(chat): remove webview/prewarm code, update check scripts"
+git commit -m "feat(chat): native chat UI + remove webview/prewarm code"
 ```
 
 ---
 
-## Chunk 4: Integration test + system map
+## Chunk 3: Integration test + system map
 
-### Task 5: Final verification
+### Task 4: Final verification
 
 - [ ] **Step 1: Regenerate system map**
 
