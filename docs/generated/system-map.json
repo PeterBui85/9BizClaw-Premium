@@ -2538,6 +2538,14 @@
       "bytes": 236571
     },
     {
+      "path": "electron/lib/updates.js",
+      "bytes": 182889
+    },
+    {
+      "path": "electron/lib/license.js",
+      "bytes": 177973
+    },
+    {
       "path": "electron/lib/cron-api.js",
       "bytes": 114733
     },
@@ -2563,7 +2571,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 63159
+      "bytes": 63827
     },
     {
       "path": "electron/lib/workspace.js",
