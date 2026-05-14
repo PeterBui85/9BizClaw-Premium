@@ -2153,6 +2153,20 @@ function startCronApi() {
         return jsonResp(res, 500, { error: String(e?.message || e).slice(0, 300) });
       }
 
+    // === 9Router auth redirect (cookie bridge for default browser) ===
+    } else if (urlPath === '/api/internal/9router-redirect' && req.method === 'GET') {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      const token = u.searchParams.get('token');
+      const target = u.searchParams.get('path') || '/dashboard/providers/codex';
+      if (!token) return jsonResp(res, 400, { error: 'token required' });
+      const safePath = target.startsWith('/') ? target : '/' + target;
+      res.writeHead(302, {
+        'Set-Cookie': `auth_token=${token}; Path=/; HttpOnly; SameSite=Lax`,
+        'Location': 'http://127.0.0.1:20128' + safePath,
+        'Cache-Control': 'no-store',
+      });
+      return res.end();
+
     // === User Skills API ===
     } else if (urlPath === '/api/user-skills/list' && (req.method === 'GET' || req.method === 'POST')) {
       try {

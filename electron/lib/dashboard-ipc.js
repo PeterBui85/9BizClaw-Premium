@@ -225,26 +225,19 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           req.end();
         });
 
-        const { session: electronSession } = require('electron');
-        const ses = electronSession.fromPartition('persist:embed-9router');
-        await ses.cookies.set({
-          url: 'http://127.0.0.1:20128',
-          name: 'auth_token',
-          value: cookieValue,
-          path: '/',
-        });
-        console.log('[setup-9router-auto] openCodexAuthed — cookie injected');
+        const { getCronApiPort } = require('./cron-api');
+        const port = getCronApiPort();
+        const redirectUrl = `http://127.0.0.1:${port}/api/internal/9router-redirect?token=${encodeURIComponent(cookieValue)}&path=/dashboard/providers/codex`;
+        const { shell } = require('electron');
+        shell.openExternal(redirectUrl);
+        console.log('[setup-9router-auto] openCodexAuthed — opened in default browser via cookie bridge');
       } catch (loginErr) {
         console.warn('[setup-9router-auto] openCodexAuthed — login failed:', loginErr.message);
         loginFailed = true;
+        const { shell } = require('electron');
+        shell.openExternal('http://127.0.0.1:20128/dashboard/providers/codex');
       }
 
-      const { BrowserWindow } = require('electron');
-      const codexWin = new BrowserWindow({
-        width: 1100, height: 750,
-        webPreferences: { partition: 'persist:embed-9router' },
-      });
-      codexWin.loadURL('http://127.0.0.1:20128/dashboard/providers/codex');
       return { success: true, windowOpened: true, loginFailed };
     }
 
