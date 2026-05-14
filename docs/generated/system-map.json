@@ -2553,7 +2553,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 236638
+      "bytes": 236848
     },
     {
       "path": "electron/ui/wizard.html",
