@@ -225,7 +225,8 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           req.end();
         });
 
-        const { getCronApiPort } = require('./cron-api');
+        const { getCronApiPort, startCronApi: ensureCronApi } = require('./cron-api');
+        try { ensureCronApi(); } catch {}
         const port = getCronApiPort();
         const redirectUrl = `http://127.0.0.1:${port}/api/internal/9router-redirect?token=${encodeURIComponent(cookieValue)}&path=/dashboard/providers/codex`;
         const { shell } = require('electron');
