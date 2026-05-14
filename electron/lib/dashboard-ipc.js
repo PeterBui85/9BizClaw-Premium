@@ -136,6 +136,7 @@ const {
   getAgentFlagProfile, getAgentCliHealthy,
 } = require('./cron');
 const { startCronApi, getCronApiToken, getCronApiPort } = require('./cron-api');
+const { registerChatIpc } = require('./chat');
 
 // ============================================
 //  GOOGLE CALENDAR
@@ -161,6 +162,8 @@ function startRuntimeSidecars(source) {
 }
 
 function registerAllIpcHandlers() {
+
+registerChatIpc();
 
 // ============================================
 //  IPC HANDLERS

@@ -1489,6 +1489,7 @@ try {
   const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
   const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const chatSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'chat.js'), 'utf-8');
   const invokeRe = /ipcRenderer\.invoke\(['"]([^'"]+)['"]/g;
   const handleRe = /\.handle\(['"]([^'"]+)['"]/g;
   const preloadChannels = new Set();
@@ -1497,6 +1498,7 @@ try {
   const handleChannels = new Set();
   while ((im = handleRe.exec(ipcSrc)) !== null) handleChannels.add(im[1]);
   while ((im = handleRe.exec(mainSrc)) !== null) handleChannels.add(im[1]);
+  while ((im = handleRe.exec(chatSrc)) !== null) handleChannels.add(im[1]);
   const orphanBridges = [...preloadChannels].filter(ch => !handleChannels.has(ch));
   if (orphanBridges.length > 0) {
     fail('preload↔ipc parity', `preload.js calls ipcRenderer.invoke for channels with NO handler: [${orphanBridges.join(', ')}] — these will silently hang at runtime`);
