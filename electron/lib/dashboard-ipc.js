@@ -229,11 +229,15 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         });
 
         const { getCronApiPort, startCronApi: ensureCronApi } = require('./cron-api');
-        try { ensureCronApi(); } catch {}
+        try { ensureCronApi(); } catch (e) { console.warn('[setup-9router-auto] ensureCronApi failed:', e.message); }
         const port = getCronApiPort();
-        const redirectUrl = `http://127.0.0.1:${port}/api/internal/9router-redirect?token=${encodeURIComponent(cookieValue)}&path=/dashboard/providers/codex`;
         const { shell } = require('electron');
-        shell.openExternal(redirectUrl);
+        if (!port) {
+          shell.openExternal('http://127.0.0.1:20128/dashboard/providers/codex');
+        } else {
+          const redirectUrl = `http://127.0.0.1:${port}/api/internal/9router-redirect?token=${encodeURIComponent(cookieValue)}&path=/dashboard/providers/codex`;
+          shell.openExternal(redirectUrl);
+        }
         console.log('[setup-9router-auto] openCodexAuthed — opened in default browser via cookie bridge');
       } catch (loginErr) {
         console.warn('[setup-9router-auto] openCodexAuthed — login failed:', loginErr.message);
