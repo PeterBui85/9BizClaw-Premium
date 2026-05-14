@@ -2,8 +2,8 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 107,
-    "ipcHandlers": 167,
-    "preloadBridges": 159,
+    "ipcHandlers": 169,
+    "preloadBridges": 161,
     "dashboardPages": 15,
     "capabilityContracts": 5
   },
@@ -1122,6 +1122,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "get-chat-history",
+      "source": "electron/lib/chat.js"
+    },
+    {
       "channel": "get-compact-stats",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1554,6 +1558,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "send-chat-message",
+      "source": "electron/lib/chat.js"
+    },
+    {
       "channel": "set-app-prefs",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1811,6 +1819,11 @@
     {
       "name": "getCeoMemoryCount",
       "channel": "get-ceo-memory-count",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getChatHistory",
+      "channel": "get-chat-history",
       "source": "electron/preload.js"
     },
     {
@@ -2329,6 +2342,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "sendChatMessage",
+      "channel": "send-chat-message",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "setAppPrefs",
       "channel": "set-app-prefs",
       "source": "electron/preload.js"
@@ -2531,19 +2549,15 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 540393
+      "bytes": 547151
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 236571
+      "bytes": 236638
     },
     {
-      "path": "electron/lib/updates.js",
-      "bytes": 182889
-    },
-    {
-      "path": "electron/lib/license.js",
-      "bytes": 177973
+      "path": "electron/ui/wizard.html",
+      "bytes": 114781
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2551,11 +2565,11 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 100692
+      "bytes": 100664
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 84587
+      "bytes": 84068
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -2567,15 +2581,15 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 70353
+      "bytes": 70118
     },
     {
-      "path": "electron/ui/wizard.html",
-      "bytes": 63827
+      "path": "electron/ui/preview-telegram-redesign.html",
+      "bytes": 66621
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 46429
+      "bytes": 46568
     },
     {
       "path": "electron/lib/config.js",
@@ -2583,7 +2597,7 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 39478
+      "bytes": 44772
     },
     {
       "path": "electron/lib/nine-router.js",
