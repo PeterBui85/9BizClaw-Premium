@@ -1,10 +1,10 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 100,
-    "ipcHandlers": 160,
-    "preloadBridges": 152,
-    "dashboardPages": 14,
+    "apiRoutes": 107,
+    "ipcHandlers": 167,
+    "preloadBridges": 159,
+    "dashboardPages": 15,
     "capabilityContracts": 5
   },
   "apiRoutes": [
@@ -729,6 +729,15 @@
       ]
     },
     {
+      "path": "/api/internal/9router-redirect",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/internal/agent-deliver-zalo",
       "sources": [
         "electron/lib/cron-api.js"
@@ -846,6 +855,60 @@
       ]
     },
     {
+      "path": "/api/user-skills/check-conflict",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/user-skills/create",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/user-skills/delete",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/user-skills/list",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/user-skills/toggle",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/user-skills/update",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/workspace/append",
       "sources": [
         "electron/lib/cron-api.js"
@@ -935,6 +998,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "check-skill-conflict",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "check-telegram-ready",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -960,6 +1027,10 @@
     },
     {
       "channel": "create-knowledge-folder",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "create-user-skill",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1000,6 +1071,10 @@
     },
     {
       "channel": "delete-openclaw-cron",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "delete-user-skill",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1104,6 +1179,10 @@
     },
     {
       "channel": "get-shop-state",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-skill-detail",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1308,6 +1387,10 @@
     },
     {
       "channel": "knowledge-search",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "list-all-skills",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1523,7 +1606,15 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "toggle-user-skill",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "update-appointment",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "update-user-skill",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1583,6 +1674,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "checkSkillConflict",
+      "channel": "check-skill-conflict",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "checkTelegramReady",
       "channel": "check-telegram-ready",
       "source": "electron/preload.js"
@@ -1605,6 +1701,11 @@
     {
       "name": "createKnowledgeFolder",
       "channel": "create-knowledge-folder",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "createUserSkill",
+      "channel": "create-user-skill",
       "source": "electron/preload.js"
     },
     {
@@ -1650,6 +1751,11 @@
     {
       "name": "deleteOpenclawCron",
       "channel": "delete-openclaw-cron",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "deleteUserSkill",
+      "channel": "delete-user-skill",
       "source": "electron/preload.js"
     },
     {
@@ -1775,6 +1881,11 @@
     {
       "name": "getShopState",
       "channel": "get-shop-state",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getSkillDetail",
+      "channel": "get-skill-detail",
       "source": "electron/preload.js"
     },
     {
@@ -2028,6 +2139,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "listAllSkills",
+      "channel": "list-all-skills",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "listAppointments",
       "channel": "list-appointments",
       "source": "electron/preload.js"
@@ -2278,8 +2394,18 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "toggleUserSkill",
+      "channel": "toggle-user-skill",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "updateAppointment",
       "channel": "update-appointment",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "updateUserSkill",
+      "channel": "update-user-skill",
       "source": "electron/preload.js"
     },
     {
@@ -2363,6 +2489,10 @@
       "source": "electron/ui/dashboard.html"
     },
     {
+      "id": "skills",
+      "source": "electron/ui/dashboard.html"
+    },
+    {
       "id": "telegram",
       "source": "electron/ui/dashboard.html"
     },
@@ -2401,15 +2531,15 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 530980
+      "bytes": 540393
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 233253
+      "bytes": 236571
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 111041
+      "bytes": 114733
     },
     {
       "path": "electron/lib/cron.js",
@@ -2437,7 +2567,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 45923
+      "bytes": 46429
     },
     {
       "path": "electron/lib/config.js",

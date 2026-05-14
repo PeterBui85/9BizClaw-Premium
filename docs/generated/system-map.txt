@@ -1,10 +1,10 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 100
-- ipcHandlers: 160
-- preloadBridges: 152
-- dashboardPages: 14
+- apiRoutes: 107
+- ipcHandlers: 167
+- preloadBridges: 159
+- dashboardPages: 15
 - capabilityContracts: 5
 
 Capability Contracts
@@ -95,6 +95,7 @@ API Routes
 - /api/image/preferences [local-api]
 - /api/image/skills [local-api]
 - /api/image/status [local-api]
+- /api/internal/9router-redirect [local-api]
 - /api/internal/agent-deliver-zalo [local-api]
 - /api/knowledge/add [local-api]
 - /api/media/describe [local-api]
@@ -108,6 +109,12 @@ API Routes
 - /api/memory/write [local-api]
 - /api/system/info [local-api]
 - /api/telegram/send-photo [local-api]
+- /api/user-skills/check-conflict [local-api]
+- /api/user-skills/create [local-api]
+- /api/user-skills/delete [local-api]
+- /api/user-skills/list [local-api]
+- /api/user-skills/toggle [local-api]
+- /api/user-skills/update [local-api]
 - /api/workspace/append [local-api]
 - /api/workspace/list [local-api]
 - /api/workspace/read [local-api]
@@ -129,20 +136,21 @@ Dashboard Pages
 - persona-mix
 - schedules
 - shop-state
+- skills
 - telegram
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 530980 bytes
-- electron/lib/dashboard-ipc.js: 233253 bytes
-- electron/lib/cron-api.js: 111041 bytes
+- electron/ui/dashboard.html: 540393 bytes
+- electron/lib/dashboard-ipc.js: 236571 bytes
+- electron/lib/cron-api.js: 114733 bytes
 - electron/lib/cron.js: 100692 bytes
 - electron/lib/channels.js: 84587 bytes
 - electron/lib/knowledge.js: 77313 bytes
 - electron/lib/runtime-installer.js: 76039 bytes
 - electron/lib/gateway.js: 70353 bytes
 - electron/ui/wizard.html: 63159 bytes
-- electron/lib/workspace.js: 45923 bytes
+- electron/lib/workspace.js: 46429 bytes
 - electron/lib/config.js: 45718 bytes
 - electron/lib/fb-schedule.js: 39478 bytes
 - electron/lib/nine-router.js: 38508 bytes
