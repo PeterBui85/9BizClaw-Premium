@@ -13,11 +13,12 @@ const requiredWiring = [
   'openAiModelsBrowser()',
   'openAdvancedSettings()',
   'copyAndShowGatewayToken()',
-  'prewarmChatEmbed',
-  "ensureEmbedLoaded('chat', { silent: true })",
-  "if (page === '9router' || page === 'openclaw' || page === 'chat')",
+  "if (page === '9router' || page === 'openclaw')",
   'http://127.0.0.1:20128/',
   'http://127.0.0.1:18789/',
+  'sendChatMsg',
+  'loadChatHistory',
+  'startChatPoll',
 ];
 
 const missing = requiredWiring.filter((needle) => !dashboard.includes(needle));
@@ -28,4 +29,4 @@ if (missing.length) {
   process.exit(1);
 }
 
-console.log('[openclaw-launchers] PASS OpenClaw chat and launcher wiring present');
+console.log('[openclaw-launchers] PASS OpenClaw native chat and launcher wiring present');

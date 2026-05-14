@@ -27,8 +27,7 @@ const mustInclude = [
   ['premium entrance helper', 'function maybeShowPremiumEntrance()'],
   ['premium entrance one-session key', 'premiumEntranceSeen'],
   ['premium entrance reduced motion guard', 'prefers-reduced-motion: reduce'],
-  ['clean chat shell class', 'chat-shell'],
-  ['chat prewarm helper', 'prewarmChatEmbed'],
+  ['native chat container class', 'chat-container'],
   ['silent embed load option', 'ensureEmbedLoaded(name, options = {})'],
   ['9BizClaw update button preserved', 'id="check-update-btn"'],
   ['9BizClaw update banner preserved', 'function showUpdateBanner(info) {'],
@@ -65,4 +64,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('[premium-theme-no-updates] PASS executive neutral theme, chat prewarm, and OpenClaw update UI disabled');
+console.log('[premium-theme-no-updates] PASS executive neutral theme, native chat, and OpenClaw update UI disabled');

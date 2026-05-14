@@ -619,7 +619,7 @@
       .know-columns { grid-template-columns:1fr; }
       #page-knowledge.page.active { height:auto; }
     }
-    /* Embedded web UI pages (9Router, OpenClaw, Chat) */
+    /* Embedded web UI pages (9Router, OpenClaw) */
     #page-9router.page.active, #page-openclaw.page.active, #page-chat.page.active {
       display:flex; flex-direction:column; height:calc(100vh - 32px);
     }
@@ -630,14 +630,34 @@
     }
     .embed-frame { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
     .embed-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:13px; z-index:1; background:linear-gradient(180deg, var(--surface), var(--bg)); }
-    .chat-shell { display:flex; flex-direction:column; min-height:0; flex:1; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); }
-    .chat-shell-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--border); background:var(--surface-elevated); flex-shrink:0; }
-    .chat-shell-title { display:flex; align-items:center; gap:8px; min-width:0; color:var(--text); font-size:13px; font-weight:700; }
-    .chat-shell-sub { color:var(--text-muted); font-size:11px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .chat-shell-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-    .chat-status-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:999px; border:1px solid rgba(34,197,94,.26); background:rgba(34,197,94,.1); color:var(--success); font-size:11px; font-weight:700; white-space:nowrap; }
-    .chat-status-pill::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px rgba(34,197,94,.45); }
-    .chat-shell .embed-wrap { border:0; border-radius:0; box-shadow:none; }
+    .chat-container { display:flex; flex-direction:column; flex:1; min-height:0; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); }
+    .chat-messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:4px; }
+    .chat-bubble-group { display:flex; flex-direction:column; gap:2px; margin-bottom:12px; }
+    .chat-bubble-group.user { align-items:flex-end; }
+    .chat-bubble-group.bot { align-items:flex-start; }
+    .chat-bubble { max-width:70%; padding:10px 14px; font-size:13px; line-height:1.5; word-break:break-word; white-space:pre-wrap; }
+    .chat-bubble.user { background:var(--accent); color:#fff; border-radius:12px 12px 4px 12px; }
+    .chat-bubble.bot { background:var(--bg); color:var(--text-secondary); border-radius:12px 12px 12px 4px; border:1px solid var(--border); }
+    .chat-time { font-size:10px; color:var(--text-muted); margin-top:2px; padding:0 4px; }
+    .chat-input-bar { display:flex; align-items:flex-end; gap:8px; padding:12px; border-top:1px solid var(--border); background:var(--surface-elevated); flex-shrink:0; }
+    .chat-input-bar textarea { flex:1; resize:none; border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:13px; color:var(--text); background:var(--bg); outline:none; font-family:inherit; max-height:120px; line-height:1.4; }
+    .chat-input-bar textarea:focus { border-color:var(--accent); }
+    .chat-send-btn { width:40px; height:40px; border-radius:10px; border:none; background:var(--accent); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:opacity .15s; }
+    .chat-send-btn:hover { opacity:.85; }
+    .chat-send-btn:disabled { opacity:.4; cursor:default; }
+    .chat-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; color:var(--text-muted); padding:40px 20px; text-align:center; }
+    .chat-empty-title { font-size:15px; font-weight:600; color:var(--text); }
+    .chat-empty-sub { font-size:13px; }
+    .chat-prompt-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+    .chat-prompt-chip { padding:8px 14px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text-secondary); font-size:12px; cursor:pointer; transition:border-color .15s, background .15s; }
+    .chat-prompt-chip:hover { border-color:var(--accent); background:var(--accent-soft, rgba(200,167,90,.06)); }
+    .chat-typing { display:flex; align-items:center; gap:4px; padding:10px 14px; }
+    .chat-typing span { width:6px; height:6px; border-radius:50%; background:var(--text-muted); animation:chatDot 1.4s infinite ease-in-out both; }
+    .chat-typing span:nth-child(1) { animation-delay:0s; }
+    .chat-typing span:nth-child(2) { animation-delay:.2s; }
+    .chat-typing span:nth-child(3) { animation-delay:.4s; }
+    @keyframes chatDot { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+    .chat-error { padding:10px 14px; font-size:12px; color:var(--danger); background:rgba(229,57,53,.08); border-radius:8px; margin:8px 0; text-align:center; }
     .zalo-mgr-row .info { flex:1; min-width:0; overflow:hidden; }
     .zalo-mgr-row .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .zalo-mgr-row .sub { font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -3592,34 +3612,19 @@
         </div>
       </div>
 
-      <!-- PAGE: Chat (embedded OpenClaw chat UI) -->
+      <!-- PAGE: Chat (native in-app chat) -->
       <div class="page" id="page-chat">
         <div class="page-header">
           <span class="page-icon" data-icon="messages-square" data-icon-size="26"></span>
-          <div><h2>Chat</h2><div class="page-sub">Trò chuyện trực tiếp với trợ lý qua OpenClaw Gateway</div></div>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
-            <button class="page-help-btn" title="Chat nhúng trong Dashboard, dùng cùng token Gateway">?</button>
-            <button class="btn btn-secondary btn-small" onclick="reloadEmbed('chat')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Reload</button>
-            <button class="btn btn-secondary btn-small" onclick="copyAndShowGatewayToken()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="key-round" data-icon-size="14"></span>Token</button>
-            <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:18789/chat')">Browser</button>
-          </div>
+          <div><h2>Chat</h2><div class="page-sub">Trò chuyện trực tiếp với trợ lý AI</div></div>
         </div>
-        <div class="chat-shell">
-          <div class="chat-shell-toolbar">
-            <div class="chat-shell-title">
-              <span data-icon="messages-square" data-icon-size="16"></span>
-              <div style="min-width:0">
-                <div>Chat với trợ lý</div>
-                <div class="chat-shell-sub">Đã chuẩn bị sẵn phiên OpenClaw để phản hồi nhanh hơn</div>
-              </div>
-            </div>
-            <div class="chat-shell-actions">
-              <span class="chat-status-pill">Gateway</span>
-              <button class="btn btn-secondary btn-small" onclick="showGatewayToken()">Hiện token</button>
-            </div>
-          </div>
-          <div class="embed-wrap" id="embed-wrap-chat">
-            <!-- webview prewarmed after Dashboard boot to reduce click-to-chat delay -->
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages"></div>
+          <div class="chat-input-bar">
+            <textarea id="chat-input" rows="1" placeholder="Nhập tin nhắn..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg()}"></textarea>
+            <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMsg()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -4984,8 +4989,13 @@
       if (page === 'calendar') {
         loadAppointments();
       }
-      if (page === '9router' || page === 'openclaw' || page === 'chat') {
+      if (page === '9router' || page === 'openclaw') {
         ensureEmbedLoaded(page);
+      }
+      if (page === 'chat') {
+        startChatPoll();
+      } else {
+        stopChatPoll();
       }
       if (page === 'overview') {
         loadOverview();
@@ -5015,6 +5025,174 @@
     }
     // Alias used by overview card buttons (matches what onclick handlers call)
     function setActivePage(page) { switchPage(page); }
+
+    // ============================================
+    //  NATIVE CHAT
+    // ============================================
+    let _chatLastSeenTs = 0;
+    let _chatSending = false;
+    let _chatPollTimer = null;
+    let _chatInitialized = false;
+
+    function renderChatEmpty() {
+      var el = document.getElementById('chat-messages');
+      el.innerHTML = '';
+      var empty = document.createElement('div');
+      empty.className = 'chat-empty';
+      empty.innerHTML = '<div class="chat-empty-title">Chat</div>' +
+        '<div class="chat-empty-sub">Bắt đầu trò chuyện với trợ lý AI</div>' +
+        '<div class="chat-prompt-chips">' +
+          '<div class="chat-prompt-chip" onclick="sendChatPrompt(this)">Báo cáo hôm nay</div>' +
+          '<div class="chat-prompt-chip" onclick="sendChatPrompt(this)">Kiểm tra đơn hàng</div>' +
+          '<div class="chat-prompt-chip" onclick="sendChatPrompt(this)">Tình hình Zalo</div>' +
+        '</div>';
+      el.appendChild(empty);
+    }
+
+    function sendChatPrompt(chip) {
+      var text = chip.textContent;
+      document.getElementById('chat-input').value = text;
+      sendChatMsg();
+    }
+
+    function renderChatBubble(role, text, ts) {
+      var group = document.createElement('div');
+      group.className = 'chat-bubble-group ' + (role === 'user' ? 'user' : 'bot');
+      var bubble = document.createElement('div');
+      bubble.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'bot');
+      bubble.textContent = text;
+      group.appendChild(bubble);
+      if (ts) {
+        var time = document.createElement('div');
+        time.className = 'chat-time';
+        time.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        group.appendChild(time);
+      }
+      return group;
+    }
+
+    function scrollChatToBottom() {
+      var el = document.getElementById('chat-messages');
+      requestAnimationFrame(function() { el.scrollTop = el.scrollHeight; });
+    }
+
+    function showChatTyping() {
+      var el = document.getElementById('chat-messages');
+      var existing = el.querySelector('.chat-typing-wrap');
+      if (existing) return;
+      var group = document.createElement('div');
+      group.className = 'chat-bubble-group bot chat-typing-wrap';
+      group.innerHTML = '<div class="chat-typing"><span></span><span></span><span></span></div>';
+      el.appendChild(group);
+      scrollChatToBottom();
+    }
+
+    function removeChatTyping() {
+      var el = document.getElementById('chat-messages');
+      var t = el.querySelector('.chat-typing-wrap');
+      if (t) t.remove();
+    }
+
+    async function sendChatMsg() {
+      var input = document.getElementById('chat-input');
+      var text = (input.value || '').trim();
+      if (!text || _chatSending) return;
+      input.value = '';
+      input.style.height = 'auto';
+
+      // Remove empty state if present
+      var empty = document.querySelector('#chat-messages .chat-empty');
+      if (empty) empty.remove();
+
+      // Append user bubble
+      var el = document.getElementById('chat-messages');
+      el.appendChild(renderChatBubble('user', text, Date.now()));
+      scrollChatToBottom();
+
+      // Show typing indicator + send
+      _chatSending = true;
+      document.getElementById('chat-send-btn').disabled = true;
+      showChatTyping();
+
+      try {
+        var result = await window.claw.sendChatMessage(text);
+        removeChatTyping();
+        if (result.ok && result.reply) {
+          el.appendChild(renderChatBubble('assistant', result.reply, Date.now()));
+        } else {
+          var errMsg = result.error === 'BOOT_IN_PROGRESS'
+            ? 'Hệ thống đang khởi động, vui lòng chờ...'
+            : result.error === 'gateway_offline'
+              ? 'Trợ lý chưa sẵn sàng. Vui lòng chờ bot khởi động.'
+              : 'Lỗi: ' + (result.error || 'unknown');
+          var errDiv = document.createElement('div');
+          errDiv.className = 'chat-error';
+          errDiv.textContent = errMsg;
+          el.appendChild(errDiv);
+        }
+      } catch (e) {
+        removeChatTyping();
+        var errDiv2 = document.createElement('div');
+        errDiv2.className = 'chat-error';
+        errDiv2.textContent = 'Lỗi kết nối: ' + (e.message || 'unknown');
+        el.appendChild(errDiv2);
+      }
+      _chatSending = false;
+      document.getElementById('chat-send-btn').disabled = false;
+      scrollChatToBottom();
+    }
+
+    async function loadChatHistory() {
+      if (_chatSending) return;
+      try {
+        var messages = await window.claw.getChatHistory();
+        if (!messages || !messages.length) {
+          if (!_chatInitialized || !document.querySelector('#chat-messages .chat-empty')) { renderChatEmpty(); _chatInitialized = true; }
+          return;
+        }
+        var el = document.getElementById('chat-messages');
+        var newMsgs = messages.filter(function(m) { return m.ts > _chatLastSeenTs; });
+        if (!_chatInitialized) {
+          // First load — render all
+          el.innerHTML = '';
+          messages.forEach(function(m) {
+            el.appendChild(renderChatBubble(m.role, m.text, m.ts));
+          });
+          _chatLastSeenTs = messages[messages.length - 1].ts;
+          _chatInitialized = true;
+          scrollChatToBottom();
+        } else if (newMsgs.length > 0) {
+          // Incremental — append only new
+          newMsgs.forEach(function(m) {
+            el.appendChild(renderChatBubble(m.role, m.text, m.ts));
+          });
+          _chatLastSeenTs = newMsgs[newMsgs.length - 1].ts;
+          scrollChatToBottom();
+        }
+      } catch (e) {
+        console.warn('[chat] history load error:', e);
+      }
+    }
+
+    function startChatPoll() {
+      if (_chatPollTimer) return;
+      loadChatHistory();
+      _chatPollTimer = setInterval(loadChatHistory, 20000);
+    }
+
+    function stopChatPoll() {
+      if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      var chatInput = document.getElementById('chat-input');
+      if (chatInput) {
+        chatInput.addEventListener('input', function() {
+          this.style.height = 'auto';
+          this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+      }
+    });
 
     // ============================================
     //  PERSONA MIX — Tính cách bot
@@ -5737,18 +5915,16 @@
     }
 
     // ============================================
-    //  EMBEDDED WEB UI (9Router + OpenClaw + Chat)
+    //  EMBEDDED WEB UI (9Router + OpenClaw)
     // ============================================
-    const embedLoaded = { '9router': false, 'openclaw': false, 'chat': false };
+    const embedLoaded = { '9router': false, 'openclaw': false };
     const EMBED_URLS = {
       '9router': 'http://127.0.0.1:20128/',
       'openclaw': 'http://127.0.0.1:18789/',
-      'chat': 'http://127.0.0.1:18789/chat',
     };
     const EMBED_PARTITIONS = {
       '9router': 'persist:embed-9router',
       'openclaw': 'persist:embed-openclaw',
-      'chat': 'persist:embed-openclaw',
     };
     const _embedRetry = {};
     function renderEmbedLoading(loader, label, attempt) {
@@ -5821,9 +5997,6 @@
 
       try { wv.src = EMBED_URLS[name]; } catch(ex) { wv.setAttribute('src', EMBED_URLS[name]); }
       if (!silent) addActivity('Đã mở ' + label + ' trong app');
-    }
-    function prewarmChatEmbed() {
-      try { ensureEmbedLoaded('chat', { silent: true }); } catch (e) { console.warn('[embed] chat prewarm failed:', e); }
     }
     function retryEmbed(name) {
       var wrap = document.getElementById('embed-wrap-' + name);
@@ -7065,13 +7238,6 @@
     setThemeMode(getThemeMode());
     window.claw.onBotStatus((data) => {
       updateBotStatus(data.running, data.error);
-      if (data.running && currentPage === 'chat') {
-        if (!embedLoaded['chat']) ensureEmbedLoaded('chat', { silent: true });
-        else {
-          var chatWv = document.getElementById('iframe-chat');
-          if (chatWv && chatWv.style.visibility === 'hidden') retryEmbed('chat');
-        }
-      }
     });
 
     // ============================================
