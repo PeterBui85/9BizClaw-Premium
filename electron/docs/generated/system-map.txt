@@ -1,0 +1,155 @@
+﻿9BizClaw Generated System Map
+
+Counts
+- apiRoutes: 100
+- ipcHandlers: 160
+- preloadBridges: 152
+- dashboardPages: 14
+- capabilityContracts: 5
+
+Capability Contracts
+- brand-image: Generate brand-aware images with uploaded assets (capabilities/brand-image.contract.json)
+- facebook-post: Publish to Facebook Fanpage (capabilities/facebook-post.contract.json)
+- google-gmail: Read and send Gmail through connected Workspace (capabilities/google-gmail.contract.json)
+- google-sheets: Read and update Google Sheets through connected Workspace (capabilities/google-sheets.contract.json)
+- zalo-cron: Create scheduled Zalo group messages or agent jobs (capabilities/zalo-cron.contract.json)
+
+API Routes
+- /api/auth/token [local-api]
+- /api/brand-assets/list [local-api]
+- /api/brand-assets/save [local-api]
+- /api/capabilities [local-api]
+- /api/ceo-rules/write [local-api]
+- /api/cron/create [local-api]
+- /api/cron/delete [local-api]
+- /api/cron/list [local-api]
+- /api/cron/replace [local-api]
+- /api/cron/toggle [local-api]
+- /api/customer-memory/write [local-api]
+- /api/exec [local-api]
+- /api/fb/post [local-api]
+- /api/fb/recent [local-api]
+- /api/fb/schedule [local-api]
+- /api/fb/schedule/approve [fb-schedule-api]
+- /api/fb/schedule/create [fb-schedule-api]
+- /api/fb/schedule/delete [fb-schedule-api]
+- /api/fb/schedule/edit-caption [fb-schedule-api]
+- /api/fb/schedule/list [fb-schedule-api]
+- /api/fb/schedule/pending [fb-schedule-api]
+- /api/fb/schedule/regenerate [fb-schedule-api]
+- /api/fb/schedule/reject [fb-schedule-api]
+- /api/fb/schedule/telegram-command [fb-schedule-api]
+- /api/fb/schedule/trigger-generate [fb-schedule-api]
+- /api/fb/schedule/update [fb-schedule-api]
+- /api/fb/verify [local-api]
+- /api/file [local-api]
+- /api/file/copy [local-api]
+- /api/file/delete [local-api]
+- /api/file/download [local-api]
+- /api/file/list [local-api]
+- /api/file/open [local-api]
+- /api/file/read [local-api]
+- /api/file/rename [local-api]
+- /api/file/search [local-api]
+- /api/file/write [local-api]
+- /api/google [local-api]
+- /api/google/appscript/run [google-api]
+- /api/google/calendar/create [google-api]
+- /api/google/calendar/delete [google-api]
+- /api/google/calendar/events [google-api]
+- /api/google/calendar/free-slots [google-api]
+- /api/google/calendar/freebusy [google-api]
+- /api/google/calendar/update [google-api]
+- /api/google/contacts/create [google-api]
+- /api/google/contacts/list [google-api]
+- /api/google/contacts/search [google-api]
+- /api/google/docs/create [google-api]
+- /api/google/docs/export [google-api]
+- /api/google/docs/find-replace [google-api]
+- /api/google/docs/info [google-api]
+- /api/google/docs/insert [google-api]
+- /api/google/docs/list [google-api]
+- /api/google/docs/read [google-api]
+- /api/google/docs/write [google-api]
+- /api/google/drive/download [google-api]
+- /api/google/drive/list [google-api]
+- /api/google/drive/share [google-api]
+- /api/google/drive/upload [google-api]
+- /api/google/gmail/inbox [google-api]
+- /api/google/gmail/read [google-api]
+- /api/google/gmail/reply [google-api]
+- /api/google/gmail/send [google-api]
+- /api/google/health [google-api]
+- /api/google/sheets/append [google-api]
+- /api/google/sheets/get [google-api]
+- /api/google/sheets/list [google-api]
+- /api/google/sheets/metadata [google-api]
+- /api/google/sheets/update [google-api]
+- /api/google/status [google-api]
+- /api/google/tasks/complete [google-api]
+- /api/google/tasks/create [google-api]
+- /api/google/tasks/list [google-api]
+- /api/google/tasks/lists [google-api]
+- /api/image/generate [local-api]
+- /api/image/generate-and-send-zalo [local-api]
+- /api/image/preferences [local-api]
+- /api/image/skills [local-api]
+- /api/image/status [local-api]
+- /api/internal/agent-deliver-zalo [local-api]
+- /api/knowledge/add [local-api]
+- /api/media/describe [local-api]
+- /api/media/list [local-api]
+- /api/media/search [local-api]
+- /api/media/upload [local-api]
+- /api/memory/count [local-api]
+- /api/memory/delete [local-api]
+- /api/memory/list [local-api]
+- /api/memory/search [local-api]
+- /api/memory/write [local-api]
+- /api/system/info [local-api]
+- /api/telegram/send-photo [local-api]
+- /api/workspace/append [local-api]
+- /api/workspace/list [local-api]
+- /api/workspace/read [local-api]
+- /api/zalo/friends [local-api]
+- /api/zalo/ready [local-api]
+- /api/zalo/send [local-api]
+- /api/zalo/send-media [local-api]
+
+Dashboard Pages
+- 9router
+- calendar
+- chat
+- facebook
+- google
+- image-assets
+- knowledge
+- openclaw
+- overview
+- persona-mix
+- schedules
+- shop-state
+- telegram
+- zalo
+
+Large Source Files
+- electron/ui/dashboard.html: 529345 bytes
+- electron/lib/dashboard-ipc.js: 230933 bytes
+- electron/lib/cron-api.js: 111041 bytes
+- electron/lib/cron.js: 100692 bytes
+- electron/ui/wizard.html: 87052 bytes
+- electron/lib/channels.js: 84587 bytes
+- electron/lib/knowledge.js: 77313 bytes
+- electron/lib/runtime-installer.js: 76039 bytes
+- electron/lib/gateway.js: 70353 bytes
+- electron/lib/workspace.js: 45923 bytes
+- electron/lib/config.js: 45718 bytes
+- electron/lib/fb-schedule.js: 39478 bytes
+- electron/lib/nine-router.js: 38508 bytes
+- electron/lib/zalo-plugin.js: 35420 bytes
+- electron/lib/boot.js: 35084 bytes
+- electron/lib/vendor-patches.js: 33786 bytes
+- electron/lib/media-library.js: 30376 bytes
+- electron/lib/google-api.js: 29327 bytes
+- electron/lib/conversation.js: 25838 bytes
+- electron/ui/splash.html: 25078 bytes
