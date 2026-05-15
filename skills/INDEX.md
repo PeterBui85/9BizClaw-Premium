@@ -7,7 +7,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 2. Bot đọc INDEX → match keyword → đọc skill file tương ứng
 3. Bot follow quy trình trong skill → output chất lượng cao
 
-## Vận hành bot (15 skills) — `skills/operations/`
+## Vận hành bot (23 skills) — `skills/operations/`
 
 | Skill | File | Khi nào dùng |
 |---|---|---|
@@ -26,6 +26,14 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Chuỗi workflow | `workflow-chains.md` | Kết hợp nhiều API thành chuỗi tự động |
 | Tạo skill mới | `skill-builder.md` | CEO tạo/sửa/xóa skill tùy chỉnh qua chat |
 | Sinh script tự động | `script-generator/SKILL.md` | Tạo Python/Node script cho task lặp lại của CEO (Excel/Sheet/OCR/scrape/...) |
+| Viết bài bán hàng | `viet-bai-ban-hang.md` | Viết bài FB/Zalo bán hàng kiểu người thật, 3 phiên bản |
+| Soạn báo giá | `bao-gia.md` | Soạn báo giá/proposal nhanh cho khách hàng |
+| Theo dõi công nợ | `cong-no.md` | Ghi nợ, trả nợ, nhắc nợ, cảnh báo quá hạn |
+| Sổ sách đơn giản | `so-sach-don-gian.md` | Thu chi hàng ngày, báo cáo tuần/tháng |
+| Kịch bản bán hàng | `kich-ban-ban-hang.md` | Script bán hàng + xử lý 7 tình huống từ chối |
+| Checklist vận hành | `checklist-van-hanh.md` | Mở/đóng cửa, giao ca, kiểm kho — theo ngành |
+| Tuyển dụng nhanh | `tuyen-dung-nhanh.md` | JD + bài đăng FB group + câu hỏi phỏng vấn |
+| Báo cáo ngày | `bao-cao-ngay.md` | Tóm tắt ngày/tuần: thu chi, khách, việc tồn |
 
 ## Marketing (2 skills) — `skills/marketing/`
 
@@ -58,5 +66,5 @@ CEO tạo skill riêng qua Telegram ("tạo skill mới"). Đọc `skill-builder
 
 ---
 
-**Tổng: 26 skill cơ bản + mẫu ảnh + skill tùy chỉnh CEO tạo** cho chủ doanh nghiệp Việt Nam.
+**Tổng: 34 skill cơ bản + mẫu ảnh + skill tùy chỉnh CEO tạo** cho chủ doanh nghiệp Việt Nam.
 Skill cũ (advisory, board, SOC2, Twitter, marketing SaaS) đã chuyển vào `skills/_archived/` — vẫn truy cập được nếu cần.
