@@ -318,6 +318,7 @@ const _outputFilterPatterns = [
   //     legitimate operation.
   { name: 'pii-cccd-cmnd', re: /(?:cccd|căn\s*cước|cmnd|chứng\s*minh\s*(?:nhân\s*dân|thư))[\s:=]*\d{9}(?:\d{3})?\b/i },
   { name: 'pii-bank-account', re: /(?:stk|số\s*tài\s*khoản|account\s*(?:number|no\.?)|acct\s*#?)[\s:=]*\d{6,20}/i },
+  { name: 'pii-bank-transfer-dest', re: /(?:chuy[eể]n\s*kho[aả]n|transfer)[\s:]+(?:v[aà]o|t[oớ]i|đ[eế]n|to)[\s:]+\d{6,14}/i, why: 'bank transfer destination leak' },
   { name: 'pii-credit-card', re: /\b\d{4}[\s-]\d{4}[\s-]\d{4}[\s-]\d{1,4}\b/ },
   // Layer A1.3: internal protocol terms — heartbeat protocol leaked to customers
   { name: 'heartbeat-ok', re: /\bHEARTBEAT_OK\b/ },
