@@ -14,7 +14,7 @@ metadata:
 1. **Tách thành bước rõ ràng** — mỗi bước = 1 API call, confirm kết quả trước khi bước tiếp
 2. **KHÔNG gộp** — không gọi 2 API cùng lúc, không đoán kết quả bước 1 để feed vào bước 2
 3. **Fail fast** — bước nào fail → dừng ngay, báo CEO rõ bước nào lỗi, không tiếp tục
-4. **Mỗi bước đọc skill tương ứng** — bước Google Sheet → đọc `skills/operations/google-workspace.md`, bước tạo ảnh → đọc `skills/operations/facebook-image.md`
+4. **Mỗi bước đọc skill tương ứng** — bước Google Sheet → đọc `skills/operations/google-workspace.md`, bước tạo ảnh → đọc `skills/operations/image-generation.md`
 
 ## Quy trình
 

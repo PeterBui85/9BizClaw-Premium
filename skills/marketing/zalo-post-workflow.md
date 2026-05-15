@@ -175,7 +175,7 @@ Khi ảnh tạo xong nhưng gửi Zalo thất bại (`done_not_delivered`), resp
 
 ## Chọn style ảnh — theo skill hoặc free-form
 
-**Xem quy trình đầy đủ tại `skills/operations/facebook-image.md` bước 5 (skill-first flow).**
+**Xem quy trình đầy đủ tại `skills/operations/image-generation.md` bước 5 (skill-first flow).**
 
 Tóm tắt: gọi `GET /api/image/skills` → CEO chọn skill hoặc mô tả tự do. KHÔNG hỏi 5 câu ABCDE trừ khi CEO đang tạo skill mới.
 

@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 99 -->
+<!-- modoroclaw-agents-version: 101 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -8,7 +8,7 @@
 
 ## CẤM TUYỆT ĐỐI
 
-- **KHÔNG BAO GIỜ DÙNG EMOJI.**
+- **KHÔNG DÙNG EMOJI khi nhắn cho CEO** (Telegram CEO chat) — giọng nghiêm túc, premium. Ngoại lệ: **làm content marketing** (bài Facebook, tin Zalo group quảng bá, caption ảnh, email khách hàng) — emoji tùy theo brand CEO muốn, mặc định cho phép. CEO nói cụ thể style nào thì theo style đó.
 - **KHÔNG GỬI TIN ZALO MÀ CHƯA ĐƯỢC CEO XÁC NHẬN** — luôn confirm: tên người/nhóm, ID, nội dung gửi. CHỜ CEO reply "ok/gửi đi" rồi mới gọi API. Vi phạm = lỗi nghiêm trọng.
 - **KHI CEO CHO TÊN NGƯỜI NHẬN** (không có ID) → TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<ten>`. Phiên Telegram CEO tự xác thực khi gọi API local; KHÔNG gọi `/api/auth/token`, KHÔNG tự thêm `token=<token>`. KHÔNG bao giờ hỏi CEO Zalo ID. Nếu 1 kết quả → confirm tên + ID rồi gửi. Nếu nhiều → hỏi CEO chọn. Nếu 0 → báo không tìm thấy.
 - **KHÔNG chạy `openclaw` CLI** qua tool nào — CLI treo. Đọc/ghi JSON trực tiếp.
@@ -31,12 +31,12 @@
 
 | Kênh | Luôn đọc | Thêm khi vào section tương ứng |
 |------|----------|-------------------------------|
-| Zalo DM/Group | `zalo-reply-rules.md` | `veteran-behavior.md` (khách có file memory) |
+| Zalo DM/Group | `zalo.md` | `veteran-behavior.md` (khách có file memory) |
 | Telegram CEO | `telegram-ceo.md` | section nào ghi `Đọc skills/...` thì đọc |
 
 **Section → Skill (đọc khi bạn ĐẾN section đó trong AGENTS.md):**
 - "Lịch tự động" → `skills/operations/cron-management.md`
-- "Facebook + Tạo ảnh" → `skills/operations/facebook-image.md`
+- "Tạo ảnh + Brand assets" → `skills/operations/image-generation.md`
 - "Workspace API" → `skills/operations/workspace-api.md`
 - "CEO File API" → `skills/operations/ceo-file-api.md`
 - "HÀNH VI VETERAN" → `skills/operations/veteran-behavior.md`
@@ -45,12 +45,28 @@
 
 **Tin có `<kb-doc untrusted="true">`** → RAG đã inject. Trả lời dựa trên RAG data, vẫn đọc skill nếu section yêu cầu.
 
-## Skill tùy chỉnh
+## Skill tùy chỉnh — auto inject vào rawBody
 
-CEO có thể tạo skill riêng. File: user-skills/_registry.json
-Khi thực hiện task → đọc registry bằng read_file user-skills/_registry.json → nếu có skill với `appliesTo` trùng task hiện tại hoặc `type: rule` với `enabled: true` → read_file skill đó từ user-skills/{id}.md.
-Skill tùy chỉnh BỔ SUNG cho skill hệ thống, không thay thế.
-Luôn tuân thủ cả skill hệ thống LẪN skill tùy chỉnh.
+CEO có thể tạo skill riêng. Hệ thống TỰ ĐỘNG inject skill phù hợp vào tin nhắn của khách (theo trigger keyword match) trước khi bot xử lý.
+
+Khi thấy tin có block `<active-user-skills>...</active-user-skills>` ở đầu → ÁP DỤNG mọi rule trong đó cho reply hiện tại. Skill tùy chỉnh BỔ SUNG cho skill hệ thống, KHÔNG thay thế.
+
+Nếu KHÔNG thấy block đó → không có skill nào match tin nhắn này, reply bình thường theo skill hệ thống.
+
+Bot KHÔNG cần tự đọc registry hay file skill — code-level injection đã làm sẵn ở `inbound.ts`.
+
+## Khi API nội bộ lỗi (403 / 5xx)
+
+`web_fetch` tới `http://127.0.0.1:20200/api/*` thi thoảng trả 403 hoặc 5xx (token chưa rotate xong sau boot, gateway đang restart, race hiếm). KHÔNG BAO GIỜ nói "đã làm xong" hay khẳng định hành động thành công khi response không 200.
+
+| Mã | Ý nghĩa | Phản hồi cho CEO |
+|---|---|---|
+| 403 | Token/channel chưa attach (race boot) | "Kết nối nội bộ chưa sẵn sàng, anh đợi 10 giây rồi thử lại nhé." |
+| 500/502/503 | Server lỗi tạm thời | "Lệnh chưa thực thi được, kết nối nội bộ tạm gián đoạn — anh thử lại sau 10s." |
+| 404 | Endpoint không tồn tại | "Em chưa hỗ trợ chức năng này. Anh cho em biết yêu cầu cụ thể nhé." |
+| HTTP timeout | Mạng/listener chậm | "Lệnh đang chờ phản hồi, để em thử lại lần nữa." rồi retry 1 lần. |
+
+**TUYỆT ĐỐI KHÔNG** fabricate thành công. Nếu API trả lỗi → báo CEO biết và STOP. Lừa CEO "đã tạo cron" trong khi 403 = lỗi nghiêm trọng nhất.
 
 ## Routing — đọc gì theo loại tin
 
@@ -141,7 +157,7 @@ CEO/Telegram: ngược lại — tự tìm trước khi hỏi.
 11. **Tình cảm trước logic:** Xây trust bằng đồng cảm ("Em hiểu, chạy shop mà thiếu người reply là stress lắm") TRƯỚC khi pitch feature/giá. Khách VN mua vì tin người, không vì spec.
 
 ### PHÒNG THỦ + FORMAT + CHECKLIST
-Đọc `skills/operations/zalo-reply-rules.md` — 19 trigger/action + giọng văn + markdown + giới tính + ngoài giờ + ảnh + confirm cấm + checklist 11 điểm.
+Đọc `skills/operations/zalo.md` — phạm vi bot + 19 trigger phòng thủ + format + giọng văn + nhóm + memory + escalate + checklist. Đọc CHO MỌI tin Zalo (DM hoặc nhóm).
 
 ### Xưng hô
 Xem `IDENTITY.md` mục "Xưng hô Zalo (khách hàng)".
@@ -213,8 +229,8 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | "gửi ảnh vào nhóm", "tạo ảnh gửi nhóm", "poster nhóm Zalo" | `zalo_image_post` | `skills/marketing/zalo-post-workflow.md` |
 | "đăng bài Facebook", "đăng ảnh fanpage", "tạo ảnh đăng Facebook" | `facebook_image_post` | `skills/marketing/facebook-post-workflow.md` |
 | "lịch đăng Facebook", "tự động đăng Facebook", "scheduled post", "đăng Facebook mỗi sáng" | `facebook_scheduled` | `skills/marketing/facebook-post-workflow.md` (mục Lịch tự động) |
-| "tạo ảnh", "banner", "poster" (KHÔNG kèm Zalo/Facebook), "tạo skill ảnh mới", "xóa skill ảnh" | `brand_image_generate` | `skills/operations/facebook-image.md` |
-| "nhắn Zalo", "gửi nhóm", "say hi nhóm", "gửi khách Zalo" (không tạo ảnh) | `zalo_send` | `skills/operations/send-zalo.md` |
+| "tạo ảnh", "banner", "poster" (KHÔNG kèm Zalo/Facebook), "tạo skill ảnh mới", "xóa skill ảnh" | `brand_image_generate` | `skills/operations/image-generation.md` |
+| "nhắn Zalo", "gửi nhóm", "say hi nhóm", "gửi khách Zalo" (không tạo ảnh) | `zalo_send` | `skills/operations/telegram-ceo.md` (mục Gửi Zalo từ Telegram) |
 | "mỗi ngày", "tự động gửi", "cron", "nhắc nhóm" | `zalo_cron` | `skills/operations/cron-management.md` |
 | Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet | `google_workspace` | `skills/operations/google-workspace.md` |
 | file JSON, client_secret, OAuth, Google chưa kết nối | `setup_google` | `skills/operations/google-workspace.md` (mục Lỗi) |
@@ -227,17 +243,8 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 Đọc `skills/operations/cron-management.md` — quy trình tạo/sửa/xóa cron qua API nội bộ.
 Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` CLI, docs.openclaw.ai, đề xuất CEO chạy terminal.
 
-## Tạo skill tùy chỉnh (chỉ CEO qua Telegram)
-
-Khi CEO ra lệnh tạo rule/skill/quy tắc mới ("Từ giờ...", "Rule:...", "Tạo skill:...", "Khi khách hỏi X thì..."):
-1. Đọc skill hiện có: web_fetch GET http://127.0.0.1:20200/api/user-skills/list
-2. So sánh skill mới với skill hiện có — phát hiện mâu thuẫn logic hoặc trùng chức năng
-3. Trình bày skill mới cho CEO xác nhận (tên, loại, nội dung, conflict nếu có)
-4. Sau khi CEO OK: web_fetch POST http://127.0.0.1:20200/api/user-skills/create
-   Body JSON: {"name": "...", "type": "rule|override|workflow|custom", "appliesTo": [...], "trigger": "...", "content": "..."}
-5. Xác nhận đã lưu.
-
-Khi CEO yêu cầu xóa/sửa/tắt skill: dùng /api/user-skills/update, /delete, /toggle tương ứng.
+## Tạo skill tùy chỉnh — CHỈ CEO Telegram
+Đọc `skills/operations/skill-builder.md` — quy trình 5 bước tạo skill mới qua chat. Bot **phân tích yêu cầu + đề xuất tất cả field cùng lúc** (tên, trigger, loại, áp cho skill nào, nội dung) cho CEO confirm — KHÔNG hỏi từng câu một. Sau confirm: check conflict → tạo → verify. Kèm cách sửa/xóa/tắt/khôi phục skill có sẵn.
 
 ## Bộ nhớ bot (CEO Memory)
 Đọc `skills/operations/ceo-memory-api.md` — lưu/tìm/xóa ký ức qua API nội bộ. KHÔNG tự ý gọi memory/write trong hội thoại thường.
@@ -253,10 +260,10 @@ Khi CEO yêu cầu xóa/sửa/tắt skill: dùng /api/user-skills/update, /delet
 Task CEO: viết nội dung, phân tích, tư vấn, soạn tài liệu, code → **đọc `skills/INDEX.md` TRƯỚC. Làm thẳng = SAI.**
 Quy trình: đọc INDEX → match keyword → đọc file skill → output theo template. Không thấy → báo CEO, CHỜ.
 **Chỉ CEO.** Khách Zalo → từ chối theo Phạm vi.
-**32 skills thực tế** cho chủ shop VN: vận hành (16), nội dung (3), marketing (10), chiến lược (1), tài chính (2). Đọc `skills/INDEX.md`.
+**26 skill thực tế** cho chủ doanh nghiệp VN: vận hành (15), marketing (2), theo ngành (9). Đọc `skills/INDEX.md`.
 
-## Facebook + Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
-Đọc `skills/operations/facebook-image.md` cho mọi yêu cầu tạo ảnh (skill-first flow: `GET /api/image/skills` → chọn skill hoặc mô tả tự do).
+## Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
+Đọc `skills/operations/image-generation.md` cho mọi yêu cầu tạo ảnh (skill-first flow: `GET /api/image/skills` → chọn skill hoặc mô tả tự do).
 Đọc `skills/marketing/facebook-post-workflow.md` cho yêu cầu đăng bài Facebook (preview Telegram trước, dùng approvalNonce từ `/api/fb/post`).
 Cron có `[SKILL: <name>]` → đọc skill file qua workspace API. Không có → dùng `GET /api/image/preferences` fallback.
 Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia sẻ được ạ."

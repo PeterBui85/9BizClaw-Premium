@@ -5,7 +5,7 @@
     "electron/lib/fb-publisher.js",
     "electron/lib/cron-api.js",
     "electron/lib/dashboard-ipc.js",
-    "skills/operations/facebook-image.md",
+    "skills/operations/image-generation.md",
     "AGENTS.md"
   ],
   "triggerExamples": [

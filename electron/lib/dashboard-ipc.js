@@ -1301,6 +1301,11 @@ ipcMain.handle('get-zalo-manager-config', async () => {
       const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
       if (fs.existsSync(gsPath)) groupSettings = JSON.parse(fs.readFileSync(gsPath, 'utf-8'));
     } catch {}
+    let userSettings = {};
+    try {
+      const usPath = path.join(getWorkspace(), 'zalo-user-settings.json');
+      if (fs.existsSync(usPath)) userSettings = JSON.parse(fs.readFileSync(usPath, 'utf-8'));
+    } catch {}
     let strangerPolicy = 'ignore';
     try {
       const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
@@ -1313,6 +1318,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
       dmPolicy: zalo.dmPolicy || 'open',
       userBlocklist: normalizeZaloBlocklist(blocklist),
       groupSettings,
+      userSettings,
       strangerPolicy,
     };
   } catch (e) {
@@ -1320,7 +1326,45 @@ ipcMain.handle('get-zalo-manager-config', async () => {
   }
 });
 
-function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy }) {
+// Merge incoming per-user internal flags into zalo-user-settings.json.
+// Sanitizes to `{ internal: true }` only; deletes entries where internal !== true.
+// Emits audit log on each diff. Skips write if result is empty AND file doesn't
+// exist yet (avoids stub file on fresh install when CEO hasn't touched feature).
+function _mergeUserSettingsFile(userSettings) {
+  if (!userSettings || typeof userSettings !== 'object' || Array.isArray(userSettings)) return;
+  const usPath = path.join(getWorkspace(), 'zalo-user-settings.json');
+  let existingUs = {};
+  try {
+    if (fs.existsSync(usPath)) existingUs = JSON.parse(fs.readFileSync(usPath, 'utf-8')) || {};
+    if (typeof existingUs !== 'object' || Array.isArray(existingUs)) existingUs = {};
+  } catch {}
+  let oldExistingUs = {};
+  try { oldExistingUs = JSON.parse(JSON.stringify(existingUs)); } catch {}
+  for (const [uid, us] of Object.entries(userSettings)) {
+    if (!us || typeof us !== 'object') continue;
+    if (us.internal === true) {
+      existingUs[uid] = { internal: true };
+    } else {
+      delete existingUs[uid];
+    }
+  }
+  try {
+    const allUids = new Set([...Object.keys(oldExistingUs), ...Object.keys(existingUs)]);
+    for (const uid of allUids) {
+      const wasInternal = oldExistingUs[uid]?.internal === true;
+      const isInternal = existingUs[uid]?.internal === true;
+      if (wasInternal !== isInternal) {
+        auditLog('user-internal-change', { userId: uid, internal: isInternal, ts: Date.now() });
+      }
+    }
+  } catch {}
+  // Mirror groupSettings: don't create empty stub file.
+  if (Object.keys(existingUs).length > 0 || fs.existsSync(usPath)) {
+    writeJsonAtomic(usPath, existingUs);
+  }
+}
+
+function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy }) {
   const bp = getZaloBlocklistPath();
   let existingBl = [];
   try {
@@ -1369,6 +1413,8 @@ function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, gro
       writeJsonAtomic(gsPath, existing);
     }
   }
+
+  _mergeUserSettingsFile(userSettings);
 
   if (strangerPolicy !== undefined) {
     const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
@@ -1421,14 +1467,14 @@ async function forceDisableZaloFailClosed(source = 'manager-disabled') {
   return { pauseOk, configOk, stickyOk };
 }
 
-ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy }) => {
+ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy }) => {
   invalidateZaloFriendsCache(); // PERF: bust friends cache on config save
   const booting = rejectIfBooting('save-zalo-manager-config');
   if (booting) {
     if (enabled === false) {
       ctx.ipcInFlightCount++;
       try {
-        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy });
+        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy });
         const off = await forceDisableZaloFailClosed('manager-disabled-while-booting');
         return {
           success: off.pauseOk || off.configOk || off.stickyOk,
@@ -1441,11 +1487,11 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         ctx.ipcInFlightCount--;
       }
     }
-    if (userBlocklistTouched === true || groupSettings || strangerPolicy !== undefined) {
+    if (userBlocklistTouched === true || groupSettings || userSettings || strangerPolicy !== undefined) {
       if (enabled !== false && isZaloChannelEnabled() === false) return booting;
       ctx.ipcInFlightCount++;
       try {
-        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy });
+        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy });
         return {
           success: true,
           booting: true,
@@ -1580,6 +1626,10 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         writeJsonAtomic(gsPath, existing);
       }
     }
+    // 3b. User settings (per-friend internal flag) — mirror group settings.
+    // CEO marks 1-on-1 friend as internal employee → DM grants same trust as
+    // being in an internal group (RAG internal-tier docs, command-block bypass).
+    _mergeUserSettingsFile(userSettings);
     // 4. Write stranger policy to workspace — mirror groupSettings pattern:
     // if no explicit strangerPolicy provided, REMOVE file so patch falls back
     // to plugin default (prevents stale policy file leaking after CEO clears
@@ -3269,7 +3319,6 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
           // Non-fatal — upload still succeeds. Backfill on boot catches missed rows.
         }
       }
-      try { db.close(); } catch {}
     } else {
       dbWarning = 'DB không mở được — file đã lưu trên disk, sẽ index lại sau khi sửa DB.';
     }
@@ -3300,8 +3349,8 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
       filename = row?.filename;
       filepath = row?.filepath;
       info = db.prepare('UPDATE documents SET visibility=? WHERE id=?').run(visibility, docId);
-    } finally {
-      try { db.close(); } catch {}
+    } catch (e) {
+      return { success: false, error: 'DB error: ' + e.message };
     }
     if (!info || info.changes === 0) return { success: false, error: 'Document not found' };
     try { auditLog('visibility-change', { docId, visibility, ts: Date.now() }); } catch {}
@@ -3340,7 +3389,6 @@ ipcMain.handle('list-knowledge-files', async (_event, { category }) => {
     } catch (e) {
       console.error('[knowledge] db query error:', e.message);
     }
-    try { db.close(); } catch {}
     // Merge: prefer DB row (has summary) but include disk-only files (uploaded
     // while DB was broken).
     const dbNames = new Set(dbRows.map(r => r.filename));
@@ -3375,8 +3423,8 @@ ipcMain.handle('delete-knowledge-file', async (_event, { category, filename }) =
           db.prepare('DELETE FROM documents_fts WHERE filename = ?').run(filename);
         });
         deleteAll();
-      } finally {
-        try { db.close(); } catch {}
+      } catch (e) {
+        console.warn('[knowledge] DB delete failed:', e.message);
       }
     }
     const fp = path.join(getKnowledgeDir(category), 'files', filename);
@@ -3415,8 +3463,8 @@ ipcMain.handle('get-knowledge-counts', async () => {
         counts[cat] = n + diskExtra;
       }
       return counts;
-    } finally {
-      try { db.close(); } catch {}
+    } catch (e) {
+      console.warn('[knowledge] counts query failed:', e.message);
     }
   } catch {
     const counts = {};
@@ -3532,7 +3580,7 @@ ipcMain.handle('delete-knowledge-folder', async (_event, { id }) => {
     // Clean DB entries
     try {
       const db = getDocumentsDb();
-      if (db) { db.prepare('DELETE FROM documents WHERE category = ?').run(id); db.close(); }
+      if (db) { db.prepare('DELETE FROM documents WHERE category = ?').run(id); }
     } catch {}
     purgeAgentSessions('knowledge-folder-delete');
     return { success: true };
@@ -3584,7 +3632,6 @@ ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
           .run(filename, content);
       });
       insertBoth();
-      db.close();
     }
 
     return { success: true, filename, wordCount, filesize };
@@ -3627,7 +3674,7 @@ ipcMain.handle('search-documents', async (_event, query) => {
     // Layer 3: rerank for semantic relevance.
     return await rerankSearchResults(query, results);
   } catch (e) { return []; }
-  finally { try { if (db) db.close(); } catch {} }
+  finally {}
 });
 
 ipcMain.handle('list-documents', async () => {
@@ -3635,7 +3682,6 @@ ipcMain.handle('list-documents', async () => {
     const db = getDocumentsDb();
     if (!db) return [];
     const docs = db.prepare('SELECT filename, filetype, word_count, filesize, created_at FROM documents ORDER BY created_at DESC').all();
-    db.close();
     return docs;
   } catch { return []; }
 });
@@ -3647,7 +3693,6 @@ ipcMain.handle('delete-document', async (_event, filename) => {
     if (db) {
       db.prepare('DELETE FROM documents WHERE filename = ?').run(filename);
       db.prepare('DELETE FROM documents_fts WHERE filename = ?').run(filename);
-      db.close();
     }
     const fp = path.join(getDocumentsDir(), filename);
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
@@ -5164,31 +5209,67 @@ ipcMain.handle('download-and-install-update', async () => {
     } catch (e) { return null; }
   });
 
+  // Broadcast helper — notify all renderer windows that the skill registry
+  // changed, so Dashboard auto-refreshes without a manual reload.
+  function _broadcastSkillUpdated() {
+    try {
+      const { BrowserWindow } = require('electron');
+      const sm = require('./skill-manager');
+      const skills = sm.listUserSkills();
+      for (const w of BrowserWindow.getAllWindows()) {
+        try { w.webContents.send('skill-updated', { skills }); } catch {}
+      }
+    } catch {}
+  }
+
   ipcMain.handle('create-user-skill', async (_event, data) => {
     try {
       const sm = require('./skill-manager');
-      return sm.createUserSkill({ ...data, createdVia: 'dashboard' });
+      if (sm.isContentTooLong(data?.content)) {
+        throw new Error(`Nội dung dài quá ${String(data.content).length}/${sm.SKILL_CONTENT_MAX} ký tự.`);
+      }
+      const entry = await sm.createUserSkill({ ...data, createdVia: 'dashboard' });
+      _broadcastSkillUpdated();
+      return entry;
     } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('update-user-skill', async (_event, id, data) => {
     try {
       const sm = require('./skill-manager');
-      return sm.updateUserSkill(id, data);
+      if (data?.content !== undefined && sm.isContentTooLong(data.content)) {
+        throw new Error(`Nội dung dài quá ${String(data.content).length}/${sm.SKILL_CONTENT_MAX} ký tự.`);
+      }
+      const skill = await sm.updateUserSkill(id, data);
+      _broadcastSkillUpdated();
+      return skill;
     } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('delete-user-skill', async (_event, id) => {
     try {
       const sm = require('./skill-manager');
-      return sm.deleteUserSkill(id);
+      const result = await sm.deleteUserSkill(id);
+      _broadcastSkillUpdated();
+      return result;
     } catch (e) { throw new Error(e.message); }
   });
 
   ipcMain.handle('toggle-user-skill', async (_event, id, enabled) => {
     try {
       const sm = require('./skill-manager');
-      return sm.toggleUserSkill(id, enabled);
+      const skill = await sm.toggleUserSkill(id, enabled);
+      _broadcastSkillUpdated();
+      return skill;
+    } catch (e) { throw new Error(e.message); }
+  });
+
+  ipcMain.handle('restore-user-skill', async (_event, id) => {
+    try {
+      const sm = require('./skill-manager');
+      const entry = await sm.restoreUserSkill(id);
+      _broadcastSkillUpdated();
+      return entry;
     } catch (e) { throw new Error(e.message); }
   });
 

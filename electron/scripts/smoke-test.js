@@ -745,10 +745,11 @@ section('AGENTS.md rules');
 const agentsPath = path.join(templateRoot, 'AGENTS.md');
 if (fs.existsSync(agentsPath)) {
   const ac = fs.readFileSync(agentsPath, 'utf-8');
-  if (!/KHÔNG BAO GIỜ DÙNG EMOJI/i.test(ac)) {
-    fail('AGENTS.md emoji rule', 'missing "KHÔNG BAO GIỜ DÙNG EMOJI" rule — bot will reply with emojis on fresh install');
+  // Context-split emoji rule (v100+): no emoji in CEO chat, allowed in marketing content.
+  if (!/KHÔNG DÙNG EMOJI khi nhắn cho CEO/i.test(ac)) {
+    fail('AGENTS.md emoji rule', 'missing "KHÔNG DÙNG EMOJI khi nhắn cho CEO" rule — bot may emoji-spam CEO');
   } else {
-    pass('AGENTS.md has no-emoji rule');
+    pass('AGENTS.md has context-split emoji rule (no emoji to CEO, allowed for marketing content)');
   }
   if (!/LỊCH SỬ TIN NHẮN/i.test(ac)) {
     fail('AGENTS.md history rule', 'missing cron history block rule — bot will hallucinate "no Zalo data"');
@@ -1112,7 +1113,7 @@ section('Action capability router');
 try {
   const agentsSrc = fs.readFileSync(path.join(templateRoot, 'AGENTS.md'), 'utf-8');
   const _skillRoot = path.join(templateRoot, 'skills');
-  const _skillFiles = ['operations/google-workspace.md', 'operations/facebook-image.md', 'operations/cron-management.md', 'marketing/facebook-post-workflow.md', 'marketing/zalo-post-workflow.md'];
+  const _skillFiles = ['operations/google-workspace.md', 'operations/image-generation.md', 'operations/cron-management.md', 'marketing/facebook-post-workflow.md', 'marketing/zalo-post-workflow.md'];
   const combinedSrc = agentsSrc + '\n' + _skillFiles.map(f => { try { return fs.readFileSync(path.join(_skillRoot, f), 'utf-8'); } catch { return ''; } }).join('\n');
   const requiredRouterBits = [
     'Capability Router',

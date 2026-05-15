@@ -17,6 +17,17 @@ const TIMESTAMP_FILE = path.join(process.platform === 'win32'
   : path.join(os.homedir(), '.9bizclaw'), 'fb-last-post.json');
 let _lastPostAt = _loadLastPostAt();
 let _postQueue = Promise.resolve();
+const POST_QUEUE_TIMEOUT_MS = 90000;
+
+function _withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('post queue timeout')), ms);
+    promise.then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 function _loadLastPostAt() {
   try {
@@ -175,6 +186,12 @@ async function verifyToken(token) {
 }
 
 async function enforcePostInterval() {
+  // Re-read from disk before comparing so a sibling Electron instance (dev
+  // setup or a second window) that posted recently is observed. Without this,
+  // `_lastPostAt` would be the module-load snapshot — second instance starts
+  // with 0, posts immediately, defeats the anti-shadow-ban rate limiter.
+  const onDisk = _loadLastPostAt();
+  if (onDisk > _lastPostAt) _lastPostAt = onDisk;
   const elapsed = Date.now() - _lastPostAt;
   const jitter = Math.floor(Math.random() * JITTER_MAX_MS);
   const required = MIN_POST_INTERVAL_MS + jitter;
@@ -186,26 +203,26 @@ async function enforcePostInterval() {
 }
 
 function postText(pageId, token, message) {
-  const job = _postQueue.then(async () => {
+  const job = _postQueue.then(() => _withTimeout((async () => {
     await enforcePostInterval();
     const data = await graphRequest('POST', `/${pageId}/feed`, token, { message });
     _lastPostAt = Date.now();
     _saveLastPostAt(_lastPostAt);
     return { postId: data.id, postUrl: formatPostUrl(data.id) };
-  });
+  })(), POST_QUEUE_TIMEOUT_MS));
   _postQueue = job.catch(() => {});
   return job;
 }
 
 function postPhoto(pageId, token, message, imageBuffer, imagePath) {
-  const job = _postQueue.then(async () => {
+  const job = _postQueue.then(() => _withTimeout((async () => {
     await enforcePostInterval();
     const data = await graphMultipartPhoto(pageId, token, message, imageBuffer, imagePath);
     _lastPostAt = Date.now();
     _saveLastPostAt(_lastPostAt);
     const postId = data.post_id || data.id;
     return { postId, postUrl: formatPostUrl(postId) };
-  });
+  })(), POST_QUEUE_TIMEOUT_MS));
   _postQueue = job.catch(() => {});
   return job;
 }

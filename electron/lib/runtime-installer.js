@@ -1063,15 +1063,18 @@ function killOrphanVendorNodeProcesses() {
 // next attempt. Clean them so the retry starts fresh.
 function cleanNpmStagingDirs(nodeModulesDir) {
   if (!nodeModulesDir || !fs.existsSync(nodeModulesDir)) return;
+  // 2026-05-15: positive-match staging pattern instead of deny-list. npm's
+  // staging dirs are `.<package>-<8-hex>` (e.g. `.express-3a2b1c4d`).
+  // Deny-list approach risked nuking new npm internals if/when added.
+  const STAGING_PATTERN = /^\.[A-Za-z0-9_-]+-[A-Za-z0-9]{8}$/;
   try {
     let cleaned = 0;
     for (const entry of fs.readdirSync(nodeModulesDir)) {
-      if (entry.startsWith('.') && entry !== '.package-lock.json' && entry !== '.cache' && entry !== '.bin') {
-        try {
-          fs.rmSync(path.join(nodeModulesDir, entry), { recursive: true, force: true, maxRetries: 2, retryDelay: 500 });
-          cleaned++;
-        } catch {}
-      }
+      if (!STAGING_PATTERN.test(entry)) continue;
+      try {
+        fs.rmSync(path.join(nodeModulesDir, entry), { recursive: true, force: true, maxRetries: 2, retryDelay: 500 });
+        cleaned++;
+      } catch {}
     }
     if (cleaned) console.log(`[runtime-installer] cleaned ${cleaned} stale npm staging dir(s)`);
   } catch {}

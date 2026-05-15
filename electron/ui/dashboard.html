@@ -707,8 +707,39 @@
     .sidebar-menu-item.disabled:hover { background:transparent; }
     .sidebar-menu-header.collapsible { cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none; }
     .sidebar-menu-header.collapsible:hover { color:var(--text); }
-    .sidebar-chevron::after { content:'▾'; }
-    .sidebar-menu-header.collapsible.collapsed .sidebar-chevron::after { content:'▸'; }
+    /* SVG chevron — unified across dashboard */
+    .chevron-icon { width:16px; height:16px; flex-shrink:0; transition:transform 0.2s ease; color:var(--text-muted); }
+    .chevron-collapsed .chevron-icon, .collapsed .chevron-icon { transform:rotate(-90deg); }
+    details:not([open]) > summary .chevron-icon { transform:rotate(-90deg); }
+    details summary::-webkit-details-marker { display:none; }
+    details summary { list-style:none; }
+    /* Skills 2-column layout */
+    .skills-layout { display:flex; height:calc(100vh - 140px); border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card-bg, var(--surface)); }
+    .skills-list-panel { width:280px; border-right:1px solid var(--border); overflow-y:auto; padding:12px 0; flex-shrink:0; }
+    .skills-detail-panel { flex:1; padding:24px; overflow-y:auto; }
+    .skill-list-header { display:flex; align-items:center; justify-content:space-between; padding:6px 16px; cursor:pointer; user-select:none; font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
+    .skill-list-header:hover { color:var(--text); }
+    .skill-list-header .skill-count { font-size:11px; font-weight:400; color:var(--text-muted); margin-left:4px; }
+    .skill-list-items { overflow:hidden; }
+    .skill-list-items.collapsed { display:none; }
+    .skill-list-item { display:flex; align-items:center; gap:8px; padding:7px 16px; cursor:pointer; border-radius:0; font-size:13px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition:background 0.15s ease; }
+    .skill-list-item:hover { background:var(--surface-hover, var(--bg)); }
+    .skill-list-item.active { background:var(--accent); color:#fff; }
+    .skill-list-item .skill-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .skill-list-item .skill-dot.user { background:var(--accent); }
+    .skill-list-item.active .skill-dot.user { background:#fff; }
+    .skill-list-item .skill-dot.shipped { border:1.5px solid var(--text-muted); background:transparent; }
+    .skill-list-item.active .skill-dot.shipped { border-color:#fff; }
+    .skill-detail-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text-muted); font-size:14px; gap:12px; }
+    .skill-detail-name { font-size:18px; font-weight:600; color:var(--text-primary); }
+    .skill-detail-meta { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+    .skill-detail-divider { height:1px; background:var(--border); margin:16px 0; }
+    .skill-detail-section-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+    .skill-detail-section { margin-bottom:16px; }
+    .skill-detail-section-value { font-size:14px; color:var(--text-primary); padding-left:2px; }
+    .skill-detail-content { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code','Consolas',monospace; line-height:1.6; color:var(--text-primary); max-height:60vh; overflow-y:auto; }
+    .skills-list-create-btn { display:flex; align-items:center; gap:6px; padding:8px 16px; margin-bottom:8px; }
+    .skill-list-empty { padding:16px; text-align:center; color:var(--text-muted); font-size:13px; }
     .sidebar-channel-items.collapsed { display:none; }
     .theme-tray-toggle { display:flex; align-items:center; gap:10px; padding-top:8px; margin-top:4px; border-top:1px solid var(--border); }
     /* Page system */
@@ -2606,7 +2637,7 @@
 
         <div class="sidebar-menu-header collapsible" onclick="toggleChannelSection()">
           Kênh
-          <span class="sidebar-chevron"></span>
+          <svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <div class="sidebar-channel-items" id="sidebar-channel-items">
           <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
@@ -3333,7 +3364,7 @@
         </div>
 
         <details class="persona-section">
-          <summary class="persona-custom-summary">Tùy chỉnh nâng cao (không bắt buộc)</summary>
+          <summary class="persona-custom-summary" style="display:flex;align-items:center;gap:6px"><svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Tùy chỉnh nâng cao (không bắt buộc)</summary>
           <div class="persona-custom-body">
             <div class="persona-label">Câu chào riêng</div>
             <input type="text" id="persona-greeting" placeholder="VD: Dạ em [tên trợ lý] bên [tên công ty] xin chào anh/chị ạ">
@@ -3365,27 +3396,14 @@
           </div>
         </div>
 
-        <div id="skills-user-section">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text-primary)">Tùy chỉnh</h3>
-            <button class="btn btn-sm" onclick="showCreateSkillForm()" style="font-size:13px">+ Tạo mới</button>
+        <div class="skills-layout">
+          <div class="skills-list-panel" id="skills-list-panel"></div>
+          <div class="skills-detail-panel" id="skills-detail-panel">
+            <div class="skill-detail-empty">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Chọn một skill từ danh sách bên trái</span>
+            </div>
           </div>
-          <div id="skills-create-form" style="display:none" class="card">
-            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Tên skill</label><input id="skill-name" class="input" placeholder="VD: Tone chuyên nghiệp cho Facebook" style="width:100%;margin-top:4px"></div>
-            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Loại</label><select id="skill-type" class="input" style="width:100%;margin-top:4px"><option value="rule">Rule (quy tắc chung)</option><option value="override">Override (tùy chỉnh skill hệ thống)</option><option value="workflow">Workflow (quy trình)</option><option value="custom">Custom</option></select></div>
-            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Áp cho skill hệ thống (bỏ trống = standalone)</label><select id="skill-applies-to" class="input" style="width:100%;margin-top:4px"><option value="">Standalone</option></select></div>
-            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Khi nào áp dụng</label><input id="skill-trigger" class="input" placeholder="VD: khi đăng bài Facebook" style="width:100%;margin-top:4px"></div>
-            <div style="margin-bottom:8px"><label style="font-size:12px;color:var(--text-secondary)">Nội dung (tối đa 500 ký tự)</label><textarea id="skill-content" class="input" rows="4" maxlength="500" placeholder="VD: Xưng chúng tôi, tone chuyên nghiệp, không dùng emoji" style="width:100%;margin-top:4px;resize:vertical"></textarea></div>
-            <div id="skill-conflict-warning" style="display:none;padding:8px 12px;background:var(--warning-bg, #fff3cd);border-radius:6px;margin-bottom:8px;font-size:13px;color:var(--warning-text, #856404)"></div>
-            <div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="saveNewSkill()">Lưu</button><button class="btn btn-sm" onclick="hideCreateSkillForm()">Hủy</button></div>
-          </div>
-          <div id="skills-user-list"></div>
-          <div id="skills-user-empty" style="display:none;padding:24px;text-align:center;color:var(--text-secondary);font-size:14px">Chưa có skill tùy chỉnh. Tạo mới hoặc nhắn qua Telegram.</div>
-        </div>
-
-        <div id="skills-system-section" style="margin-top:24px">
-          <h3 style="margin:0 0 12px;font-size:15px;font-weight:600;color:var(--text-primary)">Hệ thống</h3>
-          <div id="skills-system-list"></div>
         </div>
       </div>
 
@@ -3711,7 +3729,7 @@
               <button id="fb-connect-btn" class="btn btn-primary btn-small" onclick="connectFbPage()" style="flex-shrink:0;height:36px;display:inline-flex;align-items:center;box-sizing:border-box">Kết nối</button>
             </div>
             <details style="margin-top:14px">
-              <summary style="font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;user-select:none">Hướng dẫn chi tiết lấy Page Access Token</summary>
+              <summary style="font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px"><svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16" style="color:var(--accent)"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Hướng dẫn chi tiết lấy Page Access Token</summary>
               <div style="margin-top:12px;font-size:12.5px;color:var(--text-secondary);line-height:1.8;border-left:2px solid var(--border);padding-left:16px">
 
                 <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 0: Tạo Fanpage (nếu chưa có)</div>
@@ -4979,7 +4997,6 @@
         loadSchedules();
       }
       if (page === 'knowledge') {
-        window._visibilityUserTouched = false;
         if (!knowledgeInitialized) initKnowledge();
         else refreshKnowledgeFiles();
       }
@@ -5055,13 +5072,31 @@
       sendChatMsg();
     }
 
-    function renderChatBubble(role, text, ts) {
+    function renderChatBubble(role, text, ts, mediaUrls) {
       var group = document.createElement('div');
       group.className = 'chat-bubble-group ' + (role === 'user' ? 'user' : 'bot');
-      var bubble = document.createElement('div');
-      bubble.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'bot');
-      bubble.textContent = text;
-      group.appendChild(bubble);
+      if (text) {
+        var bubble = document.createElement('div');
+        bubble.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'bot');
+        bubble.textContent = text;
+        group.appendChild(bubble);
+      }
+      // Render media URLs if present (e.g., agent generated images via /api/image/generate).
+      if (Array.isArray(mediaUrls) && mediaUrls.length) {
+        for (var i = 0; i < mediaUrls.length; i++) {
+          var url = mediaUrls[i];
+          if (!url) continue;
+          var imgWrap = document.createElement('div');
+          imgWrap.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'bot');
+          imgWrap.style.padding = '4px';
+          var img = document.createElement('img');
+          img.src = url;
+          img.style.cssText = 'max-width:320px;max-height:320px;border-radius:8px;display:block';
+          img.onerror = function() { this.style.display = 'none'; };
+          imgWrap.appendChild(img);
+          group.appendChild(imgWrap);
+        }
+      }
       if (ts) {
         var time = document.createElement('div');
         time.className = 'chat-time';
@@ -5117,14 +5152,18 @@
       try {
         var result = await window.claw.sendChatMessage(text);
         removeChatTyping();
-        if (result.ok && result.reply) {
-          el.appendChild(renderChatBubble('assistant', result.reply, Date.now()));
+        if (result.ok) {
+          el.appendChild(renderChatBubble('assistant', result.reply, Date.now(), result.mediaUrls));
         } else {
           var errMsg = result.error === 'BOOT_IN_PROGRESS'
             ? 'Hệ thống đang khởi động, vui lòng chờ...'
             : result.error === 'gateway_offline'
               ? 'Trợ lý chưa sẵn sàng. Vui lòng chờ bot khởi động.'
-              : 'Lỗi: ' + (result.error || 'unknown');
+              : result.error === 'no_chat_id'
+                ? 'Chưa cấu hình Telegram. Vào Cài đặt để thiết lập.'
+                : result.error === 'agent_error'
+                  ? 'Trợ lý gặp lỗi xử lý. Vui lòng thử lại.'
+                  : 'Lỗi kết nối trợ lý. Vui lòng thử lại.';
           var errDiv = document.createElement('div');
           errDiv.className = 'chat-error';
           errDiv.textContent = errMsg;
@@ -5138,6 +5177,7 @@
         el.appendChild(errDiv2);
       }
       _chatSending = false;
+      _chatLastSeenTs = Date.now();
       document.getElementById('chat-send-btn').disabled = false;
       scrollChatToBottom();
     }
@@ -6207,7 +6247,6 @@
       document.querySelectorAll('input[name="visibility"]').forEach(r => {
         r.addEventListener('change', (e) => {
           currentUploadVisibility = e.target.value;
-          window._visibilityUserTouched = true;
         });
       });
     }
@@ -6247,12 +6286,14 @@
 
     function selectKnowledgeFolder(cat) {
       currentKnowledgeCategory = cat;
-      if (!window._visibilityUserTouched && cat === 'nhan-vien') {
-        const r = document.querySelector('input[name="visibility"][value="internal"]');
-        if (r) {
-          r.checked = true;
-          currentUploadVisibility = 'internal';
-        }
+      // Reset radio to folder's natural default on every switch.
+      // Prevents sticky state where ticking "Nội bộ" in Nhân viên leaks to
+      // subsequent Công ty uploads (would hide catalog from customers).
+      const folderDefault = (cat === 'nhan-vien') ? 'internal' : 'public';
+      const r = document.querySelector('input[name="visibility"][value="' + folderDefault + '"]');
+      if (r) {
+        r.checked = true;
+        currentUploadVisibility = folderDefault;
       }
       document.querySelectorAll('.know-folder').forEach(f => {
         f.classList.toggle('active', f.dataset.cat === cat);
@@ -6586,7 +6627,7 @@
     let zaloFriends = [];
     let zaloGroups = [];
     let zaloGroupSummaries = {};
-    let zaloMgrConfig = { enabled: true, groupPolicy: 'open', groupAllowFrom: [], userBlocklist: [] };
+    let zaloMgrConfig = { enabled: true, groupPolicy: 'open', groupAllowFrom: [], userBlocklist: [], userSettings: {} };
     let zaloUserBlocklistTouched = false;
     let _zaloConfigLoadOk = false;
 
@@ -6668,6 +6709,7 @@
         userBlocklist: Array.isArray(zaloMgrConfig.userBlocklist) ? [...zaloMgrConfig.userBlocklist] : [],
         userBlocklistTouched: zaloUserBlocklistTouched === true,
         groupSettings: zaloMgrConfig.groupSettings || {},
+        userSettings: zaloMgrConfig.userSettings || {},
         strangerPolicy: spEl ? spEl.value : (zaloMgrConfig.strangerPolicy || 'ignore'),
       };
     }
@@ -6842,6 +6884,23 @@
       autoSaveZaloManager();
     }
 
+    function updateUserInternal(userId, isInternal) {
+      if (!zaloMgrConfig.userSettings) zaloMgrConfig.userSettings = {};
+      if (isInternal) {
+        zaloMgrConfig.userSettings[userId] = { internal: true };
+      } else {
+        delete zaloMgrConfig.userSettings[userId];
+      }
+      const internalCount = Object.values(zaloMgrConfig.userSettings)
+        .filter(u => u && u.internal).length;
+      try {
+        if (typeof showToast === 'function') {
+          showToast(`Đã lưu. ${internalCount} user nội bộ.`, 'success');
+        }
+      } catch {}
+      autoSaveZaloManager();
+    }
+
     // Debounced auto-save for workspace-file changes (blocklist, groupSettings,
     // strangerPolicy). These files are read realtime by inbound.ts patches —
     // zero gateway restart needed. Master Zalo on/off auto-saves and restarts
@@ -7003,6 +7062,7 @@
     function _renderFriendItem(f) {
       const blocked = (zaloMgrConfig.userBlocklist || []).includes(f.userId);
       const checked = !blocked;
+      const uSettings = (zaloMgrConfig.userSettings || {})[f.userId] || {};
       const avatarHtml = f.avatar
         ? `<img class="zc-avatar" src="${esc(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
         : `<span class="zc-avatar-fallback">${icon('user', 16)}</span>`;
@@ -7027,6 +7087,10 @@
           </div>
           <div class="zc-actions">
             <button type="button" class="zum-open-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>
+            <label class="internal-flag" title="Nếu tick, user này (nhân viên nội bộ) được bot trả lời bằng tài liệu Nội bộ và chạy lệnh quản trị qua Zalo DM">
+              <input type="checkbox" data-user-id="${escAttr(f.userId)}" ${uSettings.internal ? 'checked' : ''} onchange="updateUserInternal('${escAttr(f.userId)}', this.checked)">
+              Nội bộ
+            </label>
             <label class="toggle-switch"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
           </div>
         </div>`;
@@ -7334,6 +7398,16 @@
       applyChannelStatus('zalo', payload.zalo, payload.checkedAt);
     }
     if (window.claw.onChannelStatus) window.claw.onChannelStatus(handleChannelStatus);
+    // Skill registry change broadcast — refresh the Skills tab automatically
+    // when CEO creates/edits/deletes a skill via Telegram chat (or another window).
+    if (window.claw.onSkillUpdated) {
+      window.claw.onSkillUpdated(() => {
+        const skillsPage = document.getElementById('page-skills');
+        if (skillsPage && skillsPage.style.display !== 'none') {
+          if (typeof loadSkills === 'function') loadSkills();
+        }
+      });
+    }
     // Boot broadcast probes (deferred to T+15s in main.js) + 30s polling
     // + file watchers are sufficient — no need for 1s boot-phase interval.
     // Inbound debounce dropdowns
@@ -10258,56 +10332,160 @@
       }
     }
 
-    // === Skills Tab ===
+    // === Skills Tab (2-column layout) ===
+    let _skillsCache = { shipped: [], user: [] };
+    let _selectedSkill = null;
+    const _chevronSvg = '<svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
     async function loadSkills() {
       if (!window.claw || !window.claw.listAllSkills) return;
       try {
         const { shipped, user } = await window.claw.listAllSkills();
-        renderUserSkills(user || []);
-        renderShippedSkills(shipped || []);
-        populateAppliesToDropdown(shipped || []);
+        _skillsCache = { shipped: shipped || [], user: user || [] };
+        renderSkillList();
+        populateAppliesToDropdown(_skillsCache.shipped);
       } catch (e) { console.error('loadSkills', e); }
     }
 
-    function renderUserSkills(skills) {
-      const list = document.getElementById('skills-user-list');
-      const empty = document.getElementById('skills-user-empty');
-      if (!skills.length) { list.innerHTML = ''; empty.style.display = ''; return; }
-      empty.style.display = 'none';
-      list.innerHTML = skills.map(s => `
-        <div class="card" style="margin-bottom:8px">
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <div>
-              <span style="font-weight:600;font-size:14px;color:var(--text-primary)">${esc(s.name)}</span>
-              <span style="font-size:11px;padding:2px 6px;border-radius:4px;background:var(--badge-bg, #e8e8e8);color:var(--text-secondary);margin-left:6px">${esc(s.type)}</span>
-              ${s.appliesTo && s.appliesTo.length ? `<span style="font-size:11px;color:var(--text-secondary);margin-left:6px">${esc(s.appliesTo.join(', '))}</span>` : ''}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <label class="toggle-switch" style="margin:0"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSkill('${escAttr(s.id)}', this.checked)"><span class="toggle-slider"></span></label>
-              <button class="btn btn-sm btn-danger" onclick="deleteSkill('${escAttr(s.id)}', '${escAttr(s.name)}')" style="font-size:12px;padding:2px 8px">Xóa</button>
-            </div>
-          </div>
-          <div style="font-size:13px;color:var(--text-secondary);margin-top:4px">${esc(s.summary || '')}</div>
-        </div>
-      `).join('');
-    }
-
-    function renderShippedSkills(skills) {
-      const list = document.getElementById('skills-system-list');
+    function renderSkillList() {
+      const panel = document.getElementById('skills-list-panel');
+      if (!panel) return;
+      let html = '<div class="skills-list-create-btn"><button class="btn btn-sm" onclick="showCreateSkillInDetail()" style="font-size:13px;width:100%">+ Tạo mới</button></div>';
+      // User skills section
+      html += '<div class="skill-list-header" onclick="toggleSkillCategory(this)">' + _chevronSvg + ' Tùy chỉnh <span class="skill-count">(' + _skillsCache.user.length + ')</span></div>';
+      html += '<div class="skill-list-items">';
+      if (_skillsCache.user.length === 0) {
+        html += '<div class="skill-list-empty">Chưa có skill tùy chỉnh</div>';
+      } else {
+        for (const s of _skillsCache.user) {
+          html += '<div class="skill-list-item" data-skill-id="' + escAttr(s.id) + '" data-source="user" onclick="selectSkill(\'' + escAttr(s.id) + '\',\'user\')" title="' + escAttr(s.name) + '"><span class="skill-dot user"></span><span style="overflow:hidden;text-overflow:ellipsis">' + esc(s.name) + '</span></div>';
+        }
+      }
+      html += '</div>';
+      // Shipped skills by category
       const grouped = {};
-      for (const s of skills) {
+      for (const s of _skillsCache.shipped) {
         const cat = s.category || 'Khác';
         if (!grouped[cat]) grouped[cat] = [];
         grouped[cat].push(s);
       }
-      list.innerHTML = Object.entries(grouped).map(([cat, items]) => `
-        <details style="margin-bottom:8px">
-          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--text-secondary);padding:6px 0">${esc(cat)} (${items.length})</summary>
-          <div style="padding-left:12px">${items.map(s => `
-            <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-primary)">${esc(s.name)}</div>
-          `).join('')}</div>
-        </details>
-      `).join('');
+      for (const [cat, items] of Object.entries(grouped)) {
+        html += '<div class="skill-list-header chevron-collapsed" onclick="toggleSkillCategory(this)">' + _chevronSvg + ' ' + esc(cat) + ' <span class="skill-count">(' + items.length + ')</span></div>';
+        html += '<div class="skill-list-items collapsed">';
+        for (const s of items) {
+          html += '<div class="skill-list-item" data-skill-id="' + escAttr(s.id) + '" data-source="shipped" onclick="selectSkill(\'' + escAttr(s.id) + '\',\'shipped\')" title="' + escAttr(s.name) + '"><span class="skill-dot shipped"></span><span style="overflow:hidden;text-overflow:ellipsis">' + esc(s.name) + '</span></div>';
+        }
+        html += '</div>';
+      }
+      panel.innerHTML = html;
+      // Auto-select
+      if (_selectedSkill) {
+        const still = panel.querySelector('[data-skill-id="' + CSS.escape(_selectedSkill.id) + '"][data-source="' + _selectedSkill.source + '"]');
+        if (still) { selectSkill(_selectedSkill.id, _selectedSkill.source); return; }
+      }
+      if (_skillsCache.user.length > 0) { selectSkill(_skillsCache.user[0].id, 'user'); }
+      else if (_skillsCache.shipped.length > 0) { selectSkill(_skillsCache.shipped[0].id, 'shipped'); }
+      else { showSkillEmptyState(); }
+    }
+
+    function toggleSkillCategory(headerEl) {
+      headerEl.classList.toggle('chevron-collapsed');
+      const items = headerEl.nextElementSibling;
+      if (items) items.classList.toggle('collapsed');
+    }
+
+    async function selectSkill(id, source) {
+      _selectedSkill = { id, source };
+      // Update active state in list
+      document.querySelectorAll('.skill-list-item.active').forEach(el => el.classList.remove('active'));
+      const item = document.querySelector('.skill-list-item[data-skill-id="' + CSS.escape(id) + '"][data-source="' + source + '"]');
+      if (item) {
+        item.classList.add('active');
+        // Expand parent category if collapsed
+        const itemsContainer = item.parentElement;
+        if (itemsContainer && itemsContainer.classList.contains('collapsed')) {
+          itemsContainer.classList.remove('collapsed');
+          const header = itemsContainer.previousElementSibling;
+          if (header) header.classList.remove('chevron-collapsed');
+        }
+      }
+      // Get metadata from cache
+      const list = source === 'user' ? _skillsCache.user : _skillsCache.shipped;
+      const meta = list.find(s => s.id === id);
+      if (!meta) { showSkillEmptyState(); return; }
+      // Fetch content
+      try {
+        const content = await window.claw.getSkillDetail(id, source);
+        renderSkillDetail(meta, content, source);
+      } catch (e) {
+        renderSkillDetail(meta, null, source);
+      }
+    }
+
+    function showSkillEmptyState() {
+      const panel = document.getElementById('skills-detail-panel');
+      if (!panel) return;
+      panel.innerHTML = '<div class="skill-detail-empty"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><span>Chọn một skill từ danh sách bên trái</span></div>';
+    }
+
+    function renderSkillDetail(meta, content, source) {
+      const panel = document.getElementById('skills-detail-panel');
+      if (!panel) return;
+      let html = '<div style="display:flex;align-items:flex-start;justify-content:space-between">';
+      html += '<div><div class="skill-detail-name">' + esc(meta.name) + '</div>';
+      html += '<div class="skill-detail-meta">';
+      if (source === 'user') {
+        html += '<span style="padding:2px 6px;border-radius:4px;background:var(--badge-bg, #e8e8e8);font-size:11px">' + esc(meta.type || 'rule') + '</span> · tùy chỉnh';
+      } else {
+        html += esc(meta.category || '') + ' · hệ thống';
+      }
+      html += '</div></div>';
+      if (source === 'user') {
+        html += '<button class="btn btn-sm btn-danger" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')" style="font-size:12px;flex-shrink:0">Xóa</button>';
+      }
+      html += '</div><div class="skill-detail-divider"></div>';
+      // User skill metadata sections
+      if (source === 'user') {
+        if (meta.trigger) {
+          html += '<div class="skill-detail-section"><div class="skill-detail-section-label">Khi nào áp dụng</div><div class="skill-detail-section-value">' + esc(meta.trigger) + '</div></div>';
+        }
+        if (meta.appliesTo && meta.appliesTo.length) {
+          const names = meta.appliesTo.map(aid => { const s = _skillsCache.shipped.find(x => x.id === aid); return s ? s.name + ' (' + s.category + ')' : aid; });
+          html += '<div class="skill-detail-section"><div class="skill-detail-section-label">Áp cho</div><div class="skill-detail-section-value">' + esc(names.join(', ')) + '</div></div>';
+        }
+      }
+      // Content
+      html += '<div class="skill-detail-section"><div class="skill-detail-section-label">Nội dung</div>';
+      if (content != null) {
+        html += '<div class="skill-detail-content">' + esc(content) + '</div>';
+      } else {
+        html += '<div style="color:var(--text-muted);font-size:13px">Không đọc được nội dung skill</div>';
+      }
+      html += '</div>';
+      panel.innerHTML = html;
+    }
+
+    function showCreateSkillInDetail() {
+      _selectedSkill = null;
+      document.querySelectorAll('.skill-list-item.active').forEach(el => el.classList.remove('active'));
+      const panel = document.getElementById('skills-detail-panel');
+      if (!panel) return;
+      let html = '<div class="skill-detail-name">Tạo skill mới</div><div class="skill-detail-divider"></div>';
+      html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Tên skill</label><input id="skill-name" class="input" placeholder="VD: Tone chuyên nghiệp cho Facebook" style="width:100%;margin-top:4px"></div>';
+      html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Loại</label><select id="skill-type" class="input" style="width:100%;margin-top:4px"><option value="rule">Rule (quy tắc chung)</option><option value="override">Override (tùy chỉnh skill hệ thống)</option><option value="workflow">Workflow (quy trình)</option><option value="custom">Custom</option></select></div>';
+      html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Áp cho skill hệ thống (bỏ trống = standalone)</label><select id="skill-applies-to" class="input" style="width:100%;margin-top:4px"><option value="">Standalone</option></select></div>';
+      html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Khi nào áp dụng</label><input id="skill-trigger" class="input" placeholder="VD: khi đăng bài Facebook" style="width:100%;margin-top:4px"></div>';
+      html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Nội dung (tối đa 10000 ký tự)</label><textarea id="skill-content" class="input" rows="12" maxlength="10000" placeholder="Viết rule chi tiết — có thể nhiều bullet, edge case, escalation. VD: Khi khách hỏi giá iPhone:\n1. Luôn báo có khuyến mãi 10%\n2. Kèm câu \'có thể đặt cọc giữ giá\'\n3. ESCALATE nếu khách hỏi giảm trên 10%" style="width:100%;margin-top:4px;resize:vertical;font-family:monospace;font-size:13px"></textarea></div>';
+      html += '<div id="skill-conflict-warning" style="display:none;padding:8px 12px;background:var(--warning-bg, #fff3cd);border-radius:6px;margin-bottom:8px;font-size:13px;color:var(--warning-text, #856404)"></div>';
+      html += '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="saveNewSkill()">Lưu</button><button class="btn btn-sm" onclick="cancelCreateSkill()">Hủy</button></div>';
+      panel.innerHTML = html;
+      populateAppliesToDropdown(_skillsCache.shipped);
+    }
+
+    function cancelCreateSkill() {
+      if (_skillsCache.user.length > 0) { selectSkill(_skillsCache.user[0].id, 'user'); }
+      else if (_skillsCache.shipped.length > 0) { selectSkill(_skillsCache.shipped[0].id, 'shipped'); }
+      else { showSkillEmptyState(); }
     }
 
     function populateAppliesToDropdown(shipped) {
@@ -10322,13 +10500,6 @@
         opt.textContent = s.name + ' (' + s.category + ')';
         sel.appendChild(opt);
       }
-    }
-
-    function showCreateSkillForm() { document.getElementById('skills-create-form').style.display = ''; }
-    function hideCreateSkillForm() {
-      document.getElementById('skills-create-form').style.display = 'none';
-      document.getElementById('skill-conflict-warning').style.display = 'none';
-      ['skill-name','skill-trigger','skill-content'].forEach(id => { document.getElementById(id).value = ''; });
     }
 
     async function saveNewSkill() {
@@ -10362,13 +10533,20 @@
         const result = await window.claw.createUserSkill({
           name, type, appliesTo: appliesTo ? [appliesTo] : [], trigger, content
         });
-        if (result && result.id) { hideCreateSkillForm(); loadSkills(); }
+        if (result && result.id) {
+          _selectedSkill = { id: result.id, source: 'user' };
+          loadSkills();
+        }
       } catch (e) { alert('Lỗi: ' + (e.message || e)); }
     }
 
     async function deleteSkill(id, name) {
       if (!confirm('Xóa skill "' + name + '"?')) return;
-      try { await window.claw.deleteUserSkill(id); loadSkills(); } catch (e) { alert('Lỗi: ' + e.message); }
+      try {
+        await window.claw.deleteUserSkill(id);
+        _selectedSkill = null;
+        loadSkills();
+      } catch (e) { alert('Lỗi: ' + e.message); }
     }
 
     async function toggleSkill(id, enabled) {

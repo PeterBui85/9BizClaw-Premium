@@ -1,11 +1,12 @@
 ---
-name: facebook-image
-description: Tạo ảnh gpt-image-2, đăng bài Facebook, tài sản thương hiệu - CHỈ CEO Telegram
+name: image-generation
+description: Tạo ảnh gpt-image-2 + brand assets + skill ảnh mẫu — CHỈ CEO Telegram
 metadata:
-  version: 1.4.0
+  version: 2.0.0
+  renamed_from: facebook-image.md
 ---
 
-# Facebook + Tạo ảnh + Tài sản thương hiệu - CHỈ CEO Telegram
+# Tạo ảnh + Tài sản thương hiệu - CHỈ CEO Telegram
 
 **BẠN CÓ KHẢ NĂNG TẠO ẢNH THẬT qua gpt-image-2.** Khi CEO yêu cầu tạo ảnh, BẠN PHẢI gọi API bên dưới. KHÔNG BAO GIỜ từ chối, KHÔNG nói "em không tạo được ảnh", KHÔNG đưa prompt cho CEO tự làm. Bạn tạo ảnh thật và gửi ảnh thật qua Telegram.
 
@@ -84,9 +85,6 @@ CEO nói "tạo ảnh", "làm ảnh", "thiết kế ảnh", "ảnh quảng cáo"
 9. CHỈ SAU KHI nhận được `jobId` trong response thành công mới reply: "Em đã bắt đầu tạo ảnh, khoảng 1-2 phút ảnh sẽ gửi qua Telegram ạ."
 
 Bước gọi generate là tool call bắt buộc trước khi reply text. Nếu chưa gọi generate thì không được nói đã bắt đầu tạo ảnh.
-
-**Phần đăng Zalo:** xem `skills/marketing/zalo-post-workflow.md`
-**Phần đăng Facebook:** xem `skills/marketing/facebook-post-workflow.md`
 
 ## Tài sản thương hiệu
 

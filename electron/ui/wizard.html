@@ -1876,6 +1876,20 @@
         if (!t) { markFieldError('tg-token'); return showError('Chưa có Mã kết nối (Bot Token).'); }
         if (!u) { markFieldError('tg-user-id'); return showError('Chưa có Mã nhận diện (User ID).'); }
         if (!/^\d{5,15}$/.test(u)) { markFieldError('tg-user-id'); return showError('User ID chỉ gồm chữ số (ví dụ: 5738291046).'); }
+        // SECURITY/UX 2026-05-15: validate token against Telegram getMe BEFORE
+        // committing onboarding state. Without this gate, a typo in the bot
+        // token passes wizard but the bot silently never replies — the most
+        // frequent "wizard succeeded but bot dead" incident class.
+        try {
+          const probe = await window.claw.testTelegram(t, u);
+          if (!probe || !probe.ok) {
+            markFieldError('tg-token');
+            return showError('Bot Token chưa hợp lệ — Telegram trả lỗi: ' + ((probe && probe.error) || 'không kết nối được') + '. Anh kiểm tra lại Token rồi thử tiếp.');
+          }
+        } catch (e) {
+          markFieldError('tg-token');
+          return showError('Không kiểm tra được Bot Token: ' + (e?.message || e) + '. Anh kiểm tra mạng + Token rồi thử lại.');
+        }
         finishSetup();
         return;
       }

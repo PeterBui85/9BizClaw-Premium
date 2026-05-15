@@ -32,7 +32,7 @@ const DEFAULT_SCHEDULES_JSON = [
 ];
 
 // --- AGENTS.md versioning (private) ---
-const CURRENT_AGENTS_MD_VERSION = 99;
+const CURRENT_AGENTS_MD_VERSION = 101;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 // ─── User data dir (Electron/APPDATA level) ─────────────────────
@@ -157,7 +157,10 @@ function readFbConfig() {
         if (safeStorage.isEncryptionAvailable()) {
           cfg.accessToken = safeStorage.decryptString(Buffer.from(cfg.accessToken, 'base64'));
         }
-      } catch {}
+      } catch (e) {
+        console.error('[fb-config] token decryption failed — token is unusable:', e.message);
+        cfg.accessToken = null;
+      }
     }
     return cfg;
   } catch { return null; }
@@ -304,8 +307,34 @@ function seedWorkspace() {
         // template .md files that changed significantly. These don't have
         // their own version stamps, so they only get updated on AGENTS.md
         // version bumps. CEO customizations in these files are rare (they're
-        // bot-internal, not user-facing), so overwriting is safe.
+        // bot-internal, not user-facing).
+        //
+        // 2026-05-15: BACKUP each piggyback file BEFORE overwrite so that
+        // CEOs who DID hand-edit (e.g., to tweak SOUL.md persona quirks) can
+        // recover from `.learnings/<NAME>-backup-v<ver>-<ts>.md`. Previously
+        // only AGENTS.md had this safety net — round-2 review flagged the
+        // silent-loss risk for SOUL/TOOLS/BOOTSTRAP/README.
         const alsoOverwrite = ['BOOTSTRAP.md', 'SOUL.md', 'TOOLS.md', 'README.md'];
+        try {
+          const backupDir = path.join(ws, '.learnings');
+          fs.mkdirSync(backupDir, { recursive: true });
+          const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          for (const fname of alsoOverwrite) {
+            const fp = path.join(ws, fname);
+            if (!fs.existsSync(fp)) continue;
+            try {
+              const existing = fs.readFileSync(fp, 'utf-8');
+              const base = fname.replace(/\.md$/, '');
+              const backupName = base + '-backup-v' + existingVersion + '-' + ts + '.md';
+              fs.writeFileSync(path.join(backupDir, backupName), existing, 'utf-8');
+              console.log('[seedWorkspace] backed up ' + fname + ' → .learnings/' + backupName);
+            } catch (bpe) {
+              console.warn('[seedWorkspace] piggyback backup failed for ' + fname + ':', bpe?.message);
+            }
+          }
+        } catch (pbe) {
+          console.warn('[seedWorkspace] piggyback backup setup failed:', pbe?.message);
+        }
         // Force-refresh template-owned files in these dirs while preserving
         // any files the customer created (custom skills, prompts, etc.).
         // Strategy: walk the template dir, overwrite matching files in workspace,
@@ -336,6 +365,62 @@ function seedWorkspace() {
             }
           };
           try { walkAndRefresh(''); console.log('[seedWorkspace] ' + dirName + '/ refreshed ' + refreshed + ' template files (user files preserved)'); } catch (we) { console.warn('[seedWorkspace] ' + dirName + '/ refresh failed:', we.message); }
+
+          // ORPHAN CLEANUP: remove ONLY files in known-shipped subdirs that
+          // no longer exist in template. v2.4.0 → v2.4.4 upgrade retains stale
+          // skills/marketing/copywriting/, skills/content/, skills/finance/,
+          // etc. that we removed from the template. This whitelist approach
+          // protects CEO-created subdirs (custom/, image-templates/, etc.)
+          // and `_archived/` from accidental deletion.
+          if (dirName === 'skills') {
+            // Whitelist of subdirs known to have been SHIPPED in past versions.
+            // Cleanup runs ONLY in these dirs. Anything else = CEO-owned, preserved.
+            const cleanupSubdirs = ['operations', 'marketing', 'content', 'finance', 'strategy', 'advisory', 'growth', 'hr', 'sales'];
+            let purged = 0;
+            const purgeOrphans = (rel) => {
+              const srcDir = path.join(tmplDir, rel);
+              const dstDir = path.join(wsDir, rel);
+              if (!fs.existsSync(dstDir)) return;
+              for (const entry of fs.readdirSync(dstDir, { withFileTypes: true })) {
+                const dstChild = path.join(dstDir, entry.name);
+                const srcChild = path.join(srcDir, entry.name);
+                if (entry.isDirectory()) {
+                  if (!fs.existsSync(srcChild)) {
+                    // Subdir entirely removed from template — purge it from workspace.
+                    try { fs.rmSync(dstChild, { recursive: true, force: true }); purged++; }
+                    catch (e) { console.warn('[seedWorkspace] could not purge orphan dir ' + dstChild + ':', e.message); }
+                  } else {
+                    purgeOrphans(path.join(rel, entry.name));
+                  }
+                } else if (entry.isFile()) {
+                  if (!fs.existsSync(srcChild)) {
+                    try { fs.unlinkSync(dstChild); purged++; }
+                    catch (e) { console.warn('[seedWorkspace] could not purge orphan file ' + dstChild + ':', e.message); }
+                  }
+                }
+              }
+            };
+            // For root-level files in skills/, also clean up orphans (old .md files removed from template).
+            try {
+              const rootEntries = fs.readdirSync(wsDir, { withFileTypes: true });
+              for (const entry of rootEntries) {
+                if (entry.isFile() && entry.name.endsWith('.md')) {
+                  const srcFile = path.join(tmplDir, entry.name);
+                  if (!fs.existsSync(srcFile)) {
+                    try { fs.unlinkSync(path.join(wsDir, entry.name)); purged++; }
+                    catch {}
+                  }
+                }
+              }
+            } catch {}
+            // For each known-shipped subdir, recurse and clean orphans.
+            for (const sub of cleanupSubdirs) {
+              try {
+                if (fs.existsSync(path.join(wsDir, sub))) purgeOrphans(sub);
+              } catch (pe) { console.warn('[seedWorkspace] skills/' + sub + ' orphan purge failed:', pe.message); }
+            }
+            console.log('[seedWorkspace] skills/ purged ' + purged + ' orphan files/dirs (CEO-created subdirs + _archived/ preserved)');
+          }
         }
         for (const f of alsoOverwrite) {
           const fp = path.join(ws, f);
@@ -408,6 +493,17 @@ function seedWorkspace() {
   const skillRegistryPath = path.join(userSkillsDir, '_registry.json');
   if (!fs.existsSync(skillRegistryPath)) {
     try { fs.writeFileSync(skillRegistryPath, JSON.stringify({ version: 1, skills: [] }, null, 2), 'utf-8'); } catch {}
+  }
+  // Always regenerate INLINE.md on boot to recover from stale state caused by
+  // workspace restore from backup, AV quarantine, or manual file edits. The
+  // function is idempotent and fast (re-reads registry, rewrites INLINE.md).
+  try { require('./skill-manager')._safeRegenInline(); } catch (e) {
+    console.warn('[seedWorkspace] INLINE.md boot regen skipped:', e?.message);
+  }
+  // Persist any in-memory `_migrateAppliesTo` rewrites once at boot so the
+  // on-disk registry matches current shipped skill paths (G-I2 fix 2026-05-15).
+  try { require('./skill-manager').persistAppliesToMigrationIfNeeded(); } catch (e) {
+    console.warn('[seedWorkspace] appliesTo migration persist skipped:', e?.message);
   }
 
   // Seed CEO-MEMORY.md (hot tier for Hermes-style memory)
@@ -581,8 +677,8 @@ function seedWorkspace() {
   } catch {}
 
   // Knowledge tab folders + index files
-  const knowCategories = ['cong-ty', 'san-pham', 'nhan-vien', '9bizclaw'];
-  const knowLabels = { 'cong-ty': 'Công ty', 'san-pham': 'Sản phẩm', 'nhan-vien': 'Nhân viên', '9bizclaw': '9BizClaw' };
+  const knowCategories = ['cong-ty', 'san-pham', 'nhan-vien'];
+  const knowLabels = { 'cong-ty': 'Công ty', 'san-pham': 'Sản phẩm', 'nhan-vien': 'Nhân viên' };
   for (const cat of knowCategories) {
     const filesDir = path.join(ws, 'knowledge', cat, 'files');
     try { fs.mkdirSync(filesDir, { recursive: true }); } catch {}
@@ -597,10 +693,18 @@ function seedWorkspace() {
       } catch {}
     }
   }
-  // Seed 9BizClaw product doc from source tree (self-knowledge for the bot)
-  const bizclawSrc = path.join(ctx.resourceDir, 'knowledge', '9bizclaw');
-  const bizclawDst = path.join(ws, 'knowledge', '9bizclaw');
-  if (fs.existsSync(bizclawSrc)) copyDirRecursive(bizclawSrc, bizclawDst);
+  // Cleanup: knowledge/9bizclaw/ was shipped in earlier versions as
+  // self-knowledge for the bot. Decision: never ship product marketing inside
+  // customer workspace. Remove leftover dir if present. If CEO uploaded their
+  // own files into the dir (uncommon), they're lost — but the dir was always
+  // labeled "9BizClaw" so unlikely repurposed.
+  try {
+    const stale9biz = path.join(ws, 'knowledge', '9bizclaw');
+    if (fs.existsSync(stale9biz)) {
+      fs.rmSync(stale9biz, { recursive: true, force: true });
+      console.log('[seedWorkspace] removed stale knowledge/9bizclaw/ (not shipped from v2.4.4)');
+    }
+  } catch {}
 
   return ws;
 }

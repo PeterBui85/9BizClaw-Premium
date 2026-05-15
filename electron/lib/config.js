@@ -419,6 +419,11 @@ async function ensureDefaultConfig() {
             changed = true;
           }
         }
+        // Ensure 'zalo' model is registered so gateway knows about the zalo combo
+        if (!provider.models.some(m => m && m.id === 'zalo')) {
+          provider.models.push({ id: 'zalo', name: 'Zalo Combo (gpt-5.2)', input: ['text', 'image'] });
+          changed = true;
+        }
       }
     }
 
@@ -692,6 +697,8 @@ async function ensureDefaultConfig() {
       config.agents.defaults.bootstrapMaxChars = 40000;
       changed = true;
     }
+    // contextPruning and thinkingDefault intentionally NOT set.
+    // Both trade output quality for speed — unacceptable for CEO + customer-facing bot.
     // TOOL-BLOAT FIX: use a small exact allowlist. Admin actions now go through
     // local authenticated APIs instead of giving the agent filesystem/process
     // tools globally.
@@ -734,6 +741,12 @@ async function ensureDefaultConfig() {
     // Must actively delete to heal machines that already have the bad key.
     if ('execSecurity' in config.agents.defaults) {
       delete config.agents.defaults.execSecurity;
+      changed = true;
+    }
+    // sessionPruning: openclaw 2026.4.14 rejects this key (Unrecognized key).
+    // Actively DELETE if present to prevent gateway hang on startup.
+    if (config.agents.sessionPruning) {
+      delete config.agents.sessionPruning;
       changed = true;
     }
     // Inbound message batching: wait 3s for rapid messages from same sender,

@@ -52,25 +52,40 @@ Quy tắc URL:
 - Ký tự đặc biệt: `&` -> `%26`, `"` -> `%22`, `%` -> `%25`.
 - Prompt agent mode phải viết tiếng Việt có dấu đầy đủ.
 
+**BẮT BUỘC: mọi cron group PHẢI truyền cả `groupId` VÀ `groupName`.** API cross-check để chặn bind sai nhóm (sự cố thật 2026-05-15: cron bị bind vào "LỊCH KH NUMINA" trong khi prompt nói "LỊCH CÁ NHÂN"). Nếu chỉ truyền `groupId`, API trả 400 + nhắc thêm groupName.
+
 Lặp lại một nhóm:
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Chào+sáng&cronExpr=0+9+*+*+1-5&groupId=123456&content=Chào+buổi+sáng!
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Chào+sáng&cronExpr=0+9+*+*+1-5&groupId=123456&groupName=Khách+VIP&content=Chào+buổi+sáng!
 ```
 
-Lặp lại nhiều nhóm:
+Lặp lại nhiều nhóm (groupIds + groupName phải khớp 1-1 hoặc gọi nhiều lần riêng biệt):
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Broadcast&cronExpr=0+9+*+*+1-5&groupIds=111,222,333&content=Chào+buổi+sáng!
+# Khuyến nghị: gọi 3 lần riêng cho 3 nhóm, mỗi lần có cả id+name
 ```
 
 Lịch một lần:
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo&oneTimeAt=2026-04-22T09:00:00&groupId=123456&content=Nội+dung!
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo&oneTimeAt=2026-04-22T09:00:00&groupId=123456&groupName=Tên+nhóm&content=Nội+dung!
 ```
 
 Agent mode:
 ```
-web_fetch http://127.0.0.1:20200/api/cron/create?label=Báo+cáo+sáng&cronExpr=0+8+*+*+*&groupId=123456&mode=agent&prompt=Tổng+hợp+hoạt+động+hôm+qua+và+gửi+báo+cáo+ngắn+gọn
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Báo+cáo+sáng&cronExpr=0+8+*+*+*&groupId=123456&groupName=Tên+nhóm&mode=agent&prompt=Tổng+hợp+hoạt+động+hôm+qua+và+gửi+báo+cáo+ngắn+gọn
 ```
+
+## Bước 4b: Soát lại cron cũ bị bind sai (audit)
+
+CEO hỏi "kiểm tra cron có bind đúng nhóm không?" hoặc nghi ngờ cron gửi sai nhóm → gọi:
+```
+web_fetch http://127.0.0.1:20200/api/cron/audit
+```
+Trả về `{totalCrons, flagged, findings}`. Mỗi `finding` có các `issues`:
+- `label_drift` — nhóm bị đổi tên trên Zalo, stored label cũ
+- `unknown_groupId` — nhóm đã bị xóa hoặc cache groups.json rỗng
+- `prompt_mentions_other_group` — prompt nhắc đến tên nhóm KHÁC stored target (nghi ngờ bind sai từ lúc tạo)
+
+Báo CEO danh sách cron flagged + đề xuất: (a) `delete + tạo lại` đúng, hoặc (b) `toggle enabled=false` tạm tắt trong khi xác minh.
 
 ## Bước 5: Xác nhận cron đã tạo (BẮT BUỘC)
 

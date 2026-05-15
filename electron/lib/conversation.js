@@ -150,7 +150,17 @@ function _extractConversationHistoryImpl({ sinceMs, maxMessages = 40, channels =
       if (textParts.length === 0) continue;
       let text = textParts.join('\n').trim();
       if (!text) continue;
+      let msgSender = sessionSender;
+      let msgChannel = sessionChannel;
       if (msg.role === 'user') {
+        if (!msgSender) {
+          const fromMatch = text.match(/From:\s*(.+?)[\r\n]/);
+          if (fromMatch) { msgSender = fromMatch[1].trim(); sessionSender = msgSender; }
+        }
+        if (!msgChannel) {
+          const chanMatch = text.match(/Channel:\s*(.+?)[\r\n]/);
+          if (chanMatch) { msgChannel = chanMatch[1].trim().toLowerCase().replace(/\s+/g, '-'); sessionChannel = msgChannel; }
+        }
         text = text.replace(/Conversation info[^]*?```\s*\n/g, '');
         text = text.replace(/Sender[^]*?```\s*\n/g, '');
         text = text.replace(/\[Queued messages while agent was busy\]\s*\n*---\n*Queued #\d+\n*/g, '\n');
@@ -160,8 +170,8 @@ function _extractConversationHistoryImpl({ sinceMs, maxMessages = 40, channels =
       collected.push({
         ts: tsMs,
         role: msg.role,
-        channel: sessionChannel || 'unknown',
-        sender: sessionSender || 'unknown',
+        channel: msgChannel || 'unknown',
+        sender: msgSender || 'unknown',
         text: text.slice(0, 500),
       });
     }

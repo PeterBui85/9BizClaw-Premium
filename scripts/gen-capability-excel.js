@@ -117,8 +117,8 @@ const rows = [
   ['Quản lý kênh', 'Blocklist Zalo', "CEO thêm user vào blocklist qua Dashboard", "Bot đọc zalo-blocklist.json, drop tin trước khi xử lý", 'skills/operations/channel-control.md'],
 
   // === SKILLS ===
-  ['Skill', 'Gửi tin Zalo theo lệnh CEO', "CEO: 'Gửi Zalo cho anh Minh'", "Bot tra friends/groups.json → xác nhận nội dung → gửi", 'skills/operations/send-zalo.md'],
-  ['Skill', 'Đọc Google Sheet', "CEO: 'Đọc danh sách từ Google Sheet link X'", "Bot kiểm tra public → extract Sheet ID → fetch CSV → parse", 'skills/operations/google-sheet.md'],
+  ['Skill', 'Gửi tin Zalo theo lệnh CEO', "CEO: 'Gửi Zalo cho anh Minh'", "Bot tra friends/groups.json → xác nhận nội dung → gửi", 'skills/operations/telegram-ceo.md'],
+  ['Skill', 'Đọc Google Sheet', "CEO: 'Đọc danh sách từ Google Sheet link X'", "Bot kiểm tra public → extract Sheet ID → fetch CSV → parse", 'skills/operations/google-workspace.md'],
   ['Skill', 'Follow-up khách hàng', "Cron 09:30 tự động", "Scan khách >48h, promise pending, tag hot → gửi follow-up", 'skills/operations/follow-up.md'],
 
   // === HEARTBEAT ===

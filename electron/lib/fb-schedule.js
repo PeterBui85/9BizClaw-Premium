@@ -26,6 +26,7 @@ const SCHEDULES_FILE = 'fb-scheduled-posts.json';
 const PENDING_DIR = 'fb-pending';
 const DEFAULT_LEAD_MINUTES = 120;
 const PENDING_TTL_DAYS = 7;
+const _generateInFlight = new Set();
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -44,9 +45,18 @@ function pendingFilename(scheduleId, dateStr) {
 }
 
 function todayStr() {
-  const d = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
+
+function tomorrowStr() {
+  return new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
+
+function nowInICT() {
+  const now = new Date();
+  const h = parseInt(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: 'numeric' }));
+  const m = parseInt(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', minute: 'numeric' }));
+  return { hour: h, minute: m };
 }
 
 /** Parse "HH:MM" → { hour, minute } or null */
@@ -60,15 +70,19 @@ function parseTime(timeStr) {
   return { hour, minute };
 }
 
-/** Subtract minutes from HH:MM, return new "HH:MM" (clamped to same day) */
+/** Subtract minutes from HH:MM. Returns { time: "HH:MM", prevDay: boolean }. */
 function subtractMinutes(timeStr, minutes) {
   const parsed = parseTime(timeStr);
   if (!parsed) return null;
   let totalMin = parsed.hour * 60 + parsed.minute - minutes;
-  if (totalMin < 0) totalMin = 0;
+  const prevDay = totalMin < 0;
+  if (totalMin < 0) totalMin += 1440;
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return {
+    time: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+    prevDay,
+  };
 }
 
 /** Convert "HH:MM" to node-cron expression "MM HH * * *" */
@@ -202,6 +216,16 @@ function listPendingForDate(dateStr) {
  * Generates image, sends preview to CEO via Telegram, writes pending file.
  */
 async function handleGenerate(scheduleId) {
+  if (_generateInFlight.has(scheduleId)) {
+    console.log(`[fb-schedule] handleGenerate: ${scheduleId} already in flight, skipping`);
+    return;
+  }
+  _generateInFlight.add(scheduleId);
+  try { await _handleGenerateInner(scheduleId); }
+  finally { _generateInFlight.delete(scheduleId); }
+}
+
+async function _handleGenerateInner(scheduleId) {
   const schedules = loadSchedules();
   const schedule = schedules.find(s => s.id === scheduleId);
   if (!schedule) {
@@ -213,7 +237,9 @@ async function handleGenerate(scheduleId) {
     return;
   }
 
-  const date = todayStr();
+  const lead = typeof schedule.leadMinutes === 'number' ? schedule.leadMinutes : DEFAULT_LEAD_MINUTES;
+  const genResult = subtractMinutes(schedule.postTime, lead);
+  const date = (genResult && genResult.prevDay) ? tomorrowStr() : todayStr();
   const existing = loadPending(scheduleId, date);
   if (existing && existing.status !== 'regenerating') {
     console.log(`[fb-schedule] handleGenerate: pending already exists for ${scheduleId} on ${date} (status: ${existing.status}), skipping`);
@@ -291,7 +317,7 @@ async function handleGenerate(scheduleId) {
 
       if (_sendTelegramPhoto) {
         try {
-          await _sendTelegramPhoto(imagePath, `[FB Auto-post] "${schedule.label}"\n\nCaption:\n${caption}\n\nSẽ tự động đăng lúc ${schedule.postTime}. Trả lời "hủy ${scheduleId}" để hủy.`);
+          await _sendTelegramPhoto(imagePath, `[FB Auto-post] "${schedule.label}"\n\nCaption:\n${caption}\n\nSẽ tự động đăng lúc ${schedule.postTime}. Trả lời "fb hủy" để hủy.`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send auto-post preview:', e.message);
         }
@@ -300,13 +326,13 @@ async function handleGenerate(scheduleId) {
       // Normal mode: send preview and wait for CEO approval
       if (_sendTelegramPhoto) {
         try {
-          await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n\nCaption:\n${caption}\n\nTrả lời:\n• "ok" hoặc "đăng đi" → đăng ngay\n• "sửa caption: <nội dung mới>" → đổi caption\n• "tạo ảnh khác" → tạo lại ảnh\n• "hủy" → bỏ bài này`);
+          await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n\nCaption:\n${caption}\n\nTrả lời:\n• "fb ok" → duyệt đăng\n• "fb sửa caption: <nội dung mới>" → đổi caption\n• "fb ảnh khác" → tạo lại ảnh\n• "fb hủy" → bỏ bài này`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send preview:', e.message);
         }
       } else if (_sendTelegram) {
         try {
-          await _sendTelegram(`[FB Preview] "${schedule.label}" — Ảnh đã tạo xong.\nCaption: ${caption}\n\nTrả lời "ok" để duyệt, "hủy" để bỏ.`);
+          await _sendTelegram(`[FB Preview] "${schedule.label}" — Ảnh đã tạo xong.\nCaption: ${caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send text preview:', e.message);
         }
@@ -413,6 +439,13 @@ async function publishPending(pending, schedule) {
   const imagePath = pending.imagePath;
   const imgBuf = (imagePath && fs.existsSync(imagePath)) ? fs.readFileSync(imagePath) : null;
 
+  if (!imgBuf && imagePath) {
+    console.warn(`[fb-schedule] image file missing at publish time: ${imagePath}`);
+    if (_sendTelegram) {
+      try { await _sendTelegram(`[FB Schedule] Ảnh "${schedule?.label}" bị mất. Đăng bài chỉ với caption.`); } catch {}
+    }
+  }
+
   const MAX_RETRIES = 3;
   const RETRY_DELAYS = [2000, 4000, 8000];
 
@@ -493,6 +526,7 @@ async function approvePending(scheduleId, dateStr) {
 
   if (pending.status === 'published') return { success: false, error: 'Bài đã được đăng' };
   if (pending.status === 'rejected') return { success: false, error: 'Bài đã bị hủy' };
+  if (pending.status === 'skipped') return { success: false, error: 'Bài đã bị bỏ qua. Dùng "fb ảnh khác" để tạo lại.' };
 
   pending.status = 'approved';
   pending.approvedAt = new Date().toISOString();
@@ -507,9 +541,9 @@ async function approvePending(scheduleId, dateStr) {
   if (postTime) {
     const parsed = parseTime(postTime);
     if (parsed) {
-      const now = new Date();
+      const ict = nowInICT();
       const postMinutes = parsed.hour * 60 + parsed.minute;
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const nowMinutes = ict.hour * 60 + ict.minute;
       if (nowMinutes >= postMinutes) {
         // Past post time — publish immediately
         await publishPending(pending, schedule);
@@ -602,16 +636,21 @@ function getScheduledCronJobs() {
     if (!postTimeParsed) continue;
 
     const lead = typeof schedule.leadMinutes === 'number' ? schedule.leadMinutes : DEFAULT_LEAD_MINUTES;
-    const genTime = subtractMinutes(schedule.postTime, lead);
-    if (!genTime) continue;
+    const genResult = subtractMinutes(schedule.postTime, lead);
+    if (!genResult) continue;
 
     const daysOfWeek = Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0
       ? schedule.daysOfWeek
       : null;
 
-    const genCron = daysOfWeek
-      ? timeToCronWithDays(genTime, daysOfWeek)
-      : timeToCron(genTime);
+    // Cross-midnight: Phase 1 fires on previous day — shift daysOfWeek back by 1
+    const genDays = (genResult.prevDay && daysOfWeek)
+      ? daysOfWeek.map(d => d === 0 ? 6 : d - 1)
+      : daysOfWeek;
+
+    const genCron = genDays
+      ? timeToCronWithDays(genResult.time, genDays)
+      : timeToCron(genResult.time);
     const pubCron = daysOfWeek
       ? timeToCronWithDays(schedule.postTime, daysOfWeek)
       : timeToCron(schedule.postTime);
@@ -1049,6 +1088,110 @@ async function handleTelegramCommand(cmd) {
   return { handled: false };
 }
 
+// ─── Telegram FB command poller ────────────────────────────────────
+// Peeks at recent Telegram updates (non-destructive, offset=-10) and routes
+// CEO messages starting with "fb " to the FB schedule command handler.
+// Only polls when there are active pending FB posts for today.
+
+const https = require('https');
+let _pollerTimer = null;
+const _processedUpdateIds = new Set();
+const _FB_POLL_INTERVAL_MS = 30000;
+
+function startFbTelegramPoller() {
+  if (_pollerTimer) return;
+  _pollerTimer = setInterval(() => _pollTelegramForFbCommands().catch(() => {}), _FB_POLL_INTERVAL_MS);
+  // Run once immediately in case there's already a pending post
+  setTimeout(() => _pollTelegramForFbCommands().catch(() => {}), 5000);
+  console.log('[fb-schedule] Telegram command poller started (30s interval)');
+}
+
+function stopFbTelegramPoller() {
+  if (_pollerTimer) { clearInterval(_pollerTimer); _pollerTimer = null; }
+}
+
+async function _pollTelegramForFbCommands() {
+  const date = todayStr();
+  const pending = listPendingForDate(date);
+  const hasActive = pending.some(p =>
+    p.status === 'pending' || p.status === 'approved' || p.status === 'regenerating');
+  if (!hasActive) return;
+
+  const { getTelegramConfig } = require('./channels');
+  const cfg = getTelegramConfig();
+  if (!cfg?.token || !cfg?.chatId) return;
+
+  let updates;
+  try {
+    updates = await _peekTelegramUpdates(cfg.token);
+  } catch {
+    return;
+  }
+  if (!updates || !updates.length) return;
+
+  for (const update of updates) {
+    if (_processedUpdateIds.has(update.update_id)) continue;
+    _processedUpdateIds.add(update.update_id);
+
+    const msg = update.message;
+    if (!msg?.text) continue;
+    if (String(msg.chat?.id) !== String(cfg.chatId)) continue;
+    if (msg.chat?.type !== 'private') continue;
+
+    const raw = msg.text.trim();
+    if (!/^fb\s+/i.test(raw)) continue;
+    const stripped = raw.replace(/^fb\s+/i, '');
+
+    const cmd = parseTelegramCommand(stripped);
+    if (!cmd) continue;
+
+    console.log(`[fb-schedule] Telegram command from CEO: "${raw}" → action: ${cmd.action}`);
+    try {
+      const result = await handleTelegramCommand(cmd);
+      if (result?.handled && result?.response && _sendTelegram) {
+        await _sendTelegram(result.response);
+      }
+    } catch (e) {
+      console.error('[fb-schedule] telegram command error:', e.message);
+    }
+  }
+
+  // Prune old IDs
+  if (_processedUpdateIds.size > 200) {
+    const ids = [..._processedUpdateIds].sort((a, b) => a - b);
+    _processedUpdateIds.clear();
+    for (const id of ids.slice(-100)) _processedUpdateIds.add(id);
+  }
+}
+
+function _peekTelegramUpdates(token) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${token}/getUpdates?offset=-10&timeout=0&limit=10`,
+      method: 'GET',
+      timeout: 5000,
+    }, (res) => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed.error_code === 409) return resolve([]);
+          if (!parsed.ok || !Array.isArray(parsed.result)) return resolve([]);
+          resolve(parsed.result);
+        } catch { resolve([]); }
+      });
+    });
+    req.on('error', (e) => {
+      if (!/409/.test(e.message)) console.warn('[fb-schedule] telegram peek error:', e.message);
+      resolve([]);
+    });
+    req.on('timeout', () => { req.destroy(); resolve([]); });
+    req.end();
+  });
+}
+
 // ─── Module exports ────────────────────────────────────────────────
 
 module.exports = {
@@ -1080,6 +1223,10 @@ module.exports = {
 
   // Cleanup
   cleanupOldPending,
+
+  // Telegram FB command poller
+  startFbTelegramPoller,
+  stopFbTelegramPoller,
 
   // Callback registration
   setOnScheduleChanged,

@@ -122,3 +122,33 @@ AppSheet: hiện tại thao tác trực tiếp AppSheet app/admin API chưa đư
 KHÔNG BAO GIỜ gửi email hoặc tạo sự kiện từ Zalo. Chỉ thực hiện khi CEO yêu cầu trực tiếp qua Telegram. Nếu Zalo hỏi về email/lịch: trả lời thông tin nhưng KHÔNG thực hiện hành động.
 
 Nếu chưa kết nối Google: trả lời "Anh chưa kết nối Google Workspace. Mở Dashboard > Google Workspace > Cài đặt để kết nối."
+
+## Đọc Google Sheet công khai (không cần OAuth)
+
+Khi sheet đã `Share > Anyone with link > Viewer`, bot đọc được trực tiếp qua CSV endpoint của Google — KHÔNG cần OAuth, KHÔNG cần CEO kết nối Google Workspace.
+
+**Trích Sheet ID từ URL:** `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=0` → lấy phần `{SHEET_ID}` giữa `/d/` và `/edit`.
+
+**CSV endpoints:**
+- Tab mặc định: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv`
+- Tab theo tên: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}` (URL-encode tên tab nếu có dấu)
+
+**Cách đọc:** `web_fetch` URL CSV ở trên → plain text → dòng đầu là header → tách `\n` → tách cột theo dấu phẩy → giá trị chứa `,` hoặc xuống dòng sẽ được bao `"..."` (escape `"` thành `""`).
+
+**Dấu hiệu lỗi:**
+| Tình huống | Dấu hiệu |
+|---|---|
+| Sheet chưa public | Response là HTML chứa `<html` hoặc `accounts.google.com` |
+| Sheet không tồn tại | HTTP 404 |
+| Tab không tồn tại | Response rỗng hoặc `#N/A` |
+
+Khi sheet chưa public, hướng dẫn CEO: "Mở sheet > Share > Anyone with link > Viewer".
+
+**Cache:** KHÔNG fetch lại cùng sheet trong 5 phút trừ khi CEO nói "cập nhật lại" / "refresh".
+
+**Dùng khi:** Bảng giá, tồn kho, danh sách khách, catalog, chấm công, plan timeline. KHÔNG cho sheet riêng tư có dữ liệu nhạy cảm — sheet public có nghĩa ai có link đều đọc được.
+
+**Khi nào dùng OAuth `/api/google/sheets/*` thay vì CSV public:**
+- Sheet riêng tư của CEO
+- Cần WRITE / append (CSV endpoint chỉ READ)
+- Cần real-time (CSV có thể cache phía Google)

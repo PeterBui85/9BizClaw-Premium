@@ -915,6 +915,18 @@ app.whenReady().then(async () => {
     powerMonitor.on('resume', () => {
       console.log('[power] system resume detected — node-cron may have skipped firings during sleep');
       try { auditLog('system_resume', { ts: new Date().toISOString() }); } catch {}
+      // SLEEP RECOVERY 2026-05-15: Windows lid-close freezes the JS engine entirely.
+      // node-cron only computes the NEXT future fire on resume, so missed
+      // recurring crons are silently dropped. Replay the most-recent-missed
+      // instance of each cron (within 7-day cap, custom-crons only — builtin
+      // schedules alert CEO instead of double-running side-effects).
+      try {
+        const suspendAt = parseInt(global._lastSuspendAtMs || '0', 10);
+        if (suspendAt) {
+          const cronMod = require('./lib/cron');
+          cronMod.replayMissedCrons(suspendAt).catch(e => console.warn('[power] replayMissedCrons failed:', e?.message));
+        }
+      } catch (e) { console.warn('[power] cron resume catch-up wiring failed:', e?.message); }
       // After wake, channel-status broadcast cadence is 45s → CEO can see stale
       // "đang kiểm tra" for up to 45s. Kick a fast-poll schedule mirroring the
       // boot pattern (see _channelStatusBootTimers) so UI feels instant post-wake.
@@ -945,6 +957,8 @@ app.whenReady().then(async () => {
     powerMonitor.on('suspend', () => {
       console.log('[power] system suspend detected');
       try { auditLog('system_suspend', { ts: new Date().toISOString() }); } catch {}
+      // Record suspend time so resume handler knows the gap to replay.
+      global._lastSuspendAtMs = Date.now();
     });
   } catch (e) {
     console.warn('[power] could not register powerMonitor listeners:', e?.message);

@@ -227,6 +227,11 @@ contextBridge.exposeInMainWorld('claw', {
   deleteUserSkill: (id) => ipcRenderer.invoke('delete-user-skill', id),
   toggleUserSkill: (id, enabled) => ipcRenderer.invoke('toggle-user-skill', id, enabled),
   checkSkillConflict: (data) => ipcRenderer.invoke('check-skill-conflict', data),
+  restoreUserSkill: (id) => ipcRenderer.invoke('restore-user-skill', id),
+  onSkillUpdated: (callback) => {
+    ipcRenderer.removeAllListeners('skill-updated');
+    ipcRenderer.on('skill-updated', (_, data) => callback(data));
+  },
 
   // Brand Assets
   listBrandAssets: () => ipcRenderer.invoke('list-brand-assets'),

@@ -1639,14 +1639,8 @@ async function broadcastChannelStatusOnce() {
         if (!global._channelDownSince[ch]) global._channelDownSince[ch] = now;
       }
       if (!intentionallyOff && cur.ready === false && global._channelDownSince[ch] && (now - global._channelDownSince[ch]) >= DOWN_GRACE_MS) {
-        if (now - (_lastChannelAlertAt[ch] || 0) >= THROTTLE_MS) {
-          const hhmm = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
-          const reason = (cur && cur.error) ? String(cur.error) : 'không rõ';
-          const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
-          const msg = `Kênh ${labels[ch]} mất kết nối đã ${downMin} phút (từ ${hhmm}). Tự khôi phục không thành công. Mở Dashboard kiểm tra giúp em ạ. Lý do: ${reason}.`;
-          sendCeoAlert(msg).catch((e) => { console.error('[channel-status] sendCeoAlert error:', e.message); });
-          _lastChannelAlertAt[ch] = now;
-        }
+        const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
+        console.warn(`[channel-status] ${labels[ch]} down for ${downMin}min — Dashboard dot reflects this`);
       }
       _lastChannelState[ch] = smoothed[ch];
     }

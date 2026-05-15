@@ -19,7 +19,7 @@ const {
   broadcastChannelStatusOnce, sendCeoAlert, sendTelegram,
   findOpenzcaListenerPid, registerTelegramCommands,
 } = require('./channels');
-const { start9Router, stop9Router, getRouterProcess } = require('./nine-router');
+const { start9Router, stop9Router, getRouterProcess, ensure9RouterApiKeySync } = require('./nine-router');
 const {
   cleanupOrphanZaloListener,
   seedAllGroupHistories,
@@ -446,6 +446,7 @@ async function _startOpenClawImpl(opts = {}) {
       } catch { nineRouterModelCount = 0; }
       nineRouterReady = true;
       console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${Math.round((Date.now() - t0) / 1000)}s), ${nineRouterModelCount} models`);
+      try { ensure9RouterApiKeySync(); } catch (e) { console.warn('[boot] post-ready apiKeySync error:', e?.message); }
       break;
     } catch {}
   }
@@ -471,14 +472,39 @@ async function _startOpenClawImpl(opts = {}) {
     }, 2000);
   }
 
-  // NO pre-warm completion call. A previous version of this code fired a hardcoded
-  // `gpt-5-mini` completion to force OAuth token refresh, but that failed with
-  // "404 No active credentials for provider: openai" whenever the user had
-  // configured 9router with a different provider (Claude, Gemini, Ollama, etc.).
-  // Don't hardcode any provider/model here — let 9router auto-load whatever
-  // the user has set up. The first real user message will do the OAuth refresh
-  // naturally. The boot latency benefit of parallel start9Router + 60s wait loop
-  // above is already large enough without this extra customization.
+  // Pre-warm upstream provider via 9Router's configured combo ("main").
+  // Uses model:"main" (user's combo) instead of a hardcoded provider name —
+  // works for any backend (OpenAI, Claude, Gemini, Ollama, OpenRouter, etc.).
+  // Fire-and-forget: never blocks boot, 15s timeout, failure is logged and ignored.
+  if (nineRouterReady && nineRouterModelCount > 0) {
+    const warmupT0 = Date.now();
+    console.log(`[boot] T+${Date.now() - t0}ms pre-warm: pinging 9Router model "main"...`);
+    const http = require('http');
+    let warmupApiKey = '';
+    try {
+      const { appDataDir } = require('./boot');
+      const dbPath = path.join(appDataDir(), '9router', 'db.json');
+      const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+      const keys = Array.isArray(db.apiKeys) ? db.apiKeys : [];
+      const active = keys.find(k => k && k.isActive !== false && k.name === '9BizClaw') || keys.find(k => k && k.isActive !== false && typeof k.key === 'string');
+      if (active?.key) warmupApiKey = active.key;
+    } catch (e) { console.warn(`[boot] pre-warm key read failed: ${e.message}`); }
+    const payload = JSON.stringify({ model: 'main', messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 });
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
+    if (warmupApiKey) headers['Authorization'] = 'Bearer ' + warmupApiKey;
+    const req = http.request({ hostname: '127.0.0.1', port: 20128, path: '/v1/chat/completions', method: 'POST', headers, timeout: 15000 }, (res) => {
+      let body = '';
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => {
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
+        console.log(`[boot] T+${Date.now() - t0}ms pre-warm ${ok ? 'done' : 'failed'} (${res.statusCode}, ${Date.now() - warmupT0}ms)`);
+      });
+    });
+    req.on('error', (e) => { console.warn(`[boot] T+${Date.now() - t0}ms pre-warm error: ${e.message} (${Date.now() - warmupT0}ms)`); });
+    req.on('timeout', () => { req.destroy(); console.warn(`[boot] T+${Date.now() - t0}ms pre-warm timeout (15s)`); });
+    req.write(payload);
+    req.end();
+  }
 
   // Start gateway — cwd = writable workspace so it reads/writes AGENTS.md, schedules.json, etc.
   // Prefer direct node + openclaw.mjs spawn so this works regardless of where
@@ -688,6 +714,14 @@ async function _startOpenClawImpl(opts = {}) {
     if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) ctx.mainWindow.webContents.send('bot-status', { running: true });
     global._gatewayStartedAt = Date.now(); // fast watchdog skips first 360s
     auditLog('gateway_ready', { elapsedMs, probeAttempts });
+
+    // Gateway agent warmup REMOVED. Attempted 5+ times across multiple builds:
+    // - HTTP POST to gateway :18789 → 404 (no such endpoint)
+    // - CLI agent --json → exit=1 or hangs indefinitely
+    // - CLI agent --reply-channel → 110s, delivered confusing agent reply
+    // - CLI agent --json --channel --to → never completes, blocks notification
+    // The openclaw embedded runner cannot be pre-warmed from outside.
+    // First message will take ~30s (inherent openclaw overhead). Accept it.
   } else {
     console.log(`[startOpenClaw] gateway WS still not responding after 240s (${probeAttempts} probes). Spawning background monitor.`);
     auditLog('gateway_slow_start', { probeAttempts });
@@ -843,7 +877,7 @@ async function _startOpenClawImpl(opts = {}) {
         notifyState.telegram.markerSeenAt = Date.now();
         notifyState.telegram.awaitingConfirmation = true;
         notifyState.telegram.lastError = '';
-        console.log('[ready-notify] Telegram marker seen — waiting 10s for channel init before confirming');
+        console.log('[ready-notify] Telegram marker seen — sending notification');
         setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
         if (readyNotifyThrottled('telegram') || global._suppressBootPing) {
           // Even on throttle/silent path, wait 10s for channel to finish init
@@ -860,17 +894,7 @@ async function _startOpenClawImpl(opts = {}) {
             setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
           }, 10000);
         } else {
-          // skipFilter: these are OUR system notifications, not AI output.
-          // The output filter is meant to catch AI leaking internal info to
-          // customers — doesn't apply here. Without skipFilter, Zalo version
-          // below was replaced with "Dạ em xin lỗi..." because text contained
-          // the brand name "openzca" (see filter pattern brand-openzca).
-          sendTelegram(
-            'Telegram đã sẵn sàng.\n\n' +
-            'Anh/chị nhắn bất kỳ tin nào cho bot ngay bây giờ, sẽ có trả lời thật.\n\n' +
-            '(Tin này do bot tự gửi — nếu anh/chị nhận được = Telegram đã hoạt động 100%)',
-            { skipFilter: true }
-          ).then(ok => {
+          sendTelegram('Telegram đã sẵn sàng.', { skipFilter: true }).then(ok => {
             if (ok) {
               markChannelConfirmed('telegram', 'send');
               console.log('[ready-notify] Telegram notify sent:', ok);
@@ -911,12 +935,7 @@ async function _startOpenClawImpl(opts = {}) {
             setTimeout(() => { try { broadcastChannelStatusOnce(); } catch {} }, 0);
           }, 10000);
         } else {
-          sendTelegram(
-            'Zalo đã sẵn sàng.\n\n' +
-            'Bot đã kết nối Zalo và đang đọc tin nhắn. Anh/chị nhắn bot trên Zalo ngay bây giờ, sẽ có trả lời thật.\n\n' +
-            '(Tin này gửi qua Telegram vì hệ thống chưa có Zalo ID của anh/chị)',
-            { skipFilter: true }
-          ).then(ok => {
+          sendTelegram('Zalo đã sẵn sàng.', { skipFilter: true }).then(ok => {
             if (ok) {
               markChannelConfirmed('zalo', 'send');
               console.log('[ready-notify] Zalo notify sent:', ok);
@@ -1031,11 +1050,23 @@ async function _startOpenClawImpl(opts = {}) {
     // NOT network-transient (restart won't help). The observed case logs
     // `pricing bootstrap failed: TimeoutError: ...` so this string alone
     // matches without false-positives.
+    const _lastErr = String(lastError || '').toLowerCase();
     const isTransientNetwork =
-      String(lastError || '').includes('pricing bootstrap failed');
+      _lastErr.includes('pricing bootstrap failed') ||
+      _lastErr.includes('und_err_socket') ||
+      _lastErr.includes('enotfound') ||
+      _lastErr.includes('ehostunreach') ||
+      _lastErr.includes('enetunreach') ||
+      _lastErr.includes('econnrefused') ||
+      _lastErr.includes('econnreset') ||
+      _lastErr.includes('fetch failed') ||
+      _lastErr.includes('dns') ||
+      _lastErr.includes('network') ||
+      _lastErr.includes('socket hang up') ||
+      _lastErr.includes('etimedout');
     if (isTransientNetwork && !isBonjourConflict) {
       global._networkCooldownUntil = Date.now() + 60_000;
-      console.log('[restart-guard] transient network exit — waiting 60s before restart');
+      console.log(`[restart-guard] transient network exit — waiting 60s before restart (matched: ${_lastErr.slice(-100)})`);
     }
 
     if (isSelfRestartFailure) {
@@ -1111,6 +1142,18 @@ async function _startOpenClawImpl(opts = {}) {
               try { broadcastChannelStatusOnce(); } catch {};
             }, 10000);
           }
+          return;
+        }
+        if (isTransientNetwork) {
+          console.log('[restart-guard] transient network crash — auto-restarting in 5s');
+          if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+            ctx.mainWindow.webContents.send('bot-status', { running: false, error: 'Mất kết nối mạng — đang khởi động lại...' });
+          }
+          setTimeout(() => {
+            if (!ctx.botRunning && !ctx.startOpenClawInFlight) {
+              startOpenClaw({ silent: true });
+            }
+          }, 5000);
           return;
         }
         const errMsg = code !== 0 ? `Mã lỗi: ${code}${lastError ? '\n' + lastError : ''}` : null;
@@ -1332,8 +1375,7 @@ async function fastWatchdogTick() {
             _fwZaloMissCount++;
             if (_fwZaloMissCount === 3) {
               global._zaloListenerAlertSentAt = Date.now();
-              console.warn('[fast-watchdog] Zalo listener not running (3 checks) — alerting CEO');
-              sendCeoAlert('Zalo listener không chạy. Nếu Zalo không nhận tin, vào tab Zalo bấm "Đổi tài khoản" để quét QR lại.').catch(() => {});
+              console.warn('[fast-watchdog] Zalo listener not running (3 checks)');
             }
             if (_fwZaloMissCount === 6) {
               // Intentional mtime bump to trigger gateway config reloader → openzalo plugin reload
@@ -1345,7 +1387,7 @@ async function fastWatchdogTick() {
               } catch (e) { console.warn('[fast-watchdog] config touch for Zalo reload failed:', e?.message); }
             }
             if (_fwZaloMissCount > 0 && _fwZaloMissCount % 15 === 0 && _fwZaloMissCount <= 60) {
-              sendCeoAlert('Zalo listener vẫn không chạy. Vào tab Zalo kiểm tra hoặc khởi động lại ứng dụng.').catch(() => {});
+              console.warn(`[fast-watchdog] Zalo listener still dead (${_fwZaloMissCount} checks)`);
             }
           } else {
             _fwZaloMissCount = 0;

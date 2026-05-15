@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const ctx = require('./context');
 const { appDataDir, getBundledVendorDir, getBundledNodeBin, findNodeBin, findGlobalPackageFile } = require('./boot');
+const { writeOpenClawConfigIfChanged } = require('./config');
 
 // Late-binding for killPort (still lives in main.js; used by gateway too)
 let _killPortFn = () => {};
@@ -129,6 +130,67 @@ function saveProviderKey(provider, apiKey) {
   } catch (e) { console.warn('[provider-keys] save error:', e.message); }
 }
 
+// 2026-05-15: sync 9Router's accepted API key (`db.json apiKeys[].key`) into
+// openclaw.json's `models.providers.ninerouter.apiKey`. Required because
+// 9Router may rotate its key (uninstall+reinstall, manual regen via web UI,
+// db.json reset) but openclaw.json stays on the old key → 9Router returns
+// HTTP 401 "Invalid API key" on every model call → bot reply is just the
+// raw error. Customer-reported incident 2026-05-15 confirmed this exact
+// drift (openclaw had `...ydpgpg...` while 9Router accepted `...47o2qi...`).
+//
+// Idempotent: only writes openclaw.json when the keys actually differ.
+function ensure9RouterApiKeySync() {
+  try {
+    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    const ocPath = path.join(require('os').homedir(), '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(dbPath) || !fs.existsSync(ocPath)) return { skipped: 'files-missing' };
+    const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+    const oc = JSON.parse(fs.readFileSync(ocPath, 'utf-8'));
+    // Prefer the entry named "9BizClaw" if present; else first active key.
+    const apiKeys = Array.isArray(db.apiKeys) ? db.apiKeys : [];
+    let active = apiKeys.find(k => k && k.isActive !== false && k.name === '9BizClaw');
+    if (!active) active = apiKeys.find(k => k && k.isActive !== false && typeof k.key === 'string');
+    if (!active || !active.key) return { skipped: 'no-active-key-in-9router' };
+    const expected = String(active.key);
+    const current = oc?.models?.providers?.ninerouter?.apiKey || '';
+    if (current === expected) return { skipped: 'already-in-sync' };
+    if (!oc.models) oc.models = {};
+    if (!oc.models.providers) oc.models.providers = {};
+    if (!oc.models.providers.ninerouter) oc.models.providers.ninerouter = {};
+    oc.models.providers.ninerouter.apiKey = expected;
+    writeOpenClawConfigIfChanged(ocPath, oc);
+    console.log(`[9router] synced openclaw.json apiKey ← 9Router db.json (was=${current.slice(-12)}, now=${expected.slice(-12)})`);
+    return { changed: true, oldSuffix: current.slice(-12), newSuffix: expected.slice(-12) };
+  } catch (e) {
+    console.warn('[9router] ensure9RouterApiKeySync error:', e?.message || e);
+    return { error: e?.message || String(e) };
+  }
+}
+
+// Create a "zalo" combo in 9Router's db.json if it doesn't exist yet.
+// The zalo combo uses cx/gpt-5.2 (lighter, faster model for customer service).
+// Idempotent: skips silently if a combo named "zalo" already exists.
+function ensure9RouterZaloCombo() {
+  try {
+    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    if (!fs.existsSync(dbPath)) return;
+    const raw = fs.readFileSync(dbPath, 'utf-8');
+    const db = JSON.parse(raw);
+    if (!Array.isArray(db.combos)) db.combos = [];
+    if (db.combos.some(c => c && c.name === 'zalo')) return;
+    const now = new Date().toISOString();
+    db.combos.push({
+      id: crypto.randomUUID(),
+      name: 'zalo',
+      models: ['cx/gpt-5.2'],
+      createdAt: now,
+      updatedAt: now,
+    });
+    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+    console.log('[9router] created zalo combo (gpt-5.2)');
+  } catch (e) { console.error('[9router] ensure zalo combo error:', e.message); }
+}
+
 function ensure9RouterProviderKeys() {
   try {
     const dbPath = path.join(appDataDir(), '9router', 'db.json');
@@ -245,6 +307,10 @@ function start9Router() {
 
     ensure9RouterDefaultPassword();
     ensure9RouterProviderKeys();
+    // 2026-05-15: keep openclaw.json's `ninerouter.apiKey` in lock-step with
+    // 9Router's accepted key so the agent never gets 401 from a stale key.
+    ensure9RouterApiKeySync();
+    ensure9RouterZaloCombo();
     const rtkDbResult = tryWrite9RouterRtkDefaultToDb();
     if (rtkDbResult.changed || rtkDbResult.skipped === 'already-enabled') {
       writeRtkDefaultMarker({
@@ -890,7 +956,8 @@ async function detectChatgptPlusOAuth() {
 }
 
 module.exports = {
-  ensure9RouterDefaultPassword, saveProviderKey, ensure9RouterProviderKeys,
+  ensure9RouterDefaultPassword, ensure9RouterZaloCombo, saveProviderKey, ensure9RouterProviderKeys,
+  ensure9RouterApiKeySync,
   ensure9RouterRtkDefaultEnabled,
   start9Router, stop9Router, nineRouterApi, autoFix9RouterSqlite,
   waitFor9RouterReady, validateOllamaKeyDirect,

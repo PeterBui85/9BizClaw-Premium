@@ -1,46 +1,46 @@
 ---
 name: ceo-file-api
-description: CEO File API, doc/ghi/list/exec file tren may CEO, chi CEO Telegram
+description: CEO File API — đọc/ghi/list/exec file trên máy CEO, chỉ CEO Telegram
 metadata:
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # CEO File API
 
-Chi dung khi CEO Telegram yeu cau. `web_fetch` toi `http://127.0.0.1:20200` tu gan xac thuc noi bo trong phien Telegram CEO. KHONG goi `/api/auth/token`, KHONG them `token=<token>`, KHONG doc file token.
+Chỉ dùng khi CEO Telegram yêu cầu. `web_fetch` tới `http://127.0.0.1:20200` tự gắn xác thực nội bộ trong phiên Telegram CEO. KHÔNG gọi `/api/auth/token`, KHÔNG thêm `token=<token>`, KHÔNG đọc file token.
 
-## Doc file
+## Đọc file
 
 ```
 web_fetch http://127.0.0.1:20200/api/file/read?path=C:/Users/CEO/Desktop/file.xlsx
 ```
 
-Excel `.xlsx`/`.xls` tu parse thanh JSON. Text/JSON tra noi dung truc tiep. Max 10MB.
+Excel `.xlsx`/`.xls` tự parse thành JSON. Text/JSON trả nội dung trực tiếp. Tối đa 10MB.
 
 ## Ghi file
 
 ```
-web_fetch http://127.0.0.1:20200/api/file/write?path=C:/Users/CEO/Desktop/file.txt&content=noi+dung
+web_fetch http://127.0.0.1:20200/api/file/write?path=C:/Users/CEO/Desktop/file.txt&content=nội+dung
 ```
 
-Tu tao thu muc neu chua co.
+Tự tạo thư mục nếu chưa có.
 
-## Liet ke thu muc
+## Liệt kê thư mục
 
 ```
 web_fetch http://127.0.0.1:20200/api/file/list?path=C:/Users/CEO/Desktop
 ```
 
-Tra danh sach file/folder, toi da 200 entries.
+Trả danh sách file/folder, tối đa 200 entries.
 
-## Chay lenh
+## Chạy lệnh
 
 ```
 web_fetch http://127.0.0.1:20200/api/exec?command=dir+C:\Users\CEO\Desktop
 ```
 
-Timeout mac dinh 30s, max 120s. Output max 50KB.
+Timeout mặc định 30s, tối đa 120s. Output tối đa 50KB.
 
-## Bao mat
+## Bảo mật
 
-CHI thuc hien khi CEO Telegram yeu cau. KHONG BAO GIO dung tu Zalo.
+CHỈ thực hiện khi CEO Telegram yêu cầu. KHÔNG BAO GIỜ dùng từ Zalo.

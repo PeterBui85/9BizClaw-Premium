@@ -116,9 +116,9 @@ if (!fs.existsSync(zaloRiskScanPath)) {
   }
 }
 
-const facebookSkill = readText('skills/operations/facebook-image.md');
+const facebookSkill = readText('skills/operations/image-generation.md');
 if (/workspace\/read\?path=cron-api-token\.txt/i.test(facebookSkill)) {
-  fail('skills/operations/facebook-image.md', 'Facebook skill still instructs blocked cron token file read');
+  fail('skills/operations/image-generation.md', 'Image-generation skill still instructs blocked cron token file read');
 }
 
 if (failures.length) {

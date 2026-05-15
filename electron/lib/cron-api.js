@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { isPathSafe, writeJsonAtomic } = require('./util');
 const { getWorkspace, getBrandAssetsDir, readFbConfig, purgeAgentSessions, auditLog, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE } = require('./workspace');
-const { _withCustomCronLock, loadCustomCrons, getCustomCronsPath, restartCronJobs } = require('./cron');
+const { _withCustomCronLock, _withKnowledgeLock, loadCustomCrons, getCustomCronsPath, restartCronJobs } = require('./cron');
 const { sendCeoAlert, sendZaloTo, sendZaloMediaTo, sendTelegram, sendTelegramPhoto, probeZaloReady } = require('./channels');
 const { getZcaCacheDir, sanitizeZaloUserId } = require('./zalo-memory');
 const { stripCronApiTokenFromAgents } = require('./cron-api-token');
@@ -123,7 +123,21 @@ function startCronApi() {
   _cronApiToken = crypto.randomBytes(24).toString('hex');
   try {
     const tokenPath = path.join(getWorkspace(), 'cron-api-token.txt');
-    fs.writeFileSync(tokenPath, _cronApiToken, 'utf-8');
+    fs.writeFileSync(tokenPath, _cronApiToken, { encoding: 'utf-8', mode: 0o600 });
+    // Defense-in-depth on POSIX: ensure mode 600 even if umask is broad.
+    try { if (process.platform !== 'win32') fs.chmodSync(tokenPath, 0o600); } catch {}
+    // Also mirror to %APPDATA%/9bizclaw/ on Windows where vendor-patches.js
+    // reads as a fallback (covers the case where openclaw subprocess cwd is
+    // NOT the workspace dir on packaged builds — round-2 B-I1 finding).
+    if (process.platform === 'win32' && process.env.APPDATA) {
+      const appdataPath = path.join(process.env.APPDATA, '9bizclaw', 'cron-api-token.txt');
+      try {
+        fs.mkdirSync(path.dirname(appdataPath), { recursive: true });
+        if (path.resolve(appdataPath) !== path.resolve(tokenPath)) {
+          fs.writeFileSync(appdataPath, _cronApiToken, { encoding: 'utf-8', mode: 0o600 });
+        }
+      } catch {}
+    }
   } catch (e) { console.error('[cron-api] failed to write token file:', e.message); }
   stripCronApiTokenFromCustomCrons();
   try {
@@ -157,17 +171,40 @@ function startCronApi() {
   function loadGroupsMap() {
     try {
       const p = path.join(getZcaCacheDir(), 'groups.json');
-      if (!fs.existsSync(p)) return { byId: {}, byName: {} };
+      if (!fs.existsSync(p)) return { byId: {}, byName: {}, ambiguous: new Set() };
       const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
       const byId = {}, byName = {};
+      // Track Vietnamese-normalized lowercase names that map to >1 group id.
+      // Customers commonly reuse names ("Khách VIP", "Đối tác"); silently
+      // overwriting in byName would map all uses to whichever group appeared
+      // last in groups.json — that's exactly how a 11:40 "LỊCH CÁ NHÂN" cron
+      // ends up bound to "LỊCH KH NUMINA" (real prod incident 2026-05-15).
+      const nameCounts = new Map();
       const groups = Array.isArray(data) ? data : (Array.isArray(data?.groups) ? data.groups : []);
       for (const g of groups) {
         const id = String(g.groupId || g.id || '');
         const name = g.name || g.groupName || '';
-        if (id) { byId[id] = name; if (name) byName[name.toLowerCase()] = id; }
+        if (!id) continue;
+        byId[id] = name;
+        if (!name) continue;
+        const key = name.normalize('NFC').toLowerCase();
+        nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+        if (!byName[key]) byName[key] = id;
       }
-      return { byId, byName };
-    } catch { return { byId: {}, byName: {} }; }
+      const ambiguous = new Set();
+      for (const [key, count] of nameCounts) if (count > 1) ambiguous.add(key);
+      return { byId, byName, ambiguous };
+    } catch { return { byId: {}, byName: {}, ambiguous: new Set() }; }
+  }
+
+  // List all group ids that share a (NFC-normalized, lowercased) name. Used
+  // to render the "ambiguous" 409 with concrete choices the bot can pick.
+  function _findAllGroupIdsByName(byId, nameKey) {
+    const ids = [];
+    for (const [id, name] of Object.entries(byId)) {
+      if ((name || '').normalize('NFC').toLowerCase() === nameKey) ids.push(id);
+    }
+    return ids;
   }
 
   function boolParam(value) {
@@ -201,32 +238,141 @@ function startCronApi() {
 
   function resolveCronZaloTarget(params, opts = {}) {
     const allowMultipleGroups = opts.allowMultipleGroups !== false;
-    const groupTargets = [];
+    const { byId, byName, ambiguous } = loadGroupsMap();
+
+    // Separate the channels so we can cross-check id-vs-name consistency
+    // BEFORE merging them into the resolution list. Bot LLM may pass both
+    // groupId and groupName; if they disagree, refusing is safer than
+    // accepting either silently and delivering to the wrong group.
+    const explicitIds = [];
     if (params.groupIds) {
       for (const raw of String(params.groupIds).split(',')) {
         const item = raw.trim();
-        if (item) groupTargets.push(item);
+        if (item) explicitIds.push(item);
       }
     }
-    if (params.groupId) groupTargets.push(String(params.groupId).trim());
-    if (params.groupName) groupTargets.push(String(params.groupName).trim());
+    if (params.groupId) explicitIds.push(String(params.groupId).trim());
+
+    const explicitNames = [];
+    if (params.groupName) explicitNames.push(String(params.groupName).trim());
 
     const isGroupFlag = boolParam(params.isGroup);
     const rawTargetId = String(params.targetId || '').trim();
-    if (isGroupFlag === true && rawTargetId) groupTargets.push(rawTargetId);
+    if (isGroupFlag === true && rawTargetId) explicitIds.push(rawTargetId);
 
+    // Ambiguous-name guard: a customer's groups.json frequently has multiple
+    // groups sharing a Vietnamese name. If bot supplies a name AND no MATCHING
+    // id resolves it explicitly, refuse and list candidate ids. Previously the
+    // guard only fired when `explicitIds.length === 0` — bot could send a
+    // (wrong, unrelated) groupId alongside the ambiguous name and bypass.
+    for (const name of explicitNames) {
+      const key = name.normalize('NFC').toLowerCase();
+      if (!ambiguous.has(key)) continue;
+      const candidates = _findAllGroupIdsByName(byId, key);
+      // Ambiguous name OK only if at least one explicit id is in the candidate set.
+      const idMatchesCandidate = explicitIds.some(eid => candidates.includes(String(eid).trim()));
+      if (!idMatchesCandidate) {
+        return {
+          error: `groupName "${name}" matches ${candidates.length} groups (${candidates.join(', ')}). Pass groupId explicitly to disambiguate.`,
+          ambiguous: true,
+          candidates,
+        };
+      }
+    }
+
+    // Cross-check every (id, name) pair. Mismatch = bot picked the wrong line
+    // from the groups list — the failure pattern observed on 2026-05-15 where
+    // bot bound a "LỊCH CÁ NHÂN" cron to "LỊCH KH NUMINA"'s id. Earlier this
+    // only fired for the 1-id + 1-name case; widened to all combinations.
+    // Empty `byId[id]` (group exists but cache lost its name) treated as a
+    // forced reject when a name is supplied — otherwise mismatch is masked.
+    if (explicitIds.length > 0 && explicitNames.length > 0) {
+      const nameKeys = explicitNames.map(n => n.normalize('NFC').toLowerCase());
+      for (const id of explicitIds) {
+        if (!(id in byId)) continue; // unknown id is caught later by invalidIds; skip cross-check
+        const idName = String(byId[id] || '').normalize('NFC').toLowerCase();
+        if (!idName) {
+          return {
+            error: `groupId ${id} has no resolvable name in groups cache; cannot verify against groupName ${JSON.stringify(explicitNames[0])}. Refresh groups list or pass a different group.`,
+            mismatch: true,
+            idName: '',
+            nameProvided: explicitNames[0],
+          };
+        }
+        if (!nameKeys.includes(idName)) {
+          return {
+            error: `groupId/groupName mismatch — groupId ${id} is "${byId[id]}" but groupName(s) say ${JSON.stringify(explicitNames)}. Refusing to dispatch.`,
+            mismatch: true,
+            idName: byId[id],
+            nameProvided: explicitNames[0],
+          };
+        }
+      }
+    }
+
+    // targetId + isGroup:true with NO groupName — there's no second channel
+    // to cross-check, so the bot's chosen id rides through with only the
+    // last-4-of-id echo as defence. Require a groupName so we can verify
+    // against the cache (closes B-I2 from 2026-05-15 review).
+    if (isGroupFlag === true && rawTargetId && explicitNames.length === 0 && !params.groupId && !params.groupIds) {
+      const expectedName = byId[rawTargetId];
+      if (expectedName) {
+        return {
+          error: `targetId+isGroup:true requires groupName "${expectedName}" so the binding can be cross-checked. Pass {groupId:"${rawTargetId}", groupName:"${expectedName}"}.`,
+          mismatch: true,
+          idName: expectedName,
+          nameProvided: '',
+        };
+      }
+      // unknown id falls through to invalidIds check below
+    }
+
+    // STRICT MODE 2026-05-15: any group cron MUST pass BOTH groupId AND
+    // groupName so the cross-check above is always armed. Previously a
+    // bot call with only `groupId` skipped cross-check — that's how the
+    // customer's "LỊCH KH NUMINA vs LỊCH CÁ NHÂN" cron escaped (real prod
+    // incident with screenshot evidence). Refusing forces the bot to
+    // be explicit and gives us both signals to verify.
+    if (explicitIds.length > 0 && explicitNames.length === 0) {
+      const idsForHint = explicitIds.slice(0, 3);
+      const namesForHint = idsForHint.map(id => byId[id] || '?').filter(Boolean);
+      return {
+        error: `Group cron requires BOTH groupId and groupName so the API can cross-check the binding. You sent only ${explicitIds.length} groupId(s) (${idsForHint.join(', ')}). Add groupName(s): ${JSON.stringify(namesForHint)}.`,
+        missingGroupName: true,
+        hint: namesForHint,
+      };
+    }
+    if (explicitIds.length === 0 && explicitNames.length > 0) {
+      // Symmetric: a bare name might be ambiguous (already guarded above) but
+      // also gives no id signal to cross-check against. Require the bot to
+      // resolve the id and pass both.
+      const namesForHint = explicitNames.slice(0, 3);
+      const idsForHint = namesForHint.map(n => {
+        const key = String(n).normalize('NFC').toLowerCase();
+        return byName[key] || '?';
+      });
+      return {
+        error: `Group cron requires BOTH groupName and groupId. You sent only ${explicitNames.length} groupName(s). Look up id(s) via /api/cron/list and resend with groupId: ${JSON.stringify(idsForHint)}.`,
+        missingGroupId: true,
+        hint: idsForHint,
+      };
+    }
+
+    const groupTargets = [...explicitIds, ...explicitNames];
     if (groupTargets.length > 0) {
-      if (!allowMultipleGroups && groupTargets.length > 1) return { error: 'Only one Zalo group target is allowed for this cron mode.' };
-      const { byId, byName } = loadGroupsMap();
-      const resolvedIds = groupTargets.map(t => byName[String(t).toLowerCase()] || t);
-      const invalidIds = resolvedIds.filter(id => !(id in byId));
+      const resolvedIds = groupTargets.map(t => byName[String(t).normalize('NFC').toLowerCase()] || t);
+      // De-dup BEFORE the allowMultipleGroups gate. groupId + matching
+      // groupName both pointing to the same group is one target, not two.
+      const uniqueIds = [...new Set(resolvedIds)];
+      if (!allowMultipleGroups && uniqueIds.length > 1) return { error: 'Only one Zalo group target is allowed for this cron mode.' };
+      const invalidIds = uniqueIds.filter(id => !(id in byId));
       if (invalidIds.length > 0) {
         return { error: 'unknown groupId(s): ' + invalidIds.join(', ') + '. Available: ' + Object.entries(byId).map(([id, name]) => `${name} (${id})`).join(', ') };
       }
       return {
         type: 'group',
-        ids: resolvedIds,
-        labels: resolvedIds.map(id => byId[id] || id),
+        ids: uniqueIds,
+        labels: uniqueIds.map(id => byId[id] || id),
       };
     }
 
@@ -316,6 +462,11 @@ function startCronApi() {
 
   async function withWriteLock(fn) {
     return _withCustomCronLock(fn);
+  }
+  // SPLIT LOCK 2026-05-15: knowledge/workspace mutations no longer block cron
+  // CRUD. Use this helper for the workspace-append + knowledge-add endpoints.
+  async function withKnowledgeLock(fn) {
+    return _withKnowledgeLock(fn);
   }
 
   function normalizeCronScheduleSpec(spec) {
@@ -454,15 +605,68 @@ function startCronApi() {
     const _reqChannel = req.headers['x-9bizclaw-agent-channel'] || req.headers['x-source-channel'] || '';
     console.log(`[cron-api] ${req.method} ${urlPath} channel=${_reqChannel || 'none'} host=${host}`);
 
-    // Google Workspace routes — token-free, localhost-only, Zalo-blocked at route level.
+    // Auth helper for CEO-only routes.
+    //
+    // SECURITY 2026-05-15: the OLD pattern `if (_reqChannel && _reqChannel.toLowerCase() !== 'telegram')`
+    // was fail-OPEN — when the channel header was missing entirely (`_reqChannel === ''`), the `&&`
+    // short-circuited and the request flowed through as if from Telegram. Combined with several
+    // high-impact endpoints (`/api/cron/*`, `/api/zalo/send`, `/api/exec`, `/api/file/*`,
+    // `/api/customer-memory/*`) having no gate at all, that meant a Zalo-channel turn (whose
+    // patched web_fetch does NOT set any channel header) could call CEO endpoints.
+    //
+    // New pattern: BOTH `X-Source-Channel: telegram` AND `Authorization: Bearer <_cronApiToken>`
+    // are required for CEO-only routes. The web_fetch patch in vendor-patches.js automatically
+    // injects both on Telegram-CEO turns; Zalo turns get neither.
+    function _requireCeoTelegram() {
+      // Defensive coercion: header can be string|string[]|undefined depending
+      // on Node version and proxy intermediaries.
+      const chanRaw = req.headers['x-9bizclaw-agent-channel'] || req.headers['x-source-channel'];
+      const chan = String(Array.isArray(chanRaw) ? chanRaw[0] : (chanRaw || '')).trim().toLowerCase();
+      if (chan !== 'telegram') return { ok: false, reason: 'wrong_or_missing_channel' };
+      const authRaw = req.headers.authorization;
+      const auth = String(Array.isArray(authRaw) ? authRaw[0] : (authRaw || '')).trim();
+      // Tolerant Bearer regex: allow optional trailing whitespace (shell heredoc
+      // adds it), and match the 48-hex token. Lowercase the captured group for
+      // case-insensitive comparison since `randomBytes(...).toString('hex')`
+      // always produces lowercase.
+      const m = auth.match(/^Bearer\s+([a-f0-9]{48})\s*$/i);
+      if (!m) return { ok: false, reason: 'missing_token' };
+      const providedLc = m[1].toLowerCase();
+      // crypto.timingSafeEqual prevents timing side-channels (theoretical on
+      // localhost but trivial defense).
+      let safeEq = false;
+      try {
+        const a = Buffer.from(providedLc, 'utf-8');
+        const b = Buffer.from(_cronApiToken, 'utf-8');
+        if (a.length === b.length) safeEq = require('crypto').timingSafeEqual(a, b);
+      } catch {}
+      if (!safeEq) return { ok: false, reason: 'bad_token' };
+      return { ok: true };
+    }
+    function _denyCeoTelegram(reason, extra = {}) {
+      try { require('./workspace').auditLog('cron_api_unauth', { urlPath, reason, channel: _reqChannel || 'none', ...extra }); } catch {}
+      return jsonResp(res, 403, { error: 'CEO Telegram only.' });
+    }
+
+    // SECURITY 2026-05-15: global default-deny gate.
+    //
+    // Endpoints explicitly listed in PUBLIC_ROUTES are reachable without auth
+    // (legacy compat, capability self-description, health probes). Everything
+    // else requires Telegram-CEO channel + Bearer token (per `_requireCeoTelegram`).
+    //
+    // Google routes have their own per-route Zalo gate inside `google-routes.js`
+    // and are handled before this central gate to keep that semantics intact.
+    const PUBLIC_ROUTES = new Set([
+      '/api/auth/token',          // legacy compat — returns dummy
+      '/api/capabilities',         // capability self-description (read-only metadata)
+    ]);
     if (urlPath.startsWith('/api/google/')) {
       return handleGoogleRoute(urlPath.slice('/api/google'.length), params, req, res, jsonResp);
     }
-
-    // Auth: localhost-only binding (line 447) + Zalo command-block in inbound.ts
-    // (rewrites all localhost URLs, /api/* paths, mutation commands) + per-route
-    // isZalo checks in google-routes.js. Token auth removed — it blocked the
-    // Telegram bot from using the API (all skills say "KHÔNG gọi /api/auth/token").
+    if (!PUBLIC_ROUTES.has(urlPath)) {
+      const auth = _requireCeoTelegram();
+      if (!auth.ok) return _denyCeoTelegram(auth.reason);
+    }
 
     // Legacy /api/auth/token — kept for backwards compat, returns dummy token.
     if (urlPath === '/api/auth/token') {
@@ -705,7 +909,12 @@ function startCronApi() {
             crons.push(entry);
             writeJsonAtomic(getCustomCronsPath(), crons);
             try { restartCronJobs(); } catch {}
-            const targetLabel = delivery ? ' — ' + delivery.type + ': ' + (delivery.labels || delivery.ids).join(', ') : '';
+            // Echo the target with last-4 of groupId so CEO can catch a
+            // wrong-group binding at create time (mismatch between intent and
+            // the id bot actually picked from groups.json).
+            const targetLabel = delivery
+              ? ' — ' + delivery.type + ': ' + delivery.labels.map((n, i) => `${n} (…${String(delivery.ids[i]).slice(-4)})`).join(', ')
+              : '';
             console.log('[cron-api] created agent cron:', id, label || '', targetLabel);
             try {
               sendCeoAlert('[Cron] Đã tạo (agent): ' + (label || 'no label') + ' — ' + (cronExpr || oneTimeAt) + targetLabel);
@@ -720,8 +929,42 @@ function startCronApi() {
       if (String(content).length > 500) return jsonResp(res, 400, { error: 'content too long (max 500 chars)' });
       const targets = groupIds ? String(groupIds).split(',').map(s => s.trim()).filter(Boolean) : (groupId ? [String(groupId).trim()] : []);
       if (targets.length === 0) return jsonResp(res, 400, { error: 'groupId or groupIds required' });
-      const { byId, byName } = loadGroupsMap();
-      const resolvedIds = targets.map(t => byName[t.toLowerCase()] || t);
+      const { byId, byName, ambiguous } = loadGroupsMap();
+      // STRICT MODE 2026-05-15: legacy text-mode now also requires groupName
+      // when ANY target string is recognized as a known groupId (i.e., it's
+      // in `byId`). If the target looks like a NAME (not in byId) the
+      // existing byName lookup handles it. This catches the customer
+      // incident class where bot sent only `groupId` for a real Zalo id.
+      const looksLikeId = targets.some(t => t in byId);
+      if (looksLikeId && !groupName) {
+        const namesForHint = targets.slice(0, 3).map(t => byId[t] || '?');
+        return jsonResp(res, 400, {
+          error: `Group cron requires BOTH groupId and groupName. You sent ${targets.length} target(s) that look like groupId(s). Add groupName: ${JSON.stringify(namesForHint)}.`,
+          missingGroupName: true,
+          hint: namesForHint,
+        });
+      }
+      // Defense against the same name-collision class as resolveCronZaloTarget:
+      // if a target looks like a group NAME (not an id) and that name is
+      // ambiguous, refuse so the bot must pass an id.
+      for (const t of targets) {
+        const key = String(t).normalize('NFC').toLowerCase();
+        if (ambiguous.has(key) && !(t in byId)) {
+          const candidates = _findAllGroupIdsByName(byId, key);
+          return jsonResp(res, 409, { error: `groupName "${t}" matches ${candidates.length} groups (${candidates.join(', ')}). Pass groupId explicitly to disambiguate.`, ambiguous: true, candidates });
+        }
+      }
+      // If both `groupId` and `groupName` arrived, verify they agree before
+      // accepting either. Same defense as agent mode.
+      if (groupId && groupName) {
+        const idStr = String(groupId).trim();
+        const idName = (byId[idStr] || '').normalize('NFC').toLowerCase();
+        const nameKey = String(groupName).normalize('NFC').toLowerCase();
+        if (idName && idName !== nameKey) {
+          return jsonResp(res, 400, { error: `groupId/groupName mismatch — groupId ${idStr} is "${byId[idStr]}" but groupName says "${groupName}". Refusing to dispatch.` });
+        }
+      }
+      const resolvedIds = targets.map(t => byName[String(t).normalize('NFC').toLowerCase()] || t);
       const invalidIds = resolvedIds.filter(id => !(id in byId));
       if (invalidIds.length > 0) return jsonResp(res, 400, { error: 'unknown groupId(s): ' + invalidIds.join(', ') + '. Available: ' + Object.entries(byId).map(([id, name]) => `${name} (${id})`).join(', ') });
       if (cronExpr) {
@@ -769,10 +1012,74 @@ function startCronApi() {
           try { restartCronJobs(); } catch {}
           console.log('[cron-api] created:', id, label || '');
           try {
-            const groupNames = resolvedIds.map(gid => byId[gid] || gid).join(', ');
+            // Echo last-4 of groupId so CEO can catch a wrong-group binding.
+            const groupNames = resolvedIds.map(gid => `${byId[gid] || gid} (…${String(gid).slice(-4)})`).join(', ');
             sendCeoAlert('[Cron] Đã tạo: ' + (label || 'no label') + ' — ' + (cronExpr || oneTimeAt) + ' — group: ' + groupNames);
           } catch {}
           return jsonResp(res, 200, { success: true, id, entry });
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/cron/audit' && (req.method === 'GET' || req.method === 'POST')) {
+      // 2026-05-15: scan EXISTING crons for prompt-vs-stored target mismatch.
+      // Designed for the customer-incident class where bot picked a wrong
+      // groupId at create time and the wrong-binding wasn't caught until the
+      // cron fired weeks later. Bot/Dashboard can call this to triage legacy
+      // crons in bulk.
+      try {
+        const crons = loadCustomCrons() || [];
+        const { byId } = loadGroupsMap();
+        const findings = [];
+        for (const c of crons) {
+          if (!c || !c.zaloTarget || !c.zaloTarget.id) continue;
+          const storedId = String(c.zaloTarget.id);
+          const storedLabel = String(c.zaloTarget.label || '');
+          const canonicalName = String(byId[storedId] || '');
+          const issues = [];
+
+          // 1. Label drift: stored label differs from current canonical name.
+          if (canonicalName && storedLabel && canonicalName !== storedLabel) {
+            issues.push({ kind: 'label_drift', stored: storedLabel, canonical: canonicalName });
+          }
+          // 2. Unknown groupId — group deleted on Zalo side or cache empty.
+          if (!canonicalName) {
+            issues.push({ kind: 'unknown_groupId', stored: storedId });
+          }
+          // 3. Prompt content mentions a group name that does NOT match the
+          //    stored target. Soft heuristic: look for any token in
+          //    prompt/label matching a known groupName that ≠ stored.
+          const haystack = [c.prompt || '', c.label || ''].join(' ').normalize('NFC');
+          const hitNames = [];
+          for (const [otherId, otherName] of Object.entries(byId)) {
+            if (!otherName) continue;
+            if (otherId === storedId) continue;
+            // Only flag exact-token hits (avoid partial-word false positives).
+            const re = new RegExp('(^|[^\\p{L}])' + otherName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^\\p{L}])', 'u');
+            if (re.test(haystack)) hitNames.push({ id: otherId, name: otherName });
+          }
+          if (hitNames.length > 0) {
+            // Filter: only flag if stored name is NOT also in the haystack.
+            const storedRe = canonicalName ? new RegExp('(^|[^\\p{L}])' + canonicalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^\\p{L}])', 'u') : null;
+            const storedAlsoInPrompt = storedRe && storedRe.test(haystack);
+            if (!storedAlsoInPrompt) {
+              issues.push({ kind: 'prompt_mentions_other_group', mentioned: hitNames, stored: { id: storedId, label: storedLabel } });
+            }
+          }
+          if (issues.length > 0) {
+            findings.push({
+              id: c.id, label: c.label || c.id, cronExpr: c.cronExpr, oneTimeAt: c.oneTimeAt,
+              storedTarget: { id: storedId, label: storedLabel, canonicalName },
+              issues,
+            });
+          }
+        }
+        return jsonResp(res, 200, {
+          totalCrons: crons.length,
+          flagged: findings.length,
+          findings,
+          hint: findings.length > 0
+            ? 'Mỗi cron flagged có thể: (1) đúng — prompt nhắc group khác chỉ là ví dụ, hoặc (2) sai — bot picked wrong groupId at create time. Verify with CEO and either /api/cron/delete + re-create, or /api/cron/toggle để tạm tắt.'
+            : 'Tất cả crons đều consistent — không có mismatch giữa prompt content và stored target.',
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
@@ -930,6 +1237,12 @@ function startCronApi() {
         /^skills\/[^\/]+\.md$/,
         /^skills\/[^\/]+\/[^\/]+\.md$/,
         /^skills\/[^\/]+\/[^\/]+\/[^\/]+\.md$/,
+        /^skills\/[^\/]+\/[^\/]+\/(scripts|references|assets)\/[^\/]+$/,
+        /^user-skills\/_registry\.json$/,
+        /^user-skills\/[^\/]+\.md$/,
+        /^user-skills\/[^\/]+\/SKILL\.md$/,
+        /^user-skills\/[^\/]+\/scripts\/[^\/]+\.(py|js|sh|ps1|txt|json)$/,
+        /^user-skills\/[^\/]+\/references\/[^\/]+\.md$/,
         /^prompts\/[^\/]+\.md$/,
         /^prompts\/[^\/]+\/[^\/]+\.md$/,
         /^tools\/[^\/]+\.md$/,
@@ -943,7 +1256,19 @@ function startCronApi() {
       try {
         const fullPath = path.join(ws, reqPath);
         if (!fs.existsSync(fullPath)) return jsonResp(res, 404, { error: 'file not found: ' + reqPath });
-        const content = redactSecrets(fs.readFileSync(fullPath, 'utf-8'));
+        // Resolve symlinks BEFORE reading. The path-whitelist above only
+        // matches the requested *string*; without realpath the OS would
+        // happily dereference a symlink pointing outside the workspace
+        // (e.g. memory/foo.md → /etc/passwd) and we'd leak it through the
+        // redactSecrets filter (which only knows specific known-secret
+        // patterns, not arbitrary files).
+        const realPath = fs.realpathSync(fullPath);
+        const wsReal = fs.realpathSync(ws);
+        if (!realPath.startsWith(wsReal + path.sep) && realPath !== wsReal) {
+          auditLog('workspace_read_escape', { reqPath, realPath, ws: wsReal });
+          return jsonResp(res, 403, { error: 'path resolves outside workspace (symlink rejected)' });
+        }
+        const content = redactSecrets(fs.readFileSync(realPath, 'utf-8'));
         return jsonResp(res, 200, { path: reqPath, content, size: Buffer.byteLength(content) });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
@@ -962,7 +1287,7 @@ function startCronApi() {
       }
       if (Buffer.byteLength(content) > 2000) return jsonResp(res, 400, { error: 'content too large (max 2000 bytes)' });
       try {
-        return await withWriteLock(async () => {
+        return await withKnowledgeLock(async () => {
           const fullPath = path.join(ws, reqPath);
           fs.mkdirSync(path.dirname(fullPath), { recursive: true });
           fs.appendFileSync(fullPath, '\n' + content, 'utf-8');
@@ -1192,7 +1517,7 @@ function startCronApi() {
       let tId = groupId || rawTargetId;
       if (!tId && groupName) {
         const { byName } = loadGroupsMap();
-        tId = byName[String(groupName).toLowerCase()];
+        tId = byName[String(groupName).normalize('NFC').toLowerCase()];
         if (!tId) return jsonResp(res, 400, { error: 'unknown groupName: ' + groupName + '. Check /api/cron/list for available groups.' });
       }
       if (!tId && friendName) {
@@ -1246,7 +1571,7 @@ function startCronApi() {
       let tId = groupId || rawTargetId;
       if (!tId && groupName) {
         const { byName } = loadGroupsMap();
-        tId = byName[String(groupName).toLowerCase()];
+        tId = byName[String(groupName).normalize('NFC').toLowerCase()];
         if (!tId) return jsonResp(res, 400, { error: 'unknown groupName: ' + groupName + '. Check /api/cron/list for available groups.' });
       }
       if (!tId && friendName) {
@@ -1311,7 +1636,7 @@ function startCronApi() {
       if (String(title).length > 200) return jsonResp(res, 400, { error: 'title too long (max 200)' });
       if (String(faqContent).length > 2000) return jsonResp(res, 400, { error: 'content too long (max 2000)' });
       try {
-        return await withWriteLock(async () => {
+        return await withKnowledgeLock(async () => {
           const indexPath = path.join(ws, 'knowledge', category, 'index.md');
           fs.mkdirSync(path.dirname(indexPath), { recursive: true });
           const entry = `\n\n## ${String(title).trim()}\n\n${String(faqContent).trim()}\n`;
@@ -2167,63 +2492,212 @@ function startCronApi() {
       });
       return res.end();
 
-    // === User Skills API ===
     } else if (urlPath === '/api/user-skills/list' && (req.method === 'GET' || req.method === 'POST')) {
+      // List is read-only — allowed from any channel (so bot can introspect on Zalo turn).
       try {
         const skills = skillManager.listUserSkills();
         return jsonResp(res, 200, { skills });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/user-skills/create' && req.method === 'POST') {
+      // SECURITY: user-skills mutations are CEO-only. The modoro-zalo web_fetch
+      // patch sets X-Source-Channel: zalo on Zalo turns; CEO Telegram chat does not.
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_unauth_attempt');
       try {
-        const { name, type, appliesTo, trigger, content } = params;
+        const { name, type, appliesTo, trigger, content, confirmOverride, scripts, allowedTools, description } = params;
         if (!name || !content) return jsonResp(res, 400, { error: 'name and content required' });
+        // Loud-fail on content length BEFORE truncating. CEO must rewrite, not lose data.
+        if (skillManager.isContentTooLong(content)) {
+          return jsonResp(res, 413, { error: 'content_too_long', limit: skillManager.SKILL_CONTENT_MAX, received: String(content).length, message: `Nội dung dài quá ${String(content).length}/${skillManager.SKILL_CONTENT_MAX} ký tự. Anh tóm gọn lại giúp em nhé.` });
+        }
         const conflicts = skillManager.checkConflict({ content, appliesTo: appliesTo || [], trigger: trigger || '' });
-        const entry = await skillManager.createUserSkill({ name, type, appliesTo, trigger, content });
+        // Server-side gate: if conflicts found and caller didn't explicitly
+        // override, refuse. This prevents the bot from bypassing the
+        // conflict-confirmation step in skill-builder.md.
+        if (conflicts.length > 0 && !confirmOverride) {
+          return jsonResp(res, 409, { error: 'conflicts_detected', conflicts, message: 'Skill conflicts with existing. Resend with confirmOverride:true to force.' });
+        }
+        const entry = await skillManager.createUserSkill({ name, type, appliesTo, trigger, content, scripts, allowedTools, description });
+        // System-emitted confirmation. CEO knows the skill is REAL (not LLM hallucination).
+        try {
+          if (process.env.NODE_ENV !== 'test' && !process.env._9BIZ_SUPPRESS_TG) {
+            const ch = require('./channels');
+            ch.sendTelegram(`✓ Đã tạo skill "${entry.name}" (id: ${entry.id}). Mở Dashboard > Skills để xem chi tiết.`, { skipFilter: true, skipPauseCheck: true })
+              .catch(() => {});
+          }
+        } catch {}
+        try { _broadcastSkillUpdated(); } catch {}
         return jsonResp(res, 200, { success: true, entry, conflicts });
-      } catch (e) { return jsonResp(res, e.message.includes('already exists') || e.message.includes('conflicts with') ? 409 : 500, { error: e.message }); }
+      } catch (e) {
+        if (e.message.includes('Too many skills')) return jsonResp(res, 429, { error: e.message });
+        return jsonResp(res, e.message.includes('already exists') || e.message.includes('conflicts with') ? 409 : 500, { error: e.message });
+      }
 
     } else if (urlPath === '/api/user-skills/update' && req.method === 'POST') {
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_unauth_attempt');
       try {
         const { id, name, type, appliesTo, trigger, content } = params;
         if (!id) return jsonResp(res, 400, { error: 'id required' });
+        if (content !== undefined && skillManager.isContentTooLong(content)) {
+          return jsonResp(res, 413, { error: 'content_too_long', limit: skillManager.SKILL_CONTENT_MAX, received: String(content).length });
+        }
         const skill = await skillManager.updateUserSkill(id, { name, type, appliesTo, trigger, content });
+        try { _broadcastSkillUpdated(); } catch {}
         return jsonResp(res, 200, { success: true, skill });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
+    } else if (urlPath === '/api/user-skills/restore' && req.method === 'POST') {
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_unauth_attempt');
+      try {
+        const { id } = params;
+        if (!id) return jsonResp(res, 400, { error: 'id required' });
+        const entry = await skillManager.restoreUserSkill(id);
+        return jsonResp(res, 200, { success: true, entry });
+      } catch (e) {
+        if (e.message.includes('No deleted backup') || e.message.includes('No trash')) return jsonResp(res, 404, { error: e.message });
+        if (e.message.includes('already exists')) return jsonResp(res, 409, { error: e.message });
+        return jsonResp(res, 500, { error: e.message });
+      }
+
     } else if (urlPath === '/api/user-skills/delete' && req.method === 'POST') {
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_unauth_attempt');
       try {
         const { id } = params;
         if (!id) return jsonResp(res, 400, { error: 'id required' });
         const result = await skillManager.deleteUserSkill(id);
+        try { _broadcastSkillUpdated(); } catch {}
+        try {
+          if (process.env.NODE_ENV !== 'test' && !process.env._9BIZ_SUPPRESS_TG) {
+            const ch = require('./channels');
+            ch.sendTelegram(`✓ Đã xóa skill "${id}". Có thể khôi phục trong 20 lần xóa gần nhất.`, { skipFilter: true, skipPauseCheck: true }).catch(() => {});
+          }
+        } catch {}
         return jsonResp(res, 200, { success: true, ...result });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/user-skills/toggle' && req.method === 'POST') {
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_unauth_attempt');
       try {
         const { id, enabled } = params;
         if (!id) return jsonResp(res, 400, { error: 'id required' });
         const skill = await skillManager.toggleUserSkill(id, enabled !== false && enabled !== 'false');
+        try { _broadcastSkillUpdated(); } catch {}
         return jsonResp(res, 200, { success: true, skill });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/user-skills/check-conflict' && req.method === 'POST') {
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_unauth_attempt');
       try {
         const { content, appliesTo, trigger } = params;
         const conflicts = skillManager.checkConflict({ content: content || '', appliesTo: appliesTo || [], trigger: trigger || '' });
         return jsonResp(res, 200, { conflicts });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
+    } else if (urlPath === '/api/skill/exec' && req.method === 'POST') {
+      // Execute a script from a saved user skill folder. CEO-only.
+      // Whitelist: script must be declared in SKILL.md frontmatter `scripts:` list.
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_script_unauth_attempt');
+      try {
+        const { skillId, script, args, timeoutMs } = params;
+        if (!skillId || !script) return jsonResp(res, 400, { error: 'skillId and script required' });
+        const list = skillManager.listUserSkills();
+        const skill = list.find(s => s.id === skillId);
+        if (!skill) return jsonResp(res, 404, { error: 'skill not found: ' + skillId });
+        if (skill.enabled === false) return jsonResp(res, 403, { error: 'skill is disabled' });
+        const declared = (skill.scripts || []).find(s => s.name === script || s.filename === script);
+        if (!declared) return jsonResp(res, 403, { error: 'script not declared in skill frontmatter: ' + script });
+        const ws = require('./workspace').getWorkspace();
+        const scriptPath = path.join(ws, 'user-skills', skillId, 'scripts', declared.filename);
+        if (!fs.existsSync(scriptPath)) return jsonResp(res, 404, { error: 'script file missing on disk: ' + declared.filename });
+        const runner = require('./skill-runner');
+        const startedAt = Date.now();
+        const result = await runner.runScript(scriptPath, {
+          args: Array.isArray(args) ? args : (args ? [String(args)] : []),
+          timeoutMs: Math.min(Math.max(parseInt(timeoutMs, 10) || 60000, 1000), 300000),
+        });
+        try { require('./workspace').auditLog('user_skill_script_executed', {
+          skillId, script: declared.filename, runtime: result.runtime,
+          exitCode: result.exitCode, durationMs: result.durationMs,
+          timedOut: !!result.timedOut, truncated: !!result.killedSize,
+        }); } catch {}
+        return jsonResp(res, 200, {
+          success: result.exitCode === 0,
+          exitCode: result.exitCode,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          durationMs: result.durationMs,
+          timedOut: result.timedOut || false,
+          truncated: result.killedSize || false,
+          runtime: result.runtime,
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/skill/test-exec' && req.method === 'POST') {
+      // Sandbox-run ad-hoc script code (no save). Used by AI generation flow
+      // to validate a script before persisting as skill. CEO-only.
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('user_skill_test_unauth_attempt');
+      try {
+        const { code, runtime, args } = params;
+        if (!code) return jsonResp(res, 400, { error: 'code required' });
+        const rt = String(runtime || 'python').toLowerCase();
+        if (!['python', 'node', 'bash', 'powershell'].includes(rt)) {
+          return jsonResp(res, 400, { error: 'unsupported runtime: ' + rt });
+        }
+        if (String(code).length > 50000) return jsonResp(res, 413, { error: 'code too long (max 50000 chars)' });
+        const runner = require('./skill-runner');
+        const result = await runner.testRunScript(String(code), rt, Array.isArray(args) ? args : []);
+        return jsonResp(res, 200, {
+          success: result.exitCode === 0,
+          exitCode: result.exitCode,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          durationMs: result.durationMs,
+          timedOut: result.timedOut || false,
+          runtime: rt,
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/skill/python-status' && (req.method === 'GET' || req.method === 'POST')) {
+      // Check if Python runtime is available, lazy-download if not (Windows).
+      // CEO-only — long-running, requires confirmation UI.
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('python_status_unauth_attempt');
+      try {
+        const py = require('./python-runtime');
+        const detected = py.detectSystemPython();
+        return jsonResp(res, 200, {
+          available: !!detected,
+          bin: detected || null,
+          platform: process.platform,
+          arch: process.arch,
+          canLazyDownload: process.platform === 'win32',
+          hint: detected ? null : (process.platform === 'win32'
+            ? 'Python chưa có trên máy. Gọi /api/skill/python-install để tự cài (~30MB embedded).'
+            : 'Python 3.8+ chưa cài. Cài qua Homebrew (Mac) hoặc apt (Linux), rồi thử lại.'),
+        });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/skill/python-install' && req.method === 'POST') {
+      // Lazy-download embedded Python (Windows only).
+      if (!_requireCeoTelegram().ok) return _denyCeoTelegram('python_install_unauth_attempt');
+      try {
+        const py = require('./python-runtime');
+        const bin = await py.ensurePython();
+        return jsonResp(res, 200, { success: true, bin });
+      } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
     } else {
-      return jsonResp(res, 404, { error: 'not found', endpoints: ['/api/cron/create', '/api/cron/replace', '/api/cron/list', '/api/cron/delete', '/api/cron/toggle', '/api/zalo/send', '/api/zalo/send-media', '/api/knowledge/add', '/api/workspace/read', '/api/workspace/append', '/api/workspace/list', '/api/customer-memory/write', '/api/ceo-rules/write', '/api/file/read', '/api/file/write', '/api/file/list', '/api/file/search', '/api/file/open', '/api/file/rename', '/api/file/copy', '/api/file/delete', '/api/file/download', '/api/system/info', '/api/exec', '/api/brand-assets/list', '/api/brand-assets/save', '/api/media/list', '/api/media/search', '/api/media/upload', '/api/media/describe', '/api/image/generate', '/api/image/generate-and-send-zalo', '/api/image/status', '/api/telegram/send-photo', '/api/fb/post', '/api/fb/recent', '/api/image/skills', '/api/user-skills/list', '/api/user-skills/create', '/api/user-skills/update', '/api/user-skills/delete', '/api/user-skills/toggle', '/api/user-skills/check-conflict'] });
+      // 404 — drop the verbose endpoint list. Per Overseer-2 finding it
+      // leaks attack surface to unauthenticated callers (anyone reaching
+      // this branch is already past the auth gate, but defense-in-depth).
+      return jsonResp(res, 404, { error: 'not found' });
     }
   });
 
   function tryListen(port, retries) {
     server.listen(port, '127.0.0.1', () => {
       _cronApiServer = server;
-      _cronApiPort = port;
-      console.log('[cron-api] listening on http://127.0.0.1:' + port);
+      _cronApiPort = server.address().port;
+      console.log('[cron-api] listening on http://127.0.0.1:' + _cronApiPort);
     });
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE' && retries > 0) {
@@ -2232,14 +2706,33 @@ function startCronApi() {
         tryListen(port + 1, retries - 1);
       } else {
         console.error('[cron-api] server error:', err.message);
+        _cronApiPort = null;
         try { sendCeoAlert('[Cron API] Không khởi động được HTTP server: ' + err.message); } catch {}
       }
     });
   }
-  tryListen(20200, 3);
+  // In test env, bind to an OS-assigned ephemeral port to avoid colliding with
+  // a live MODOROClaw app instance that already owns 20200..20203. Production
+  // still uses the fixed 20200 range so the `web_fetch` tool URL stays stable.
+  const startPort = process.env.NODE_ENV === 'test' ? 0 : 20200;
+  tryListen(startPort, 3);
 }
 
 function getCronApiToken() { return _cronApiToken; }
+
+// Broadcast user-skill change to Dashboard renderers so the Skills tab refreshes
+// without manual reload. Pulls electron lazily — cron-api.js can run without it
+// during tests.
+function _broadcastSkillUpdated() {
+  try {
+    const electron = require('electron');
+    if (!electron?.BrowserWindow) return;
+    const skills = require('./skill-manager').listUserSkills();
+    for (const w of electron.BrowserWindow.getAllWindows()) {
+      try { w.webContents.send('skill-updated', { skills }); } catch {}
+    }
+  } catch {}
+}
 function getCronApiPort() { return _cronApiPort; }
 
 function cleanupCronApi() {

@@ -12,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/fix-better-sqlite3.js",
-    "smoke": "node scripts/smoke-test.js && node scripts/smoke-context-injection.js && node scripts/smoke-zalo-followup.js && node scripts/smoke-visibility.js && npm run guard:architecture",
+    "smoke": "node scripts/smoke-test.js && node scripts/smoke-context-injection.js && node scripts/smoke-zalo-followup.js && node scripts/smoke-visibility.js && node scripts/smoke-skill-runtime.js && npm run guard:architecture",
     "map:generate": "node scripts/generate-system-map.js",
     "map:check": "node scripts/generate-system-map.js --check",
     "guard:contracts": "node scripts/check-capability-contracts.js",
@@ -31,7 +31,8 @@
     "guard:media-library": "node scripts/check-media-library-contract.js",
     "guard:migration-safety": "node scripts/check-migration-safety.js",
     "guard:runtime-install": "node scripts/check-runtime-install-contract.js",
-    "guard:architecture": "npm run map:check && npm run guard:contracts && npm run guard:api-docs && npm run guard:google-sheets && npm run guard:google-calendar && npm run guard:google-workspace-audit && npm run guard:gmail-inbox && npm run guard:openclaw-launchers && npm run guard:premium-theme && npm run guard:dashboard-ux && npm run guard:9router-rtk && npm run guard:facebook && npm run guard:image-generation && npm run guard:media-library && npm run guard:migration-safety && npm run guard:runtime-install && npm run guard:bundle",
+    "guard:obfuscation-residue": "node scripts/check-obfuscation-residue.js",
+    "guard:architecture": "npm run map:check && npm run guard:contracts && npm run guard:api-docs && npm run guard:google-sheets && npm run guard:google-calendar && npm run guard:google-workspace-audit && npm run guard:gmail-inbox && npm run guard:openclaw-launchers && npm run guard:premium-theme && npm run guard:dashboard-ux && npm run guard:9router-rtk && npm run guard:facebook && npm run guard:image-generation && npm run guard:media-library && npm run guard:migration-safety && npm run guard:runtime-install && npm run guard:obfuscation-residue && npm run guard:bundle",
     "prebuild:vendor": "node scripts/prebuild-vendor.js",
     "prebuild:modoro-zalo": "node scripts/prebuild-modoro-zalo.js",
     "build:win": "node scripts/build-win.js",

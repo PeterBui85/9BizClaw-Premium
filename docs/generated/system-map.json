@@ -1,9 +1,9 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 107,
-    "ipcHandlers": 169,
-    "preloadBridges": 161,
+    "apiRoutes": 113,
+    "ipcHandlers": 170,
+    "preloadBridges": 162,
     "dashboardPages": 15,
     "capabilityContracts": 5
   },
@@ -46,6 +46,15 @@
     },
     {
       "path": "/api/ceo-rules/write",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/cron/audit",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -837,6 +846,42 @@
       ]
     },
     {
+      "path": "/api/skill/exec",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/skill/python-install",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/skill/python-status",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/skill/test-exec",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/system/info",
       "sources": [
         "electron/lib/cron-api.js"
@@ -883,6 +928,15 @@
     },
     {
       "path": "/api/user-skills/list",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/user-skills/restore",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -1487,6 +1541,10 @@
     },
     {
       "channel": "resolve-zalo-target",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "restore-user-skill",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -2267,6 +2325,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "restoreUserSkill",
+      "channel": "restore-user-skill",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "resumeTelegram",
       "channel": "resume-telegram",
       "source": "electron/preload.js"
@@ -2549,23 +2612,23 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 547151
+      "bytes": 558916
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 236848
-    },
-    {
-      "path": "electron/ui/wizard.html",
-      "bytes": 114781
+      "bytes": 240503
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 114733
+      "bytes": 142118
+    },
+    {
+      "path": "electron/ui/wizard.html",
+      "bytes": 115665
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 100664
+      "bytes": 113801
     },
     {
       "path": "electron/lib/channels.js",
@@ -2577,11 +2640,11 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 76039
+      "bytes": 76243
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 70118
+      "bytes": 72424
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -2589,19 +2652,23 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 46568
+      "bytes": 52210
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 45718
+      "bytes": 46421
     },
     {
       "path": "electron/lib/fb-schedule.js",
       "bytes": 44772
     },
     {
+      "path": "electron/lib/skill-manager.js",
+      "bytes": 44098
+    },
+    {
       "path": "electron/lib/nine-router.js",
-      "bytes": 38508
+      "bytes": 42065
     },
     {
       "path": "electron/lib/zalo-plugin.js",
@@ -2625,7 +2692,7 @@
     },
     {
       "path": "electron/lib/conversation.js",
-      "bytes": 25838
+      "bytes": 26324
     },
     {
       "path": "electron/ui/splash.html",

@@ -73,6 +73,10 @@ async function selfTestOpenClawAgent() {
     if (res.code === 0 && versionStr) {
       _agentCliHealthy = true;
       _agentCliVersionOk = true;
+      // Reset alert flag so a NEW outage in the same session re-alerts CEO.
+      // Without this, once CEO is told "openclaw down" they're never told
+      // "openclaw recovered" or "openclaw down again" (Round-2 Reviewer F).
+      _selfTestAlertSent = false;
       console.log(`[cron-agent self-test] OK — openclaw ${versionStr} (directNode=${usingDirectNode}, profile=full)`);
       journalCronRun({
         phase: 'self-test',
@@ -192,15 +196,17 @@ function buildAgentArgs(prompt, chatId, useJson = false) {
   const idStr = String(chatId);
   const base = ['agent', '--message', prompt];
   if (useJson) base.push('--json');
-  if (_agentFlagProfile === 'full') {
+  // Default to 'full' if self-test hasn't completed yet (e.g. chat IPC fires
+  // within the first ~10s of boot). Without --channel paired with --to,
+  // openclaw rejects the spawn.
+  const profile = _agentFlagProfile || 'full';
+  if (profile === 'full') {
     const args = [...base, '--channel', 'telegram', '--to', idStr];
     if (!useJson) args.push('--reply-channel', 'telegram', '--reply-to', idStr);
     return args;
   }
-  if (_agentFlagProfile === 'medium') {
-    return [...base, '--channel', 'telegram', '--to', idStr];
-  }
-  return [...base, '--to', idStr];
+  // 'medium' and 'minimal' both require --channel when --to is set.
+  return [...base, '--channel', 'telegram', '--to', idStr];
 }
 
 function isTransientErr(stderr) {
@@ -285,7 +291,7 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   if (!isZaloListenerAlive()) {
     console.error(`[cron-exec] "${label || 'cron'}" — Zalo listener not running, refusing send`);
     journalCronRun({ phase: 'fail', label: label || 'cron', mode: 'safe-openzca', err: 'zalo-listener-down' });
-    try { await sendCeoAlert(`Cron "${label || 'cron'}" không gửi được — Zalo listener không chạy. Vào Dashboard kiểm tra tab Zalo.`); } catch {}
+    console.error(`[cron-exec] "${label || 'cron'}" — Zalo listener down, skipping send`);
     return false;
   }
   if (targetIds.length === 1) {
@@ -327,6 +333,25 @@ async function runCronAgentPrompt(prompt, opts = {}) {
 
 async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 600000 } = {}) {
   const niceLabel = label || 'cron';
+
+  // PAUSE CHECK 2026-05-15: if this cron targets Zalo and Zalo channel is
+  // paused, short-circuit BEFORE running the agent. Previously the agent
+  // ran (~30-90s of LLM tokens wasted) and on Zalo failure the reply was
+  // forwarded to CEO Telegram — violates CEO's pause intent (they paused
+  // to STOP customer chatter, not to redirect it).
+  if (zaloTarget && zaloTarget.id) {
+    try {
+      const channels = require('./channels');
+      if (typeof channels.isChannelPaused === 'function' && channels.isChannelPaused('zalo')) {
+        const status = (typeof channels.getChannelPauseStatus === 'function') ? channels.getChannelPauseStatus('zalo') : null;
+        const until = status && status.until ? ` (đến ${new Date(status.until).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })})` : '';
+        journalCronRun({ phase: 'skip', label: niceLabel, reason: 'zalo-paused', until: status?.until || null });
+        console.log(`[cron-agent] "${niceLabel}" skipped — Zalo channel paused${until}`);
+        try { await sendCeoAlert(`[Cron "${niceLabel}"] đã bỏ qua vì kênh Zalo đang tạm dừng${until}. Em sẽ chạy lại khi anh tiếp tục Zalo.`); } catch {}
+        return false;
+      }
+    } catch (e) { console.warn('[cron-agent] pause-check error (proceeding):', e?.message); }
+  }
 
   const execMatch = prompt.trim().match(/^exec:\s+(.+)$/s);
   if (execMatch) {
@@ -523,7 +548,13 @@ function loadSchedules() {
       try {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) throw new Error('schedules.json must be an array');
-        return parsed;
+        const hadHeartbeat = parsed.some(s => s.id === 'heartbeat');
+        const cleaned = parsed.filter(s => s.id !== 'heartbeat');
+        if (hadHeartbeat) {
+          try { writeJsonAtomic(schedulesPath, cleaned); } catch {}
+          console.log('[schedules] removed legacy heartbeat entry');
+        }
+        return cleaned;
       } catch (parseErr) {
         const backupPath = schedulesPath + '.corrupt-' + Date.now();
         try { fs.copyFileSync(schedulesPath, backupPath); } catch {}
@@ -1582,6 +1613,46 @@ let cronJobs = [];
 let _startCronJobsInFlight = false;
 let _customCronWriteChain = Promise.resolve();
 
+// C-I1 helper: read tail of audit.jsonl, populate `_cronInFlight` Map for
+// any `cron_fired` event within the last 5 minutes with a marker so the
+// matching scheduler tick (if it fires this minute due to crash recovery)
+// skips. After 5 minutes, the Map auto-evicts.
+function _seedRecentFiresFromAudit() {
+  try {
+    const auditPath = path.join(getWorkspace(), 'logs', 'audit.jsonl');
+    if (!fs.existsSync(auditPath)) return;
+    // Read last 64KB only — cron-fired events are tiny; 64KB is plenty for 5min.
+    const stat = fs.statSync(auditPath);
+    const offset = Math.max(0, stat.size - 65536);
+    const fd = fs.openSync(auditPath, 'r');
+    const buf = Buffer.alloc(stat.size - offset);
+    fs.readSync(fd, buf, 0, buf.length, offset);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf-8').split('\n').filter(Boolean);
+    const cutoff = Date.now() - 5 * 60_000;
+    let seeded = 0;
+    for (const line of lines) {
+      try {
+        const e = JSON.parse(line);
+        if (!e || e.event !== 'cron_fired') continue;
+        const ts = e.ts ? Date.parse(e.ts) : 0;
+        if (!ts || ts < cutoff) continue;
+        const id = e.meta?.id || e.meta?.label;
+        if (!id) continue;
+        // Mark as in-flight so the next fire (if it happens within 5min) skips.
+        // Auto-expire after the remaining grace window.
+        global._cronInFlight.set(id, true);
+        const remainingMs = (ts + 5 * 60_000) - Date.now();
+        if (remainingMs > 0) {
+          setTimeout(() => { try { global._cronInFlight.delete(id); } catch {} }, remainingMs).unref?.();
+        }
+        seeded++;
+      } catch {}
+    }
+    if (seeded > 0) console.log(`[cron] seeded ${seeded} recent fire(s) from audit log (crash recovery idempotency)`);
+  } catch (e) { console.warn('[cron] _seedRecentFiresFromAudit error:', e?.message); }
+}
+
 // Late-binding getter for _saveZaloManagerInFlight (lives in dashboard-ipc.js)
 let _getSaveZaloManagerInFlight = () => false;
 function setSaveZaloManagerInFlightGetter(fn) { _getSaveZaloManagerInFlight = fn; }
@@ -1595,6 +1666,12 @@ function startCronJobs() {
 function _startCronJobsInner() {
   stopCronJobs();
   if (!global._cronInFlight) global._cronInFlight = new Map();
+
+  // C-I1 fix 2026-05-15: seed `_recentFireIds` from audit log so a cron that
+  // ALREADY fired in the last 5 minutes (e.g. before a crash) does not
+  // re-fire on next boot. The Map is process-lifetime; entries expire after
+  // 5 minutes (longer than typical cron-schedule precision).
+  try { _seedRecentFiresFromAudit(); } catch (e) { console.warn('[cron] audit seed failed:', e?.message); }
 
   selfTestOpenClawAgent()
     .then(async () => {
@@ -1835,6 +1912,15 @@ function _startCronJobsInner() {
         }
         const effectiveDelay = Math.max(delayMs, 1000);
         const timer = setTimeout(async () => {
+          // A-I2 fix 2026-05-15: oneTimeAt previously skipped both _cronInFlight
+          // and _cronFireDedup. If restartCronJobs runs while a fire is in-flight
+          // (e.g., quick /api/cron/replace), the new schedule could double-fire.
+          const niceId = c.id || c.label || 'one-time';
+          if (global._cronInFlight && global._cronInFlight.get(niceId)) {
+            console.warn(`[cron] OneTime ${niceId} SKIPPED — already firing in this process`);
+            return;
+          }
+          global._cronInFlight && global._cronInFlight.set(niceId, true);
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
             if (c.prompt && !c.prompt.startsWith('exec:')) {
@@ -1847,6 +1933,8 @@ function _startCronJobsInner() {
             console.error(`[cron] OneTime ${c.id} failed:`, e?.message);
             try { auditLog('cron_failed', { id: c.id, label: c.label || c.id, kind: 'one-time', error: String(e?.message || e).slice(0, 200) }); } catch {}
             try { await sendCeoAlert(`*Cron một lần "${c.label || c.id}" lỗi*\n\n\`${String(e?.message || e).slice(0, 300)}\``); } catch {}
+          } finally {
+            global._cronInFlight && global._cronInFlight.delete(niceId);
           }
           try { await _removeCustomCronById(c.id); } catch (re) { console.error(`[cron] remove oneTime ${c.id} failed:`, re?.message); }
         }, effectiveDelay);
@@ -1888,6 +1976,13 @@ function _startCronJobsInner() {
         }
         const effectiveDelay = Math.max(delayMs, 1000);
         const timer = setTimeout(async () => {
+          // A-I2 fix 2026-05-15 — mirror in-flight guard on the healed branch.
+          const niceId = c.id || c.label || 'one-time';
+          if (global._cronInFlight && global._cronInFlight.get(niceId)) {
+            console.warn(`[cron] OneTime (healed) ${niceId} SKIPPED — already firing`);
+            return;
+          }
+          global._cronInFlight && global._cronInFlight.set(niceId, true);
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
             if (c.prompt && !c.prompt.startsWith('exec:')) {
@@ -1900,6 +1995,8 @@ function _startCronJobsInner() {
             console.error(`[cron] OneTime ${c.id} failed:`, e?.message);
             try { auditLog('cron_failed', { id: c.id, label: c.label || c.id, kind: 'one-time-healed', error: String(e?.message || e).slice(0, 200) }); } catch {}
             try { await sendCeoAlert(`*Cron một lần "${c.label || c.id}" lỗi*\n\n\`${String(e?.message || e).slice(0, 300)}\``); } catch {}
+          } finally {
+            global._cronInFlight && global._cronInFlight.delete(niceId);
           }
           try { await _removeCustomCronById(c.id); } catch (re) { console.error(`[cron] remove oneTime ${c.id} failed:`, re?.message); }
         }, effectiveDelay);
@@ -1975,9 +2072,24 @@ function _startCronJobsInner() {
       }
     }
     fbSchedule.cleanupOldPending();
+    fbSchedule.startFbTelegramPoller();
   } catch (e) {
     console.error('[cron] FB schedule setup error:', e.message);
   }
+}
+
+// SEPARATE LOCK 2026-05-15: unrelated knowledge / workspace appends used to
+// share the cron mutex, so a slow knowledge import would queue every cron
+// create/delete/toggle behind it. Splitting locks keeps cron CRUD responsive
+// while still serializing knowledge writes.
+let _knowledgeWriteChain = Promise.resolve();
+async function _withKnowledgeLock(fn) {
+  let release;
+  const gate = new Promise(r => { release = r; });
+  const prev = _knowledgeWriteChain;
+  _knowledgeWriteChain = gate;
+  await prev;
+  try { return await fn(); } finally { release(); }
 }
 
 async function _withCustomCronLock(fn) {
@@ -2014,6 +2126,137 @@ function surfaceCronConfigError(c, reason) {
 function stopCronJobs() {
   for (const { job } of cronJobs) { try { job.stop(); } catch {} }
   cronJobs = [];
+}
+
+// ─── Sleep/resume catch-up ───────────────────────────────────────────
+// On Windows, lid close suspends the entire JS engine. node-cron only computes
+// the NEXT future fire on resume, so any cron whose fire time fell during sleep
+// is silently dropped. `replayMissedCrons(sinceMs)` walks the gap minute by
+// minute, finds which crons would have fired, and fires the MOST RECENT missed
+// instance ONCE (not all missed instances — 5 days of sleep should NOT trigger
+// 5 morning briefings).
+//
+// Cron expression supported: standard 5-field `m h dom mon dow` with the most
+// common subforms: `*`, exact int, `*/N`, `A-B`, `A,B,C`. Matches node-cron
+// validate scope. Anything more exotic falls back to "no match" (safer).
+function _parseCronField(field, min, max) {
+  // Returns a Set<int> of values that match within [min,max], or null if invalid.
+  const out = new Set();
+  for (const part of String(field).split(',')) {
+    let p = part.trim();
+    if (!p) continue;
+    let step = 1;
+    const slash = p.split('/');
+    if (slash.length === 2) { step = parseInt(slash[1], 10) || 1; p = slash[0]; }
+    if (p === '*') {
+      for (let i = min; i <= max; i++) if ((i - min) % step === 0) out.add(i);
+      continue;
+    }
+    const range = p.split('-');
+    if (range.length === 2) {
+      const lo = parseInt(range[0], 10), hi = parseInt(range[1], 10);
+      if (Number.isFinite(lo) && Number.isFinite(hi)) {
+        for (let i = lo; i <= hi; i++) if ((i - lo) % step === 0 && i >= min && i <= max) out.add(i);
+        continue;
+      }
+    }
+    const n = parseInt(p, 10);
+    if (Number.isFinite(n) && n >= min && n <= max) out.add(n);
+  }
+  return out.size ? out : null;
+}
+
+function _cronMatchesDate(expr, d) {
+  const parts = String(expr).trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  const [fMin, fHour, fDom, fMon, fDow] = parts;
+  const min = _parseCronField(fMin, 0, 59);
+  const hour = _parseCronField(fHour, 0, 23);
+  const dom = _parseCronField(fDom, 1, 31);
+  const mon = _parseCronField(fMon, 1, 12);
+  const dow = _parseCronField(fDow, 0, 7); // 0+7 both = Sunday for cron tradition
+  if (!min || !hour || !dom || !mon || !dow) return false;
+  // node-cron schedules use { timezone: 'Asia/Ho_Chi_Minh' }, so we must
+  // extract time components in that timezone — not system local time.
+  const vnStr = d.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const vn = new Date(vnStr);
+  if (!min.has(vn.getMinutes())) return false;
+  if (!hour.has(vn.getHours())) return false;
+  if (!mon.has(vn.getMonth() + 1)) return false;
+  // Cron quirk: if BOTH dom and dow are restricted (not `*`), use OR; else AND.
+  const dowVal = vn.getDay(); // 0=Sun
+  const dowMatch = dow.has(dowVal) || (dowVal === 0 && dow.has(7));
+  const domMatch = dom.has(vn.getDate());
+  const domRestricted = fDom !== '*';
+  const dowRestricted = fDow !== '*';
+  if (domRestricted && dowRestricted) return domMatch || dowMatch;
+  return domMatch && dowMatch;
+}
+
+async function replayMissedCrons(sinceMs) {
+  if (!sinceMs || typeof sinceMs !== 'number') return { replayed: 0, skipped: 0 };
+  const now = Date.now();
+  const gapMs = now - sinceMs;
+  if (gapMs < 60_000) return { replayed: 0, skipped: 0, reason: 'gap_too_short' };
+  // Hard cap: don't walk more than 7 days of minutes (10080 iterations).
+  // Beyond that, just skip — CEO can manually re-run if they really care.
+  const maxGapMs = 7 * 24 * 60 * 60_000;
+  const walkFrom = gapMs > maxGapMs ? now - maxGapMs : sinceMs;
+
+  // Gather all enabled cron expressions from schedules.json + custom-crons.json.
+  // For each cron we'll record the LATEST timestamp that matched within the gap.
+  const candidates = []; // [{ id, label, expr, handler, lastMatch }]
+  try {
+    const schedules = loadSchedules();
+    for (const sched of (schedules || [])) {
+      if (!sched || sched.enabled === false || !sched.time) continue;
+      // schedules use HH:MM not cron expr — translate
+      const m = String(sched.time).match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) continue;
+      const cronExpr = `${parseInt(m[2], 10)} ${parseInt(m[1], 10)} * * *`;
+      candidates.push({ id: 'sched:' + (sched.id || sched.label || 'unknown'), label: sched.label || sched.id || 'unknown', expr: cronExpr, isBuiltin: true });
+    }
+  } catch (e) { console.warn('[replayMissedCrons] loadSchedules failed:', e?.message); }
+  try {
+    const custom = loadCustomCrons() || [];
+    for (const c of custom) {
+      if (!c || c.enabled === false) continue;
+      if (!c.cronExpr) continue; // oneTimeAt is re-loaded by startCronJobs, no replay needed
+      candidates.push({ id: c.id, label: c.label || c.id, expr: c.cronExpr, prompt: c.prompt, zaloTarget: c.zaloTarget });
+    }
+  } catch (e) { console.warn('[replayMissedCrons] loadCustomCrons failed:', e?.message); }
+
+  // Walk minute by minute from walkFrom to now. _cronMatchesDate converts
+  // each Date to Asia/Ho_Chi_Minh before matching (consistent with node-cron tz).
+  let replayed = 0, skipped = 0;
+  for (const c of candidates) {
+    let lastMatch = 0;
+    for (let t = Math.ceil(walkFrom / 60_000) * 60_000; t <= now; t += 60_000) {
+      const d = new Date(t);
+      if (_cronMatchesDate(c.expr, d)) lastMatch = t;
+    }
+    if (!lastMatch) { skipped++; continue; }
+    // Don't replay if gap < 5min (cron probably already fired post-resume).
+    if (now - lastMatch < 5 * 60_000) { skipped++; continue; }
+    console.log(`[replayMissedCrons] firing ${c.id} (${c.label}) — last match ${new Date(lastMatch).toISOString()}`);
+    try { journalCronRun({ phase: 'replay-missed', label: c.label, id: c.id, missedAt: new Date(lastMatch).toISOString() }); } catch {}
+    // For custom-cron entries, fire via runCronAgentPrompt (same path as
+    // scheduled fire). For builtin schedules, defer to the next legitimate
+    // fire — the builtin handlers may have side effects we don't want to
+    // duplicate on resume (e.g. morning briefing also triggers data prep).
+    // CEO is alerted that they were skipped.
+    if (c.isBuiltin) {
+      try { await sendCeoAlert(`[Cron resume] Lịch "${c.label}" đáng lẽ chạy lúc ${new Date(lastMatch).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} nhưng máy đang ngủ. Em sẽ chạy lại lúc lịch tiếp theo.`); } catch {}
+    } else if (c.prompt) {
+      try {
+        if (c.prompt.startsWith('exec:')) await runCronAgentPrompt(c.prompt, { label: c.label, zaloTarget: c.zaloTarget });
+        else await runCronViaSessionOrFallback(c.prompt, { label: c.label, zaloTarget: c.zaloTarget });
+        replayed++;
+      } catch (e) { console.warn(`[replayMissedCrons] ${c.id} failed:`, e?.message); }
+    }
+  }
+  console.log(`[replayMissedCrons] done — replayed=${replayed} skipped=${skipped} gapMin=${Math.round(gapMs / 60_000)}`);
+  return { replayed, skipped, gapMs };
 }
 
 function restartCronJobs() {
@@ -2220,8 +2463,10 @@ module.exports = {
   // Cron lifecycle
   healCustomCronEntries, watchCustomCrons,
   startCronJobs, stopCronJobs, restartCronJobs,
+  // Sleep/resume catch-up (Windows lid close)
+  replayMissedCrons,
   // CRUD helpers
-  _withCustomCronLock, _removeCustomCronById, surfaceCronConfigError,
+  _withCustomCronLock, _withKnowledgeLock, _removeCustomCronById, surfaceCronConfigError,
   // Telegram builtins
   handleTimCommand, handleThongkeCommand, handleBaocaoCommand,
   handleTelegramBuiltinCommand,
