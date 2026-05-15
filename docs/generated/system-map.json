@@ -2644,7 +2644,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 72424
+      "bytes": 72566
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -2671,16 +2671,16 @@
       "bytes": 42065
     },
     {
+      "path": "electron/lib/vendor-patches.js",
+      "bytes": 35530
+    },
+    {
       "path": "electron/lib/zalo-plugin.js",
       "bytes": 35420
     },
     {
       "path": "electron/lib/boot.js",
       "bytes": 35084
-    },
-    {
-      "path": "electron/lib/vendor-patches.js",
-      "bytes": 33786
     },
     {
       "path": "electron/lib/media-library.js",

@@ -613,6 +613,43 @@ function _tryPatch(name, fn) {
 }
 
 // ---------------------------------------------------------------------------
+// Auth cache TTL extension (15min → 1hr)
+// openclaw caches auth-profiles for 15min (9e5 ms). After 15min idle, next
+// message pays full auth sync cost (~10-15s). Extending to 1hr (36e5) keeps
+// the cache warm for typical CEO usage patterns.
+// ---------------------------------------------------------------------------
+
+function ensureAuthCacheTtlExtension(vendorDir) {
+  if (!vendorDir) return;
+  const distDir = path.join(vendorDir, 'node_modules', 'openclaw', 'dist');
+  if (!fs.existsSync(distDir)) return;
+  // Find store file by content (hash suffix changes on update)
+  const files = fs.readdirSync(distDir).filter(f => f.startsWith('store-') && f.endsWith('.js'));
+  for (const file of files) {
+    const fp = path.join(distDir, file);
+    let content;
+    try { content = fs.readFileSync(fp, 'utf-8'); } catch { continue; }
+    if (!content.includes('syncedAtMs')) continue;
+    // Already patched?
+    if (content.includes('36e5') && !content.includes('9e5')) {
+      console.log('[vendor-patches] auth-cache-ttl: already patched');
+      return;
+    }
+    // Find and replace the TTL
+    const original = 'Date.now() - cached.syncedAtMs >= 9e5';
+    if (!content.includes(original)) {
+      console.warn('[vendor-patches] auth-cache-ttl: anchor not found in ' + file);
+      return;
+    }
+    const patched = content.replace(original, 'Date.now() - cached.syncedAtMs >= 36e5');
+    fs.writeFileSync(fp, patched, 'utf-8');
+    console.log(`[vendor-patches] auth-cache-ttl: extended 15min → 1hr in ${file}`);
+    return;
+  }
+  console.warn('[vendor-patches] auth-cache-ttl: no store file with syncedAtMs found');
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -625,5 +662,6 @@ module.exports = {
   ensureOpenclawPrewarmFix,
   ensureOpenclawUpdateUiDisabled,
   ensureOpenzcaFriendEventFix,
+  ensureAuthCacheTtlExtension,
   applyAllVendorPatches,
 };

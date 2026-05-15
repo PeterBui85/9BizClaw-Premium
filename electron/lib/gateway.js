@@ -144,6 +144,7 @@ function ensureOpenzcaFriendEventFix() { vendorPatches.ensureOpenzcaFriendEventF
 function ensureOpenclawPricingFix() { vendorPatches.ensureOpenclawPricingFix(getBundledVendorDir()); }
 function ensureOpenclawPrewarmFix() { vendorPatches.ensureOpenclawPrewarmFix(getBundledVendorDir()); }
 function ensureOpenclawUpdateUiDisabled() { vendorPatches.ensureOpenclawUpdateUiDisabled(getBundledVendorDir(), ctx.HOME); }
+function ensureAuthCacheTtlExtension() { vendorPatches.ensureAuthCacheTtlExtension(getBundledVendorDir()); }
 
 // ============================================
 //  IPC DRAIN + BOOT GUARD
@@ -298,6 +299,7 @@ async function _startOpenClawImpl(opts = {}) {
     ensureOpenclawPricingFix,
     ensureOpenclawPrewarmFix,
     ensureOpenclawUpdateUiDisabled,
+    ensureAuthCacheTtlExtension,
     cleanBlocklist,
     ensureOpenzcaFriendEventFix,
     ensureVisionFix,
