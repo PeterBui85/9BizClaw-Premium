@@ -1145,6 +1145,17 @@ async function _startOpenClawImpl(opts = {}) {
           return;
         }
         if (isTransientNetwork) {
+          // Rate-limit transient network restarts. Without this, persistent
+          // network outage loops ~5x/min indefinitely (5s delay × no cap).
+          _fwRestartTimestamps.push(Date.now());
+          if (!_fwCanRestart()) {
+            console.warn('[restart-guard] transient network — rate limit hit (' + FW_MAX_RESTARTS_PER_HOUR + '/hr), backing off 10min');
+            global._networkCooldownUntil = Date.now() + 600000;
+            if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+              ctx.mainWindow.webContents.send('bot-status', { running: false, error: 'Mất kết nối mạng — đã thử khởi động lại nhiều lần. Đợi 10 phút hoặc kiểm tra internet.' });
+            }
+            return;
+          }
           console.log('[restart-guard] transient network crash — auto-restarting in 5s');
           if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
             ctx.mainWindow.webContents.send('bot-status', { running: false, error: 'Mất kết nối mạng — đang khởi động lại...' });

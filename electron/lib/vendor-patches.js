@@ -603,6 +603,7 @@ function applyAllVendorPatches({ vendorDir, homeDir, workspaceDir }) {
   results.visionSerialization = _tryPatch('visionSerialization', () => ensureVisionSerializationFix(vendorDir, homeDir));
   results.ssrf = _tryPatch('ssrf', () => ensureWebFetchLocalhostFix(vendorDir, homeDir));
   results.friendEvent = _tryPatch('friendEvent', () => ensureOpenzcaFriendEventFix(vendorDir, workspaceDir));
+  results.authCacheTtl = _tryPatch('authCacheTtl', () => ensureAuthCacheTtlExtension(vendorDir));
 
   return results;
 }
@@ -631,7 +632,8 @@ function ensureAuthCacheTtlExtension(vendorDir) {
     try { content = fs.readFileSync(fp, 'utf-8'); } catch { continue; }
     if (!content.includes('syncedAtMs')) continue;
     // Already patched?
-    if (content.includes('36e5') && !content.includes('9e5')) {
+    const AUTH_TTL_MARKER = '/* 9BizClaw AUTH_CACHE_TTL_EXTENDED */';
+    if (content.includes(AUTH_TTL_MARKER)) {
       console.log('[vendor-patches] auth-cache-ttl: already patched');
       return;
     }
@@ -641,7 +643,7 @@ function ensureAuthCacheTtlExtension(vendorDir) {
       console.warn('[vendor-patches] auth-cache-ttl: anchor not found in ' + file);
       return;
     }
-    const patched = content.replace(original, 'Date.now() - cached.syncedAtMs >= 36e5');
+    const patched = content.replace(original, 'Date.now() - cached.syncedAtMs >= 36e5 ' + AUTH_TTL_MARKER);
     fs.writeFileSync(fp, patched, 'utf-8');
     console.log(`[vendor-patches] auth-cache-ttl: extended 15min → 1hr in ${file}`);
     return;

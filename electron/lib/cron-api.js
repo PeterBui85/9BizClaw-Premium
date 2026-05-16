@@ -1249,6 +1249,9 @@ function startCronApi() {
         /^tools\/[^\/]+\/[^\/]+\.md$/,
         /^docs\/[^\/]+\.md$/,
         /^docs\/[^\/]+\/[^\/]+\.md$/,
+        /^cong-no\.md$/,
+        /^so-sach\.md$/,
+        /^follow-up-queue\.json$/,
       ];
       if (reqPath.includes('..') || !ALLOWED.some(r => r.test(reqPath))) {
         return jsonResp(res, 403, { error: 'path not in whitelist' });
@@ -1281,6 +1284,8 @@ function startCronApi() {
       const APPEND_ALLOWED = [
         /^\.?learnings\/LEARNINGS\.md$/,
         /^LEARNINGS\.md$/,
+        /^cong-no\.md$/,
+        /^so-sach\.md$/,
       ];
       if (reqPath.includes('..') || !APPEND_ALLOWED.some(r => r.test(reqPath))) {
         return jsonResp(res, 403, { error: 'append only allowed for LEARNINGS.md' });

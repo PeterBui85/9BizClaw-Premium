@@ -7,6 +7,8 @@ metadata:
 
 # Theo dõi công nợ
 
+**CHỈ CEO Telegram.** Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ ạ."
+
 ## Nguyên tắc
 
 CEO nói 1 câu — bot xuất kết quả NGAY. Không hỏi lại.

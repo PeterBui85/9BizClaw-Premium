@@ -375,7 +375,11 @@ function buildSkillInjectionBlock(rawBody, opts) {
     const trigger = (skill.trigger || '').trim() || 'luôn luôn';
     return `[${skill.name}] (khi: ${trigger})\n${content}`;
   });
-  return blocks.join('\n\n');
+  let block = blocks.join('\n\n');
+  if (block && block.length > 5000) {
+    block = block.slice(0, 5000) + '\n[... skill content truncated at 5KB]';
+  }
+  return block;
 }
 
 // Backward-compat no-op. INLINE.md is no longer regenerated; lazy match is
@@ -1012,7 +1016,7 @@ function getShippedSkillContent(relPath) {
   }
   // Fall back to flat .md
   const flatPath = path.resolve(skillsDir, relPath + '.md');
-  if (!flatPath.startsWith(skillsDir + path.sep) && flatPath !== skillsDir) return null;
+  if (!flatPath.startsWith(skillsDir + path.sep)) return null;
   try { return fs.readFileSync(flatPath, 'utf-8'); } catch { return null; }
 }
 

@@ -7,6 +7,8 @@ metadata:
 
 # Sổ sách thu chi đơn giản
 
+**CHỈ CEO Telegram.** Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ ạ."
+
 ## Nguyên tắc
 
 CEO nói 1 câu — bot ghi NGAY. Không hỏi lại.
@@ -84,10 +86,8 @@ Mỗi ngày 1 section. Mỗi dòng 1 giao dịch. Thu và Chi tách cột riêng
 
 CEO: "hôm qua ghi sai, thu 15tr chứ không phải 12tr"
 
-Bot:
-1. Tìm dòng cần sửa trong file
-2. Sửa trực tiếp (KHÔNG append dòng mới)
-3. Xác nhận: "Đã sửa: thu 12,000,000 → 15,000,000 ngày 15/05"
+Bot: Append dòng sửa: `SỬA: [ngày] Thu 12.000.000 → 15.000.000 (CEO yêu cầu [hôm nay])`
+Khi báo cáo, đọc dòng SỬA và tính lại số liệu đúng.
 
 ## Lưu ý
 
