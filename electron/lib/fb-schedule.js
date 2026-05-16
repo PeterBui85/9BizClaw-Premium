@@ -725,7 +725,7 @@ function handleRoute(urlPath, params, jsonResp, res) {
     let leadMinutes = DEFAULT_LEAD_MINUTES;
     if (params.leadMinutes !== undefined) {
       const parsed = parseInt(params.leadMinutes, 10);
-      if (!isNaN(parsed) && parsed >= 5 && parsed <= 480) leadMinutes = parsed;
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 480) leadMinutes = parsed;
     }
 
     let daysOfWeek = [];
@@ -794,7 +794,7 @@ function handleRoute(urlPath, params, jsonResp, res) {
     }
     if (params.leadMinutes !== undefined) {
       const parsed = parseInt(params.leadMinutes, 10);
-      if (!isNaN(parsed) && parsed >= 5 && parsed <= 480) existing.leadMinutes = parsed;
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 480) existing.leadMinutes = parsed;
     }
     if (params.enabled !== undefined) existing.enabled = params.enabled === true || params.enabled === 'true';
     if (params.autoPost !== undefined) {
