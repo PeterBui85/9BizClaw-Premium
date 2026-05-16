@@ -699,6 +699,15 @@ async function ensureDefaultConfig() {
     }
     // contextPruning and thinkingDefault intentionally NOT set.
     // Both trade output quality for speed — unacceptable for CEO + customer-facing bot.
+    // LLM PROVIDER CACHE: extend prefix cache TTL to 1hr. No quality tradeoff —
+    // just tells the provider to keep the cached prompt prefix longer.
+    if (!config.agents) config.agents = {};
+    if (!config.agents.defaults) config.agents.defaults = {};
+    if (!config.agents.defaults.params) config.agents.defaults.params = {};
+    if (config.agents.defaults.params.cacheRetention !== 'long') {
+      config.agents.defaults.params.cacheRetention = 'long';
+      changed = true;
+    }
     // TOOL-BLOAT FIX: use a small exact allowlist. Admin actions now go through
     // local authenticated APIs instead of giving the agent filesystem/process
     // tools globally.
