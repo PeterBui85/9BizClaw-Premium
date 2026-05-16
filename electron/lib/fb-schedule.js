@@ -24,7 +24,7 @@ function setOnScheduleChanged(cb) { _onScheduleChanged = cb; }
 // ─── Constants ─────────────────────────────────────────────────────
 const SCHEDULES_FILE = 'fb-scheduled-posts.json';
 const PENDING_DIR = 'fb-pending';
-const DEFAULT_LEAD_MINUTES = 120;
+const DEFAULT_LEAD_MINUTES = 30;
 const PENDING_TTL_DAYS = 7;
 const _generateInFlight = new Set();
 
@@ -771,6 +771,21 @@ function handleRoute(urlPath, params, jsonResp, res) {
     if (autoPost && _sendTelegram) {
       _sendTelegram(`[FB Schedule] Đã tạo lịch "${newSchedule.label}" ở chế độ tự động đăng (không cần duyệt). Trả lời "tắt autopost ${id}" để bật duyệt thủ công.`).catch(() => {});
     }
+
+    // Nếu giờ đăng còn dưới leadMinutes → generate preview ngay lập tức
+    try {
+      const postTimeParsed = parseTime(postTime);
+      if (postTimeParsed) {
+        const ict = nowInICT();
+        const postMin = postTimeParsed.hour * 60 + postTimeParsed.minute;
+        const nowMin = ict.hour * 60 + ict.minute;
+        const remaining = postMin - nowMin;
+        if (remaining > 0 && remaining <= leadMinutes) {
+          console.log(`[fb-schedule] postTime trong ${remaining}p (< lead ${leadMinutes}p) — generate preview ngay`);
+          handleGenerate(id).catch(e => console.error('[fb-schedule] immediate generate failed:', e.message));
+        }
+      }
+    } catch (e) { console.warn('[fb-schedule] immediate generate check failed:', e.message); }
 
     jsonResp(res, 200, { success: true, schedule: newSchedule });
     return true;
