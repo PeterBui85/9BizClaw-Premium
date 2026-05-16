@@ -4196,8 +4196,9 @@
                   <div style="display:flex;gap:8px;align-items:center">
                     <input type="email" id="gw-email" placeholder="ceo@company.com" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;outline:none;height:36px;box-sizing:border-box" />
                     <button class="btn btn-primary btn-small" onclick="connectGoogle()" style="flex-shrink:0;height:36px;display:inline-flex;align-items:center;box-sizing:border-box">Kết nối</button>
+                    <button class="btn btn-secondary btn-small" onclick="copyGoogleAuthLink()" style="flex-shrink:0;height:36px;display:inline-flex;align-items:center;box-sizing:border-box" title="Copy link để mở thủ công">Copy link</button>
                   </div>
-                  <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:8px">Khi bấm Kết nối, trình duyệt sẽ mở trang đăng nhập Google. Chọn cùng email đã nhập, cho phép quyền truy cập, rồi quay lại app.</div>
+                  <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:8px">Khi bấm Kết nối, trình duyệt sẽ mở trang đăng nhập Google. Nếu trình duyệt không mở, bấm Copy link rồi paste vào trình duyệt.</div>
                 </div>
               </div>
             </div>
@@ -10299,6 +10300,23 @@
         input.click();
       } catch (e) {
         document.getElementById('gw-upload-status').textContent = e.message;
+      }
+    }
+
+    async function copyGoogleAuthLink() {
+      const email = document.getElementById('gw-email').value.trim();
+      if (!email) { alert('Nhập email trước'); return; }
+      try {
+        const result = await window.claw.googleGetAuthUrl(email);
+        if (result.error) throw new Error(result.error);
+        if (result.url) {
+          await navigator.clipboard.writeText(result.url);
+          alert('Đã copy link. Paste vào trình duyệt để đăng nhập Google.');
+        } else {
+          alert('Không lấy được link. Thử bấm Kết nối thay thế.');
+        }
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
       }
     }
 

@@ -4831,6 +4831,13 @@ ipcMain.handle('download-and-install-update', async () => {
     } catch (e) { return { error: e.message }; }
   });
 
+  ipcMain.handle('google-get-auth-url', async (_ev, email) => {
+    try {
+      const url = await googleApi.getAuthUrl(email);
+      return { url };
+    } catch (e) { return { error: e.message }; }
+  });
+
   ipcMain.handle('google-connect', async (_ev, email) => {
     try {
       const result = await googleApi.connectAccount(email);

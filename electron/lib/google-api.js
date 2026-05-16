@@ -244,6 +244,16 @@ async function connectAccount(email) {
   return _connectInFlight;
 }
 
+async function getAuthUrl(email) {
+  const result = await gogSpawnAsync(
+    ['auth', 'url', email, '--services', GOOGLE_SERVICES],
+    15000
+  );
+  const stdout = typeof result === 'string' ? result : (result?.stdout || result?.output || '');
+  const urlMatch = String(stdout).match(/https:\/\/accounts\.google\.com[^\s"]+/);
+  return urlMatch ? urlMatch[0] : null;
+}
+
 async function disconnectAccount() {
   const email = getGogAccount();
   if (email) {
@@ -835,7 +845,7 @@ async function serviceHealth() {
 module.exports = {
   getGogBinaryPath, getGogConfigDir, getGogAccount,
   gogExec, gogReadExec, gogSpawnAsync, gogEnv, cleanupGogProcesses,
-  authStatus, validateOAuthClientSecret, registerCredentials, connectAccount, disconnectAccount,
+  authStatus, validateOAuthClientSecret, registerCredentials, connectAccount, getAuthUrl, disconnectAccount,
   listEvents, createEvent, updateEvent, deleteEvent, getFreeBusy, getFreeSlots,
   listInbox, readEmail, sendEmail, replyEmail,
   listFiles, listSheets, uploadFile, downloadFile, shareFile,

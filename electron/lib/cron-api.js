@@ -659,6 +659,7 @@ function startCronApi() {
     const PUBLIC_ROUTES = new Set([
       '/api/auth/token',          // legacy compat — returns dummy
       '/api/capabilities',         // capability self-description (read-only metadata)
+      '/api/internal/9router-redirect', // cookie bridge — browser opens, no Telegram headers
     ]);
     if (urlPath.startsWith('/api/google/')) {
       return handleGoogleRoute(urlPath.slice('/api/google'.length), params, req, res, jsonResp);

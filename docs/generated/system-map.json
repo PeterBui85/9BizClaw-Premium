@@ -2,8 +2,8 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 113,
-    "ipcHandlers": 170,
-    "preloadBridges": 162,
+    "ipcHandlers": 171,
+    "preloadBridges": 163,
     "dashboardPages": 15,
     "capabilityContracts": 5
   },
@@ -1372,6 +1372,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "google-get-auth-url",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "google-gmail-inbox",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -2120,6 +2124,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "googleGetAuthUrl",
+      "channel": "google-get-auth-url",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "googleGmailInbox",
       "channel": "google-gmail-inbox",
       "source": "electron/preload.js"
@@ -2612,15 +2621,15 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 558916
+      "bytes": 559833
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 240524
+      "bytes": 240729
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 142253
+      "bytes": 142349
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2688,7 +2697,7 @@
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 29327
+      "bytes": 29709
     },
     {
       "path": "electron/lib/conversation.js",
