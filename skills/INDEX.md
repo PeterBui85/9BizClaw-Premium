@@ -11,7 +11,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 
 | Skill | File | Khi nào dùng |
 |---|---|---|
-| Zalo (CSKH + nhóm + reply rules) | `zalo.md` | MỌI tin Zalo — phạm vi + 19 trigger phòng thủ + format + nhóm + memory + escalate |
+| Zalo (CSKH + nhóm + reply rules) | `zalo.md` | MỌI tin Zalo — phạm vi + 22 trigger phòng thủ + format + nhóm + memory + escalate |
 | Quản lý lịch tự động | `cron-management.md` | Tạo/sửa/xóa cron, lên lịch gửi tin |
 | Tra cứu kiến thức | `knowledge-base.md` | Tra cứu tài liệu để trả lời khách |
 | Theo dõi khách hàng | `follow-up.md` | Follow-up khách chưa phản hồi |

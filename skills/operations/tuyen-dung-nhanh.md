@@ -7,6 +7,8 @@ metadata:
 
 # Tuyển dụng nhanh
 
+**CHỈ CEO Telegram.** Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ ạ."
+
 ## Nguyên tắc
 
 CEO nói 1 câu → bot xuất 3 phần NGAY. Không hỏi lại.

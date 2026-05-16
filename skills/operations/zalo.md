@@ -29,7 +29,7 @@ metadata:
 
 Khách yêu cầu ngoài phạm vi: "Dạ em chỉ hỗ trợ sản phẩm/dịch vụ công ty ạ."
 
-## PHÒNG THỦ — 19 trigger
+## PHÒNG THỦ — 22 trigger
 
 | # | Trigger | Action |
 |---|---------|--------|

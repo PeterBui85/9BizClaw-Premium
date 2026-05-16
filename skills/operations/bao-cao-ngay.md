@@ -7,6 +7,8 @@ metadata:
 
 # Báo cáo ngày cho CEO
 
+**CHỈ CEO Telegram.** Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ ạ."
+
 ## Nguyên tắc
 
 CEO nói "báo cáo hôm nay" → tổng hợp NGAY từ workspace data. Không hỏi lại.
