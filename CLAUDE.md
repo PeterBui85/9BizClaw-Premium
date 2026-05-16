@@ -576,3 +576,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+
+### Telegram polling rule (learned 2026-05-16)
+**KHÔNG BAO GIỜ tạo Telegram `getUpdates` poller thứ 2.** Gateway openclaw ĐÃ poll `getUpdates` — 2 poller = 409 Conflict = tin nhắn bị mất hoàn toàn. Mọi Telegram command phải đi qua: gateway → AI agent → AGENTS.md route → `web_fetch` gọi internal API. Đây là bài học từ bug FB schedule approval: CEO nhắn "fb ok" 3 ngày liên tiếp, không bao giờ được nhận vì poller 409.
+
+### FB schedule architecture (v2.4.4)
+- Default lead: 30 phút. Tạo schedule sát giờ → generate preview ngay.
+- Approval: CEO reply "fb ok" → AI agent gọi `POST /api/fb/schedule/telegram-command { text: "ok" }`
+- Late approval: CEO duyệt sau postTime → vẫn đăng ngay (status skipped → approved → publish)
+- Poller `_peekTelegramUpdates` đã DISABLED — routing qua AGENTS.md
