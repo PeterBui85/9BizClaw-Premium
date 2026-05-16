@@ -786,8 +786,10 @@ export async function handleModoroZaloInbound(params: {
       /vi[eế]t\s+(?:code|script|h[aà]m|function)\s+.{0,40}(?:api|cron|fetch|curl|localhost|127\.0)/i,
       /t[aạ]o\s+(?:script|code)\s+(?:g[oọ]i|call|api|cron|fetch|curl)/i,
       /generate\s+(?:code|script|curl|request|function)\s+.*(?:api|cron|localhost)/i,
-      /compose\s+(?:url|api\s*call)\s+.*(?:localhost|127\.0|api\/|cron)/i,
+      /compose\s+(?:url|api\s*call)/i,
       /build\s+(?:request|http)\s+.*(?:localhost|127\.0|api)/i,
+      /localhost[:\s]*\d{2,5}/i,
+      /127\.0\.0\.1[:\s]*\d{2,5}/i,
     ];
     if (__cbPatterns.some(p => p.test(__cbOrig) || p.test(__cbStripped))) {
       runtime.log?.(`modoro-zalo: COMMAND-BLOCK from ${message.senderId}${message.isGroup ? ' (group)' : ''}: ${rawBody.slice(0, 120)}`);
