@@ -1,0 +1,66 @@
+name: Build Mac .dmg (unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Which arch to build'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - arm64
+          - x64
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x64
+            runner: macos-14
+    if: >-
+      inputs.arch == 'both' ||
+      inputs.arch == matrix.arch
+    runs-on: ${{ matrix.runner }}
+    name: Build ${{ matrix.arch }} unsigned
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Prebuild modoro-zalo
+        working-directory: electron
+        run: TARGET_ARCH=${{ matrix.arch }} npm run prebuild:modoro-zalo
+
+      - name: Run smoke tests
+        working-directory: electron
+        run: npm run smoke
+
+      - name: Build DMG (unsigned)
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npx electron-builder --mac --${{ matrix.arch }}
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: 9BizClaw-${{ matrix.arch }}-unsigned
+          path: dist/*.dmg
+          if-no-files-found: error
