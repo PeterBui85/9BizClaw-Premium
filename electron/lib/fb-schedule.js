@@ -1106,11 +1106,11 @@ const _processedUpdateIds = new Set();
 const _FB_POLL_INTERVAL_MS = 30000;
 
 function startFbTelegramPoller() {
-  if (_pollerTimer) return;
-  _pollerTimer = setInterval(() => _pollTelegramForFbCommands().catch(() => {}), _FB_POLL_INTERVAL_MS);
-  // Run once immediately in case there's already a pending post
-  setTimeout(() => _pollTelegramForFbCommands().catch(() => {}), 5000);
-  console.log('[fb-schedule] Telegram command poller started (30s interval)');
+  // DISABLED: independent getUpdates poller conflicts with gateway's Telegram
+  // long-polling (HTTP 409). CEO approval commands ("fb ok") are now routed
+  // by the AI agent via web_fetch to /api/fb/schedule/telegram-command.
+  // See AGENTS.md "Facebook duyệt bài" section.
+  console.log('[fb-schedule] Telegram command poller DISABLED (gateway routes via AGENTS.md)');
 }
 
 function stopFbTelegramPoller() {

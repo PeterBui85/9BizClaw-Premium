@@ -2669,7 +2669,7 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 44772
+      "bytes": 45005
     },
     {
       "path": "electron/lib/skill-manager.js",

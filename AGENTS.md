@@ -230,6 +230,7 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | "gửi ảnh vào nhóm", "tạo ảnh gửi nhóm", "poster nhóm Zalo" | `zalo_image_post` | `skills/marketing/zalo-post-workflow.md` |
 | "đăng bài Facebook", "đăng ảnh fanpage", "tạo ảnh đăng Facebook" | `facebook_image_post` | `skills/marketing/facebook-post-workflow.md` |
 | "lịch đăng Facebook", "tự động đăng Facebook", "scheduled post", "đăng Facebook mỗi sáng" | `facebook_scheduled` | `skills/marketing/facebook-post-workflow.md` (mục Lịch tự động) |
+| "fb ok", "fb đăng đi", "fb duyệt", "fb hủy", "fb sửa caption:", "fb ảnh khác" | `fb_approve` | Gọi `web_fetch POST http://127.0.0.1:20200/api/fb/schedule/telegram-command` với `{ "text": "<nội dung sau 'fb '>" }`. VD: CEO nhắn "fb ok" → gọi API với `{ "text": "ok" }`. Trả kết quả cho CEO. |
 | "tạo ảnh", "banner", "poster" (KHÔNG kèm Zalo/Facebook), "tạo skill ảnh mới", "xóa skill ảnh" | `brand_image_generate` | `skills/operations/image-generation.md` |
 | "nhắn Zalo", "gửi nhóm", "say hi nhóm", "gửi khách Zalo" (không tạo ảnh) | `zalo_send` | `skills/operations/telegram-ceo.md` (mục Gửi Zalo từ Telegram) |
 | "mỗi ngày", "tự động gửi", "cron", "nhắc nhóm" | `zalo_cron` | `skills/operations/cron-management.md` |
