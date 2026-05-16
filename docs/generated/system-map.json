@@ -2616,7 +2616,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 240503
+      "bytes": 240524
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2644,7 +2644,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 72566
+      "bytes": 72476
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",

@@ -1059,16 +1059,14 @@ async function _startOpenClawImpl(opts = {}) {
       _lastErr.includes('enotfound') ||
       _lastErr.includes('ehostunreach') ||
       _lastErr.includes('enetunreach') ||
-      _lastErr.includes('econnrefused') ||
       _lastErr.includes('econnreset') ||
       _lastErr.includes('fetch failed') ||
-      _lastErr.includes('dns') ||
-      _lastErr.includes('network') ||
+      _lastErr.includes('getaddrinfo') ||
+      _lastErr.includes('network error') ||
       _lastErr.includes('socket hang up') ||
       _lastErr.includes('etimedout');
     if (isTransientNetwork && !isBonjourConflict) {
-      global._networkCooldownUntil = Date.now() + 60_000;
-      console.log(`[restart-guard] transient network exit — waiting 60s before restart (matched: ${_lastErr.slice(-100)})`);
+      console.log(`[restart-guard] transient network exit — will auto-restart in 5s (matched: ${_lastErr.slice(-100)})`);
     }
 
     if (isSelfRestartFailure) {

@@ -3465,6 +3465,7 @@ ipcMain.handle('get-knowledge-counts', async () => {
       return counts;
     } catch (e) {
       console.warn('[knowledge] counts query failed:', e.message);
+      return counts;
     }
   } catch {
     const counts = {};

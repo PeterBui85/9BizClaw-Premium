@@ -783,10 +783,10 @@ export async function handleModoroZaloInbound(params: {
       /\b(?:gui|send)\s+email\b/i,
       /\b(?:tao|dat|book)\s+(?:meeting|lich|su kien|event)\b/i,
       // v5: indirect code generation targeting internal APIs
-      /vi[eế]t\s+(?:code|script|h[aà]m|function)\s+.*(?:api|cron|fetch|curl|localhost|127\.0)/i,
+      /vi[eế]t\s+(?:code|script|h[aà]m|function)\s+.{0,40}(?:api|cron|fetch|curl|localhost|127\.0)/i,
       /t[aạ]o\s+(?:script|code)\s+(?:g[oọ]i|call|api|cron|fetch|curl)/i,
       /generate\s+(?:code|script|curl|request|function)\s+.*(?:api|cron|localhost)/i,
-      /compose\s+(?:url|request|api\s*call)/i,
+      /compose\s+(?:url|api\s*call)\s+.*(?:localhost|127\.0|api\/|cron)/i,
       /build\s+(?:request|http)\s+.*(?:localhost|127\.0|api)/i,
     ];
     if (__cbPatterns.some(p => p.test(__cbOrig) || p.test(__cbStripped))) {
@@ -1394,7 +1394,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
           let __usTotalLen = 0;
           const __usCapped: string[] = [];
           for (const __b of __usBlocks) {
-            if (__usTotalLen + __b.length > 3000) break;
+            if (__usCapped.length > 0 && __usTotalLen + __b.length > 3000) break;
             __usCapped.push(__b);
             __usTotalLen += __b.length;
           }

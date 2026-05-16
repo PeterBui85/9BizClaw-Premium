@@ -1,96 +1,96 @@
 ---
 name: cong-no
-description: Theo doi cong no khach hang — ghi no, tra no, nhac no, canh bao qua han
+description: Theo dõi công nợ khách hàng — ghi nợ, trả nợ, nhắc nợ, cảnh báo quá hạn
 metadata:
   version: 1.0.0
 ---
 
-# Theo doi cong no
+# Theo dõi công nợ
 
-## Nguyen tac
+## Nguyên tắc
 
-CEO noi 1 cau — bot xuat ket qua NGAY. Khong hoi lai.
-Thieu thong tin → gia dinh hop ly + ghi "[gia dinh: X — anh sua neu khac]".
-Luu file: `workspace/cong-no.md`. Append-only, co ngay thang.
+CEO nói 1 câu — bot xuất kết quả NGAY. Không hỏi lại.
+Thiếu thông tin → giả định hợp lý + ghi "[giả định: X — anh sửa nếu khác]".
+Lưu file: `workspace/cong-no.md`. Append-only, có ngày tháng.
 
-## Ghi no moi
+## Ghi nợ mới
 
-CEO: "ghi no anh Tuan 5 trieu" / "Tuan no 5tr tien hang"
+CEO: "ghi nợ anh Tuấn 5 triệu" / "Tuấn nợ 5tr tiền hàng"
 
-Bot NGAY LAP TUC:
-1. Doc `workspace/cong-no.md` (tao moi neu chua co)
-2. Append dong moi theo format bang ben duoi
-3. Gia dinh:
-   - Han tra: +30 ngay tu hom nay (neu CEO khong noi)
-   - Ghi chu: suy tu ngau canh ("tien hang", "tien cong", ...)
-   - Ngay no: hom nay
-4. Xac nhan:
+Bot NGAY LẬP TỨC:
+1. Đọc `workspace/cong-no.md` (tạo mới nếu chưa có)
+2. Append dòng mới theo format bảng bên dưới
+3. Giả định:
+   - Hạn trả: +30 ngày từ hôm nay (nếu CEO không nói)
+   - Ghi chú: suy từ ngữ cảnh ("tiền hàng", "tiền công", ...)
+   - Ngày nợ: hôm nay
+4. Xác nhận:
 
 ```
-Da ghi:
-| Ten      | So tien    | Ngay no    | Han tra    | Ghi chu   |
+Đã ghi:
+| Tên      | Số tiền    | Ngày nợ    | Hạn trả    | Ghi chú   |
 |----------|-----------|------------|------------|-----------|
-| Anh Tuan | 5,000,000 | 2026-05-16 | 2026-06-15 | Tien hang |
-[gia dinh: han 30 ngay — anh sua neu khac]
+| Anh Tuấn | 5,000,000 | 2026-05-16 | 2026-06-15 | Tiền hàng |
+[giả định: hạn 30 ngày — anh sửa nếu khác]
 ```
 
-## Tra no (mot phan hoac toan bo)
+## Trả nợ (một phần hoặc toàn bộ)
 
-CEO: "anh Tuan tra 3 trieu" / "Tuan thanh toan het"
+CEO: "anh Tuấn trả 3 triệu" / "Tuấn thanh toán hết"
 
 Bot:
-1. Doc file, tim dong cua "Tuan" con no
-2. Ghi dong moi voi so tien am (tra): `-3,000,000`
-3. Tinh con lai, bao CEO:
+1. Đọc file, tìm dòng của "Tuấn" còn nợ
+2. Ghi dòng mới với số tiền âm (trả): `-3,000,000`
+3. Tính còn lại, báo CEO:
 
 ```
-Anh Tuan da tra 3,000,000. Con no lai: 2,000,000 (han 2026-06-15).
+Anh Tuấn đã trả 3,000,000. Còn nợ lại: 2,000,000 (hạn 2026-06-15).
 ```
 
-Neu tra het → ghi `DA THANH TOAN` vao ghi chu.
+Nếu trả hết → ghi `ĐÃ THANH TOÁN` vào ghi chú.
 
-## Xem tong hop cong no
+## Xem tổng hợp công nợ
 
-CEO: "ai dang no minh?" / "bao cao cong no"
+CEO: "ai đang nợ mình?" / "báo cáo công nợ"
 
-Bot doc file, tong hop theo tung nguoi, chi hien khoan CON NO:
-- Bang: Ten | Tong no | Da tra | Con lai | Han gan nhat | Trang thai
-- Trang thai: `Trong han` / `SAP QUA HAN` (<7 ngay) / `QUA HAN` (+ so ngay)
-- Dong cuoi: tong con no + so khoan sap/qua han
+Bot đọc file, tổng hợp theo từng người, chỉ hiện khoản CÒN NỢ:
+- Bảng: Tên | Tổng nợ | Đã trả | Còn lại | Hạn gần nhất | Trạng thái
+- Trạng thái: `Trong hạn` / `SẮP QUÁ HẠN` (<7 ngày) / `QUÁ HẠN` (+ số ngày)
+- Dòng cuối: tổng còn nợ + số khoản sắp/quá hạn
 
-## Soan tin nhac no
+## Soạn tin nhắc nợ
 
-CEO: "nhac anh Tuan tra no" / "soan tin nhac Chi Lan"
+CEO: "nhắc anh Tuấn trả nợ" / "soạn tin nhắc Chị Lan"
 
-Bot soan tin nhac: than thien, khong gay ap luc, nhac so tien + khoan gi + ngay.
-Hoi CEO: "Anh gui qua Zalo/goi dien, hoac de em gui giup?"
+Bot soạn tin nhắc: thân thiện, không gây áp lực, nhắc số tiền + khoản gì + ngày.
+Hỏi CEO: "Anh gửi qua Zalo/gọi điện, hoặc để em gửi giúp?"
 
-## Canh bao tu dong
+## Cảnh báo tự động
 
-Khi CEO hoi bat ky cau gi lien quan cong no, bot kem canh bao neu co:
-- No qua han (qua ngay han tra): **CANH BAO** + so ngay qua han
-- Sap qua han (<7 ngay): **LUU Y**
-- No lon (>20 trieu 1 nguoi): ghi chu "[khoan lon — anh theo doi sat]"
+Khi CEO hỏi bất kỳ câu gì liên quan công nợ, bot kèm cảnh báo nếu có:
+- Nợ quá hạn (quá ngày hạn trả): **CẢNH BÁO** + số ngày quá hạn
+- Sắp quá hạn (<7 ngày): **LƯU Ý**
+- Nợ lớn (>20 triệu 1 người): ghi chú "[khoản lớn — anh theo dõi sát]"
 
 ## Format file `workspace/cong-no.md`
 
 ```markdown
-# So cong no
+# Sổ công nợ
 
 ## 2026-05-16
-| Ten | So tien | Loai | Han tra | Ghi chu |
+| Tên | Số tiền | Loại | Hạn trả | Ghi chú |
 |-----|---------|------|---------|---------|
-| Anh Tuan | 5,000,000 | NO | 2026-06-15 | Tien hang |
+| Anh Tuấn | 5,000,000 | NỢ | 2026-06-15 | Tiền hàng |
 
 ## 2026-05-18
-| Anh Tuan | -3,000,000 | TRA | — | Chuyen khoan |
+| Anh Tuấn | -3,000,000 | TRẢ | — | Chuyển khoản |
 ```
 
-Moi dong la 1 giao dich. `NO` = ghi no moi, `TRA` = tra no. Tong no = SUM theo ten.
+Mỗi dòng là 1 giao dịch. `NỢ` = ghi nợ mới, `TRẢ` = trả nợ. Tổng nợ = SUM theo tên.
 
-## Luu y
+## Lưu ý
 
-- KHONG lam phuc tap — day la so no, khong phai ke toan
-- Tien Viet Nam, khong can don vi ngoai te
-- Ten nguoi: giu nguyen cach CEO goi (anh Tuan, chi Lan, Minh, ...)
-- Neu CEO noi "xoa no anh Tuan" → ghi `TRA` toan bo + ghi chu "CEO xoa no"
+- KHÔNG làm phức tạp — đây là sổ nợ, không phải kế toán
+- Tiền Việt Nam, không cần đơn vị ngoại tệ
+- Tên người: giữ nguyên cách CEO gọi (anh Tuấn, chị Lan, Minh, ...)
+- Nếu CEO nói "xóa nợ anh Tuấn" → ghi `TRẢ` toàn bộ + ghi chú "CEO xóa nợ"

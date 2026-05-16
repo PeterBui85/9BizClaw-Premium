@@ -1,98 +1,98 @@
 ---
 name: so-sach-don-gian
-description: So sach thu chi don gian — ghi hang ngay, bao cao tuan/thang cho CEO
+description: Sổ sách thu chi đơn giản — ghi hằng ngày, báo cáo tuần/tháng cho CEO
 metadata:
   version: 1.0.0
 ---
 
-# So sach thu chi don gian
+# Sổ sách thu chi đơn giản
 
-## Nguyen tac
+## Nguyên tắc
 
-CEO noi 1 cau — bot ghi NGAY. Khong hoi lai.
-Thieu thong tin → gia dinh hop ly + ghi "[gia dinh: X]".
-Luu file: `workspace/so-sach.md`. Append-only, co ngay thang.
-Day la so thu chi, KHONG phai ke toan — don gian de CEO doc.
+CEO nói 1 câu — bot ghi NGAY. Không hỏi lại.
+Thiếu thông tin → giả định hợp lý + ghi "[giả định: X]".
+Lưu file: `workspace/so-sach.md`. Append-only, có ngày tháng.
+Đây là sổ thu chi, KHÔNG phải kế toán — đơn giản để CEO đọc.
 
 ## Ghi thu chi
 
-CEO: "hom nay thu 15 trieu chi 8 trieu" / "ban 3 thung son 4.5tr"
+CEO: "hôm nay thu 15 triệu chi 8 triệu" / "bán 3 thùng sơn 4.5tr"
 
-Bot NGAY LAP TUC:
-1. Doc `workspace/so-sach.md` (tao moi neu chua co)
-2. Suy luan khoan muc tu ngau canh (SOUL.md biet nganh + san pham)
-3. Append theo format bang
-4. Xac nhan:
+Bot NGAY LẬP TỨC:
+1. Đọc `workspace/so-sach.md` (tạo mới nếu chưa có)
+2. Suy luận khoản mục từ ngữ cảnh (SOUL.md biết ngành + sản phẩm)
+3. Append theo format bảng
+4. Xác nhận:
 
 ```
-Da ghi ngay 2026-05-16:
-| Khoan muc      | Thu        | Chi       | Ghi chu     |
+Đã ghi ngày 2026-05-16:
+| Khoản mục      | Thu        | Chi       | Ghi chú     |
 |----------------|-----------|-----------|-------------|
-| Ban hang       | 15,000,000 |           | [gia dinh: doanh thu ban hang] |
-| Chi phi        |            | 8,000,000 | [gia dinh: chi phi hoat dong]  |
+| Bán hàng       | 15,000,000 |           | [giả định: doanh thu bán hàng] |
+| Chi phí        |            | 8,000,000 | [giả định: chi phí hoạt động]  |
 
-Lai trong ngay: 7,000,000
+Lãi trong ngày: 7,000,000
 ```
 
-Neu CEO noi cu the ("chi 2tr tien dien, 1tr5 tien nuoc") → tach rieng tung dong.
+Nếu CEO nói cụ thể ("chi 2tr tiền điện, 1tr5 tiền nước") → tách riêng từng dòng.
 
-## Bao cao tuan
+## Báo cáo tuần
 
-CEO: "bao cao thu chi tuan nay" / "tuan nay loi bao nhieu"
+CEO: "báo cáo thu chi tuần này" / "tuần này lời bao nhiêu"
 
-Bot doc file, loc 7 ngay gan nhat:
-- Bang: Ngay | Thu | Chi | Chenh lech
-- Tong tuan: thu, chi, lai
-- Highlight: ngay thu cao nhat, ngay chi nhieu nhat
+Bot đọc file, lọc 7 ngày gần nhất:
+- Bảng: Ngày | Thu | Chi | Chênh lệch
+- Tổng tuần: thu, chi, lãi
+- Highlight: ngày thu cao nhất, ngày chi nhiều nhất
 
-## Bao cao thang
+## Báo cáo tháng
 
-CEO: "thang nay thu chi the nao" / "bao cao thang 5"
+CEO: "tháng này thu chi thế nào" / "báo cáo tháng 5"
 
-Tuong tu bao cao tuan nhung nhom theo tuan:
-- Tong thang: thu, chi, lai
-- Bang theo tuan: Tuan | Thu | Chi | Lai
-- Top 3 khoan chi lon nhat
+Tương tự báo cáo tuần nhưng nhóm theo tuần:
+- Tổng tháng: thu, chi, lãi
+- Bảng theo tuần: Tuần | Thu | Chi | Lãi
+- Top 3 khoản chi lớn nhất
 
-## Nhac ghi so
+## Nhắc ghi sổ
 
-CEO nhac den tien/mua/ban nhung KHONG yeu cau ghi → KHONG tu dong ghi, chi nhac nhe: "Anh co muon em ghi vao so thu chi khong?"
-Morning report kem: "Hom qua anh chua ghi thu chi — anh nho ghi nha."
+CEO nhắc đến tiền/mua/bán nhưng KHÔNG yêu cầu ghi → KHÔNG tự động ghi, chỉ nhắc nhẹ: "Anh có muốn em ghi vào sổ thu chi không?"
+Morning report kèm: "Hôm qua anh chưa ghi thu chi — anh nhớ ghi nha."
 
 ## Format file `workspace/so-sach.md`
 
 ```markdown
-# So thu chi
+# Sổ thu chi
 
 ## 2026-05-16
-| Khoan muc | Thu | Chi | Ghi chu |
+| Khoản mục | Thu | Chi | Ghi chú |
 |-----------|-----|-----|---------|
-| Ban hang | 15,000,000 | | Son noi that |
-| Chi phi hoat dong | | 8,000,000 | Nhap nguyen lieu |
+| Bán hàng | 15,000,000 | | Sơn nội thất |
+| Chi phí hoạt động | | 8,000,000 | Nhập nguyên liệu |
 
 ## 2026-05-17
-| Khoan muc | Thu | Chi | Ghi chu |
+| Khoản mục | Thu | Chi | Ghi chú |
 |-----------|-----|-----|---------|
-| Ban hang | 4,500,000 | | 3 thung son |
-| Tien dien | | 2,000,000 | |
-| Tien nuoc | | 1,500,000 | |
+| Bán hàng | 4,500,000 | | 3 thùng sơn |
+| Tiền điện | | 2,000,000 | |
+| Tiền nước | | 1,500,000 | |
 ```
 
-Moi ngay 1 section. Moi dong 1 giao dich. Thu va Chi tach cot rieng.
+Mỗi ngày 1 section. Mỗi dòng 1 giao dịch. Thu và Chi tách cột riêng.
 
-## Sua so
+## Sửa sổ
 
-CEO: "hom qua ghi sai, thu 15tr chu khong phai 12tr"
+CEO: "hôm qua ghi sai, thu 15tr chứ không phải 12tr"
 
 Bot:
-1. Tim dong can sua trong file
-2. Sua truc tiep (KHONG append dong moi)
-3. Xac nhan: "Da sua: thu 12,000,000 → 15,000,000 ngay 15/05"
+1. Tìm dòng cần sửa trong file
+2. Sửa trực tiếp (KHÔNG append dòng mới)
+3. Xác nhận: "Đã sửa: thu 12,000,000 → 15,000,000 ngày 15/05"
 
-## Luu y
+## Lưu ý
 
-- Tien Viet Nam, format co dau phay ngan (15,000,000)
-- KHONG tinh thue, KHONG phan biet doanh thu/loi nhuan gop — chi thu va chi
-- KHONG tu dong phan loai phuc tap — giu nguyen cach CEO noi
-- Neu CEO noi "lo 5 trieu thang nay" → hoi lai "Anh muon ghi khoan chi 5 trieu hay la nhan xet chung?"
-- Cuoi thang nhac: "Anh review so thu chi thang nay khong? Em tom tat cho anh."
+- Tiền Việt Nam, format có dấu phẩy ngàn (15,000,000)
+- KHÔNG tính thuế, KHÔNG phân biệt doanh thu/lợi nhuận gộp — chỉ thu và chi
+- KHÔNG tự động phân loại phức tạp — giữ nguyên cách CEO nói
+- Nếu CEO nói "lỗ 5 triệu tháng này" → hỏi lại "Anh muốn ghi khoản chi 5 triệu hay là nhận xét chung?"
+- Cuối tháng nhắc: "Anh review sổ thu chi tháng này không? Em tóm tắt cho anh."

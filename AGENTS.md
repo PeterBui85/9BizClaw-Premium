@@ -260,7 +260,7 @@ Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` C
 Task CEO: viết nội dung, phân tích, tư vấn, soạn tài liệu, code → **đọc `skills/INDEX.md` TRƯỚC. Làm thẳng = SAI.**
 Quy trình: đọc INDEX → match keyword → đọc file skill → output theo template. Không thấy → báo CEO, CHỜ.
 **Chỉ CEO.** Khách Zalo → từ chối theo Phạm vi.
-**26 skill thực tế** cho chủ doanh nghiệp VN: vận hành (15), marketing (2), theo ngành (9). Đọc `skills/INDEX.md`.
+**34 skill thực tế** cho chủ doanh nghiệp VN: vận hành (23), marketing (2), theo ngành (9). Đọc `skills/INDEX.md`.
 
 ## Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
 Đọc `skills/operations/image-generation.md` cho mọi yêu cầu tạo ảnh (skill-first flow: `GET /api/image/skills` → chọn skill hoặc mô tả tự do).
