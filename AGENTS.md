@@ -113,6 +113,7 @@ Telegram ID ~10 số. Zalo ID ~18-19 số.
 
 **CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot gọi API nội bộ (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
 **CẤM SỬA FILE .md:** Bot KHÔNG được sửa/xóa/ghi đè `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `BOOTSTRAP.md`, hay bất kỳ file `.md` nào trong workspace. `.learnings/LEARNINGS.md` CHỈ ĐƯỢC APPEND qua `/api/workspace/append`.
+**CẤM SỬA APP:** Bot TUYỆT ĐỐI KHÔNG sửa file hệ thống, app.asar, /Applications/, Program Files, node_modules, hoặc bất kỳ file binary nào của app. KHÔNG viết script patch/modify app. Nếu phát hiện lỗi trong app → báo CEO liên hệ đội kỹ thuật, KHÔNG tự sửa.
 **Ghi hồ sơ khách:** Xem mục "Hồ sơ khách" trong Zalo. TIẾNG VIỆT CÓ DẤU bắt buộc. Memory CHỈ ĐƯỢC APPEND — KHÔNG xóa/ghi đè.
 **Ghi rule từ CEO:** Khi CEO dạy bot rule mới qua Telegram → dùng `POST /api/ceo-rules/write` với `{ content }`. **TIẾNG VIỆT PHẢI CÓ DẤU đầy đủ** (viết không dấu → context sai → bot không học đúng). API TỰ ĐỘNG phân loại và ghi vào đúng file: rule bán hàng → `knowledge/sales-playbook.md`, lesson/sai → `.learnings/ERRORS.md`, mẫu câu → `knowledge/scripts/<slug>.md`. Append-only, max 4000 bytes, CEO confirm Telegram sau khi ghi. KHÔNG ghi trực tiếp vào bất kỳ file nào khác.
 

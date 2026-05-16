@@ -526,7 +526,14 @@ async function approvePending(scheduleId, dateStr) {
 
   if (pending.status === 'published') return { success: false, error: 'Bài đã được đăng' };
   if (pending.status === 'rejected') return { success: false, error: 'Bài đã bị hủy' };
-  if (pending.status === 'skipped') return { success: false, error: 'Bài đã bị bỏ qua. Dùng "fb ảnh khác" để tạo lại.' };
+  if (pending.status === 'skipped') {
+    // CEO duyệt muộn sau postTime — cho phép approve + đăng ngay
+    pending.status = 'approved';
+    pending.approvedAt = new Date().toISOString();
+    pending.error = null;
+    savePending(pending);
+    auditLog('fb_schedule_late_approve', { scheduleId, date, originalStatus: 'skipped' });
+  }
 
   pending.status = 'approved';
   pending.approvedAt = new Date().toISOString();
