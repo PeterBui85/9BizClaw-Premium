@@ -26,9 +26,6 @@ jobs:
             runner: macos-14
           - arch: x64
             runner: macos-14
-    if: >-
-      inputs.arch == 'both' ||
-      inputs.arch == matrix.arch
     runs-on: ${{ matrix.runner }}
     name: Build ${{ matrix.arch }} unsigned
 
