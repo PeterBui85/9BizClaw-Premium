@@ -155,17 +155,11 @@ Response:
 
 Mọi thao tác sửa/xóa/khôi phục PHẢI confirm CEO trước.
 
-## Giới hạn
+## Giới hạn + Quy tắc
 
-- Tối đa **100 skill user** — vượt → API trả lỗi "Too many skills (max 100). Delete some first."
-- Tên trùng shipped skill (VD: `zalo`, `image-generation`, `telegram-ceo`) → reject 409
-- Tên trùng skill user đã có → reject 409
-- Nội dung > 10000 ký tự → API trả 413, hỏi CEO rút gọn (không silent truncate)
-- Tên tiếng Việt không dấu hoặc rỗng → slug-ify thành `skill-<timestamp>`
-
-## Quy tắc bắt buộc
-
+- Tối đa 100 skill user. Nội dung tối đa 10000 ký tự
+- Tên trùng shipped/user skill -> reject 409
 - Skill PHẢI viết tiếng Việt CÓ DẤU đầy đủ
-- Bot KHÔNG tự tạo skill — chỉ khi CEO yêu cầu rõ ràng
-- Khách Zalo yêu cầu tạo skill → từ chối tuyệt đối, đây là feature CEO
+- Bot KHÔNG tự tạo skill -- chỉ khi CEO yêu cầu rõ ràng
+- Khách Zalo yêu cầu tạo skill -> từ chối tuyệt đối
 - Skill load runtime ngay sau khi tạo, không cần restart

@@ -74,7 +74,7 @@ function startNudgeTimer() {
     const idle = now - _lastCeoMessageAt;
     if (_nudgeInFlight) return;
     const shouldNudge = (_nudgeImmediate && _lastCeoMessageAt > _lastNudgeAt)
-      || (idle > 300000 && _lastCeoMessageAt > _lastNudgeAt);
+      || (idle > 60000 && _lastCeoMessageAt > _lastNudgeAt);
     if (!shouldNudge) return;
 
     const source = _nudgeImmediate ? 'ceo_correction' : 'nudge';

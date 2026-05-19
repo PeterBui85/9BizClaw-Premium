@@ -49,9 +49,9 @@
     .rail-status-dot.running { background:#22c55e; }
     .rail-status-dot.stopped { background:#ef4444; }
     .rail-status-dot.checking { background:#94a3b8; animation:pulse-dot 1.4s ease-in-out infinite; }
-    .rail-toggle-btn { width:56px; padding:4px 0; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text-muted); font-size:9px; font-weight:600; cursor:pointer; transition:all .15s; text-align:center; letter-spacing:0.2px; }
-    .rail-toggle-btn:hover { background:var(--surface-hover); color:var(--text); border-color:var(--text-muted); }
-    .rail-toggle-btn.running { border-color:var(--success); color:var(--success); background:rgba(34,197,94,0.06); }
+    .rail-toggle-btn { width:56px; padding:4px 0; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text-muted); font-size:9px; font-weight:500; cursor:pointer; transition:all .15s; text-align:center; letter-spacing:0.2px; opacity:0.7; }
+    .rail-toggle-btn:hover { background:var(--surface-hover); color:var(--text); border-color:var(--text-muted); opacity:1; }
+    .rail-toggle-btn.running { border-color:rgba(34,197,94,0.3); color:var(--text-muted); background:transparent; }
     .rail-update-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--warning, #f59e0b); cursor:pointer; animation:pulse-update 2s ease-in-out infinite; }
     .rail-item { display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 4px; border-radius:12px; width:68px; cursor:pointer; transition:background .15s, color .15s; position:relative; color:var(--text-muted); margin:2px 0; }
     .rail-item:hover { background:var(--surface-hover, rgba(0,0,0,0.04)); color:var(--text); }
@@ -3144,7 +3144,7 @@
         <style>
           #page-brain { display:none; flex-direction:column; height:calc(100vh - 32px); overflow:hidden; }
           #page-brain.page.active { display:flex; }
-          .brain-toolbar { position:absolute; top:10px; left:10px; right:10px; display:flex; align-items:center; gap:6px; z-index:10; pointer-events:none; }
+          .brain-toolbar { position:absolute; top:10px; left:10px; right:10px; display:flex; align-items:center; gap:6px; z-index:10; pointer-events:none; flex-wrap:wrap; }
           .brain-toolbar > * { pointer-events:auto; }
           .brain-chip { padding:4px 8px; border-radius:6px; font-size:10px; font-weight:600; cursor:pointer; transition:all .15s; border:1px solid; user-select:none; display:inline-flex; align-items:center; gap:3px; background-clip:padding-box; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
           .brain-chip.off { opacity:0.25; }
@@ -3154,10 +3154,10 @@
           .brain-chip[data-type="doc"] { background:rgba(248,113,113,0.15); color:#fca5a5; border-color:rgba(248,113,113,0.4); }
           .brain-chip[data-type="learning"] { background:rgba(148,163,184,0.15); color:#cbd5e1; border-color:rgba(148,163,184,0.4); }
           .brain-chip[data-type="skill"] { background:rgba(167,139,250,0.15); color:#c4b5fd; border-color:rgba(167,139,250,0.4); }
-          .brain-search { padding:5px 12px; background:rgba(30,41,59,0.8); border:1px solid rgba(100,116,139,0.4); border-radius:8px; color:#e2e8f0; font-size:11px; min-width:120px; outline:none; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+          .brain-search { padding:5px 12px; background:rgba(30,41,59,0.8); border:1px solid rgba(100,116,139,0.4); border-radius:8px; color:#e2e8f0; font-size:11px; width:180px; flex-shrink:0; outline:none; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
           .brain-search::placeholder { color:#64748b; }
           .brain-search:focus { border-color:rgba(200,167,90,0.6); }
-          .brain-refresh { width:28px; height:28px; border:1px solid rgba(100,116,139,0.4); border-radius:8px; background:rgba(30,41,59,0.8); color:#94a3b8; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+          .brain-refresh { width:28px; height:28px; flex-shrink:0; border:1px solid rgba(100,116,139,0.4); border-radius:8px; background:rgba(30,41,59,0.8); color:#94a3b8; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
           .brain-refresh:hover { border-color:#64748b; color:#e2e8f0; }
           .brain-layout { flex:1; display:flex; overflow:hidden; position:relative; }
           #brain-canvas { flex:1; background:#1a1a2e; display:block; }
@@ -3190,7 +3190,7 @@
             <span class="brain-chip" data-type="doc" onclick="toggleBrainFilter('doc')">Tài liệu <span id="brain-count-doc">0</span></span>
             <span class="brain-chip" data-type="learning" onclick="toggleBrainFilter('learning')">Học hỏi <span id="brain-count-learning">0</span></span>
             <span class="brain-chip" data-type="skill" onclick="toggleBrainFilter('skill')">Kỹ năng <span id="brain-count-skill">0</span></span>
-            <div style="flex:1"></div>
+            <div style="flex:1;min-width:12px"></div>
             <input class="brain-search" id="brain-search" placeholder="Tìm kiếm..." oninput="searchBrainGraph(this.value)">
             <button class="brain-refresh" id="brain-refresh-btn" onclick="refreshBrainGraph()" title="Làm mới đồ thị"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
           </div>
@@ -5012,6 +5012,11 @@
       document.querySelectorAll('.page').forEach(p => {
         p.classList.toggle('active', p.id === `page-${page}`);
       });
+      // Hide webviews when their page is not active (Electron webview compositing ignores display:none)
+      ['openclaw', '9router'].forEach(name => {
+        const wv = document.getElementById('iframe-' + name);
+        if (wv) wv.style.visibility = (page === name) ? 'visible' : 'hidden';
+      });
       document.body.classList.toggle('compact-layout', page !== 'overview');
       // Close drawer when switching pages
       const drawer = document.getElementById('activity-drawer');
@@ -5021,6 +5026,12 @@
       // Dismiss active guide when switching pages
       const _goEl = document.getElementById('guide-overlay');
       if (_goEl && _goEl.classList.contains('show')) _guideDismiss();
+      // Dismiss walkthrough if user navigates manually (not from walkthrough itself)
+      const _woEl = document.getElementById('walkthrough-overlay');
+      if (_woEl && _woEl.style.display !== 'none' && typeof _walkIdx !== 'undefined') {
+        const _ws = typeof WALKTHROUGH_STEPS !== 'undefined' ? WALKTHROUGH_STEPS[_walkIdx] : null;
+        if (!_ws || _ws.pageBefore !== page) walkthroughSkip();
+      }
       // First-time guide check on tab entry
       if (page === 'zalo' && !localStorage.getItem('zalo-guide-complete') && !_guideCheckInFlight.zalo) {
         _guideCheckInFlight.zalo = true;
@@ -9109,6 +9120,10 @@
     function walkthroughSkip() {
       const ov = document.getElementById('walkthrough-overlay');
       if (ov) ov.style.display = 'none';
+      const hl = document.getElementById('walkthrough-highlight');
+      if (hl) hl.style.display = 'none';
+      const sp = document.getElementById('walkthrough-spotlight');
+      if (sp) { sp.setAttribute('width', 0); sp.setAttribute('height', 0); }
     }
     function walkthroughNext() {
       if (_walkIdx >= WALKTHROUGH_STEPS.length - 1) {
@@ -9146,11 +9161,20 @@
       if (nextBtn) nextBtn.textContent = _walkIdx === WALKTHROUGH_STEPS.length - 1 ? 'Hoàn tất' : 'Tiếp →';
       _renderWalkDots();
 
-      const target = document.querySelector(step.target);
+      const target = step.target ? document.querySelector(step.target) : null;
       const highlight = document.getElementById('walkthrough-highlight');
       const spotlight = document.getElementById('walkthrough-spotlight');
       const card = document.getElementById('walkthrough-card');
-      if (!target || !highlight || !card || !spotlight) return;
+      if (!highlight || !card || !spotlight) return;
+      if (!target) {
+        highlight.style.display = 'none';
+        spotlight.setAttribute('width', 0);
+        spotlight.setAttribute('height', 0);
+        const cardW = 360;
+        card.style.left = Math.max(10, (window.innerWidth - cardW) / 2) + 'px';
+        card.style.top = Math.max(80, (window.innerHeight - (card.offsetHeight || 220)) / 2) + 'px';
+        return;
+      }
 
       const r = target.getBoundingClientRect();
       const pad = 8;
@@ -9728,14 +9752,14 @@
       },
       {
         title: 'Lệnh cơ bản',
-        target: '.tg-cmds',
+        target: '.tg-info-grid',
         render: () => `
           <h2 class="guide-title">Lệnh cơ bản</h2>
           <p class="guide-text">Anh/chị có thể ra lệnh cho bot bằng tiếng Việt tự nhiên. Một số ví dụ:</p>
           <div class="guide-card"><p class="guide-card-desc"><strong>Hỏi báo cáo:</strong> "Hôm nay có bao nhiêu khách nhắn Zalo?"</p></div>
           <div class="guide-card"><p class="guide-card-desc"><strong>Quản lý bot:</strong> "Tạm dừng Zalo 30 phút" hoặc "Bật lại Zalo"</p></div>
           <div class="guide-card"><p class="guide-card-desc"><strong>Gửi tin nhóm:</strong> "Gửi nhóm BĐS: Chào mọi người, tuần này có dự án mới"</p></div>
-          <div class="guide-note"><p>Click vào lệnh bất kỳ bên dưới để copy. Dán vào Telegram và gửi cho bot.</p></div>`
+          <div class="guide-note"><p>Mở Telegram, nhắn cho bot bất kỳ câu nào ở trên để bắt đầu.</p></div>`
       },
       {
         title: 'Cron & Báo cáo',
@@ -9803,7 +9827,9 @@
             tTop = rect.top - tooltipRect.height - 16;
             arrowPos = 'bottom';
           } else {
-            tTop = Math.max(16, Math.min(vh - tooltipRect.height - 16, rect.top));
+            // Fallback: place below target even if partially clipped, avoid overlapping the target
+            tTop = Math.min(rect.bottom + 16, vh - tooltipRect.height - 16);
+            if (tTop < rect.bottom) tTop = Math.max(16, rect.top - tooltipRect.height - 16);
             arrowPos = '';
           }
           tLeft = Math.max(16, Math.min(vw - tooltipRect.width - 16, rect.left));
@@ -9889,7 +9915,7 @@
 
       if (def.target) {
         const targetEl = document.querySelector(def.target);
-        if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (targetEl) targetEl.scrollIntoView({ behavior: 'instant', block: 'center' });
       }
       const tooltip = document.getElementById('guide-tooltip');
       if (tooltip) {

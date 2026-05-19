@@ -13,7 +13,7 @@ metadata:
 
 CEO nói 1 câu — bot ghi NGAY. Không hỏi lại.
 Thiếu thông tin → giả định hợp lý + ghi "[giả định: X]".
-Lưu file: `workspace/so-sach.md`. Append-only, có ngày tháng.
+Lưu file: `so-sach.md`. Append-only, có ngày tháng.
 Đây là sổ thu chi, KHÔNG phải kế toán — đơn giản để CEO đọc.
 
 ## Ghi thu chi
@@ -21,9 +21,16 @@ Lưu file: `workspace/so-sach.md`. Append-only, có ngày tháng.
 CEO: "hôm nay thu 15 triệu chi 8 triệu" / "bán 3 thùng sơn 4.5tr"
 
 Bot NGAY LẬP TỨC:
-1. Đọc `workspace/so-sach.md` (tạo mới nếu chưa có)
+1. Đọc `so-sach.md`:
+   ```
+   web_fetch http://127.0.0.1:20200/api/workspace/read?path=so-sach.md
+   ```
+   (tạo mới nếu chưa có)
 2. Suy luận khoản mục từ ngữ cảnh (SOUL.md biết ngành + sản phẩm)
-3. Append theo format bảng
+3. Ghi file (append nội dung mới vào cuối):
+   ```
+   web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"so-sach.md\",\"content\":\"<nội dung mới theo format bên dưới>\",\"mode\":\"append\"}" headers="{\"Content-Type\":\"application/json\"}"
+   ```
 4. Xác nhận:
 
 ```
@@ -61,7 +68,7 @@ Tương tự báo cáo tuần nhưng nhóm theo tuần:
 CEO nhắc đến tiền/mua/bán nhưng KHÔNG yêu cầu ghi → KHÔNG tự động ghi, chỉ nhắc nhẹ: "Anh có muốn em ghi vào sổ thu chi không?"
 Morning report kèm: "Hôm qua anh chưa ghi thu chi — anh nhớ ghi nha."
 
-## Format file `workspace/so-sach.md`
+## Format file `so-sach.md`
 
 ```markdown
 # Sổ thu chi

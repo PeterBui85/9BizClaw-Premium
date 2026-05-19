@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 117,
+    "apiRoutes": 133,
     "ipcHandlers": 184,
     "preloadBridges": 176,
     "dashboardPages": 16,
@@ -621,6 +621,15 @@
       ]
     },
     {
+      "path": "/api/google/sheets/create-formatted",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
       "path": "/api/google/sheets/format",
       "sources": [
         "electron/lib/google-routes.js"
@@ -792,7 +801,79 @@
       ]
     },
     {
+      "path": "/api/inventory/adjust",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/inventory/alerts",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/inventory/check",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/inventory/set-min",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/knowledge/add",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/leave/approve",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/leave/list",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/leave/request",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/leave/summary",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -874,6 +955,60 @@
     },
     {
       "path": "/api/memory/write",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/order/create",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/order/list",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/order/status",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/order/summary",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/order/update",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/report/daily",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -1018,6 +1153,15 @@
     },
     {
       "path": "/api/workspace/read",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/zalo-crm/export",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -2778,7 +2922,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 605711
+      "bytes": 607335
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -2786,11 +2930,11 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 145531
+      "bytes": 157898
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 123778
+      "bytes": 124658
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2870,7 +3014,11 @@
     },
     {
       "path": "electron/ui/brain.js",
-      "bytes": 24668
+      "bytes": 24667
+    },
+    {
+      "path": "electron/lib/google-routes.js",
+      "bytes": 20652
     }
   ]
 }

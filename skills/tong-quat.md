@@ -44,3 +44,20 @@ metadata:
 - Đọc hợp đồng PDF/Word, tóm tắt điều khoản quan trọng
 - Đọc file nhân sự: danh sách nhân viên, chấm công, ngày phép
 - Tìm kiếm trong thư viện tài liệu: hợp đồng, quy trình, mẫu văn bản
+
+## Ví dụ dùng API mới
+
+**Ghi đơn hàng:**
+```
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty XYZ\",\"items\":[{\"name\":\"Dịch vụ tư vấn\",\"qty\":1,\"price\":5000000}],\"note\":\"Hợp đồng 1 tháng\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Ghi nghỉ phép nhân viên:**
+```
+web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Linh\",\"type\":\"annual\",\"from\":\"2026-05-26\",\"to\":\"2026-05-27\",\"note\":\"Việc gia đình\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Báo cáo tổng hợp ngày:**
+```
+web_fetch url="http://127.0.0.1:20200/api/report/daily" method=POST body="{\"date\":\"2026-05-19\"}" headers="{\"Content-Type\":\"application/json\"}"
+```

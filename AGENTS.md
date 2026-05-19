@@ -274,6 +274,16 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | "ghi nhớ", "nhớ giùm", "lưu lại", "remember", "bộ nhớ bot" | `ceo_memory` | `skills/operations/ceo-memory-api.md` — gọi `POST /api/memory/write` NGAY. |
 | "tổng hợp khách Zalo", "xuất khách ra Sheet", "follow-up sheet", "báo cáo khách vào Sheet" | `zalo_followup_sheet` | `skills/operations/zalo-followup-sheet.md` |
 | bot định nói không kéo được / chưa kết nối / chưa thấy dữ liệu | `diagnostic_recovery` | gọi status/list/health route tương ứng trước; báo lỗi theo response thật |
+| "báo cáo ngày", "báo cáo tuần", "hôm nay thế nào", "tóm tắt ngày" | `daily_report` | `POST /api/report/daily` — gọi API, format kết quả cho CEO |
+| "sổ sách", "thu chi", "ghi thu", "ghi chi" | `bookkeeping` | `skills/operations/so-sach-don-gian.md` |
+| "công nợ", "ai nợ", "khách nợ" | `receivables` | `skills/operations/cong-no.md` |
+| "kịch bản", "mẫu trả lời", "script bán hàng" | `sales_script` | `skills/operations/kich-ban-ban-hang.md` |
+| "checklist", "danh sách kiểm tra" | `checklist` | `skills/operations/checklist-van-hanh.md` |
+| "tuyển dụng", "JD", "đăng tuyển" | `recruitment` | `skills/operations/tuyen-dung-nhanh.md` |
+| "lịch hẹn", "đặt lịch", "cuộc hẹn" | `appointments` | `skills/appointments.md` |
+| "ghi đơn", "đơn hàng", "order", "đặt hàng" | `order_mgmt` | `POST /api/order/create` hoặc `GET /api/order/list` tùy ngữ cảnh |
+| "tồn kho", "kiểm kho", "nhập hàng", "xuất hàng" | `inventory` | `POST /api/inventory/adjust` hoặc `GET /api/inventory/check` |
+| "xin nghỉ", "nghỉ phép", "chấm công" | `leave_mgmt` | `POST /api/leave/request` hoặc `GET /api/leave/list` |
 
 **Multi-step:** Nhiều bước = checklist giao dịch. `jobId` / `status: "generating"` KHÔNG PHẢI proof thành công. Block đợi kết quả thật. Nếu bước fail → báo rõ, không im lặng.
 

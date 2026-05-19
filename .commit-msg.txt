@@ -1,0 +1,7 @@
+fix: add untracked files missing from CI — backup.js, brain-graph, prompts
+
+backup.js, brain-graph.js, brain-layout-worker.js, brain.js, and prompt/skill
+reference files existed locally but were never committed. CI smoke test fails
+on backup module require because the file is absent in the repo.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>

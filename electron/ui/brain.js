@@ -204,10 +204,10 @@ function _fitGraphToView() {
   var ch = canvas.height / dpr;
   var graphW = maxX - minX || 1;
   var graphH = maxY - minY || 1;
-  var padding = 60;
+  var padding = 100;
 
   _brainScale = Math.min((cw - padding * 2) / graphW, (ch - padding * 2) / graphH);
-  _brainScale = Math.max(0.1, Math.min(10, _brainScale));
+  _brainScale = Math.max(0.05, Math.min(5, _brainScale));
 
   var cx = (minX + maxX) / 2;
   var cy = (minY + maxY) / 2;
@@ -293,7 +293,7 @@ function renderGraph() {
     var node = _brainNodes[k];
     if (!visibleSet[node.id]) continue;
 
-    var radius = Math.max(2, Math.min(12, Math.sqrt(node.size || 4))) / _brainScale;
+    var radius = Math.max(2, Math.min(7, Math.sqrt(node.size || 4))) / _brainScale;
     var color = BRAIN_COLORS[node.type] || '#94a3b8';
     var isSearch = _brainSearchMatches && _brainSearchMatches.has(node.id);
     var isSelected = node.id === _brainSelectedId;
@@ -371,7 +371,7 @@ function renderGraph() {
 
 function _hitTestBrainNode(sx, sy) {
   var g = screenToGraph(sx, sy);
-  var hitRadius = 15 / _brainScale;
+  var hitRadius = 20 / _brainScale;
   var closest = null;
   var closestDist = Infinity;
 
@@ -381,7 +381,7 @@ function _hitTestBrainNode(sx, sy) {
     var dx = n.x - g.x;
     var dy = n.y - g.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
-    var nodeR = Math.max(2, Math.min(12, Math.sqrt(n.size || 4))) / _brainScale;
+    var nodeR = Math.max(2, Math.min(7, Math.sqrt(n.size || 4))) / _brainScale;
     if (dist < hitRadius + nodeR && dist < closestDist) {
       closestDist = dist;
       closest = n;

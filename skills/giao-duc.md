@@ -37,3 +37,20 @@ metadata:
 - Đọc file danh sách học viên, phân tích ai cần liên hệ (nợ phí, vắng nhiều)
 - Đọc file doanh thu học phí, tính tổng theo khóa/tháng
 - Tìm kiếm trong thư viện: giáo trình, đề thi mẫu, quy chế
+
+## Ví dụ dùng API mới
+
+**Ghi đơn đăng ký khóa học:**
+```
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Phụ huynh Nguyễn Văn A\",\"items\":[{\"name\":\"Khóa IELTS 3 tháng\",\"qty\":1,\"price\":8000000}],\"note\":\"Học viên: Nguyễn B, bắt đầu 01/06\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Ghi nghỉ phép giáo viên:**
+```
+web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Cô Hương\",\"type\":\"sick\",\"from\":\"2026-05-20\",\"to\":\"2026-05-20\",\"note\":\"Nghỉ ốm, cần tìm giáo viên thay\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Xem tổng thu học phí tháng:**
+```
+web_fetch http://127.0.0.1:20200/api/order/summary?from=2026-05-01&to=2026-05-31
+```

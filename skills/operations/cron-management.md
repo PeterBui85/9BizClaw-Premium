@@ -74,19 +74,6 @@ Agent mode:
 web_fetch http://127.0.0.1:20200/api/cron/create?label=Báo+cáo+sáng&cronExpr=0+8+*+*+*&groupId=123456&groupName=Tên+nhóm&mode=agent&prompt=Tổng+hợp+hoạt+động+hôm+qua+và+gửi+báo+cáo+ngắn+gọn
 ```
 
-## Bước 4b: Soát lại cron cũ bị bind sai (audit)
-
-CEO hỏi "kiểm tra cron có bind đúng nhóm không?" hoặc nghi ngờ cron gửi sai nhóm → gọi:
-```
-web_fetch http://127.0.0.1:20200/api/cron/audit
-```
-Trả về `{totalCrons, flagged, findings}`. Mỗi `finding` có các `issues`:
-- `label_drift` — nhóm bị đổi tên trên Zalo, stored label cũ
-- `unknown_groupId` — nhóm đã bị xóa hoặc cache groups.json rỗng
-- `prompt_mentions_other_group` — prompt nhắc đến tên nhóm KHÁC stored target (nghi ngờ bind sai từ lúc tạo)
-
-Báo CEO danh sách cron flagged + đề xuất: (a) `delete + tạo lại` đúng, hoặc (b) `toggle enabled=false` tạm tắt trong khi xác minh.
-
 ## Bước 5: Xác nhận cron đã tạo (BẮT BUỘC)
 
 Sau khi gọi create, PHẢI kiểm tra response:
@@ -106,27 +93,16 @@ web_fetch http://127.0.0.1:20200/api/cron/toggle?id=<cronId>&enabled=false
 
 Mọi thao tác phải confirm CEO trước.
 
-## Sửa / thay nhiều cron
+## Sửa nhiều cron (atomic)
 
-KHÔNG xóa từng cron rồi mới tạo lại. Nếu bước tạo lại lỗi, cron cũ sẽ mất.
+Dùng `POST /api/cron/replace` body `{"deleteIds":[...], "creates":[...]}` -- API giữ cron cũ nếu tạo mới lỗi.
 
-Dùng route atomic:
+## Audit cron bind sai
 
-```
-web_fetch url="http://127.0.0.1:20200/api/cron/replace" method=POST body="{\"deleteIds\":[\"cron_cũ\"],\"creates\":[{\"label\":\"Báo cáo mới\",\"cronExpr\":\"0 8 * * *\",\"groupId\":\"123456\",\"mode\":\"agent\",\"prompt\":\"Tổng hợp hoạt động hôm qua và gửi báo cáo ngắn gọn\"}]}" headers="{\"Content-Type\":\"application/json\"}"
-```
-
-Chỉ báo đã cập nhật khi response có:
-- `success:true`
-- `transactional:true`
-- `createdIds` đủ số cron mới
-
-Nếu route trả lỗi, API tự giữ nguyên cron cũ và bot phải báo rõ lỗi cho CEO.
+CEO nghi ngờ cron gửi sai nhóm: `web_fetch http://127.0.0.1:20200/api/cron/audit` -- trả về `flagged` + lý do.
 
 ## Lưu ý
 
-- Label tiếng Việt đầy đủ dấu, KHÔNG emoji.
-- GroupId phải tồn tại, API tự validate.
-- API chỉ bind localhost và xác thực nội bộ; Zalo customers KHÔNG truy cập được.
-- Token nội bộ không hiện trong prompt, không hardcode.
-- Write mutex: API serialize mọi write.
+- Label tiếng Việt đầy đủ dấu, KHÔNG emoji
+- GroupId phải tồn tại, API tự validate
+- Zalo customers KHÔNG truy cập được API

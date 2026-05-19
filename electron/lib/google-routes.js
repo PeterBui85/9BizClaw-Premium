@@ -349,6 +349,57 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
       const r = await googleApi.numberFormatSheet(params.spreadsheetId, params.range, params.type);
       return jsonResp(res, 200, r);
     }
+    if (urlPath === '/sheets/create-formatted') {
+      if (blockZaloMutation('Google Sheets create-formatted')) return;
+      const { title, headers, data, style, textColumns, parent } = params;
+      if (!title || !headers) return jsonResp(res, 400, { error: 'title and headers required' });
+
+      try {
+        // Step 1: Create sheet
+        const created = await googleApi.createSheet(title, null, parent);
+        const sid = typeof created === 'string' ? created : (created.spreadsheetId || JSON.parse(created).spreadsheetId);
+
+        // Step 2: Set text columns BEFORE writing data (preserves leading zeros)
+        if (textColumns && textColumns.length) {
+          for (const col of textColumns) {
+            await googleApi.numberFormatSheet(sid, 'Sheet1!' + col + ':' + col, 'TEXT');
+          }
+        }
+
+        // Step 3: Write data
+        const allRows = [headers, ...(data || [])];
+        const lastCol = String.fromCharCode(64 + headers.length);
+        const range = 'Sheet1!A1:' + lastCol + allRows.length;
+        await googleApi.updateSheet(sid, range, allRows);
+
+        // Step 4: Apply style
+        const s = style || 'crm';
+        if (s === 'crm' || s === 'report') {
+          // Freeze header
+          await googleApi.freezeSheet(sid, 1);
+          // Header style
+          const headerRange = 'Sheet1!A1:' + lastCol + '1';
+          if (s === 'crm') {
+            await googleApi.formatSheet(sid, headerRange,
+              { textFormat: { bold: true, foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } }, backgroundColor: { red: 0.1, green: 0.21, blue: 0.36 } },
+              'textFormat.bold,textFormat.foregroundColorStyle,backgroundColor');
+          } else {
+            await googleApi.formatSheet(sid, headerRange,
+              { textFormat: { bold: true }, backgroundColor: { red: 0.85, green: 0.85, blue: 0.85 } },
+              'textFormat.bold,backgroundColor');
+          }
+          // Wrap all cells
+          const fullRange = 'Sheet1!A1:' + lastCol + '100';
+          await googleApi.formatSheet(sid, fullRange,
+            { wrapStrategy: 'WRAP' }, 'wrapStrategy');
+        }
+
+        const url = 'https://docs.google.com/spreadsheets/d/' + sid + '/edit';
+        return jsonResp(res, 200, { spreadsheetId: sid, spreadsheetUrl: url, rowsWritten: (data || []).length });
+      } catch (e) {
+        return jsonResp(res, 500, { error: 'create-formatted failed: ' + e.message });
+      }
+    }
     // Apps Script, useful for automations around Google Sheets/AppSheet data.
     if (urlPath === '/appscript/run') {
       if (blockZaloMutation('Google Apps Script run')) return;

@@ -62,12 +62,10 @@ CHỜ CEO confirm trước khi viết code.
 web_fetch http://127.0.0.1:20200/api/skill/python-status
 ```
 
-- `available: true` → tiếp Bước 4
-- `available: false` + `canLazyDownload: true` (Windows) → báo CEO:
-  > Python chưa có trên máy. Bot cần tải ~30MB lần đầu, mất khoảng 1-2 phút. Anh cho phép cài luôn không?
-
-  CEO ok → `POST /api/skill/python-install` → đợi response → tiếp Bước 4.
-- `available: false` + `canLazyDownload: false` (Mac/Linux) → "Anh cài Python 3.8+ qua Homebrew/apt rồi thử lại."
+- `available: true` -> tiep Bước 4
+- `available: false` + `canLazyDownload: true` (Windows) -> hỏi CEO cho phép cài (~30MB). CEO ok -> `POST /api/skill/python-install`
+- `available: false` + `canLazyDownload: false` (Mac/Linux) -> "Anh cài Python 3.8+ qua Homebrew/apt rồi thử lại."
+- **Mac fallback:** Nếu Python không có, ưu tiên viết bằng Node.js (đã có sẵn trong vendor). Node có `xlsx`, `csv-parse`, `fs`, `https` -- đủ cho phần lớn task data processing. Chỉ cần Python cho task đặc thù (PIL/image, pandas/ML, playwright/browser).
 
 Cho task Node-only (vd Playwright), skip Python check.
 

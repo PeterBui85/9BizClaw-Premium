@@ -36,3 +36,20 @@ metadata:
 - Đọc file bảng chấm công, tổng hợp giờ làm, phát hiện bất thường
 - Đọc menu PDF/Word, tóm tắt danh sách món và giá
 - Tìm kiếm thông tin trong thư viện tài liệu đã lưu (SOP, công thức, hợp đồng)
+
+## Ví dụ dùng API mới
+
+**Nhập nguyên liệu:**
+```
+web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"CF-ROBUSTA\",\"name\":\"Cà phê Robusta 1kg\",\"qty\":20,\"type\":\"in\",\"note\":\"Nhập từ NCC Tân Phú\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Ghi đơn đặt bàn:**
+```
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Anh Hùng\",\"items\":[{\"name\":\"Bàn VIP 10 người\",\"qty\":1,\"price\":2000000}],\"note\":\"Tối 20/05 lúc 19h, sinh nhật\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Kiểm tra nguyên liệu sắp hết:**
+```
+web_fetch http://127.0.0.1:20200/api/inventory/alerts
+```

@@ -71,18 +71,14 @@ Xác nhận: tên file, vị trí, danh sách cột. Hỏi "Anh cần thêm dữ
 
 ## Fallback chain
 
-1. `web_fetch /api/file/read` — nhanh nhất, API tự parse
+1. `web_fetch /api/file/read` -- nhanh nhất, API tự parse
 2. Node.js + `xlsx` module (vendor bundled)
-3. Python3 + `openpyxl` (Mac có sẵn, Win có thể có)
-4. Node.js đọc `.csv` thuần (không cần module)
-5. Báo CEO: "Máy anh chưa có công cụ đọc Excel. Gửi file qua Telegram, em đọc."
+3. Python3 + `openpyxl`
+4. CSV thuần (không cần module)
 
 ## Quy tắc
 
-- KHÔNG BAO GIỜ sửa file gốc mà không backup trước
+- KHÔNG sửa file gốc mà không backup trước
 - Số tiền format có dấu chấm (5.000.000)
-- Tối đa 50 dòng hiển thị, hỏi CEO nếu cần xem thêm
-- File > 10MB → cảnh báo trước khi đọc
-- KHÔNG tự xóa cột/dòng trừ khi CEO yêu cầu rõ
-- Lỗi → báo rõ nguyên nhân + hướng xử lý
+- Tối đa 50 dòng hiển thị. File > 10MB -> cảnh báo trước
 - Tiếng Việt có dấu đầy đủ

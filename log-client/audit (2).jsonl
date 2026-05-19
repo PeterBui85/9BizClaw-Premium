@@ -1,0 +1,81 @@
+{"t":"2026-05-13T13:18:24.438Z","event":"retention_policies_enforced","pid":2396}
+{"t":"2026-05-13T13:18:24.440Z","event":"app_boot","pid":2396,"platform":"win32","node":"18.18.2","electron":"28.3.3"}
+{"t":"2026-05-13T14:19:00.677Z","event":"openclaw_config_write","pid":2396,"configPath":"openclaw.json","bytes":258,"topKeys":["gateway","channels"]}
+{"t":"2026-05-13T14:19:00.684Z","event":"openclaw_config_write","pid":2396,"configPath":"openclaw.json","bytes":606,"topKeys":["gateway","channels","models"]}
+{"t":"2026-05-13T14:19:00.689Z","event":"openclaw_config_write","pid":2396,"configPath":"openclaw.json","bytes":682,"topKeys":["gateway","channels","models","agents"]}
+{"t":"2026-05-13T14:19:04.379Z","event":"zalo_customers_seeded","pid":2396,"users":3,"groups":1,"skipped":0}
+{"t":"2026-05-13T14:19:04.380Z","event":"zalo_defaults_seeded","pid":2396,"friends":3,"groups":1}
+{"t":"2026-05-13T14:19:04.432Z","event":"startOpenClaw_begin","pid":2396}
+{"t":"2026-05-13T14:19:04.464Z","event":"openclaw_config_write","pid":2396,"configPath":"openclaw.json","bytes":2013,"topKeys":["gateway","channels","models","agents","plugins","discovery","tools","messages"]}
+{"t":"2026-05-13T14:21:02.803Z","event":"gateway_ready","pid":2396,"elapsedMs":83653,"probeAttempts":88}
+{"t":"2026-05-13T15:04:34.140Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-13T15:04:34.148Z","event":"app_boot","pid":26324,"platform":"win32","node":"18.18.2","electron":"28.3.3"}
+{"t":"2026-05-13T15:04:34.190Z","event":"startOpenClaw_begin","pid":26324}
+{"t":"2026-05-13T15:05:08.916Z","event":"gateway_ready","pid":26324,"elapsedMs":31637,"probeAttempts":37}
+{"t":"2026-05-13T15:29:54.840Z","event":"startOpenClaw_begin","pid":26324}
+{"t":"2026-05-13T15:30:27.931Z","event":"gateway_ready","pid":26324,"elapsedMs":30527,"probeAttempts":36}
+{"t":"2026-05-13T15:48:26.076Z","event":"system_suspend","pid":26324,"ts":"2026-05-13T15:48:26.075Z"}
+{"t":"2026-05-14T00:20:01.660Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-14T00:20:01.688Z","event":"system_resume","pid":26324,"ts":"2026-05-14T00:20:01.688Z"}
+{"t":"2026-05-14T00:22:09.922Z","event":"startOpenClaw_begin","pid":26324}
+{"t":"2026-05-14T00:24:27.710Z","event":"gateway_ready","pid":26324,"elapsedMs":105656,"probeAttempts":109}
+{"t":"2026-05-14T00:32:04.988Z","event":"cron_fired","pid":26324,"id":"morning","label":"Báo cáo sáng"}
+{"t":"2026-05-14T00:41:41.204Z","event":"startOpenClaw_begin","pid":26324}
+{"t":"2026-05-14T00:42:26.320Z","event":"gateway_ready","pid":26324,"elapsedMs":28321,"probeAttempts":34}
+{"t":"2026-05-14T00:49:12.435Z","event":"system_suspend","pid":26324,"ts":"2026-05-14T00:49:12.434Z"}
+{"t":"2026-05-14T12:36:06.906Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-14T12:36:07.020Z","event":"system_resume","pid":26324,"ts":"2026-05-14T12:36:07.020Z"}
+{"t":"2026-05-14T12:49:54.378Z","event":"startOpenClaw_begin","pid":26324}
+{"t":"2026-05-14T12:50:44.778Z","event":"gateway_ready","pid":26324,"elapsedMs":45952,"probeAttempts":51}
+{"t":"2026-05-14T14:00:00.756Z","event":"summary_generation_failed","pid":26324,"date":"2026-05-14","reason":"9Router returned null"}
+{"t":"2026-05-14T14:01:18.476Z","event":"cron_fired","pid":26324,"id":"evening","label":"Tóm tắt cuối ngày"}
+{"t":"2026-05-14T14:05:21.128Z","event":"startOpenClaw_begin","pid":26324}
+{"t":"2026-05-14T14:05:52.828Z","event":"gateway_ready","pid":26324,"elapsedMs":29747,"probeAttempts":35}
+{"t":"2026-05-14T14:06:06.138Z","event":"group_history_seeded","pid":26324,"groupId":"3068105172031856871","msgCount":1,"sections":["topics","members","decisions"]}
+{"t":"2026-05-14T18:02:49.161Z","event":"cron_fired","pid":26324,"id":"meditation","label":"Tối ưu ban đêm"}
+{"t":"2026-05-14T18:36:04.081Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-15T00:31:37.763Z","event":"cron_fired","pid":26324,"id":"morning","label":"Báo cáo sáng"}
+{"t":"2026-05-15T00:36:04.082Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-15T02:30:40.630Z","event":"cron_fired","pid":26324,"id":"zalo-followup","label":"Follow-up khách Zalo","candidateCount":0}
+{"t":"2026-05-15T06:36:06.055Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-15T12:36:06.061Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-15T18:36:06.067Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-16T00:36:06.077Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-16T02:31:39.727Z","event":"cron_fired","pid":26324,"id":"zalo-followup","label":"Follow-up khách Zalo","candidateCount":0}
+{"t":"2026-05-16T06:36:09.046Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-16T12:36:09.053Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-16T18:36:09.055Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-17T00:36:09.065Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-17T06:36:11.885Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-17T12:36:11.907Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-17T14:20:56.384Z","event":"system_suspend","pid":26324,"ts":"2026-05-17T14:20:56.323Z"}
+{"t":"2026-05-18T02:48:51.716Z","event":"retention_policies_enforced","pid":26324}
+{"t":"2026-05-18T02:48:51.954Z","event":"system_resume","pid":26324,"ts":"2026-05-18T02:48:51.953Z"}
+{"t":"2026-05-18T07:30:53.872Z","event":"retention_policies_enforced","pid":7292}
+{"t":"2026-05-18T07:30:53.873Z","event":"app_boot","pid":7292,"platform":"win32","node":"18.18.2","electron":"28.3.3"}
+{"t":"2026-05-18T07:30:53.885Z","event":"openclaw_config_write","pid":7292,"configPath":"openclaw.json","bytes":2376,"topKeys":["gateway","channels","models","agents","plugins","discovery","tools","messages","meta"]}
+{"t":"2026-05-18T07:32:18.948Z","event":"retention_policies_enforced","pid":24856}
+{"t":"2026-05-18T07:32:18.949Z","event":"app_boot","pid":24856,"platform":"win32","node":"18.18.2","electron":"28.3.3"}
+{"t":"2026-05-18T07:34:12.207Z","event":"openclaw_config_write","pid":24856,"configPath":"openclaw.json","bytes":258,"topKeys":["gateway","channels"]}
+{"t":"2026-05-18T07:34:12.213Z","event":"openclaw_config_write","pid":24856,"configPath":"openclaw.json","bytes":606,"topKeys":["gateway","channels","models"]}
+{"t":"2026-05-18T07:34:12.219Z","event":"openclaw_config_write","pid":24856,"configPath":"openclaw.json","bytes":682,"topKeys":["gateway","channels","models","agents"]}
+{"t":"2026-05-18T07:34:15.184Z","event":"startOpenClaw_begin","pid":24856}
+{"t":"2026-05-18T07:34:15.227Z","event":"openclaw_config_write","pid":24856,"configPath":"openclaw.json","bytes":2390,"topKeys":["gateway","channels","models","agents","plugins","discovery","tools","messages"]}
+{"t":"2026-05-18T07:36:15.808Z","event":"zalo_fail_closed_disabled","pid":24856,"source":"manager-disabled-while-booting","pauseOk":true,"configOk":true,"stickyOk":true}
+{"t":"2026-05-18T07:36:19.615Z","event":"zalo_fail_closed_disabled","pid":24856,"source":"manager-disabled-while-booting","pauseOk":true,"configOk":true,"stickyOk":true}
+{"t":"2026-05-18T07:38:52.016Z","event":"gateway_slow_start","pid":24856,"probeAttempts":243}
+{"t":"2026-05-18T07:49:55.856Z","event":"retention_policies_enforced","pid":10812}
+{"t":"2026-05-18T07:49:55.858Z","event":"app_boot","pid":10812,"platform":"win32","node":"18.18.2","electron":"28.3.3"}
+{"t":"2026-05-18T07:49:55.870Z","event":"zalo_customers_seeded","pid":10812,"users":6,"groups":5,"skipped":0}
+{"t":"2026-05-18T07:49:55.885Z","event":"zalo_defaults_seeded","pid":10812,"friends":6,"groups":5,"accountSwitch":""}
+{"t":"2026-05-18T07:49:55.935Z","event":"startOpenClaw_begin","pid":10812}
+{"t":"2026-05-18T07:54:00.080Z","event":"gateway_slow_start","pid":10812,"probeAttempts":243}
+{"t":"2026-05-18T07:54:13.013Z","event":"group_history_seeded","pid":10812,"groupId":"3035041368637129796","msgCount":13,"sections":["topics","members","decisions"]}
+{"t":"2026-05-18T07:54:27.995Z","event":"group_history_seeded","pid":10812,"groupId":"3303149943705766541","msgCount":20,"sections":["topics","members","decisions"]}
+{"t":"2026-05-18T07:54:38.431Z","event":"group_history_seeded","pid":10812,"groupId":"4938985209997639376","msgCount":16,"sections":["topics","members","decisions"]}
+{"t":"2026-05-18T07:54:48.848Z","event":"group_history_seeded","pid":10812,"groupId":"5378501302999588606","msgCount":20,"sections":["topics","members","decisions"]}
+{"t":"2026-05-18T07:54:58.450Z","event":"group_history_seeded","pid":10812,"groupId":"6778716167335853128","msgCount":20,"sections":["topics","members","decisions"]}
+{"t":"2026-05-18T08:04:44.772Z","event":"retention_policies_enforced","pid":25544}
+{"t":"2026-05-18T08:04:44.773Z","event":"app_boot","pid":25544,"platform":"win32","node":"18.18.2","electron":"28.3.3"}
+{"t":"2026-05-18T08:04:44.829Z","event":"startOpenClaw_begin","pid":25544}
+{"t":"2026-05-18T08:08:48.117Z","event":"gateway_slow_start","pid":25544,"probeAttempts":244}

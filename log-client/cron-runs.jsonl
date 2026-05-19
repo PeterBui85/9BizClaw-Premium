@@ -1,0 +1,11 @@
+{"t":"2026-05-13T14:21:03.054Z","phase":"self-test","ok":true,"profile":"full","version":"2026.4.14","directNode":true,"code":0,"stdoutLen":29}
+{"t":"2026-05-13T15:05:09.147Z","phase":"self-test","ok":true,"profile":"full","version":"2026.4.14","directNode":true,"code":0,"stdoutLen":29}
+{"t":"2026-05-14T00:32:04.988Z","phase":"ok","label":"morning-briefing","attempt":1,"durMs":94605,"profile":"full","viaCmdShell":false}
+{"t":"2026-05-14T14:01:18.475Z","phase":"ok","label":"evening-summary","attempt":1,"durMs":67743,"profile":"full","viaCmdShell":false}
+{"t":"2026-05-14T18:02:49.160Z","phase":"ok","label":"meditation","attempt":1,"durMs":169125,"profile":"full","viaCmdShell":false}
+{"t":"2026-05-15T00:31:37.761Z","phase":"ok","label":"morning-briefing","attempt":1,"durMs":60474,"profile":"full","viaCmdShell":false}
+{"t":"2026-05-15T02:30:40.629Z","phase":"ok","label":"zalo-followup","attempt":1,"durMs":40553,"profile":"full","viaCmdShell":false}
+{"t":"2026-05-16T02:31:39.725Z","phase":"ok","label":"zalo-followup","attempt":1,"durMs":99693,"profile":"full","viaCmdShell":false}
+{"t":"2026-05-18T07:38:52.203Z","phase":"self-test","ok":true,"profile":"full","version":"2026.4.14","directNode":true,"code":0,"stdoutLen":29}
+{"t":"2026-05-18T07:54:00.236Z","phase":"self-test","ok":true,"profile":"full","version":"2026.4.14","directNode":true,"code":0,"stdoutLen":29}
+{"t":"2026-05-18T08:08:48.271Z","phase":"self-test","ok":true,"profile":"full","version":"2026.4.14","directNode":true,"code":0,"stdoutLen":29}

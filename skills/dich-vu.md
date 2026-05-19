@@ -37,3 +37,20 @@ metadata:
 - Đọc file danh sách khách, phân tích khách nào cần liên hệ lại
 - Đọc bảng giá nhà cung cấp vật tư, so sánh
 - Tìm kiếm trong thư viện: quy trình dịch vụ, SOP vệ sinh, hợp đồng
+
+## Ví dụ dùng API mới
+
+**Ghi đơn dịch vụ:**
+```
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Lan\",\"items\":[{\"name\":\"Gói chăm sóc da mặt\",\"qty\":1,\"price\":500000},{\"name\":\"Massage body 60p\",\"qty\":1,\"price\":400000}],\"note\":\"Hẹn 14h ngày 20/05\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Kiểm tra vật tư tiêu hao:**
+```
+web_fetch http://127.0.0.1:20200/api/inventory/alerts
+```
+
+**Xem nghỉ phép tháng này:**
+```
+web_fetch http://127.0.0.1:20200/api/leave/summary?month=2026-05
+```

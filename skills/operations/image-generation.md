@@ -27,39 +27,13 @@ CEO nói "tạo ảnh", "làm ảnh", "thiết kế ảnh", "ảnh quảng cáo"
 2. Nếu `files` có file — DÙNG LUÔN làm assets. Ưu tiên file CEO nhắc (VD: "mascot" — file chứa `mascot`). Chỉ có 1 file — DÙNG LUÔN, KHÔNG hỏi.
 3. Nếu `files` rỗng — tạo ảnh không assets, KHÔNG nói "không truy cập được".
 4. Nếu tin nhắn hiện tại của CEO có ảnh đính kèm để làm reference thì ưu tiên ảnh đó.
-5. **Chọn style ảnh — SKILL-FIRST FLOW:**
-
-   **Decision tree:**
-   - CEO gọi tên skill cụ thể ("tạo poster khuyến mãi") → gọi `GET /api/image/skills`, match keyword → đọc style từ skill → hỏi CHỈ template variables → generate
-   - CEO mô tả style rõ ràng ("ảnh tối sang trọng, close-up") → dùng mô tả đó, KHÔNG hỏi 5 câu → generate
-   - CEO nói chung "tạo ảnh" → gọi `GET /api/image/skills`:
-     - Có skills → list menu: "Anh có N mẫu đã lưu: 1. [name] ([colorTone], [composition])... Hoặc mô tả tự do."
-     - CEO chọn số → đọc skill đó
-     - CEO mô tả tự do → dùng mô tả
-     - Chưa có skill nào → free-form (bot dùng best judgment từ yêu cầu)
-   - CEO nói "tạo skill ảnh mới" → guided creation (xem bên dưới)
-
-   **Khi dùng skill:** Đọc `## Style` section (style, colorTone, composition, lighting, text). Đọc `## Caption template` → extract `{variables}` → hỏi CEO giá trị cho variables chưa rõ từ context → thế vào → confirm caption.
-
-   **Cron/scheduled (không có CEO trả lời):** Nếu prompt có `[SKILL: <name>]` → đọc skill file qua `web_fetch http://127.0.0.1:20200/api/workspace/read?path=skills/image-templates/<name>.md`. Không có skill reference → đọc preference cũ qua `GET /api/image/preferences`. Không có preference → default A.
-
-   **Tạo skill ảnh mới (guided):**
-   CEO: "tạo skill ảnh mới" → bot hỏi lần lượt:
-   1. Tên skill? (slug: a-z, 0-9, dấu gạch ngang, VD: "poster-khuyen-mai")
-   2. Mô tả ngắn? (VD: "Poster khuyến mãi cuối tuần")
-   3. 5 câu ABCDE:
-      ```
-      Em cần biết style mẫu ảnh này:
-      1. Phong cách? A. Ảnh thật  B. Minh họa  C. 3D  D. Nghệ thuật  E. Khác
-      2. Tông màu? A. Sáng/pastel  B. Tối/luxury  C. Rực rỡ  D. Tự nhiên  E. Khác
-      3. Bố cục? A. Giữa+đơn giản  B. Động/nghiêng  C. Close-up  D. Toàn cảnh  E. Khác
-      4. Ánh sáng? A. Studio  B. Dramatic  C. Tự nhiên  D. Neon  E. Khác
-      5. Chữ? A. Không  B. Tiêu đề  C. Tiêu đề+mô tả  D. Nhiều text  E. Khác
-      ```
-   4. Caption template? (VD: "GIẢM {discount}% - {product}") — có thể bỏ trống
-   5. Confirm → gọi `POST /api/image/skills` body `{"name":"...","description":"...","style":"A","colorTone":"B","composition":"C","lighting":"A","text":"B","captionTemplate":"..."}` → lưu xong báo CEO
-
-   **Xóa skill:** CEO: "xóa skill poster-khuyen-mai" → gọi `DELETE /api/image/skills?name=poster-khuyen-mai`
+5. **Chọn style ảnh -- SKILL-FIRST FLOW:**
+   - CEO gọi tên skill cụ thể -> `GET /api/image/skills`, match keyword -> đọc style -> hỏi CHỈ template variables -> generate
+   - CEO mô tả style rõ ràng -> dùng mô tả đó, KHÔNG hỏi 5 câu -> generate
+   - CEO nói chung "tạo ảnh" -> `GET /api/image/skills`: có skills -> list menu, chưa có -> free-form
+   - CEO nói "tạo skill ảnh mới" -> hỏi tên, mô tả, 5 câu ABCDE (phong cách/tông/bố cục/ánh sáng/chữ), caption template -> `POST /api/image/skills`
+   - Xóa skill: `DELETE /api/image/skills?name=<name>`
+   - Cron/scheduled: đọc `[SKILL: <name>]` từ prompt hoặc `GET /api/image/preferences`
 
 6. **Sau khi có đáp án, soạn prompt TIẾNG ANH chi tiết (min 150 ký tự, server sẽ reject ngắn hơn).**
    Khi dùng brand asset, prompt PHẢI bắt đầu bằng:

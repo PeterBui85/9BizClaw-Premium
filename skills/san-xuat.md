@@ -38,3 +38,20 @@ metadata:
 - Đọc file Excel nguyên liệu nhập, so sánh giá với lần nhập trước
 - Đọc file chấm công, tổng hợp giờ làm, phát hiện vượt quy định (200 giờ OT/năm)
 - Tìm kiếm trong thư viện: tiêu chuẩn QC, hợp đồng khách, SOP sản xuất
+
+## Ví dụ dùng API mới
+
+**Nhập nguyên liệu:**
+```
+web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"NL-THEP-D10\",\"name\":\"Thép phi 10\",\"qty\":500,\"type\":\"in\",\"note\":\"NCC Hòa Phát, lô 2026-05\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Ghi đơn sản xuất:**
+```
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty Đại Phát\",\"items\":[{\"name\":\"Khung sắt loại A\",\"qty\":200,\"price\":150000}],\"note\":\"Giao trước 30/05\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Kiểm tra nguyên liệu dưới mức tối thiểu:**
+```
+web_fetch http://127.0.0.1:20200/api/inventory/alerts
+```

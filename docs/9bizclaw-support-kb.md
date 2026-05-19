@@ -298,7 +298,7 @@ Khi mở app lần đầu, màn hình splash tải Node.js (~20MB) + packages (~
 **Kiểm tra theo thứ tự:**
 1. Dashboard → Zalo → chấm **xanh** chưa? → Nếu đỏ: đóng app mở lại
 2. Kênh Zalo bật chưa? → Dashboard → toggle Zalo = **Bật**
-3. Khách bị chặn? → Dashboard → Zalo → Blocklist → kiểm tra
+3. Khách không trong allowlist? → Dashboard → Zalo → Bạn bè → bật toggle người đó
 4. Chế độ nhóm = Tắt? → Đổi sang **@mention** hoặc **Mọi tin**
 5. Chế độ bạn bè? → Dashboard → Zalo → Bạn bè → kiểm tra toggle
 6. Bot tạm dừng? → Dashboard → Zalo → bấm "Tiếp tục"
@@ -417,7 +417,7 @@ Khi mở app lần đầu, màn hình splash tải Node.js (~20MB) + packages (~
 
 ### G4. Upload file quá lớn
 **Keyword:** quá lớn, file size, giới hạn, limit
-**Giới hạn:** Tối đa 10MB/file. Nếu file lớn hơn → chia nhỏ hoặc tóm tắt trước khi upload.
+**Giới hạn:** Không có giới hạn cứng cho Knowledge upload. File quá lớn (>50MB) có thể chậm khi extract text. Chat upload giới hạn 10MB/file.
 
 ### G5. "Ổ đĩa đầy — không lưu được chỉ mục"
 **Keyword:** ổ đĩa đầy, không lưu, RAG, chỉ mục

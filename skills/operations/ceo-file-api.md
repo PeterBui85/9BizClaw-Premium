@@ -43,4 +43,8 @@ Timeout mặc định 30s, tối đa 120s. Output tối đa 50KB.
 
 ## Bảo mật
 
-CHỈ thực hiện khi CEO Telegram yêu cầu. KHÔNG BAO GIỜ dùng từ Zalo.
+- CHỈ thực hiện khi CEO Telegram yêu cầu. KHÔNG BAO GIỜ dùng từ Zalo
+- `/api/exec`: KHÔNG chạy `rm -rf`, `format`, `del /s` hoặc bất kỳ lệnh xoá hệ thống
+- KHÔNG chạy lệnh tải file từ URL không rõ nguồn gốc
+- Lệnh thay đổi file: confirm CEO trước khi chạy
+- Timeout mặc định 30s -- nếu lệnh cần lâu hơn, báo CEO trước

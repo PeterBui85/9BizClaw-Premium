@@ -71,17 +71,40 @@ web_fetch "http://127.0.0.1:20200/api/ceo-rules/write?content=<nội-dung-rule>"
 ## Các endpoints khác
 
 ```
-# Tạo cron
+# Cron: tạo/list/xóa
 web_fetch "http://127.0.0.1:20200/api/cron/create?label=<tên>&cronExpr=<cron>&groupId=<id>&content=<nội-dung>"
-
-# Danh sách cron
 web_fetch http://127.0.0.1:20200/api/cron/list
-
-# Xóa cron
 web_fetch http://127.0.0.1:20200/api/cron/delete?id=<cronId>
 
 # Google Sheets
 web_fetch "http://127.0.0.1:20200/api/google/sheets/append?spreadsheetId=<id>&range=Sheet1&valuesJson=[[\"Ngày\",\"Danh mục\",\"Giá trị\"]]"
+```
+
+## Quản lý đơn hàng
+
+```
+POST /api/order/create     {"customer":"Tên","items":[{"name":"SP","qty":1,"price":100000}],"note":""}
+GET  /api/order/list       ?status=pending&from=2026-05-01
+POST /api/order/update     {"orderId":"ORD-...","status":"confirmed","note":"Đã xác nhận"}
+GET  /api/order/summary    ?from=2026-05-01&to=2026-05-31
+```
+
+Lifecycle: `new` -> `confirmed` -> `paid` -> `delivered` -> `completed` | `cancelled`
+
+## Quản lý tồn kho
+
+```
+POST /api/inventory/adjust {"sku":"SP001","name":"Tên SP","qty":10,"type":"in","note":"Nhập kho"}
+GET  /api/inventory/check  ?sku=SP001  (hoặc không param = toàn bộ)
+GET  /api/inventory/alerts (SP dưới mức tối thiểu)
+```
+
+## Nghỉ phép / Chấm công
+
+```
+POST /api/leave/request    {"employee":"Linh","type":"annual","from":"2026-05-20","to":"2026-05-21","note":""}
+GET  /api/leave/list       ?month=2026-05&employee=Linh
+GET  /api/leave/summary    ?month=2026-05
 ```
 
 ## ⚠️ Nhắc nhở về tiếng Việt

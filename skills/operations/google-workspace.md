@@ -161,16 +161,35 @@ Khi sheet chưa public, hướng dẫn CEO: "Mở sheet > Share > Anyone with li
 - Cần WRITE / append (CSV endpoint chỉ READ)
 - Cần real-time (CSV có thể cache phía Google)
 
-## Recipe: Tạo sheet CRM có format đẹp
+## Composite endpoints (1 call thay 7 call)
 
-Khi CEO muốn tạo sheet theo dõi khách/nhân viên/đơn hàng với format chuyên nghiệp:
+### Tạo Sheet có format đẹp (thay 7-step recipe cũ)
 
-1. `POST /api/google/sheets/create {"title":"Tên Sheet"}` → lấy `spreadsheetId`
-2. `POST /api/google/sheets/number-format {"spreadsheetId":"<id>","range":"C:C","type":"TEXT"}` — cột SĐT giữ số 0 đầu
-3. `POST /api/google/sheets/update {"spreadsheetId":"<id>","range":"Sheet1!A1:H1","values":[["Header1","Header2",...]]}` — ghi header
-4. `POST /api/google/sheets/append` — ghi data rows
-5. `POST /api/google/sheets/freeze {"spreadsheetId":"<id>","rows":1}` — đóng băng header
-6. `POST /api/google/sheets/format {"spreadsheetId":"<id>","range":"A1:H1","formatJson":{"textFormat":{"bold":true,"foregroundColorStyle":{"rgbColor":{"red":1,"green":1,"blue":1}}},"backgroundColor":{"red":0.1,"green":0.21,"blue":0.36}},"formatFields":"textFormat.bold,textFormat.foregroundColorStyle,backgroundColor"}` — header trắng đậm nền xanh
-7. `POST /api/google/sheets/format {"spreadsheetId":"<id>","range":"A1:H100","formatJson":{"wrapStrategy":"WRAP"},"formatFields":"wrapStrategy"}` — text wrap toàn bộ
+```
+web_fetch url="http://127.0.0.1:20200/api/google/sheets/create-formatted" method=POST body="{\"title\":\"Theo dõi khách\",\"headers\":[\"Ngày\",\"Tên\",\"SĐT\",\"Nội dung\"],\"data\":[[\"2026-05-19\",\"An\",\"0909123456\",\"Hỏi giá\"]],\"style\":\"crm\",\"textColumns\":[\"C\"]}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+Styles: `crm` (header xanh, freeze, border), `report` (header xám, freeze), `plain` (chỉ data).
+Response: `{spreadsheetId, spreadsheetUrl, rowsWritten}`
+
+### Xuất khách Zalo ra CRM Sheet
+
+```
+web_fetch url="http://127.0.0.1:20200/api/zalo-crm/export" method=POST body="{\"dateRange\":\"today\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+Xem chi tiết: `skills/operations/zalo-followup-sheet.md`
+
+## Recipe cũ: Tạo sheet thủ công (7 bước)
+
+Dùng khi cần custom format ngoài 3 style preset:
+
+1. `POST /api/google/sheets/create {"title":"Tên Sheet"}` -- lấy `spreadsheetId`
+2. `POST /api/google/sheets/number-format {"spreadsheetId":"<id>","range":"C:C","type":"TEXT"}` -- cột SĐT giữ số 0 đầu
+3. `POST /api/google/sheets/update` -- ghi header
+4. `POST /api/google/sheets/append` -- ghi data rows
+5. `POST /api/google/sheets/freeze {"spreadsheetId":"<id>","rows":1}`
+6. `POST /api/google/sheets/format` -- header style
+7. `POST /api/google/sheets/format` -- text wrap
 
 Thứ tự quan trọng: set number-format TRƯỚC khi ghi data (để SĐT giữ số 0).

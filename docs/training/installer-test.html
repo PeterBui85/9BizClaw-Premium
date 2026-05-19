@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>9BizClaw — Installer Certification Test</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #fafafa;
+    --surface: #fff;
+    --border: #e2e2e2;
+    --text: #1a1a1a;
+    --text-secondary: #666;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --correct: #16a34a;
+    --correct-bg: #f0fdf4;
+    --wrong: #dc2626;
+    --wrong-bg: #fef2f2;
+    --radius: 8px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .meta {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .meta span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .question-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+
+  .question-block.answered-correct {
+    border-color: var(--correct);
+    background: var(--correct-bg);
+  }
+
+  .question-block.answered-wrong {
+    border-color: var(--wrong);
+    background: var(--wrong-bg);
+  }
+
+  .question-number {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+
+  .question-text {
+    font-size: 15px;
+    font-weight: 500;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  .options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .option:hover:not(.disabled) {
+    border-color: var(--accent);
+    background: #f0f4ff;
+  }
+
+  .option.disabled { cursor: default; opacity: 0.7; }
+  .option.selected { border-color: var(--accent); background: #eff6ff; }
+  .option.correct-answer { border-color: var(--correct); background: #dcfce7; font-weight: 500; }
+  .option.wrong-answer { border-color: var(--wrong); background: #fee2e2; }
+
+  .option input[type="radio"] {
+    margin-top: 2px;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .explanation {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: none;
+    line-height: 1.5;
+  }
+
+  .explanation.visible { display: block; }
+
+  .actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 40px;
+  }
+
+  button {
+    padding: 12px 32px;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: var(--accent-hover); }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .btn-secondary:hover { background: #f5f5f5; }
+
+  .result-banner {
+    text-align: center;
+    padding: 32px 24px;
+    border-radius: var(--radius);
+    margin-bottom: 32px;
+    display: none;
+  }
+
+  .result-banner.visible { display: block; }
+
+  .result-banner.pass {
+    background: var(--correct-bg);
+    border: 2px solid var(--correct);
+  }
+
+  .result-banner.fail {
+    background: var(--wrong-bg);
+    border: 2px solid var(--wrong);
+  }
+
+  .result-score {
+    font-size: 48px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .result-banner.pass .result-score { color: var(--correct); }
+  .result-banner.fail .result-score { color: var(--wrong); }
+
+  .result-label {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  .result-detail {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-top: 8px;
+  }
+
+  .progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    background: var(--accent);
+    transition: width 0.3s;
+    z-index: 100;
+  }
+
+  .timer-warn { color: var(--wrong); font-weight: 700; }
+  .timer-expired { color: var(--wrong); font-weight: 700; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .fail-hint {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #fef3c7;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #92400e;
+    display: none;
+    line-height: 1.5;
+  }
+
+  .fail-hint.visible { display: block; }
+
+  @media (max-width: 600px) {
+    .container { padding: 24px 16px 60px; }
+    .question-block { padding: 16px; }
+    header h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+
+<div class="container">
+  <header>
+    <h1>9BizClaw — Bài Kiểm Tra Cài Đặt</h1>
+    <p>15 câu hỏi thiết yếu. Cần đúng 12/15 (80%) để đạt. Đọc kỹ trước khi chọn.</p>
+    <div class="meta">
+      <span>15 câu hỏi</span>
+      <span>Pass: 80%</span>
+      <span id="timerDisplay">10:00</span>
+    </div>
+  </header>
+
+  <div class="result-banner" id="resultBanner">
+    <div class="result-score" id="resultScore"></div>
+    <div class="result-label" id="resultLabel"></div>
+    <div class="result-detail" id="resultDetail"></div>
+  </div>
+
+  <div id="questionsContainer"></div>
+
+  <div class="actions">
+    <button class="btn-primary" id="submitBtn" onclick="submitTest()">Nộp bài</button>
+    <button class="btn-secondary" id="retryBtn" onclick="retryTest()" style="display:none">Làm lại</button>
+  </div>
+</div>
+
+<script>
+const QUESTION_BANK = [
+  {
+    q: "Trước khi cài đặt, CEO cần chuẩn bị sẵn những gì BẮT BUỘC?",
+    options: [
+      "Telegram, Zalo, ChatGPT, máy tính Win10+/Mac11+, license key",
+      "Telegram, Zalo, ChatGPT, máy tính, logo công ty, bảng giá",
+      "Telegram, ChatGPT, máy tính, license key (Zalo không bắt buộc)",
+      "Chỉ cần máy tính và license key, còn lại thiết lập sau"
+    ],
+    correct: 0,
+    explain: "5 thứ bắt buộc: Telegram, Zalo (đăng nhập trên cùng máy), ChatGPT, máy tính (Win10+/Mac11+, 4GB RAM, 500MB trống), license key. Logo và bảng giá nên có nhưng KHÔNG bắt buộc."
+  },
+  {
+    q: "Lần đầu mở app, màn hình splash tải bao nhiêu dữ liệu và cần bao lâu?",
+    options: [
+      "~50MB, 1 phút",
+      "~170MB (Node.js + packages + gogcli), 2-10 phút tuỳ mạng",
+      "~500MB (AI model + runtime), 15-30 phút",
+      "~170MB nhưng không cần internet vì đã có trong file cài"
+    ],
+    correct: 1,
+    explain: "Splash tải Node.js (~20MB) + npm packages (~145MB) + gogcli (~5MB) = ~170MB. Cần internet ổn định. Mất 2-10 phút tuỳ tốc độ mạng."
+  },
+  {
+    q: "Splash screen báo 'EBUSY / File in use'. Bạn làm gì?",
+    options: [
+      "Tắt hoàn toàn Windows Defender rồi cài lại",
+      "Thêm thư mục %APPDATA%\\9bizclaw vào Windows Security Exclusions",
+      "Đóng app, chờ 5 phút rồi mở lại",
+      "Xoá thư mục %APPDATA%\\9bizclaw rồi cài lại"
+    ],
+    correct: 1,
+    explain: "EBUSY thường do Windows Defender đang quét file. Chỉ cần thêm Exclusions, KHÔNG cần tắt hoàn toàn Defender. Windows Security > Virus & threat protection > Exclusions > Add Folder > C:\\Users\\[tên]\\AppData\\Roaming\\9bizclaw."
+  },
+  {
+    q: "License key 9BizClaw có đặc điểm gì quan trọng nhất mà installer PHẢI biết?",
+    options: [
+      "Key dùng được trên nhiều máy, chỉ cần copy file license.json",
+      "Key khoá theo phần cứng máy (hardware lock) — không thể copy sang máy khác",
+      "Key chỉ cần nhập 1 lần, sau đó hoạt động vĩnh viễn không cần internet",
+      "Key có thể chia sẻ cho nhiều nhân viên cùng công ty"
+    ],
+    correct: 1,
+    explain: "License khoá theo phần cứng (hostname + MAC + platform). Copy file license.json sang máy khác => seal broken => bị từ chối. Đổi máy phải liên hệ tech@modoro.com.vn để reset."
+  },
+  {
+    q: "Wizard bước 3: CEO cần làm gì để kết nối Telegram?",
+    options: [
+      "Đăng nhập Telegram trên máy tính là đủ",
+      "Tạo bot qua @BotFather (lấy token) + lấy User ID qua @userinfobot + kiểm tra tin thử",
+      "Gửi số điện thoại cho 9Biz để họ tạo bot",
+      "Chỉ cần nhập số điện thoại Telegram vào app"
+    ],
+    correct: 1,
+    explain: "3 việc: (1) Mở Telegram > @BotFather > /newbot > lấy token dạng 1234567890:ABCdef... (2) @userinfobot > /start > lấy dãy số User ID (3) App gửi tin thử — CEO phải nhận được trên Telegram."
+  },
+  {
+    q: "Wizard bước 2 báo lỗi 500 khi 'Thiết lập AI'. Xử lý thế nào?",
+    options: [
+      "Liên hệ support ngay lập tức",
+      "Đóng app, mở lại (app có auto-fix). Vẫn 500 sau 3 lần: mở thư mục log > gửi 9router.log cho support",
+      "Cài lại Windows",
+      "Xoá toàn bộ thư mục 9bizclaw và cài từ đầu"
+    ],
+    correct: 1,
+    explain: "Lỗi 500 thường do better-sqlite3 không tương thích CPU. App có auto-fix. Đóng mở lại để trigger. Nếu vẫn lỗi sau 3 lần: nhấn 'Mở thư mục log' > gửi file 9router.log cho tech@modoro.com.vn."
+  },
+  {
+    q: "Sau wizard xong, CEO gửi tin Telegram nhưng bot KHÔNG trả lời. Bước kiểm tra ĐẦU TIÊN?",
+    options: [
+      "Xoá app cài lại",
+      "Kiểm tra app đã mở chưa + chờ 60 giây (gateway cần khởi động lần đầu)",
+      "Đổi ChatGPT Plus",
+      "Đổi mạng sang 5G"
+    ],
+    correct: 1,
+    explain: "Tin đầu tiên mất 30-60 giây vì gateway khởi động. Kiểm tra: (1) App đã mở? (2) Chờ 60s (3) Dashboard > sidebar > chấm Telegram xanh? (4) Đã nhấn /start trên bot? (5) ChatGPT đã kết nối?"
+  },
+  {
+    q: "Wizard hoàn tất. Bạn cần kiểm tra gì để XÁC NHẬN cài đặt thành công?",
+    options: [
+      "Chỉ cần wizard hiện 'Hoàn tất' là đủ",
+      "Mở Telegram > gửi tin cho bot > chờ 30-60 giây > bot trả lời = thành công",
+      "Kiểm tra thư mục cài đặt có đủ file không",
+      "Khởi động lại máy tính rồi mở app lại"
+    ],
+    correct: 1,
+    explain: "Proof thật sự là bot trả lời tin nhắn. Chờ 30-60s lần đầu vì gateway cần khởi động. Wizard 'Hoàn tất' chỉ nghĩa là cấu hình đã lưu, chưa chứng minh bot hoạt động."
+  },
+  {
+    q: "File dữ liệu người dùng (memory, knowledge, config) nằm ở đâu trên Windows?",
+    options: [
+      "C:\\Program Files\\9BizClaw\\",
+      "C:\\Users\\[tên]\\Desktop\\9BizClaw\\",
+      "C:\\Users\\[tên]\\AppData\\Roaming\\9bizclaw\\",
+      "C:\\Users\\[tên]\\Documents\\9BizClaw\\"
+    ],
+    correct: 2,
+    explain: "Dữ liệu nằm tại %APPDATA%\\9bizclaw\\. Trên Mac: ~/Library/Application Support/9bizclaw/. Đây là thư mục KHÔNG bị ghi đè khi cập nhật app. License riêng ở %APPDATA%\\9bizclaw\\license.json."
+  },
+  {
+    q: "Hệ điều hành chặn mở app (Windows SmartScreen hoặc macOS Gatekeeper). Xử lý thế nào?",
+    options: [
+      "Tải lại file cài đặt từ nguồn khác",
+      "Windows: More info > Run anyway. Mac: Terminal chạy xattr -dr com.apple.quarantine [đường dẫn app]",
+      "Tắt tường lửa (firewall) của hệ điều hành",
+      "Liên hệ support để lấy bản có chữ ký số"
+    ],
+    correct: 1,
+    explain: "SmartScreen và Gatekeeper chặn app chưa ký. Không cần tắt firewall — chỉ cần cho phép chạy 1 lần. Windows: nhấn 'More info' rồi 'Run anyway'. Mac: mở Terminal chạy xattr -dr com.apple.quarantine."
+  },
+  {
+    q: "CEO báo 'Key không hợp lệ' khi kích hoạt. Kiểm tra gì?",
+    options: [
+      "Liên hệ support để đổi key mới",
+      "Key bắt đầu bằng CLAW-, copy TOÀN BỘ từ email gốc (không gõ tay), không có dấu cách đầu/cuối",
+      "Thử restart máy tính",
+      "Tắt Windows Defender"
+    ],
+    correct: 1,
+    explain: "Format đúng: CLAW-... Copy từ email gốc, KHÔNG gõ tay. Không có dấu cách thừa ở đầu hoặc cuối. Thử paste vào Notepad trước để kiểm tra. Nếu vẫn lỗi: liên hệ tech@modoro.com.vn."
+  },
+  {
+    q: "Cài đặt xong, bạn cần bàn giao những gì cho CEO trước khi rời đi?",
+    options: [
+      "Chỉ cần đảm bảo app mở được là đủ",
+      "Xác nhận bot trả lời Telegram + hướng dẫn gửi tin thử + nhắc để máy mở (thu nhỏ tray)",
+      "Gửi email tổng kết kèm mật khẩu các tài khoản",
+      "Cài thêm phần mềm diệt virus để bảo vệ app"
+    ],
+    correct: 1,
+    explain: "3 việc tối thiểu: (1) bot reply Telegram OK, (2) CEO biết cách dùng cơ bản (gửi tin thử), (3) nhắc app phải mở (thu nhỏ xuống tray) để cron và bot hoạt động."
+  },
+  {
+    q: "CEO lo 'mất máy thì mất hết dữ liệu'. Bạn giải thích thế nào?",
+    options: [
+      "Dữ liệu tự đồng bộ lên cloud, không lo mất",
+      "Dữ liệu lưu trên máy — hướng dẫn CEO dùng 'Xuất backup' trong Dashboard định kỳ",
+      "License key là backup, nhập lại là có hết dữ liệu",
+      "9BizClaw tự backup mỗi ngày lên Google Drive"
+    ],
+    correct: 1,
+    explain: "Dữ liệu 100% trên máy, KHÔNG lên cloud. Dashboard có nút 'Xuất dữ liệu (backup)' ở menu hỗ trợ góc dưới phải. Khuyên CEO backup định kỳ vào USB hoặc cloud cá nhân."
+  },
+  {
+    q: "Khi nào installer NÊN liên hệ tech@modoro.com.vn thay vì tự xử lý?",
+    options: [
+      "Bất cứ khi nào CEO gặp lỗi",
+      "Sau khi đã đóng mở app 2-3 lần mà vẫn lỗi, lỗi license, splash lỗi sau 3 lần 'Thử lại'",
+      "Chỉ khi CEO yêu cầu",
+      "Khi chưa cài được trong 5 phút đầu tiên"
+    ],
+    correct: 1,
+    explain: "Liên hệ support khi: (1) Đã đóng mở 2-3 lần vẫn lỗi, (2) Lỗi license (hết hạn, chuyển máy, thu hồi), (3) Splash lỗi sau 3 lần Thử lại, (4) Cần hướng dẫn tính năng nâng cao. Gửi kèm: mô tả + ảnh chụp + hệ điều hành."
+  },
+  {
+    q: "Mạng công ty có firewall chặn splash screen (ETIMEDOUT). Giải pháp nhanh nhất?",
+    options: [
+      "Nhờ IT mở tất cả port",
+      "Dùng hotspot 4G điện thoại cho lần tải đầu tiên (~170MB), sau đó dùng mạng công ty bình thường",
+      "Cài VPN",
+      "Đợi đến khi về nhà cài"
+    ],
+    correct: 1,
+    explain: "Hotspot 4G là giải pháp nhanh nhất. Chỉ cần internet ổn định cho lần cài đầu (~170MB). Sau đó app chỉ cần mạng để kết nối ChatGPT/Telegram/Zalo — thường không bị firewall chặn. Nếu dùng mạng công ty: cần IT mở registry.npmjs.org, nodejs.org, github.com."
+  }
+];
+
+// --- Anti-cheat: shuffle everything on each load ---
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+let activeQuestions = [];
+let optionMaps = [];
+const answers = {};
+
+function buildShuffledTest() {
+  const shuffledIndices = shuffle(QUESTION_BANK.map((_, i) => i));
+  activeQuestions = shuffledIndices.map(i => QUESTION_BANK[i]);
+  optionMaps = [];
+
+  activeQuestions.forEach((q, qi) => {
+    const originalCorrect = q.correct;
+    const indices = shuffle(q.options.map((_, i) => i));
+    const newCorrect = indices.indexOf(originalCorrect);
+    optionMaps.push({ indices, correctShuffled: newCorrect });
+  });
+}
+
+// --- Timer ---
+
+let timerSeconds = 600;
+let timerInterval = null;
+let timerExpired = false;
+
+function startTimer() {
+  timerSeconds = 600;
+  timerExpired = false;
+  const el = document.getElementById('timerDisplay');
+  el.className = '';
+  updateTimerDisplay();
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timerSeconds--;
+    updateTimerDisplay();
+    if (timerSeconds <= 120 && timerSeconds > 0) {
+      el.className = 'timer-warn';
+    }
+    if (timerSeconds <= 0) {
+      clearInterval(timerInterval);
+      timerExpired = true;
+      el.className = 'timer-expired';
+      el.textContent = 'HẾT GIỜ';
+      autoSubmitExpired();
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const m = Math.floor(timerSeconds / 60);
+  const s = timerSeconds % 60;
+  document.getElementById('timerDisplay').textContent =
+    String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+function autoSubmitExpired() {
+  const total = activeQuestions.length;
+  const answered = Object.keys(answers).length;
+  if (answered < total) {
+    for (let i = 0; i < total; i++) {
+      if (answers[i] === undefined) answers[i] = -1;
+    }
+  }
+  submitTest(true);
+}
+
+// --- Render ---
+
+function renderQuestions() {
+  const container = document.getElementById('questionsContainer');
+  container.innerHTML = activeQuestions.map((q, qi) => {
+    const map = optionMaps[qi];
+    return `
+    <div class="question-block" id="qblock-${qi}">
+      <div class="question-number">Câu ${qi + 1} / ${activeQuestions.length}</div>
+      <div class="question-text">${q.q}</div>
+      <div class="options">
+        ${map.indices.map((origIdx, displayIdx) => `
+          <label class="option" id="opt-${qi}-${displayIdx}" onclick="selectOption(${qi}, ${displayIdx})">
+            <input type="radio" name="q${qi}" value="${displayIdx}">
+            <span>${q.options[origIdx]}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div class="explanation" id="explain-${qi}">${q.explain}</div>
+      <div class="fail-hint" id="hint-${qi}">Câu này sai. Đọc lại tài liệu trước khi làm lại.</div>
+    </div>`;
+  }).join('');
+}
+
+function selectOption(qi, displayIdx) {
+  if (timerExpired) return;
+  const block = document.getElementById(`qblock-${qi}`);
+  if (block.classList.contains('answered-correct') || block.classList.contains('answered-wrong')) return;
+
+  answers[qi] = displayIdx;
+
+  optionMaps[qi].indices.forEach((_, j) => {
+    document.getElementById(`opt-${qi}-${j}`).classList.remove('selected');
+  });
+  document.getElementById(`opt-${qi}-${displayIdx}`).classList.add('selected');
+  document.querySelector(`#opt-${qi}-${displayIdx} input`).checked = true;
+  updateProgress();
+}
+
+function updateProgress() {
+  const answered = Object.keys(answers).filter(k => answers[k] !== -1).length;
+  const pct = (answered / activeQuestions.length) * 100;
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+function submitTest(forced) {
+  if (!forced) {
+    const total = activeQuestions.length;
+    const answered = Object.keys(answers).filter(k => answers[k] !== -1).length;
+    if (answered < total) {
+      alert(`Còn ${total - answered} câu chưa trả lời. Vui lòng trả lời hết trước khi nộp.`);
+      return;
+    }
+  }
+
+  if (timerInterval) clearInterval(timerInterval);
+
+  let correct = 0;
+  const total = activeQuestions.length;
+
+  activeQuestions.forEach((q, qi) => {
+    const block = document.getElementById(`qblock-${qi}`);
+    const map = optionMaps[qi];
+    const isCorrect = answers[qi] === map.correctShuffled;
+
+    if (isCorrect) {
+      correct++;
+      block.classList.add('answered-correct');
+      document.getElementById(`opt-${qi}-${answers[qi]}`).classList.add('correct-answer');
+      document.getElementById(`explain-${qi}`).classList.add('visible');
+    } else {
+      block.classList.add('answered-wrong');
+      if (answers[qi] >= 0) {
+        document.getElementById(`opt-${qi}-${answers[qi]}`).classList.add('wrong-answer');
+      }
+      document.getElementById(`hint-${qi}`).classList.add('visible');
+    }
+
+    map.indices.forEach((_, j) => {
+      document.getElementById(`opt-${qi}-${j}`).classList.add('disabled');
+      const radio = document.querySelector(`#opt-${qi}-${j} input`);
+      if (radio) radio.disabled = true;
+    });
+  });
+
+  const pct = Math.round((correct / total) * 100);
+  const passed = pct >= 80;
+
+  const banner = document.getElementById('resultBanner');
+  banner.className = `result-banner visible ${passed ? 'pass' : 'fail'}`;
+  document.getElementById('resultScore').textContent = `${correct}/${total}`;
+
+  if (passed) {
+    document.getElementById('resultLabel').textContent = 'ĐẠT — Đủ điều kiện cài đặt';
+    document.getElementById('resultDetail').textContent = `${pct}% đúng. Bạn có thể tiến hành cài đặt cho khách hàng.`;
+  } else {
+    const timeUp = timerExpired ? ' (hết giờ)' : '';
+    document.getElementById('resultLabel').textContent = 'CHƯA ĐẠT — Cần học lại' + timeUp;
+    document.getElementById('resultDetail').textContent =
+      `${pct}% đúng. Cần đạt tối thiểu 80% (12/15). Câu sai đánh dấu đỏ — đọc lại tài liệu rồi làm lại.`;
+  }
+
+  document.getElementById('submitBtn').style.display = 'none';
+  document.getElementById('retryBtn').style.display = 'inline-block';
+  banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function retryTest() {
+  Object.keys(answers).forEach(k => delete answers[k]);
+  document.getElementById('resultBanner').className = 'result-banner';
+  document.getElementById('submitBtn').style.display = 'inline-block';
+  document.getElementById('retryBtn').style.display = 'none';
+  document.getElementById('progressBar').style.width = '0%';
+
+  buildShuffledTest();
+  renderQuestions();
+  startTimer();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// --- Init ---
+buildShuffledTest();
+renderQuestions();
+startTimer();
+</script>
+</body>
+</html>

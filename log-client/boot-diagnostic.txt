@@ -1,0 +1,13 @@
+==== BOOT 2026-05-18T08:04:46.762Z ====
+[2026-05-18T08:04:46.762Z] platform=win32 arch=x64 electron=28.3.3 node=18.18.2
+[2026-05-18T08:04:46.763Z] HOME=C:\Users\PHUOC BACH
+[2026-05-18T08:04:46.763Z] workspace=C:\Users\PHUOC BACH\AppData\Roaming\9bizclaw
+[2026-05-18T08:04:46.763Z] PATH (first 500 chars)=C:\Users\PHUOC BACH\AppData\Roaming\9bizclaw\vendor\node;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\dotnet\;C:\Users\PHUOC BACH\AppData\Local\Microsoft\WindowsApps;D:\Antigravity\bin
+[2026-05-18T08:04:46.763Z] ✓ findNodeBin: C:\Users\PHUOC BACH\AppData\Roaming\9bizclaw\vendor\node\node.exe
+[2026-05-18T08:04:46.764Z] ✓ findOpenClawBin: C:\Users\PHUOC BACH\AppData\Roaming\9bizclaw\vendor\node_modules\openclaw\openclaw.mjs
+[2026-05-18T08:04:46.764Z] ✓ findOpenClawCliJs: C:\Users\PHUOC BACH\AppData\Roaming\9bizclaw\vendor\node_modules\openclaw\openclaw.mjs (multi-line prompts SAFE)
+[2026-05-18T08:04:46.765Z] ✓ Telegram config: token+chatId present (chatId=8819428431)
+[2026-05-18T08:04:46.765Z] ✓ openclaw.json: schema clean (no known deprecated keys)
+[2026-05-18T08:04:46.766Z] ✓ custom-crons.json: 0 cron(s), 0 enabled
+[2026-05-18T08:04:46.766Z] ✓ schedules.json: 7 fixed schedule(s) enabled
+[2026-05-18T08:04:46.766Z] ---- diagnostic complete ----

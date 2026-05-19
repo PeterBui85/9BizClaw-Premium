@@ -152,9 +152,13 @@ Không tìm thấy knowledge ngành → dùng format mặc định.
 
 ---
 
+## Xuất file Word
+
+CEO muốn báo giá dạng file Word chuyên nghiệp -> dùng skill `skills/operations/docx/SKILL.md`. Nói "xuất file Word báo giá" hoặc "làm file docx báo giá".
+
 ## Lưu ý
 
 - KHÔNG tự động gửi báo giá cho khách. CHỜ CEO xác nhận.
-- Nếu CEO nói "báo giá nhanh" (không có tên khách) → vẫn soạn, ghi `[Kính gửi: ___]` để CEO điền.
-- Nhiều sản phẩm cùng loại → gom 1 dòng, tăng SL.
-- Chiết khấu/giảm giá → thêm dòng riêng "Chiết khấu X%" với thành tiền âm.
+- Nếu CEO nói "báo giá nhanh" (không có tên khách) -> vẫn soạn, ghi `[Kính gửi: ___]` để CEO điền.
+- Nhiều sản phẩm cùng loại -> gom 1 dòng, tăng SL.
+- Chiết khấu/giảm giá -> thêm dòng riêng "Chiết khấu X%" với thành tiền âm.

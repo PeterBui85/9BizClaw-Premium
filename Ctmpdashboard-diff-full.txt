@@ -1,0 +1,509 @@
+electron/ui/dashboard.html | 740 +++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 644 insertions(+), 96 deletions(-)
+
+--- Changes ---
+
+electron/ui/dashboard.html
+  @@ -619,7 +619,7 @@
+  -    /* Embedded web UI pages (9Router, OpenClaw, Chat) */
+  +    /* Embedded web UI pages (9Router, OpenClaw) */
+       #page-9router.page.active, #page-openclaw.page.active, #page-chat.page.active {
+         display:flex; flex-direction:column; height:calc(100vh - 32px);
+       }
+  @@ -630,14 +630,34 @@
+  -    .chat-shell { display:flex; flex-direction:column; min-height:0; flex:1; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); }
+  -    .chat-shell-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--border); background:var(--surface-elevated); flex-shrink:0; }
+  -    .chat-shell-title { display:flex; align-items:center; gap:8px; min-width:0; color:var(--text); font-size:13px; font-weight:700; }
+  -    .chat-shell-sub { color:var(--text-muted); font-size:11px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  -    .chat-shell-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  -    .chat-status-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:999px; border:1px solid rgba(34,197,94,.26); background:rgba(34,197,94,.1); color:var(--success); font-size:11px; font-weight:700; white-space:nowrap; }
+  -    .chat-status-pill::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px rgba(34,197,94,.45); }
+  -    .chat-shell .embed-wrap { border:0; border-radius:0; box-shadow:none; }
+  +    .chat-container { display:flex; flex-direction:column; flex:1; min-height:0; border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow); }
+  +    .chat-messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:4px; }
+  +    .chat-bubble-group { display:flex; flex-direction:column; gap:2px; margin-bottom:12px; }
+  +    .chat-bubble-group.user { align-items:flex-end; }
+  +    .chat-bubble-group.bot { align-items:flex-start; }
+  +    .chat-bubble { max-width:70%; padding:10px 14px; font-size:13px; line-height:1.5; word-break:break-word; white-space:pre-wrap; }
+  +    .chat-bubble.user { background:var(--accent); color:#fff; border-radius:12px 12px 4px 12px; }
+  +    .chat-bubble.bot { background:var(--bg); color:var(--text-secondary); border-radius:12px 12px 12px 4px; border:1px solid var(--border); }
+  +    .chat-time { font-size:10px; color:var(--text-muted); margin-top:2px; padding:0 4px; }
+  +    .chat-input-bar { display:flex; align-items:flex-end; gap:8px; padding:12px; border-top:1px solid var(--border); background:var(--surface-elevated); flex-shrink:0; }
+  +    .chat-input-bar textarea { flex:1; resize:none; border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:13px; color:var(--text); background:var(--bg); outline:none; font-family:inherit; max-height:120px; line-height:1.4; }
+  +    .chat-input-bar textarea:focus { border-color:var(--accent); }
+  +    .chat-send-btn { width:40px; height:40px; border-radius:10px; border:none; background:var(--accent); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:opacity .15s; }
+  +    .chat-send-btn:hover { opacity:.85; }
+  +    .chat-send-btn:disabled { opacity:.4; cursor:default; }
+  +    .chat-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; color:var(--text-muted); padding:40px 20px; text-align:center; }
+  +    .chat-empty-title { font-size:15px; font-weight:600; color:var(--text); }
+  +    .chat-empty-sub { font-size:13px; }
+  +    .chat-prompt-chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  +    .chat-prompt-chip { padding:8px 14px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--text-secondary); font-size:12px; cursor:pointer; transition:border-color .15s, background .15s; }
+  +    .chat-prompt-chip:hover { border-color:var(--accent); background:var(--accent-soft, rgba(200,167,90,.06)); }
+  +    .chat-typing { display:flex; align-items:center; gap:4px; padding:10px 14px; }
+  +    .chat-typing span { width:6px; height:6px; border-radius:50%; background:var(--text-muted); animation:chatDot 1.4s infinite ease-in-out both; }
+  +    .chat-typing span:nth-child(1) { animation-delay:0s; }
+  +    .chat-typing span:nth-child(2) { animation-delay:.2s; }
+  +    .chat-typing span:nth-child(3) { animation-delay:.4s; }
+  +    @keyframes chatDot { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+  +    .chat-error { padding:10px 14px; font-size:12px; color:var(--danger); background:rgba(229,57,53,.08); border-radius:8px; margin:8px 0; text-align:center; }
+       .zalo-mgr-row .info { flex:1; min-width:0; overflow:hidden; }
+       .zalo-mgr-row .name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+       .zalo-mgr-row .sub { font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  @@ -685,6 +705,43 @@
+  +    .sidebar-menu-header.collapsible { cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none; }
+  +    .sidebar-menu-header.collapsible:hover { color:var(--text); }
+  +    /* SVG chevron — unified across dashboard */
+  +    .chevron-icon { width:16px; height:16px; flex-shrink:0; transition:transform 0.2s ease; color:var(--text-muted); }
+  +    .chevron-collapsed .chevron-icon, .collapsed .chevron-icon { transform:rotate(-90deg); }
+  +    details:not([open]) > summary .chevron-icon { transform:rotate(-90deg); }
+  +    details summary::-webkit-details-marker { display:none; }
+  +    details summary { list-style:none; }
+  +    /* Skills 2-column layout */
+  +    .skills-layout { display:flex; height:calc(100vh - 140px); border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--card-bg, var(--surface)); }
+  +    .skills-list-panel { width:280px; border-right:1px solid var(--border); overflow-y:auto; padding:12px 0; flex-shrink:0; }
+  +    .skills-detail-panel { flex:1; padding:24px; overflow-y:auto; }
+  +    .skill-list-header { display:flex; align-items:center; justify-content:space-between; padding:6px 16px; cursor:pointer; user-select:none; font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
+  +    .skill-list-header:hover { color:var(--text); }
+  +    .skill-list-header .skill-count { font-size:11px; font-weight:400; color:var(--text-muted); margin-left:4px; }
+  +    .skill-list-items { overflow:hidden; }
+  +    .skill-list-items.collapsed { display:none; }
+  +    .skill-list-item { display:flex; align-items:center; gap:8px; padding:7px 16px; cursor:pointer; border-radius:0; font-size:13px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition:background 0.15s ease; }
+  +    .skill-list-item:hover { background:var(--surface-hover, var(--bg)); }
+  +    .skill-list-item.active { background:var(--accent); color:#fff; }
+  +    .skill-list-item .skill-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  +    .skill-list-item .skill-dot.user { background:var(--accent); }
+  +    .skill-list-item.active .skill-dot.user { background:#fff; }
+  +    .skill-list-item .skill-dot.shipped { border:1.5px solid var(--text-muted); background:transparent; }
+  +    .skill-list-item.active .skill-dot.shipped { border-color:#fff; }
+  +    .skill-detail-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text-muted); font-size:14px; gap:12px; }
+  +    .skill-detail-name { font-size:18px; font-weight:600; color:var(--text-primary); }
+  +    .skill-detail-meta { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+  +    .skill-detail-divider { height:1px; background:var(--border); margin:16px 0; }
+  +    .skill-detail-section-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+  +    .skill-detail-section { margin-bottom:16px; }
+  +    .skill-detail-section-value { font-size:14px; color:var(--text-primary); padding-left:2px; }
+  +    .skill-detail-content { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code','Consolas',monospace; line-height:1.6; color:var(--text-primary); max-height:60vh; overflow-y:auto; }
+  +    .skills-list-create-btn { display:flex; align-items:center; gap:6px; padding:8px 16px; margin-bottom:8px; }
+  +    .skill-list-empty { padding:16px; text-align:center; color:var(--text-muted); font-size:13px; }
+  +    .sidebar-channel-items.collapsed { display:none; }
+  +    .theme-tray-toggle { display:flex; align-items:center; gap:10px; padding-top:8px; margin-top:4px; border-top:1px solid var(--border); }
+       /* Page system */
+       .page { display:none; animation:fadeIn 0.2s ease; }
+       .page.active { display:block; }
+  @@ -2571,52 +2628,58 @@
+  -        <div class="sidebar-menu-header">Điều khiển</div>
+           <div class="sidebar-menu-item active" data-page="overview" onclick="switchPage('overview')">
+             <span class="icon" data-icon="home"></span><span class="label">Tổng quan</span>
+           </div>
+           <div class="sidebar-menu-item" data-page="chat" onclick="switchPage('chat')">
+             <span class="icon" data-icon="messages-square"></span><span class="label">Chat</span>
+           </div>
+  -        <div class="sidebar-menu-item" data-page="schedules" onclick="switchPage('schedules')">
+  -          <span class="icon" data-icon="calendar"></span><span class="label">Lịch tự động</span>
+  +
+  +        <div class="sidebar-menu-header collapsible" onclick="toggleChannelSection()">
+  +          Kênh
+  +          <svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+           </div>
+  +        <div class="sidebar-channel-items" id="sidebar-channel-items">
+  +          <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
+  +            <span class="icon" data-icon="brand-telegram"></span><span class="label">Telegram</span>
+  +            <span class="ready-dot" id="ready-dot-telegram" data-state="checking" title="Đang kiểm tra..."></span>
+  +          </div>
+  +          <div class="sidebar-menu-item" data-page="zalo" onclick="switchPage('zalo')">
+  +            <span class="icon" data-icon="brand-zalo"></span><span class="label">Zalo</span>
+  +            <span class="ready-dot" id="ready-dot-zalo" data-state="checking" title="Đang kiểm tra..."></span>
+  +          </div>
+  +          <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
+  +            <span class="icon" data-icon="brand-facebook"></span><span class="label">Facebook</span>
+  +          </div>
+  +          <div class="sidebar-menu-item" data-page="google" onclick="switchPage('google')">
+  +            <span class="icon" data-icon="brand-google"></span><span class="label">Google</span>
+  +          </div>
+  +        </div>
+  +
+  +        <div class="sidebar-menu-header">Trợ lý AI</div>
+           <div class="sidebar-menu-item" data-page="knowledge" onclick="switchPage('knowledge')">
+             <span class="icon" data-icon="book-open"></span><span class="label">Tài liệu</span>
+           </div>
+  -        <div class="sidebar-menu-item" data-page="image-assets" onclick="switchPage('image-assets')">
+  -          <span class="icon" data-icon="image"></span><span class="label">Tài sản hình ảnh</span>
+  -        </div>
+           <div class="sidebar-menu-item" data-page="persona-mix" onclick="switchPage('persona-mix')">
+  -          <span class="icon" data-icon="sparkles"></span>
+  -          <span class="label">Tính cách bot</span>
+  -        </div>
+  -        <!-- shop-state + calendar: UI hidden, backend retained -->
+  -
+  -        <div class="sidebar-menu-header">Kênh</div>
+  -        <div class="sidebar-menu-item" data-page="telegram" onclick="switchPage('telegram')">
+  -          <span class="icon" data-icon="brand-telegram"></span><span class="label">Telegram</span>
+  -          <span class="ready-dot" id="ready-dot-telegram" data-state="checking" title="Đang kiểm tra..."></span>
+  +          <span class="icon" data-icon="sparkles"></span><span class="label">Tính cách bot</span>
+           </div>
+  -        <div class="sidebar-menu-item" data-page="zalo" onclick="switchPage('zalo')">
+  -          <span class="icon" data-icon="brand-zalo"></span><span class="label">Zalo</span>
+  -          <span class="ready-dot" id="ready-dot-zalo" data-state="checking" title="Đang kiểm tra..."></span>
+  +        <div class="sidebar-menu-item" data-page="skills" onclick="switchPage('skills')">
+  +          <span class="icon" data-icon="zap"></span><span class="label">Skills</span>
+           </div>
+  -        <div class="sidebar-menu-item" data-page="facebook" onclick="switchPage('facebook')">
+  -          <span class="icon" data-icon="brand-facebook"></span><span class="label">Facebook</span>
+  -        </div>
+  -        <div class="sidebar-menu-item" data-page="google" onclick="switchPage('google')">
+  -          <span class="icon" data-icon="brand-google"></span><span class="label">Google</span>
+  +        <div class="sidebar-menu-item" data-page="image-assets" onclick="switchPage('image-assets')">
+  +          <span class="icon" data-icon="image"></span><span class="label">Tài sản hình ảnh</span>
+           </div>
+  -
+  -        <div class="sidebar-menu-header">Cài đặt</div>
+           <div class="sidebar-menu-item" data-page="9router" onclick="openAiModelsBrowser()">
+             <span class="icon" data-icon="cpu"></span><span class="label">AI Models</span>
+           </div>
+  -        <div class="sidebar-menu-item" onclick="openAdvancedSettings()">
+  -          <span class="icon" data-icon="settings-2"></span><span class="label">Cài đặt nâng cao</span>
+  +
+  +        <div class="sidebar-menu-header">Tự động hóa</div>
+  +        <div class="sidebar-menu-item" data-page="schedules" onclick="switchPage('schedules')">
+  +          <span class="icon" data-icon="calendar"></span><span class="label">Lịch tự động</span>
+           </div>
+  -        <div class="sidebar-menu-item theme-mode-card" style="margin-top:2px" title="Chọn giao diện sạch cho Dashboard">
+  +
+  +        <div class="sidebar-menu-header">Cài đặt</div>
+  +        <div class="sidebar-menu-item theme-mode-card" title="Chọn giao diện sạch cho Dashboard">
+             <div class="theme-mode-title">
+               <span class="icon" id="theme-toggle-icon" data-icon="gem"></span>
+               <span class="label" id="theme-toggle-label">Giao diện</span>
+  @@ -2626,16 +2689,18 @@
+  +          <div class="theme-tray-toggle">
+  +            <span style="color:var(--text-muted);font-size:12px;white-space:normal;line-height:1.3">Ẩn xuống tray khi mở</span>
+  +            <label class="toggle-switch" style="margin-left:auto">
+  +              <input type="checkbox" id="pref-start-minimized">
+  +              <span class="toggle-slider"></span>
+  +            </label>
+  +          </div>
+           </div>
+  -        <div class="sidebar-menu-item" style="margin-top:2px">
+  -          <span class="icon" data-icon="download"></span>
+  -          <span class="label" style="color:var(--text-muted);font-size:12px;white-space:normal;line-height:1.3">Ẩn xuống tray khi mở</span>
+  -          <label class="toggle-switch" style="margin-left:auto">
+  -            <input type="checkbox" id="pref-start-minimized">
+  -            <span class="toggle-slider"></span>
+  -          </label>
+  +        <div class="sidebar-menu-item" onclick="openAdvancedSettings()">
+  +          <span class="icon" data-icon="settings-2"></span><span class="label">Nâng cao</span>
+           </div>
+  -        <div class="sidebar-menu-item" onclick="manualCheckUpdate()" id="check-update-btn" style="margin-top:2px" title="Kiểm tra cập nhật">
+  +        <div class="sidebar-menu-item" onclick="manualCheckUpdate()" id="check-update-btn" title="Kiểm tra cập nhật">
+             <span class="icon" data-icon="refresh-cw"></span>
+             <span class="label" id="check-update-label">Kiểm tra cập nhật</span>
+           </div>
+  @@ -3299,7 +3364,7 @@
+  -          <summary class="persona-custom-summary">Tùy chỉnh nâng cao (không bắt buộc)</summary>
+  +          <summary class="persona-custom-summary" style="display:flex;align-items:center;gap:6px"><svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Tùy chỉnh nâng cao (không bắt buộc)</summary>
+             <div class="persona-custom-body">
+               <div class="persona-label">Câu chào riêng</div>
+               <input type="text" id="persona-greeting" placeholder="VD: Dạ em [tên trợ lý] bên [tên công ty] xin chào anh/chị ạ">
+  @@ -3321,6 +3386,27 @@
+  +      <!-- PAGE: Skills -->
+  +      <div class="page" id="page-skills">
+  +        <div class="page-header">
+  +          <span class="page-icon" data-icon="zap" data-icon-size="26"></span>
+  +          <div>
+  +            <h2>Skills</h2>
+  +            <div class="page-sub">Quản lý skill hệ thống và tùy chỉnh</div>
+  +          </div>
+  +        </div>
+  +
+  +        <div class="skills-layout">
+  +          <div class="skills-list-panel" id="skills-list-panel"></div>
+  +          <div class="skills-detail-panel" id="skills-detail-panel">
+  +            <div class="skill-detail-empty">
+  +              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+  +              <span>Chọn một skill từ danh sách bên trái</span>
+  +            </div>
+  +          </div>
+  +        </div>
+  +      </div>
+  +
+         <!-- PAGE: Tình trạng hôm nay (hidden — backend retained) -->
+         <div class="page" id="page-shop-state" style="display:none!important">
+           <div class="page-header">
+  @@ -3544,34 +3630,19 @@
+  -      <!-- PAGE: Chat (embedded OpenClaw chat UI) -->
+  +      <!-- PAGE: Chat (native in-app chat) -->
+         <div class="page" id="page-chat">
+           <div class="page-header">
+             <span class="page-icon" data-icon="messages-square" data-icon-size="26"></span>
+  -          <div><h2>Chat</h2><div class="page-sub">Trò chuyện trực tiếp với trợ lý qua OpenClaw Gateway</div></div>
+  -          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+  -            <button class="page-help-btn" title="Chat nhúng trong Dashboard, dùng cùng token Gateway">?</button>
+  -            <button class="btn btn-secondary btn-small" onclick="reloadEmbed('chat')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Reload</button>
+  -            <button class="btn btn-secondary btn-small" onclick="copyAndShowGatewayToken()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="key-round" data-icon-size="14"></span>Token</button>
+  -            <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:18789/chat')">Browser</button>
+  -          </div>
+  +          <div><h2>Chat</h2><div class="page-sub">Trò chuyện trực tiếp với trợ lý AI</div></div>
+           </div>
+  -        <div class="chat-shell">
+  -          <div class="chat-shell-toolbar">
+  -            <div class="chat-shell-title">
+  -              <span data-icon="messages-square" data-icon-size="16"></span>
+  -              <div style="min-width:0">
+  -                <div>Chat với trợ lý</div>
+  -                <div class="chat-shell-sub">Đã chuẩn bị sẵn phiên OpenClaw để phản hồi nhanh hơn</div>
+  -              </div>
+  -            </div>
+  -            <div class="chat-shell-actions">
+  -              <span class="chat-status-pill">Gateway</span>
+  -              <button class="btn btn-secondary btn-small" onclick="showGatewayToken()">Hiện token</button>
+  -            </div>
+  -          </div>
+  -          <div class="embed-wrap" id="embed-wrap-chat">
+  -            <!-- webview prewarmed after Dashboard boot to reduce click-to-chat delay -->
+  +        <div class="chat-container">
+  +          <div class="chat-messages" id="chat-messages"></div>
+  +          <div class="chat-input-bar">
+  +            <textarea id="chat-input" rows="1" placeholder="Nhập tin nhắn..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg()}"></textarea>
+  +            <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMsg()">
+  +              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  +            </button>
+             </div>
+           </div>
+         </div>
+  @@ -3658,7 +3729,7 @@
+  -              <summary style="font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;user-select:none">Hướng dẫn chi tiết lấy Page Access Token</summary>
+  +              <summary style="font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px"><svg class="chevron-icon" viewBox="0 0 16 16" width="16" height="16" style="color:var(--accent)"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Hướng dẫn chi tiết lấy Page Access Token</summary>
+                 <div style="margin-top:12px;font-size:12.5px;color:var(--text-secondary);line-height:1.8;border-left:2px solid var(--border);padding-left:16px">
+   
+                   <div style="font-weight:600;color:var(--text);margin-bottom:4px">Bước 0: Tạo Fanpage (nếu chưa có)</div>
+  @@ -4125,8 +4196,9 @@
+  +                    <button class="btn btn-secondary btn-small" onclick="copyGoogleAuthLink()" style="flex-shrink:0;height:36px;display:inline-flex;align-items:center;box-sizing:border-box" title="Copy link để mở thủ công">Copy link</button>
+                     </div>
+  -                  <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:8px">Khi bấm Kết nối, trình duyệt sẽ mở trang đăng nhập Google. Chọn cùng email đã nhập, cho phép quyền truy cập, rồi quay lại app.</div>
+  +                  <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-top:8px">Khi bấm Kết nối, trình duyệt sẽ mở trang đăng nhập Google. Nếu trình duyệt không mở, bấm Copy link rồi paste vào trình duyệt.</div>
+                   </div>
+                 </div>
+               </div>
+  @@ -4863,6 +4935,16 @@
+  +    function toggleChannelSection() {
+  +      const items = document.getElementById('sidebar-channel-items');
+  +      const header = document.querySelector('.sidebar-menu-header.collapsible');
+  +      if (!items || !header) return;
+  +      const collapsed = !items.classList.contains('collapsed');
+  +      items.classList.toggle('collapsed', collapsed);
+  +      header.classList.toggle('collapsed', collapsed);
+  +      try { localStorage.setItem('sidebar-channels-collapsed', collapsed ? '1' : ''); } catch(e) {}
+  +    }
+  +
+       function switchPage(page) {
+         currentPage = page;
+         document.querySelectorAll('.sidebar-menu-item').forEach(it => {
+  @@ -4916,7 +4998,6 @@
+  -        window._visibilityUserTouched = false;
+           if (!knowledgeInitialized) initKnowledge();
+           else refreshKnowledgeFiles();
+         }
+  @@ -4926,9 +5007,14 @@
+  -      if (page === '9router' || page === 'openclaw' || page === 'chat') {
+  +      if (page === '9router' || page === 'openclaw') {
+           ensureEmbedLoaded(page);
+         }
+  +      if (page === 'chat') {
+  +        startChatPoll();
+  +      } else {
+  +        stopChatPoll();
+  +      }
+         if (page === 'overview') {
+           loadOverview();
+           startOverviewAutoRefresh();
+  @@ -4941,6 +5027,7 @@
+  +      if (page === 'skills') loadSkills();
+         if (page === 'facebook') {
+           loadFacebookTab();
+         }
+  @@ -4957,6 +5044,197 @@
+  +    // ============================================
+  +    //  NATIVE CHAT
+  +    // ============================================
+  +    let _chatLastSeenTs = 0;
+  +    let _chatSending = false;
+  +    let _chatPollTimer = null;
+  +    let _chatInitialized = false;
+  +
+  +    function renderChatEmpty() {
+  +      var el = document.getElementById('chat-messages');
+  +      el.innerHTML = '';
+  +      var empty = document.createElement('div');
+  +      empty.className = 'chat-empty';
+  +      empty.innerHTML = '<div class="chat-empty-title">Chat</div>' +
+  +        '<div class="chat-empty-sub">Bắt đầu trò chuyện với trợ lý AI</div>' +
+  +        '<div class="chat-prompt-chips">' +
+  +          '<div class="chat-prompt-chip" onclick="sendChatPrompt(this)">Báo cáo hôm nay</div>' +
+  +          '<div class="chat-prompt-chip" onclick="sendChatPrompt(this)">Kiểm tra đơn hàng</div>' +
+  +          '<div class="chat-prompt-chip" onclick="sendChatPrompt(this)">Tình hình Zalo</div>' +
+  +        '</div>';
+  +      el.appendChild(empty);
+  +    }
+  +
+  +    function sendChatPrompt(chip) {
+  +      var text = chip.textContent;
+  +      document.getElementById('chat-input').value = text;
+  +      sendChatMsg();
+  +    }
+  +
+  +    function renderChatBubble(role, text, ts, mediaUrls) {
+  +      var group = document.createElement('div');
+  +      group.className = 'chat-bubble-group ' + (role === 'user' ? 'user' : 'bot');
+  +      if (text) {
+  +        var bubble = document.createElement('div');
+  +        bubble.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'bot');
+  +        bubble.textContent = text;
+  +        group.appendChild(bubble);
+  +      }
+  +      // Render media URLs if present (e.g., agent generated images via /api/image/generate).
+  +      if (Array.isArray(mediaUrls) && mediaUrls.length) {
+  +        for (var i = 0; i < mediaUrls.length; i++) {
+  +          var url = mediaUrls[i];
+  +          if (!url) continue;
+  +          var imgWrap = document.createElement('div');
+  +          imgWrap.className = 'chat-bubble ' + (role === 'user' ? 'user' : 'bot');
+  +          imgWrap.style.padding = '4px';
+  +          var img = document.createElement('img');
+  +          img.src = url;
+  +          img.style.cssText = 'max-width:320px;max-height:320px;border-radius:8px;display:block';
+  +          img.onerror = function() { this.style.display = 'none'; };
+  +          imgWrap.appendChild(img);
+  +          group.appendChild(imgWrap);
+  +        }
+  +      }
+  +      if (ts) {
+  +        var time = document.createElement('div');
+  +        time.className = 'chat-time';
+  +        time.textContent = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  +        group.appendChild(time);
+  +      }
+  +      return group;
+  +    }
+  +
+  +    function scrollChatToBottom() {
+  +      var el = document.getElementById('chat-messages');
+  +      requestAnimationFrame(function() { el.scrollTop = el.scrollHeight; });
+  +    }
+  +
+  +    function showChatTyping() {
+  +      var el = document.getElementById('chat-messages');
+  +      var existing = el.querySelector('.chat-typing-wrap');
+  +      if (existing) return;
+  +      var group = document.createElement('div');
+  +      group.className = 'chat-bubble-group bot chat-typing-wrap';
+  +      group.innerHTML = '<div class="chat-typing"><span></span><span></span><span></span></div>';
+  +      el.appendChild(group);
+  +      scrollChatToBottom();
+  +    }
+  +
+  +    function removeChatTyping() {
+  +      var el = document.getElementById('chat-messages');
+  +      var t = el.querySelector('.chat-typing-wrap');
+  +      if (t) t.remove();
+  +    }
+  +
+  +    async function sendChatMsg() {
+  +      var input = document.getElementById('chat-input');
+  +      var text = (input.value || '').trim();
+  +      if (!text || _chatSending) return;
+  +      input.value = '';
+  +      input.style.height = 'auto';
+  +
+  +      // Remove empty state if present
+  +      var empty = document.querySelector('#chat-messages .chat-empty');
+  +      if (empty) empty.remove();
+  +
+  +      // Append user bubble
+  +      var el = document.getElementById('chat-messages');
+  +      el.appendChild(renderChatBubble('user', text, Date.now()));
+  +      scrollChatToBottom();
+  ... (91 lines truncated)
+  @@ -5645,6 +5923,16 @@
+  +      // Restore sidebar channel collapse state
+  +      if (localStorage.getItem('sidebar-channels-collapsed') === '1') {
+  +        const channelPages = ['telegram', 'zalo', 'facebook', 'google'];
+  +        if (!channelPages.includes(currentPage)) {
+  +          const _ci = document.getElementById('sidebar-channel-items');
+  +          const _ch = document.querySelector('.sidebar-menu-header.collapsible');
+  +          if (_ci) _ci.classList.add('collapsed');
+  +          if (_ch) _ch.classList.add('collapsed');
+  +        }
+  +      }
+         // Inject copy icons into legacy prompt rows (ds-prompt rows use ds-prompt-copy instead)
+         document.querySelectorAll('.prompt-row:not(.ds-prompt)').forEach(row => {
+           if (!row.querySelector('.prompt-copy-icon')) {
+  @@ -5668,18 +5956,16 @@
+  -    //  EMBEDDED WEB UI (9Router + OpenClaw + Chat)
+  +    //  EMBEDDED WEB UI (9Router + OpenClaw)
+       // ============================================
+  -    const embedLoaded = { '9router': false, 'openclaw': false, 'chat': false };
+  +    const embedLoaded = { '9router': false, 'openclaw': false };
+       const EMBED_URLS = {
+         '9router': 'http://127.0.0.1:20128/',
+         'openclaw': 'http://127.0.0.1:18789/',
+  -      'chat': 'http://127.0.0.1:18789/chat',
+       };
+       const EMBED_PARTITIONS = {
+         '9router': 'persist:embed-9router',
+         'openclaw': 'persist:embed-openclaw',
+  -      'chat': 'persist:embed-openclaw',
+       };
+       const _embedRetry = {};
+       function renderEmbedLoading(loader, label, attempt) {
+  @@ -5753,9 +6039,6 @@
+  -    function prewarmChatEmbed() {
+  -      try { ensureEmbedLoaded('chat', { silent: true }); } catch (e) { console.warn('[embed] chat prewarm failed:', e); }
+  -    }
+       function retryEmbed(name) {
+         var wrap = document.getElementById('embed-wrap-' + name);
+         if (wrap) {
+  @@ -5965,7 +6248,6 @@
+  -          window._visibilityUserTouched = true;
+           });
+         });
+       }
+  @@ -6005,12 +6287,14 @@
+  -      if (!window._visibilityUserTouched && cat === 'nhan-vien') {
+  -        const r = document.querySelector('input[name="visibility"][value="internal"]');
+  -        if (r) {
+  -          r.checked = true;
+  -          currentUploadVisibility = 'internal';
+  -        }
+  +      // Reset radio to folder's natural default on every switch.
+  +      // Prevents sticky state where ticking "Nội bộ" in Nhân viên leaks to
+  +      // subsequent Công ty uploads (would hide catalog from customers).
+  +      const folderDefault = (cat === 'nhan-vien') ? 'internal' : 'public';
+  +      const r = document.querySelector('input[name="visibility"][value="' + folderDefault + '"]');
+  +      if (r) {
+  +        r.checked = true;
+  +        currentUploadVisibility = folderDefault;
+         }
+         document.querySelectorAll('.know-folder').forEach(f => {
+           f.classList.toggle('active', f.dataset.cat === cat);
+  @@ -6344,7 +6628,7 @@
+  -    let zaloMgrConfig = { enabled: true, groupPolicy: 'open', groupAllowFrom: [], userBlocklist: [] };
+  +    let zaloMgrConfig = { enabled: true, groupPolicy: 'open', groupAllowFrom: [], userBlocklist: [], userSettings: {} };
+       let zaloUserBlocklistTouched = false;
+       let _zaloConfigLoadOk = false;
+   
+  @@ -6426,6 +6710,7 @@
+  +        userSettings: zaloMgrConfig.userSettings || {},
+           strangerPolicy: spEl ? spEl.value : (zaloMgrConfig.strangerPolicy || 'ignore'),
+         };
+       }
+  @@ -6600,6 +6885,23 @@
+  +    function updateUserInternal(userId, isInternal) {
+  +      if (!zaloMgrConfig.userSettings) zaloMgrConfig.userSettings = {};
+  +      if (isInternal) {
+  +        zaloMgrConfig.userSettings[userId] = { internal: true };
+  +      } else {
+
+... (more changes truncated)
+  +379 -89
+[full diff: rtk git diff --no-compact]

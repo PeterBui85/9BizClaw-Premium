@@ -1,0 +1,1 @@
+module.exports={BrowserWindow:{getAllWindows:()=>[]},ipcMain:{handle:()=>{}},app:{getPath:(k)=>process.cwd(),getName:()=>'9bizclaw',whenReady:()=>Promise.resolve(),isPackaged:false}};

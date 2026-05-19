@@ -38,3 +38,20 @@ metadata:
 - Đọc file Excel doanh thu, tính tổng theo kênh bán, so sánh các kỳ
 - Đọc báo giá nhà cung cấp (PDF/Excel), so sánh giá giữa các NCC
 - Tìm kiếm thông tin trong thư viện: hợp đồng NCC, chính sách bảo hành, quy trình
+
+## Ví dụ dùng API mới
+
+**Ghi đơn hàng khách:**
+```
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Mai\",\"items\":[{\"name\":\"iPhone 15 Pro 256GB\",\"qty\":1,\"price\":25900000},{\"name\":\"Ốp lưng MagSafe\",\"qty\":1,\"price\":350000}],\"note\":\"Ship COD Q7\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Xuất kho:**
+```
+web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"IP15P-256\",\"qty\":1,\"type\":\"out\",\"note\":\"Bán cho Chị Mai\"}" headers="{\"Content-Type\":\"application/json\"}"
+```
+
+**Kiểm tra tồn kho toàn bộ:**
+```
+web_fetch http://127.0.0.1:20200/api/inventory/check
+```

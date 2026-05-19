@@ -10,6 +10,12 @@ const { stripCronApiTokenFromAgents } = require('./cron-api-token');
 const mediaLibrary = require('./media-library');
 const fbSchedule = require('./fb-schedule');
 const skillManager = require('./skill-manager');
+const orderManager = require('./order-manager');
+orderManager.init({ getWorkspace });
+const leaveManager = require('./leave-manager');
+leaveManager.init({ getWorkspace });
+const inventoryManager = require('./inventory-manager');
+inventoryManager.init({ getWorkspace });
 
 let shell;
 try { shell = require('electron').shell; } catch {}
@@ -2746,6 +2752,268 @@ function startCronApi() {
         const bin = await py.ensurePython();
         return jsonResp(res, 200, { success: true, bin });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    // === Order Management ===
+    } else if (urlPath === '/api/order/create') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const result = orderManager.createOrder(params);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 400, { error: e.message }); }
+
+    } else if (urlPath === '/api/order/list') {
+      const result = orderManager.listOrders(params);
+      return jsonResp(res, 200, { orders: result, count: result.length });
+
+    } else if (urlPath === '/api/order/update') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const result = orderManager.updateOrder(params);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 400, { error: e.message }); }
+
+    } else if (urlPath === '/api/order/status') {
+      const result = orderManager.getOrderStatus(params);
+      return jsonResp(res, 200, result);
+
+    } else if (urlPath === '/api/order/summary') {
+      const result = orderManager.orderSummary(params);
+      return jsonResp(res, 200, result);
+
+    // === Leave Management ===
+    } else if (urlPath === '/api/leave/request') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const result = leaveManager.requestLeave(params);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 400, { error: e.message }); }
+
+    } else if (urlPath === '/api/leave/list') {
+      const result = leaveManager.listLeave(params);
+      return jsonResp(res, 200, { leaves: result, count: result.length });
+
+    } else if (urlPath === '/api/leave/approve') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const result = leaveManager.approveLeave(params);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 400, { error: e.message }); }
+
+    } else if (urlPath === '/api/leave/summary') {
+      const result = leaveManager.leaveSummary(params);
+      return jsonResp(res, 200, result);
+
+    // === Inventory Management ===
+    } else if (urlPath === '/api/inventory/adjust') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const result = inventoryManager.adjustStock(params);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 400, { error: e.message }); }
+
+    } else if (urlPath === '/api/inventory/check') {
+      const result = inventoryManager.checkStock(params);
+      return jsonResp(res, 200, result);
+
+    } else if (urlPath === '/api/inventory/alerts') {
+      const result = inventoryManager.getAlerts();
+      return jsonResp(res, 200, result);
+
+    } else if (urlPath === '/api/inventory/set-min') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const result = inventoryManager.setMinQty(params);
+        return jsonResp(res, 200, result);
+      } catch (e) { return jsonResp(res, 400, { error: e.message }); }
+
+    // === Daily Report ===
+    } else if (urlPath === '/api/report/daily') {
+      try {
+        const ws = getWorkspace();
+        if (!ws) return jsonResp(res, 500, { error: 'workspace not available' });
+        const date = params.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+        const report = { date, revenue: {}, customers: {}, crons: {}, highlights: [], sources: [] };
+
+        // Revenue from so-sach.md
+        try {
+          const ssPath = path.join(ws, 'so-sach.md');
+          if (fs.existsSync(ssPath)) {
+            const content = fs.readFileSync(ssPath, 'utf-8');
+            const lines = content.split('\n').filter(l => l.includes(date));
+            let income = 0, expense = 0;
+            for (const l of lines) {
+              const amountMatch = l.match(/(\d[\d,.]*)/);
+              const amount = amountMatch ? parseInt(amountMatch[1].replace(/[,.]/g, ''), 10) : 0;
+              if (/thu|income|bán|revenue/i.test(l)) income += amount;
+              if (/chi|expense|mua|cost/i.test(l)) expense += amount;
+            }
+            report.revenue = { income, expense, net: income - expense };
+            report.sources.push('so-sach.md');
+          }
+        } catch {}
+
+        // Customer count from memory
+        try {
+          const memDir = path.join(ws, 'memory', 'zalo-users');
+          if (fs.existsSync(memDir)) {
+            const files = fs.readdirSync(memDir).filter(f => f.endsWith('.md'));
+            const newToday = files.filter(f => {
+              try { return fs.statSync(path.join(memDir, f)).mtime.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }) === date; } catch { return false; }
+            }).length;
+            report.customers = { total: files.length, newToday };
+            report.sources.push('memory/zalo-users/');
+          }
+        } catch {}
+
+        // Cron stats from journal
+        try {
+          const cronLog = path.join(ws, 'logs', 'cron-runs.jsonl');
+          if (fs.existsSync(cronLog)) {
+            const content = fs.readFileSync(cronLog, 'utf-8');
+            const lines = content.split('\n').filter(l => l.includes(date));
+            let fired = 0, failed = 0;
+            for (const l of lines) {
+              try {
+                const entry = JSON.parse(l);
+                if (entry.phase === 'ok') fired++;
+                if (entry.phase === 'fail') failed++;
+              } catch {}
+            }
+            report.crons = { fired, failed };
+            report.sources.push('cron-runs.jsonl');
+          }
+        } catch {}
+
+        // Pending follow-ups
+        try {
+          const fupPath = path.join(ws, 'follow-up-queue.json');
+          if (fs.existsSync(fupPath)) {
+            const queue = JSON.parse(fs.readFileSync(fupPath, 'utf-8'));
+            report.customers.pendingFollowUp = Array.isArray(queue) ? queue.length : 0;
+            report.sources.push('follow-up-queue.json');
+          }
+        } catch {}
+
+        // Receivables from cong-no.md
+        try {
+          const cnPath = path.join(ws, 'cong-no.md');
+          if (fs.existsSync(cnPath)) {
+            const content = fs.readFileSync(cnPath, 'utf-8');
+            const unpaidLines = content.split('\n').filter(l => /chưa|nợ|pending|unpaid/i.test(l));
+            report.receivables = { unpaidCount: unpaidLines.length };
+            report.sources.push('cong-no.md');
+          }
+        } catch {}
+
+        return jsonResp(res, 200, report);
+      } catch (e) {
+        return jsonResp(res, 500, { error: 'daily report failed: ' + e.message });
+      }
+
+    // === Zalo CRM Export ===
+    } else if (urlPath === '/api/zalo-crm/export') {
+      if (req.method !== 'POST') return jsonResp(res, 405, { error: 'POST required' });
+      try {
+        const ws = getWorkspace();
+        if (!ws) return jsonResp(res, 500, { error: 'workspace not available' });
+
+        // 1. Read memory files
+        const memDir = path.join(ws, 'memory', 'zalo-users');
+        if (!fs.existsSync(memDir)) return jsonResp(res, 200, { customersExported: 0, customers: [] });
+        const files = fs.readdirSync(memDir).filter(f => f.endsWith('.md'));
+
+        // Filter by date if specified
+        const dateRange = params.dateRange || 'all';
+        const now = new Date();
+        const todayStr = now.toISOString().slice(0, 10);
+        let filtered = files;
+        if (dateRange === 'today') {
+          filtered = files.filter(f => {
+            try {
+              const stat = fs.statSync(path.join(memDir, f));
+              return stat.mtime.toISOString().slice(0, 10) === todayStr;
+            } catch { return false; }
+          });
+        }
+
+        // 2. Read friend list for phone numbers
+        const friendsPath = path.join(getZcaCacheDir(), 'friends.json');
+        let friends = [];
+        try { friends = JSON.parse(fs.readFileSync(friendsPath, 'utf-8')); } catch {}
+        const phoneMap = {};
+        for (const f of friends) {
+          const uid = String(f.userId || f.userKey || '');
+          if (uid && f.phoneNumber) {
+            let phone = String(f.phoneNumber).replace(/\D/g, '');
+            if (phone.startsWith('84') && phone.length >= 11) phone = '0' + phone.slice(2);
+            phoneMap[uid] = phone;
+          }
+        }
+
+        // 3. Extract customer data
+        const customers = [];
+        for (const file of filtered) {
+          try {
+            const senderId = file.replace('.md', '');
+            const content = fs.readFileSync(path.join(memDir, file), 'utf-8');
+            const lines = content.split('\n');
+            const nameLine = lines.find(l => l.startsWith('# '));
+            const name = nameLine ? nameLine.slice(2).trim() : senderId;
+            const phone = phoneMap[senderId] || '';
+            // Get latest section summary
+            const sections = content.split(/\n## /);
+            const latest = sections.length > 1 ? sections[sections.length - 1].slice(0, 200).replace(/\n/g, ' ').trim() : '';
+            const isPending = /chờ|pending|hẹn|liên hệ lại/i.test(content);
+            customers.push({
+              senderId, name, phone,
+              summary: latest.slice(0, 150),
+              status: isPending ? 'Đang xử lý' : 'Mới',
+              date: todayStr,
+            });
+          } catch {}
+        }
+
+        // 4. Create formatted sheet if Google connected
+        let sheetResult = null;
+        if (customers.length > 0) {
+          try {
+            const googleApi = require('./google-api');
+            const headers = ['Ngày', 'Tên khách', 'SĐT', 'Nội dung hỏi', 'Trạng thái', 'Nhân viên follow-up', 'Ghi chú', 'Hẹn liên hệ lại'];
+            const data = customers.map(c => [c.date, c.name, c.phone, c.summary, c.status, '', '', '']);
+            const title = params.title || ('Theo dõi khách Zalo ' + todayStr);
+            const sid = params.spreadsheetId;
+
+            if (sid) {
+              // Append to existing sheet
+              await googleApi.appendSheet(sid, 'Sheet1!A2:H2', data);
+              sheetResult = { spreadsheetId: sid, spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/' + sid + '/edit', rowsWritten: data.length };
+            } else {
+              // Create new formatted sheet
+              const created = await googleApi.createSheet(title);
+              const newSid = typeof created === 'string' ? created : (created.spreadsheetId || JSON.parse(created).spreadsheetId);
+              await googleApi.numberFormatSheet(newSid, 'Sheet1!C:C', 'TEXT');
+              const lastCol = String.fromCharCode(64 + headers.length);
+              await googleApi.updateSheet(newSid, 'Sheet1!A1:' + lastCol + (data.length + 1), [headers, ...data]);
+              await googleApi.freezeSheet(newSid, 1);
+              await googleApi.formatSheet(newSid, 'Sheet1!A1:' + lastCol + '1',
+                { textFormat: { bold: true, foregroundColorStyle: { rgbColor: { red: 1, green: 1, blue: 1 } } }, backgroundColor: { red: 0.1, green: 0.21, blue: 0.36 } },
+                'textFormat.bold,textFormat.foregroundColorStyle,backgroundColor');
+              await googleApi.formatSheet(newSid, 'Sheet1!A1:' + lastCol + '100', { wrapStrategy: 'WRAP' }, 'wrapStrategy');
+              sheetResult = { spreadsheetId: newSid, spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/' + newSid + '/edit', rowsWritten: data.length };
+            }
+          } catch (e) {
+            sheetResult = { error: 'Sheet creation failed: ' + e.message + '. Google Workspace có thể chưa kết nối.' };
+          }
+        }
+
+        return jsonResp(res, 200, {
+          customersExported: customers.length,
+          customers: customers.map(c => ({ name: c.name, phone: c.phone, summary: c.summary })),
+          sheet: sheetResult,
+        });
+      } catch (e) {
+        return jsonResp(res, 500, { error: 'zalo-crm export failed: ' + e.message });
+      }
 
     } else {
       // 404 — drop the verbose endpoint list. Per Overseer-2 finding it

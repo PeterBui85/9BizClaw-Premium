@@ -2594,9 +2594,18 @@ function _nextFireTime(timeStr, now = new Date(), cronExpr = null) {
         const dowSet = _expandField(dowF, 0, 6);
         const candidate = new Date(now.getTime() + 60000);
         candidate.setSeconds(0, 0);
+        const _vnParts = (dt) => {
+          const s = dt.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+          const [datePart, timePart] = s.split(', ');
+          const [mo, da] = datePart.split('/').map(Number);
+          const [hh, mm] = timePart.split(':').map(Number);
+          const dow = parseInt(dt.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'narrow' }).replace(/[^0-6]/, ''), 10);
+          return { m: mm, h: hh, dom: da, mon: mo, d: new Date(dt.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' })).getDay() };
+        };
         for (let i = 0; i < 1440 * 31; i++) {
-          const m = candidate.getMinutes(), h = candidate.getHours(), d = candidate.getDay();
-          const dom = candidate.getDate(), mon = candidate.getMonth() + 1;
+          const vn = _vnParts(candidate);
+          const m = vn.m, h = vn.h, d = vn.d;
+          const dom = vn.dom, mon = vn.mon;
           if ((!minSet || minSet.has(m)) && (!hourSet || hourSet.has(h)) && (!domSet || domSet.has(dom)) && (!monSet || monSet.has(mon)) && (!dowSet || dowSet.has(d))) {
             return candidate.toISOString();
           }
@@ -2618,10 +2627,15 @@ function _nextFireTime(timeStr, now = new Date(), cronExpr = null) {
   if (hhmm) {
     const h = parseInt(hhmm[1], 10), m = parseInt(hhmm[2], 10);
     if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-    const next = new Date(now);
-    next.setHours(h, m, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    return next.toISOString();
+    // Compute next fire in Vietnam timezone
+    const vnNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+    const vnNext = new Date(vnNow);
+    vnNext.setHours(h, m, 0, 0);
+    if (vnNext <= vnNow) vnNext.setDate(vnNext.getDate() + 1);
+    // Convert back to real UTC by computing the offset
+    const offsetMs = vnNow.getTime() - now.getTime();
+    const realNext = new Date(vnNext.getTime() - offsetMs);
+    return realNext.toISOString();
   }
   return null;
 }
