@@ -1119,7 +1119,7 @@ function killOrphan9RouterProcesses() {
   } else {
     try {
       const out = execSync(
-        'pgrep -f "9router" 2>/dev/null || true',
+        'pgrep -f "node.*9router/(cli|app/server)" 2>/dev/null || true',
         { encoding: 'utf-8', timeout: 3000, shell: '/bin/sh' }
       );
       const myPid = process.pid;
