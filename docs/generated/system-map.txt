@@ -1,7 +1,7 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 113
+- apiRoutes: 117
 - ipcHandlers: 184
 - preloadBridges: 176
 - dashboardPages: 16
@@ -82,9 +82,13 @@ API Routes
 - /api/google/gmail/send [google-api]
 - /api/google/health [google-api]
 - /api/google/sheets/append [google-api]
+- /api/google/sheets/create [google-api]
+- /api/google/sheets/format [google-api]
+- /api/google/sheets/freeze [google-api]
 - /api/google/sheets/get [google-api]
 - /api/google/sheets/list [google-api]
 - /api/google/sheets/metadata [google-api]
+- /api/google/sheets/number-format [google-api]
 - /api/google/sheets/update [google-api]
 - /api/google/status [google-api]
 - /api/google/tasks/complete [google-api]
@@ -148,14 +152,14 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 605175 bytes
+- electron/ui/dashboard.html: 605711 bytes
 - electron/lib/dashboard-ipc.js: 252970 bytes
 - electron/lib/cron-api.js: 145531 bytes
 - electron/lib/cron.js: 123778 bytes
 - electron/ui/wizard.html: 116314 bytes
 - electron/lib/channels.js: 93447 bytes
 - electron/lib/gateway.js: 79037 bytes
-- electron/lib/runtime-installer.js: 77811 bytes
+- electron/lib/runtime-installer.js: 77834 bytes
 - electron/lib/knowledge.js: 77511 bytes
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
 - electron/lib/workspace.js: 53962 bytes
@@ -167,4 +171,4 @@ Large Source Files
 - electron/lib/zalo-plugin.js: 37523 bytes
 - electron/lib/boot.js: 36280 bytes
 - electron/lib/media-library.js: 31008 bytes
-- electron/lib/google-api.js: 29709 bytes
+- electron/lib/google-api.js: 30860 bytes

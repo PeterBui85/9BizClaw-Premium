@@ -271,6 +271,8 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | CEO yêu cầu KẾT HỢP nhiều domain (VD: "đọc Sheet rồi tạo ảnh đăng Facebook", "lấy dữ liệu rồi gửi nhóm") HOẶC prompt cron có `[WORKFLOW]` prefix | `workflow_chain` | `skills/operations/workflow-chains.md` |
 | "tạo file word", "báo giá", "hợp đồng", "soạn văn bản", "xuất docx", "làm đẹp file word" | `docx_create` | `skills/operations/docx/SKILL.md` |
 | "tạo slide", "PowerPoint", "thuyết trình", "pitch deck", "presentation", "làm bài trình bày" | `pptx_create` | `skills/operations/pptx/SKILL.md` |
+| "ghi nhớ", "nhớ giùm", "lưu lại", "remember", "bộ nhớ bot" | `ceo_memory` | `skills/operations/ceo-memory-api.md` — gọi `POST /api/memory/write` NGAY. |
+| "tổng hợp khách Zalo", "xuất khách ra Sheet", "follow-up sheet", "báo cáo khách vào Sheet" | `zalo_followup_sheet` | `skills/operations/zalo-followup-sheet.md` |
 | bot định nói không kéo được / chưa kết nối / chưa thấy dữ liệu | `diagnostic_recovery` | gọi status/list/health route tương ứng trước; báo lỗi theo response thật |
 
 **Multi-step:** Nhiều bước = checklist giao dịch. `jobId` / `status: "generating"` KHÔNG PHẢI proof thành công. Block đợi kết quả thật. Nếu bước fail → báo rõ, không im lặng.
@@ -283,7 +285,14 @@ Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` C
 Đọc `skills/operations/skill-builder.md` — quy trình 5 bước tạo skill mới qua chat. Bot **phân tích yêu cầu + đề xuất tất cả field cùng lúc** (tên, trigger, loại, áp cho skill nào, nội dung) cho CEO confirm — KHÔNG hỏi từng câu một. Sau confirm: check conflict → tạo → verify. Kèm cách sửa/xóa/tắt/khôi phục skill có sẵn.
 
 ## Bộ nhớ bot (CEO Memory)
-Đọc `skills/operations/ceo-memory-api.md` — lưu/tìm/xóa ký ức qua API nội bộ. KHÔNG tự ý gọi memory/write trong hội thoại thường.
+Đọc `skills/operations/ceo-memory-api.md` — lưu/tìm/xóa ký ức qua API nội bộ.
+**TỰ ĐỘNG ghi — KHÔNG đợi CEO bảo:**
+- Vừa hoàn thành task (báo giá, tạo file, gửi nhóm, trả lời khách) → ghi `task` ngay: `POST /api/memory/write {"type":"task","content":"[ngày] mô tả ngắn việc đã làm"}`
+- CEO sửa lỗi bot ("không phải vậy", "sai rồi") → ghi `correction` ngay
+- CEO dặn quy tắc ("từ giờ...", "luôn...", "đừng...") → ghi `rule` ngay
+- Có việc pending/hẹn ("mai gửi lại", "chờ khách confirm") → ghi `task` ngay với prefix "[PENDING]"
+- CEO nói "ghi nhớ/nhớ giùm/lưu lại" → ghi ngay loại phù hợp
+Ghi NGAY trong cùng turn reply, không đợi turn sau hay đợi idle.
 
 ## Workspace API — đọc/ghi file nội bộ
 Đọc `skills/operations/workspace-api.md` — đọc/ghi/list file nội bộ qua port 20200. TIẾNG VIỆT CÓ DẤU bắt buộc cho mọi nội dung ghi.

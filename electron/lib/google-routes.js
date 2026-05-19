@@ -323,6 +323,32 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
       const r = await googleApi.appendSheet(params.spreadsheetId, params.range, values, params);
       return jsonResp(res, 200, r);
     }
+    if (urlPath === '/sheets/create') {
+      if (blockZaloMutation('Google Sheets create')) return;
+      if (!params.title) return jsonResp(res, 400, { error: 'title required' });
+      const r = await googleApi.createSheet(params.title, params.sheets, params.parent);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/sheets/format') {
+      if (blockZaloMutation('Google Sheets format')) return;
+      if (!params.spreadsheetId || !params.range || !params.formatJson || !params.formatFields)
+        return jsonResp(res, 400, { error: 'spreadsheetId, range, formatJson, formatFields required' });
+      const r = await googleApi.formatSheet(params.spreadsheetId, params.range, params.formatJson, params.formatFields);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/sheets/freeze') {
+      if (blockZaloMutation('Google Sheets freeze')) return;
+      if (!params.spreadsheetId) return jsonResp(res, 400, { error: 'spreadsheetId required' });
+      const r = await googleApi.freezeSheet(params.spreadsheetId, params.rows, params.cols, params.sheet);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/sheets/number-format') {
+      if (blockZaloMutation('Google Sheets number-format')) return;
+      if (!params.spreadsheetId || !params.range || !params.type)
+        return jsonResp(res, 400, { error: 'spreadsheetId, range, type required' });
+      const r = await googleApi.numberFormatSheet(params.spreadsheetId, params.range, params.type);
+      return jsonResp(res, 200, r);
+    }
     // Apps Script, useful for automations around Google Sheets/AppSheet data.
     if (urlPath === '/appscript/run') {
       if (blockZaloMutation('Google Apps Script run')) return;

@@ -7552,7 +7552,7 @@
       ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' · '))}</div>` : ''}
     </div>
     <div class="zc-actions">
-      ${f.userId ? `<button type="button" class="zc-summary-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>` : ''}
+      ${f.userId ? `<button type="button" class="zc-summary-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}', '${escJs(f.phoneNumber || '')}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>` : ''}
       <label class="internal-flag" title="User nội bộ — được truy cập tài liệu nội bộ và chạy lệnh quản trị"><input type="checkbox" ${uSettings.internal ? 'checked' : ''} onchange="updateUserInternal('${escAttr(f.userId)}', this.checked)">Nội bộ</label>
       <label class="toggle-switch"><input type="checkbox" ${allowed ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
     </div>
@@ -8403,17 +8403,28 @@
     // === Zalo per-user memory modal ===
     let zumCurrentSenderId = null;
     let zumCurrentName = '';
+    let zumCurrentPhone = '';
 
-    async function openZaloUserMemory(senderId, displayName) {
+    function formatViPhone(raw) {
+      if (!raw) return '';
+      let s = String(raw).replace(/\D/g, '');
+      if (s.startsWith('84') && s.length >= 11) s = '0' + s.slice(2);
+      return s;
+    }
+
+    async function openZaloUserMemory(senderId, displayName, phoneNumber) {
       zumCurrentSenderId = senderId;
       zumCurrentName = displayName || '';
+      zumCurrentPhone = phoneNumber || '';
       const modal = document.getElementById('zum-modal');
       const titleEl = document.getElementById('zum-title');
       const subEl = document.getElementById('zum-sub');
       const bodyEl = document.getElementById('zum-body');
       const noteEl = document.getElementById('zum-note-input');
       titleEl.textContent = displayName || ('Khách Zalo ' + senderId);
-      subEl.textContent = 'ID: ' + senderId;
+      const subParts = ['ID: ' + senderId];
+      if (phoneNumber) subParts.push(formatViPhone(phoneNumber));
+      subEl.textContent = subParts.join(' · ');
       bodyEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">Đang tải...</div>';
       noteEl.value = '';
       modal.classList.add('show');
@@ -8434,6 +8445,7 @@
         if (meta.lastSeen) metaParts.push('Lần gần nhất: ' + meta.lastSeen.slice(0, 16).replace('T', ' '));
         if (meta.msgCount) metaParts.push(meta.msgCount + ' lượt');
         if (meta.gender && meta.gender !== 'unknown') metaParts.push(meta.gender === 'male' ? 'Nam' : 'Nữ');
+        if (phoneNumber) metaParts.push(formatViPhone(phoneNumber));
         if (metaParts.length > 0) subEl.textContent = 'ID: ' + senderId + ' · ' + metaParts.join(' · ');
         // Strip frontmatter for display
         const contentStripped = (res.content || '').replace(/^---\n[\s\S]*?\n---\n?/, '');
@@ -8472,7 +8484,7 @@
         const res = await window.claw.appendZaloUserNote(zumCurrentSenderId, note);
         if (res && res.success) {
           noteEl.value = '';
-          await openZaloUserMemory(zumCurrentSenderId, zumCurrentName); // reload
+          await openZaloUserMemory(zumCurrentSenderId, zumCurrentName, zumCurrentPhone); // reload
         } else {
           alert('Lỗi: ' + (res?.error || 'unknown'));
         }
@@ -8487,7 +8499,7 @@
       try {
         const res = await window.claw.deleteZaloUserNote(zumCurrentSenderId, timestamp);
         if (res && res.success) {
-          await openZaloUserMemory(zumCurrentSenderId, zumCurrentName); // reload
+          await openZaloUserMemory(zumCurrentSenderId, zumCurrentName, zumCurrentPhone); // reload
         } else {
           alert('Lỗi xóa: ' + (res?.error || 'unknown'));
         }

@@ -783,6 +783,32 @@ async function appendSheet(spreadsheetId, range, values, opts) {
   return gogExec(args, 30000);
 }
 
+async function createSheet(title, tabNames, parentFolderId) {
+  const args = ['sheets', 'create', title, '-j', '--no-input'];
+  if (tabNames) args.push('--sheets=' + tabNames);
+  if (parentFolderId) args.push('--parent=' + parentFolderId);
+  return gogExec(args, 15000);
+}
+
+async function formatSheet(spreadsheetId, range, formatJson, formatFields) {
+  const args = ['sheets', 'format', spreadsheetId, range, '-j', '-y',
+    '--format-json=' + (typeof formatJson === 'string' ? formatJson : JSON.stringify(formatJson)),
+    '--format-fields=' + formatFields];
+  return gogExec(args, 15000);
+}
+
+async function freezeSheet(spreadsheetId, rows, cols, sheetName) {
+  const args = ['sheets', 'freeze', spreadsheetId, '-j', '-y'];
+  if (rows !== undefined) args.push('--rows=' + rows);
+  if (cols !== undefined) args.push('--cols=' + cols);
+  if (sheetName) args.push('--sheet=' + sheetName);
+  return gogExec(args, 15000);
+}
+
+async function numberFormatSheet(spreadsheetId, range, type) {
+  return gogExec(['sheets', 'number-format', spreadsheetId, range, '-j', '-y', '--type=' + type], 15000);
+}
+
 async function getSheetMetadata(spreadsheetId) {
   return gogReadExec(['sheets', 'metadata', spreadsheetId]);
 }
@@ -852,7 +878,7 @@ module.exports = {
   listDocs, getDocInfo, readDoc, createDoc, writeDoc, insertDoc, findReplaceDoc, exportDoc,
   listContacts, createContact,
   listTaskLists, listTasks, createTask, completeTask,
-  getSheet, updateSheet, appendSheet, getSheetMetadata, runAppScript,
+  getSheet, updateSheet, appendSheet, createSheet, formatSheet, freezeSheet, numberFormatSheet, getSheetMetadata, runAppScript,
   serviceHealth,
 };
 

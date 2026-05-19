@@ -7,7 +7,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 2. Bot đọc INDEX → match keyword → đọc skill file tương ứng
 3. Bot follow quy trình trong skill → output chất lượng cao
 
-## Vận hành bot (26 skills) — `skills/operations/`
+## Vận hành bot (27 skills) — `skills/operations/`
 
 | Skill | File | Khi nào dùng |
 |---|---|---|
@@ -37,6 +37,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Xử lý Excel | `excel.md` | Đọc, tóm tắt, sửa, tạo file .xlsx trên máy CEO |
 | Tạo file Word/DOCX | `docx/SKILL.md` | Tạo báo giá, hợp đồng, báo cáo, đề xuất dạng Word |
 | Tạo PowerPoint/PPTX | `pptx/SKILL.md` | Tạo slide thuyết trình, pitch deck, báo cáo PowerPoint |
+| Tổng hợp khách Zalo → Sheet | `zalo-followup-sheet.md` | Xuất danh sách khách Zalo vào Google Sheet có format CRM |
 
 ## Marketing (2 skills) — `skills/marketing/`
 
@@ -69,5 +70,5 @@ CEO tạo skill riêng qua Telegram ("tạo skill mới"). Đọc `skill-builder
 
 ---
 
-**Tổng: 37 skill cơ bản + mẫu ảnh + skill tùy chỉnh CEO tạo** cho chủ doanh nghiệp Việt Nam.
+**Tổng: 38 skill cơ bản + mẫu ảnh + skill tùy chỉnh CEO tạo** cho chủ doanh nghiệp Việt Nam.
 Skill cũ (advisory, board, SOC2, Twitter, marketing SaaS) đã chuyển vào `skills/_archived/` — vẫn truy cập được nếu cần.

@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 113,
+    "apiRoutes": 117,
     "ipcHandlers": 184,
     "preloadBridges": 176,
     "dashboardPages": 16,
@@ -612,6 +612,33 @@
       ]
     },
     {
+      "path": "/api/google/sheets/create",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
+      "path": "/api/google/sheets/format",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
+      "path": "/api/google/sheets/freeze",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
       "path": "/api/google/sheets/get",
       "sources": [
         "electron/lib/google-routes.js"
@@ -631,6 +658,15 @@
     },
     {
       "path": "/api/google/sheets/metadata",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
+      "path": "/api/google/sheets/number-format",
       "sources": [
         "electron/lib/google-routes.js"
       ],
@@ -2742,7 +2778,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 605175
+      "bytes": 605711
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -2770,7 +2806,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 77811
+      "bytes": 77834
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -2818,7 +2854,7 @@
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 29709
+      "bytes": 30860
     },
     {
       "path": "electron/ui/splash.html",
