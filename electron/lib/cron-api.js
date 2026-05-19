@@ -612,6 +612,7 @@ function startCronApi() {
     }
     const urlPath = (new URL(req.url, 'http://127.0.0.1')).pathname;
     const params = await parseBody(req);
+    req.setTimeout(0); // clear body-parse timeout — handlers may take >5s (Google API, CRM export)
     const _reqChannel = req.headers['x-9bizclaw-agent-channel'] || req.headers['x-source-channel'] || '';
     console.log(`[cron-api] ${req.method} ${urlPath} channel=${_reqChannel || 'none'} host=${host}`);
 
