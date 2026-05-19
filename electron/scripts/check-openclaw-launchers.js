@@ -8,7 +8,7 @@ const dashboardPath = path.join(__dirname, '..', 'ui', 'dashboard.html');
 const dashboard = fs.readFileSync(dashboardPath, 'utf8');
 
 const requiredWiring = [
-  'data-page="chat"',
+  'data-rail="chat"',
   'id="page-chat"',
   'openAiModelsBrowser()',
   'openAdvancedSettings()',

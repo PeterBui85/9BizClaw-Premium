@@ -1,3 +1,10 @@
+---
+name: dich-vu
+description: Kỹ năng chuyên ngành dịch vụ — spa, salon, phòng khám, thẩm mỹ viện
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Dịch vụ (Spa, Salon, Phòng khám, Thẩm mỹ viện)
 
 ## Nhắc nhở vận hành

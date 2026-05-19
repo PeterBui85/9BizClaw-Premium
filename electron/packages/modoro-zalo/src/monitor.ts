@@ -46,6 +46,8 @@ const MODORO_ZALO_RECONNECT_MAX_MS = 60_000;
 const MODORO_ZALO_RECONNECT_FACTOR = 2;
 const MODORO_ZALO_RECONNECT_JITTER = 0.2;
 const MODORO_ZALO_RECONNECT_STABLE_RESET_MS = 90_000;
+const MODORO_ZALO_CIRCUIT_BREAKER_THRESHOLD = 8;
+const MODORO_ZALO_CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60_000;
 const MODORO_ZALO_WATCHDOG_IDLE_MS = 5 * 60_000;
 const MODORO_ZALO_WATCHDOG_POLL_MS = 30_000;
 
@@ -394,8 +396,17 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
   });
 
   let reconnectAttempt = 0;
+  let consecutiveFastFails = 0;
 
   while (!abortSignal.aborted) {
+    if (consecutiveFastFails >= MODORO_ZALO_CIRCUIT_BREAKER_THRESHOLD) {
+      runtime.error?.(
+        `[${account.accountId}] circuit breaker: ${consecutiveFastFails} consecutive fast failures — cooling down ${MODORO_ZALO_CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s to avoid Zalo rate-limit`,
+      );
+      try { await sleepWithAbort(MODORO_ZALO_CIRCUIT_BREAKER_COOLDOWN_MS, abortSignal); } catch { return; }
+      consecutiveFastFails = 0;
+      reconnectAttempt = 1;
+    }
     const attemptStartedAt = Date.now();
     let streamEndReason: string | null = null;
     try {
@@ -525,6 +536,11 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
       }
 
       const attemptDurationMs = Date.now() - attemptStartedAt;
+      if (attemptDurationMs < MODORO_ZALO_RECONNECT_STABLE_RESET_MS) {
+        consecutiveFastFails++;
+      } else {
+        consecutiveFastFails = 0;
+      }
       reconnectAttempt = nextReconnectAttempt(reconnectAttempt, attemptDurationMs);
       const delayMs = computeReconnectDelayMs(reconnectAttempt);
       const reason = streamEndReason ?? "listener exited";
@@ -548,6 +564,11 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
         return;
       }
       const attemptDurationMs = Date.now() - attemptStartedAt;
+      if (attemptDurationMs < MODORO_ZALO_RECONNECT_STABLE_RESET_MS) {
+        consecutiveFastFails++;
+      } else {
+        consecutiveFastFails = 0;
+      }
       reconnectAttempt = nextReconnectAttempt(reconnectAttempt, attemptDurationMs);
       const delayMs = computeReconnectDelayMs(reconnectAttempt);
       const errorText = toErrorText(error);

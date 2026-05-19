@@ -68,7 +68,9 @@ function _getSendCeoAlert() {
 //  Documents directory helpers
 // ---------------------------------------------------------------------------
 function getDocumentsDir() {
-  return path.join(getWorkspace(), 'documents');
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, 'documents');
 }
 function ensureDocumentsDir() {
   const d = getDocumentsDir();
@@ -291,7 +293,7 @@ let _backfillInProgress = false;
 async function backfillKnowledgeEmbeddings() {
   _ensureEmbedderInit();
   const db = getDocumentsDb();
-  if (!db) return;
+  if (!db || !db.open) return;
   _backfillInProgress = true;
   try {
     const missing = db.prepare(
@@ -574,6 +576,8 @@ function getDocumentsDb() {
         console.error('[documents] Manual fix: cd electron && rm -rf node_modules/better-sqlite3/build && npm install');
       }
       _documentsDbLastErrorAt = now;
+      // Surface DB error to global flag so Dashboard overview can show alert
+      global.__knowledgeDbError = { message: e.message, at: now };
     }
     return null;
   }

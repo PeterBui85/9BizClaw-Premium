@@ -1,3 +1,10 @@
+---
+name: thuong-mai
+description: Kỹ năng chuyên ngành thương mại và bán lẻ — quản lý tồn kho, đơn hàng, khuyến mãi
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Thương mại và Bán lẻ
 
 ## Nhắc nhở vận hành

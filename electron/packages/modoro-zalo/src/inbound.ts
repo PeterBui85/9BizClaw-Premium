@@ -117,6 +117,7 @@ import type { CoreConfig, ModoroZaloInboundMessage, ResolvedModoroZaloAccount } 
 import { dedupeStrings } from "./utils/dedupe-strings.js";
 
 const CHANNEL_ID = "modoro-zalo" as const;
+// Intentionally English — this is LLM system prompt context, not user-facing text
 const DEFAULT_GROUP_SYSTEM_PROMPT =
   "When sending media/files in this same group, never claim success unless media is actually attached. " +
   "Prefer MEDIA:./relative-path or MEDIA:https://... in your reply text. " +
@@ -543,72 +544,39 @@ export async function handleModoroZaloInbound(params: {
   }
   // === END 9BizClaw GCAL-NEUTRALIZE PATCH v1 ===
 
-  // === 9BizClaw BLOCKLIST PATCH ===
-  // 9BizClaw BLOCKLIST PATCH v3: resolve workspace at runtime so the same
-  // patched plugin works on Windows/macOS/Linux and fail closed on parse errors.
-  // Drop messages from senders listed in zalo-blocklist.json (workspace file
-  // managed via Dashboard → Zalo → Bạn bè). Modoro Zalo upstream only supports
-  // allowFrom (whitelist); this gives Modoro CEOs a working blocklist UX.
+  // === 9BizClaw ALLOWLIST PATCH ===
+  // 9BizClaw ALLOWLIST v2: deny-list semantics with allowlist file.
+  // Empty/missing file = allow ALL DMs (backwards compat with old blocklist model).
+  // CEO disables specific friends via Dashboard toggle → removes from allowlist.
+  // Only enforced when allowlist has >0 entries (CEO has actively configured it).
   try {
     const __mzFs = require("node:fs");
     const __mzPath = require("node:path");
-    const __mzOs = require("node:os");
-    const __mzHome = __mzOs.homedir();
-    const __mzAppDir = "9bizclaw";
-    const __mzCandidates: string[] = [];
-    if (process.env['9BIZ_WORKSPACE']) {
-      __mzCandidates.push(__mzPath.join(process.env['9BIZ_WORKSPACE'], "zalo-blocklist.json"));
-    }
-    if (process.platform === "darwin") {
-      __mzCandidates.push(__mzPath.join(__mzHome, "Library", "Application Support", __mzAppDir, "zalo-blocklist.json"));
-    } else if (process.platform === "win32") {
-      const __mzAppData = process.env.APPDATA || __mzPath.join(__mzHome, "AppData", "Roaming");
-      __mzCandidates.push(__mzPath.join(__mzAppData, __mzAppDir, "zalo-blocklist.json"));
-    } else {
-      const __mzConfig = process.env.XDG_CONFIG_HOME || __mzPath.join(__mzHome, ".config");
-      __mzCandidates.push(__mzPath.join(__mzConfig, __mzAppDir, "zalo-blocklist.json"));
-    }
-    __mzCandidates.push(__mzPath.join(__mzHome, ".openclaw", "workspace", "zalo-blocklist.json"));
-    let __mzBlocked: string[] = [];
-    let __mzPolicyError = false;
-    const __mzSeen = new Set<string>();
-    for (const __p of __mzCandidates) {
+    const __mzWs = process.env['9BIZ_WORKSPACE'] || "";
+    if (!message.isGroup && __mzWs) {
+      const __sender = String(message.senderId || "").trim();
+      if (!__sender) return;
+      let __mzAllowed: string[] = [];
+      const __mzAlPath = __mzPath.join(__mzWs, "zalo-allowlist.json");
       try {
-        const __resolved = __mzPath.resolve(__p);
-        if (__mzSeen.has(__resolved)) continue;
-        __mzSeen.add(__resolved);
-        if (!__mzFs.existsSync(__resolved)) continue;
-        const __raw = __mzFs.readFileSync(__resolved, "utf-8");
-        const __parsed = JSON.parse(__raw);
-        if (!Array.isArray(__parsed)) {
-          __mzPolicyError = true;
-          runtime.log?.(`modoro-zalo: blocklist invalid at ${__resolved} → fail closed`);
-          break;
+        if (__mzFs.existsSync(__mzAlPath)) {
+          const __parsed = JSON.parse(__mzFs.readFileSync(__mzAlPath, "utf-8"));
+          if (Array.isArray(__parsed)) {
+            __mzAllowed = __parsed.map((x: any) => String(x || "").trim()).filter(Boolean);
+          }
         }
-        __mzBlocked = __parsed.map((x: any) => String(x || "").trim()).filter(Boolean);
-        break;
-      } catch (__mzReadErr) {
-        __mzPolicyError = true;
-        runtime.log?.(`modoro-zalo: blocklist parse error: ${String(__mzReadErr)}`);
-        break;
+      } catch (__e) {
+        runtime.log?.(`modoro-zalo: allowlist read error: ${String(__e)} → allow (fail open)`);
+      }
+      if (__mzAllowed.length > 0 && !__mzAllowed.includes(__sender)) {
+        runtime.log?.(`modoro-zalo: drop sender=${__sender} (not in allowlist, ${__mzAllowed.length} allowed)`);
+        return;
       }
     }
-    if (__mzPolicyError && !message.isGroup) {
-      runtime.log?.("modoro-zalo: blocklist policy error → fail closed (DM only)");
-      return;
-    }
-    // Blocklist applies ONLY to DMs — in groups, everyone should be answered
-    // if the group is enabled. Otherwise one blocked user silences the whole group.
-    const __sender = String(message.senderId || "").trim();
-    if (!message.isGroup && __sender && __mzBlocked.includes(__sender)) {
-      runtime.log?.(`modoro-zalo: drop sender=${__sender} (9BizClaw blocklist, DM only)`);
-      return;
-    }
   } catch (__e) {
-    runtime.log?.(`modoro-zalo: blocklist check error: ${String(__e)}`);
-    return;
+    runtime.log?.(`modoro-zalo: allowlist check error: ${String(__e)}`);
   }
-  // === END 9BizClaw BLOCKLIST PATCH ===
+  // === END 9BizClaw ALLOWLIST PATCH ===
   // === 9BizClaw SYSTEM-MSG PATCH ===
   // Drop Zalo group system event notifications before they reach the AI.
   // These are automated event strings ("X đã thêm Y vào nhóm", etc.), not real messages.
@@ -639,7 +607,7 @@ export async function handleModoroZaloInbound(params: {
   // Uses a process-global Map so state persists across invocations without module-level vars.
   try {
     const __ddMap = ((global as any).__mcSenderDedup ??= new Map<string, number>());
-    const __ddKey = String(message.senderId || '') + ':' + rawBody;
+    const __ddKey = String(message.senderId || '') + ':' + (message.threadId || '') + ':' + rawBody;
     const __ddNow = Date.now();
     const __ddLast = __ddMap.get(__ddKey) ?? 0;
     if (__ddNow - __ddLast < 3000) {
@@ -684,15 +652,19 @@ export async function handleModoroZaloInbound(params: {
   if (rawBody && !__cbIsInternal) {
     const __cbOrig = rawBody.toLowerCase();
     // NFKD + zero-width strip + Cyrillic-to-Latin homoglyph normalization
-    const __cbNfkd = __cbOrig.normalize('NFKD').replace(/[​-‏‪-‮﻿­⁠⁡-⁤⁪-⁯̀-ͯ]/g, '');
+    const __cbZwRe = new RegExp('[\\u200B-\\u200F\\u202A-\\u202E\\uFEFF\\u00AD\\u2060-\\u2064\\u206A-\\u206F\\u0300-\\u036F]', 'g');
+    const __cbNfkd = __cbOrig.normalize('NFKD').replace(__cbZwRe, '');
     const __cbCyrMap: Record<string, string> = {
       'а':'a','е':'e','о':'o','р':'p','с':'c',
       'у':'y','х':'x','і':'i','ј':'j','һ':'h',
       'А':'A','В':'B','Е':'E','К':'K','М':'M',
       'Н':'H','О':'O','Р':'P','С':'C','Т':'T',
       'Х':'X',
+      'α':'a','β':'b','ε':'e','η':'n','ι':'i','κ':'k',
+      'ν':'v','ο':'o','ρ':'p','τ':'t','υ':'u','χ':'x',
     };
-    const __cbStripped = __cbNfkd.replace(/[Ѐ-ӿ]/g, c => __cbCyrMap[c] || c).normalize('NFC');
+    const __cbCyrRe = new RegExp('[\\u0370-\\u03FF\\u0400-\\u04FF]', 'g');
+    const __cbStripped = __cbNfkd.replace(__cbCyrRe, c => __cbCyrMap[c] || c).normalize('NFC');
     const __cbPatterns: RegExp[] = [
       /(?:tạo|thêm|sửa|xóa|dừng|tắt|bật|liệt kê|list)\s+cron\b/i,
       /(?:tao|them|sua|xoa|dung|tat|bat|liet ke|list)\s+cron\b/i,
@@ -1236,7 +1208,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
           "bui","do","ho","ngo","duong","ly","truong","dinh","luong","mai",
         ]);
         for (const __ghPart of __ghParts) {
-          const __ghNorm = __ghPart.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const __ghNorm = __ghPart.toLowerCase().normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "");
           if (__ghFamilyNames.has(__ghNorm)) continue;
           if (__ghMaleNames.has(__ghNorm)) { __ghGender = "M"; __ghCallName = __ghPart; break; }
           if (__ghFemaleNames.has(__ghNorm)) { __ghGender = "F"; __ghCallName = __ghPart; break; }
@@ -1298,7 +1270,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
       if (__usActive.length > 0) {
         // Normalize: lowercase + strip diacritics + đ→d for diacritic-insensitive matching.
         const __usNorm = (s: string) => String(s || "").toLowerCase()
-          .normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "")
           .replace(/đ/g, "d");
         // Stop words: pronouns, particles, conditionals, fillers — avoid false positives.
         const __usStop = new Set([
@@ -1521,7 +1493,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
             const __fcFriendMsg = "Xin chào, mình là trợ lý AI. Kết bạn để mình hỗ trợ bạn nhé!";
             if (__fcFs.existsSync(__fcVendorCli) && __fcFs.existsSync(__fcNodeBin)) {
               await new Promise<void>((resolve) => {
-                __fcExecAsync(__fcNodeBin, [__fcVendorCli, "friend", "request", __fcSender, "--message", __fcFriendMsg], { timeout: 10000, windowsHide: true, stdio: "ignore" }, (err: any) => {
+                __fcExecAsync(__fcNodeBin, [__fcVendorCli, "friend", "add", __fcSender, "--message", __fcFriendMsg], { timeout: 10000, windowsHide: true, stdio: "ignore" }, (err: any) => {
                   if (err) runtime.log?.(`modoro-zalo: friend request CLI failed: ${String(err)}`);
                   else { runtime.log?.(`modoro-zalo: friend request sent via CLI to ${__fcSender}`); __fcFriendReqSent = true; }
                   resolve();
@@ -1532,7 +1504,7 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
                 const __fcCmd = process.platform === "win32" ? "openzca.cmd" : "openzca";
                 await new Promise<void>((resolve) => {
                   if (!/^\d+$/.test(__fcSender)) { resolve(); return; }
-                __fcExecAsync(__fcCmd, ["friend", "request", __fcSender, "--message", __fcFriendMsg], { timeout: 10000, windowsHide: true, stdio: "ignore", shell: process.platform === "win32" } as any, (err: any) => {
+                __fcExecAsync(__fcCmd, ["friend", "add", __fcSender, "--message", __fcFriendMsg], { timeout: 10000, windowsHide: true, stdio: "ignore", shell: process.platform === "win32" } as any, (err: any) => {
                     if (err) runtime.log?.(`modoro-zalo: openzca CLI not found — cannot send friend request: ${String(err)}`);
                     else { runtime.log?.(`modoro-zalo: friend request sent via PATH to ${__fcSender}`); __fcFriendReqSent = true; }
                     resolve();
@@ -1591,23 +1563,8 @@ ${__ragNeutralize(r.snippet).slice(0, 500)}
             return;
           }
 
-          // --- POLICY: "reply" → rate-limited AI dispatch ---
-          if (!__fcGlobal.__modoroStrangerAiDedupe) {
-            __fcGlobal.__modoroStrangerAiDedupe = new Map();
-          }
-          const __fcAiMap: Map<string, number> = __fcGlobal.__modoroStrangerAiDedupe;
-          const __fcAiLast = __fcAiMap.get(__fcSender) || 0;
-          const __fcAiNow = Date.now();
-          const __fcAiWindow = 10 * 60 * 1000;
-          if (__fcAiNow - __fcAiLast < __fcAiWindow) {
-            runtime.log?.(`modoro-zalo: non-friend ${__fcSender} — AI dispatch rate-limited (<10min since last) — skip`);
-            return;
-          }
-          __fcAiMap.set(__fcSender, __fcAiNow);
-          for (const [__fcAk, __fcAts] of __fcAiMap.entries()) {
-            if (__fcAiNow - __fcAts > 60 * 60 * 1000) __fcAiMap.delete(__fcAk);
-          }
-          runtime.log?.(`modoro-zalo: non-friend ${__fcSender} — policy=reply — AI dispatch allowed (first msg in window)`);
+          // --- POLICY: "reply" → AI dispatch (no rate limit) ---
+          runtime.log?.(`modoro-zalo: non-friend ${__fcSender} — policy=reply — AI dispatch allowed`);
         }
       }
     } catch (__fcErr) {

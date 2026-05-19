@@ -17,10 +17,11 @@ let _escalationInterval = null;
 async function processEscalationQueue() {
   try {
     const ws = getWorkspace();
+    if (!ws) return;
     const queueFile = path.join(ws, 'logs', 'escalation-queue.jsonl');
     if (!fs.existsSync(queueFile)) return;
     const tmpFile = queueFile + '.processing.' + process.pid;
-    try { fs.renameSync(queueFile, tmpFile); } catch { return; }
+    try { fs.renameSync(queueFile, tmpFile); } catch (e) { console.warn('[escalation] rename failed — will retry next tick:', e?.message); return; }
     const raw = fs.readFileSync(tmpFile, 'utf-8').trim();
     if (!raw) { try { fs.unlinkSync(tmpFile); } catch {} return; }
     const lines = raw.split('\n').filter(Boolean);
@@ -57,9 +58,15 @@ async function processEscalationQueue() {
         parts.push(`\n${vnTime} · ID: ${entry.to}`);
         const alertMsg = parts.join('');
 
-        await sendCeoAlert(alertMsg);
-        try { auditLog('escalation_forwarded', { to: entry.to, trigger: entry.trigger }); } catch {}
-        console.log('[escalation] Forwarded to CEO:', entry.trigger, 'for', customerName);
+        const alertOk = await sendCeoAlert(alertMsg);
+        if (alertOk) {
+          try { auditLog('escalation_forwarded', { to: entry.to, trigger: entry.trigger }); } catch {}
+          console.log('[escalation] Forwarded to CEO:', entry.trigger, 'for', customerName);
+        } else {
+          // Alert failed — re-queue so it's retried next tick
+          try { fs.appendFileSync(queueFile, line + '\n', 'utf-8'); } catch {}
+          console.warn('[escalation] sendCeoAlert failed — re-queued for retry:', entry.trigger);
+        }
       } catch (e) {
         console.error('[escalation] Parse/send error for line:', e?.message);
       }

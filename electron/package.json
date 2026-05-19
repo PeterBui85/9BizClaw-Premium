@@ -12,7 +12,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "node scripts/fix-better-sqlite3.js",
-    "smoke": "node scripts/smoke-test.js && node scripts/smoke-context-injection.js && node scripts/smoke-zalo-followup.js && node scripts/smoke-visibility.js && node scripts/smoke-skill-runtime.js && npm run guard:architecture",
+    "smoke": "node scripts/check-module-contracts.js && node scripts/smoke-test.js && node scripts/smoke-context-injection.js && node scripts/smoke-zalo-followup.js && node scripts/smoke-visibility.js && node scripts/smoke-skill-runtime.js && npm run guard:architecture",
     "map:generate": "node scripts/generate-system-map.js",
     "map:check": "node scripts/generate-system-map.js --check",
     "guard:contracts": "node scripts/check-capability-contracts.js",
@@ -176,10 +176,6 @@
         ]
       },
       {
-        "from": "../knowledge/9bizclaw",
-        "to": "knowledge/9bizclaw"
-      },
-      {
         "from": "../capabilities",
         "to": "workspace-templates/capabilities"
       },
@@ -265,10 +261,15 @@
   "dependencies": {
     "@xenova/transformers": "2.17.2",
     "better-sqlite3": "11.10.0",
+    "dompurify": "3.4.3",
     "fullcalendar": "6.1.20",
+    "graphology": "0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
     "mammoth": "1.12.0",
+    "marked": "15.0.12",
     "node-cron": "4.2.1",
     "pdf-parse": "1.1.1",
+    "pptxgenjs": "4.0.1",
     "xlsx": "0.18.5"
   }
 }

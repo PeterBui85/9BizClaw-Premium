@@ -136,9 +136,12 @@ function startCronApi() {
         if (path.resolve(appdataPath) !== path.resolve(tokenPath)) {
           fs.writeFileSync(appdataPath, _cronApiToken, { encoding: 'utf-8', mode: 0o600 });
         }
-      } catch {}
+      } catch (e) { console.warn('[cron-api] APPDATA mirror failed:', e?.message); }
     }
-  } catch (e) { console.error('[cron-api] failed to write token file:', e.message); }
+  } catch (e) {
+    console.error('[cron-api] failed to write token file:', e.message);
+    try { auditLog('cron_api_token_write_fail', { error: e.message }); } catch {}
+  }
   stripCronApiTokenFromCustomCrons();
   try {
     const ws = getWorkspace();
@@ -165,7 +168,7 @@ function startCronApi() {
         zaloName: f.zaloName || f.displayName || '',
         avatar: f.avatar || '',
       }));
-    } catch { return []; }
+    } catch (e) { console.warn('[cron-api] friends.json parse error:', e?.message); return []; }
   }
 
   function loadGroupsMap() {
@@ -194,7 +197,7 @@ function startCronApi() {
       const ambiguous = new Set();
       for (const [key, count] of nameCounts) if (count > 1) ambiguous.add(key);
       return { byId, byName, ambiguous };
-    } catch { return { byId: {}, byName: {}, ambiguous: new Set() }; }
+    } catch (e) { console.warn('[cron-api] groups.json parse error:', e?.message); return { byId: {}, byName: {}, ambiguous: new Set() }; }
   }
 
   // List all group ids that share a (NFC-normalized, lowercased) name. Used
@@ -393,6 +396,7 @@ function startCronApi() {
   function jsonResp(res, code, obj) {
     if (code >= 400) console.warn(`[cron-api] → ${code}`, obj?.error || '');
     const body = JSON.stringify(obj);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
     res.end(body);
   }
@@ -661,12 +665,17 @@ function startCronApi() {
       '/api/capabilities',         // capability self-description (read-only metadata)
       '/api/internal/9router-redirect', // cookie bridge — browser opens, no Telegram headers
     ]);
-    if (urlPath.startsWith('/api/google/')) {
-      return handleGoogleRoute(urlPath.slice('/api/google'.length), params, req, res, jsonResp);
-    }
-    if (!PUBLIC_ROUTES.has(urlPath)) {
+    if (!PUBLIC_ROUTES.has(urlPath) && !urlPath.startsWith('/api/google/')) {
       const auth = _requireCeoTelegram();
       if (!auth.ok) return _denyCeoTelegram(auth.reason);
+    }
+    if (urlPath.startsWith('/api/google/')) {
+      // Google routes still have per-route Zalo gate inside google-routes.js,
+      // but MUST also pass the CEO Telegram Bearer token gate to prevent
+      // Zalo-channel web_fetch from reading CEO's Gmail/Calendar/Drive.
+      const auth = _requireCeoTelegram();
+      if (!auth.ok) return _denyCeoTelegram(auth.reason);
+      return handleGoogleRoute(urlPath.slice('/api/google'.length), params, req, res, jsonResp);
     }
 
     // Legacy /api/auth/token — kept for backwards compat, returns dummy token.
@@ -1911,7 +1920,7 @@ function startCronApi() {
       // Block shell metacharacters that enable command chaining/injection.
       // Includes \n \r (command separators in both cmd.exe and /bin/sh)
       // and ^ (cmd.exe escape character that can unblock & | etc.)
-      const SHELL_META = /[;|&`$(){}!<>\n\r^]/;
+      const SHELL_META = /[;|&`$(){}!<>\n\r^%]/;
       if (SHELL_META.test(cmdTrimmed)) {
         auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'shell metacharacter detected' });
         return jsonResp(res, 403, { error: 'SECURITY: command contains blocked shell metacharacters.' });
@@ -1919,6 +1928,15 @@ function startCronApi() {
       auditLog('exec_run', { command: cmd.slice(0, 200), cwd: params.cwd || '(default)' });
       const timeoutMs = Math.min(parseInt(params.timeout) || 30000, 120000);
       const cwd = params.cwd ? String(params.cwd) : undefined;
+      if (cwd) {
+        const { getWorkspace } = require('./workspace');
+        const ws = getWorkspace();
+        const cwdResolved = require('path').resolve(cwd);
+        const wsResolved = require('path').resolve(ws);
+        if (ws && cwdResolved !== wsResolved && !cwdResolved.startsWith(wsResolved + require('path').sep)) {
+          return jsonResp(res, 403, { error: 'cwd must be inside workspace' });
+        }
+      }
       const { exec: execAsync } = require('child_process');
       return new Promise((resolve) => {
         execAsync(cmd, {
@@ -2310,10 +2328,44 @@ function startCronApi() {
         });
       }
 
-      // No zaloTarget: non-blocking, generate and hand back to caller.
+      // No zaloTarget: generate image.
+      // If waitMs is set, block until image is done (for agent workflows that
+      // can't poll async). Capped at 15 minutes.
       // Auto-send to Telegram by DEFAULT — CEO always wants to see the result.
       // Pass autoSendTelegram=false to suppress (e.g. if caller handles delivery).
       const shouldAutoSend = autoSendTelegram !== false && autoSendTelegram !== 'false';
+      const waitMs = params.waitMs ? Math.min(Math.max(Number(params.waitMs) || 0, 0), 15 * 60 * 1000) : 0;
+
+      if (waitMs > 0) {
+        // Blocking mode: wait for image to finish before responding
+        const jobDone = new Promise((resolveJob) => {
+          imageGen.startJob(jobId, String(prompt), brandDir, assetList, imageGen.normalizeImageSize(size), (err, imgPath) => {
+            if (err) { resolveJob({ status: 'failed', error: err.message }); return; }
+            if (!imgPath) { resolveJob({ status: 'failed', error: 'no image path' }); return; }
+            if (shouldAutoSend) {
+              sendTelegramPhoto(imgPath, '').then(ok => {
+                console.log(`[image-gen] auto-send Telegram: ${ok ? 'OK' : 'FAILED'} for ${jobId}`);
+              }).catch(() => {});
+            }
+            resolveJob({ status: 'done', imagePath: imgPath });
+          });
+        });
+        const timeout = new Promise(resolve => setTimeout(() => resolve({ status: 'timeout' }), waitMs));
+        const result = await Promise.race([jobDone, timeout]);
+        if (result.status === 'failed') {
+          return jsonResp(res, 502, { jobId, status: 'failed', error: result.error });
+        }
+        if (result.status === 'timeout') {
+          return jsonResp(res, 504, { jobId, status: 'timeout', error: `image generation did not finish within ${Math.round(waitMs / 1000)}s` });
+        }
+        return jsonResp(res, 200, {
+          jobId,
+          status: 'done',
+          imagePath: result.imagePath ? path.relative(getWorkspace(), result.imagePath) : undefined,
+        });
+      }
+
+      // Non-blocking mode (default): start job and return immediately
       let startErr = null;
       try {
         imageGen.startJob(jobId, String(prompt), brandDir, assetList, imageGen.normalizeImageSize(size), (err, imgPath) => {
@@ -2614,6 +2666,10 @@ function startCronApi() {
         if (!declared) return jsonResp(res, 403, { error: 'script not declared in skill frontmatter: ' + script });
         const ws = require('./workspace').getWorkspace();
         const scriptPath = path.join(ws, 'user-skills', skillId, 'scripts', declared.filename);
+        const expectedBase = path.join(ws, 'user-skills', skillId, 'scripts');
+        if (!path.resolve(scriptPath).startsWith(path.resolve(expectedBase) + path.sep)) {
+          return jsonResp(res, 403, { error: 'script path traversal detected' });
+        }
         if (!fs.existsSync(scriptPath)) return jsonResp(res, 404, { error: 'script file missing on disk: ' + declared.filename });
         const runner = require('./skill-runner');
         const startedAt = Date.now();

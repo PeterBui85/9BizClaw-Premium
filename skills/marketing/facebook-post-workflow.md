@@ -2,7 +2,7 @@
 name: facebook-post-workflow
 description: Tạo ảnh AI rồi đăng bài vào Facebook Fanpage — CHỈ CEO Telegram
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   replaces: facebook-image.md (phần Facebook)
 ---
 
@@ -28,7 +28,7 @@ Trong phiên Telegram CEO, `web_fetch` tới `http://127.0.0.1:20200` tự độ
 ```
 PHA 0: KIỂM TRA TOKEN  → Verify Facebook token TRƯỚC khi làm gì
 PHA 1: CHỌN ASSETS     → Brand assets hoặc không
-PHA 2: TẠO ẢNH        → Generate + poll đến done
+PHA 2: TẠO ẢNH        → Generate (blocking — API chờ xong rồi trả)
 PHA 3: PREVIEW          → Gửi Telegram cho CEO xem trước
 PHA 4: ĐĂNG            → Chỉ khi CEO xác nhận "ok"
 ```
@@ -36,6 +36,7 @@ PHA 4: ĐĂNG            → Chỉ khi CEO xác nhận "ok"
 **NGUYÊN TẮC VÀNG:**
 - Ảnh chưa được CEO xác nhận → KHÔNG ĐĂNG.
 - Không bao giờ nói "đã đăng" nếu chưa nhận được `id` hoặc `post_id` từ Facebook API.
+- **GỬI TIN THEO FLOW THẬT.** Gửi tin SAU mỗi bước blocking hoàn thành. API generate dùng `waitMs=180000` nên sẽ block đến khi ảnh xong — ĐỢI response rồi mới báo. KHÔNG gom tất cả rồi gửi hàng loạt cùng lúc.
 
 ---
 
@@ -95,34 +96,30 @@ Sau khi có thông tin (caption, mô tả ảnh, có/không brand assets):
 
 **CHỜ CEO nói "ok".** Không tạo ảnh trước.
 
-### Bước 2.2 — Generate ảnh
+### Bước 2.2 — Generate ảnh (blocking)
 
 ```
 GET http://127.0.0.1:20200/api/image/generate
   ?autoSendTelegram=false
+  &waitMs=180000
   &size=1024x1024
   &assets=<file1,file2>
   &prompt=<URL-encoded prompt>
 ```
 
-- **`autoSendTelegram=false` BẮT BUỘC** — workflow này tự poll + gửi preview riêng ở Pha 3, KHÔNG để server tự gửi
+- **`autoSendTelegram=false` BẮT BUỘC** — workflow này tự gửi preview riêng ở Pha 3
+- **`waitMs=180000` BẮT BUỘC** — server chờ tối đa 180 giây cho ảnh xong rồi trả kết quả. KHÔNG cần poll riêng.
 - `size`: `1024x1024` (vuông), `1792x1024` (ngang/banner), `1024x1792` (doc/story)
 - `assets` để TRƯỚC `&prompt=`
 - `prompt` — **PHẢI là param CUỐI CÙNG**
 
-**Lỗi?** Báo lỗi thật. Không nói "đã tạo xong" nếu API lỗi.
+**Response khi thành công:** `{ status: "done", jobId: "...", imagePath: "brand-assets/generated/img_xxx.png" }` → dùng `imagePath` cho Pha 3.
 
-### Bước 2.3 — Poll đợi ảnh xong
+**Response lỗi:**
+- HTTP 502 + `status: "failed"` → báo lỗi thật
+- HTTP 504 + `status: "timeout"` → "Tạo ảnh bị timeout, thử lại sau nhé anh."
 
-```
-GET http://127.0.0.1:20200/api/image/status?jobId=<jobId>
-```
-
-Poll mỗi **15 giây**, tối đa **12 lần** (= ~180 giây). Mỗi lần gọi `web_fetch` tới URL trên.
-
-**TUYỆT ĐỐI KHÔNG:** Dùng `jobId` đang `generating` làm "ảnh đã xong".
-
-**Timeout (hết 12 lần poll mà vẫn `generating`):** "Tạo ảnh lâu hơn dự kiến, anh chờ thêm chút nhé — ảnh xong em gửi preview ngay." Sau đó gọi thêm 6 lần nữa (mỗi 15s). Nếu vẫn `generating` sau tổng 18 lần → "Tạo ảnh bị timeout, thử lại sau nhé anh."
+**TUYỆT ĐỐI KHÔNG:** Nói "đã tạo xong" nếu `status` không phải `"done"`.
 
 ---
 
@@ -247,19 +244,20 @@ Tóm tắt: gọi `GET /api/image/skills` → CEO chọn skill hoặc mô tả t
 | API `/api/fb/post` trả lỗi token | Hướng dẫn CEO cập nhật Fanpage token |
 | Ảnh không tạo được (`error`) | Báo lỗi thật, không nói "đã tạo" |
 | Preview không gửi được | Báo lỗi, vẫn tiếp tục chờ CEO xác nhận caption để đăng |
-| `jobId` trả về `generating` | Tiếp tục poll `/api/image/status` |
-| Response timeout (504) | "Facebook bị timeout, thử lại sau nhé anh." |
+| HTTP 504 từ generate (timeout) | "Tạo ảnh bị timeout, thử lại sau nhé anh." |
+| Response timeout (504) từ FB post | "Facebook bị timeout, thử lại sau nhé anh." |
 
 ---
 
 ## Checklist trước khi báo "đã đăng"
 
 - [ ] Đã confirm với CEO trước khi tạo ảnh?
-- [ ] Đã poll đến `status: "done"` trước khi dùng `imagePath`?
+- [ ] Generate API trả `status: "done"` + `imagePath` trước khi dùng?
 - [ ] Đã gửi preview Telegram trước khi đăng?
 - [ ] Đã chờ CEO xác nhận "ok"/"đăng đi" trước khi gọi `/api/fb/post`?
 - [ ] Đã đọc `id`/`post_id` trong response body?
 - [ ] Nếu lỗi token: đã hướng dẫn CEO cập nhật Fanpage trong Dashboard?
+- [ ] CHỈ gửi 1 tin nhắn cho toàn bộ flow?
 
 ---
 
@@ -270,11 +268,11 @@ CEO nói: "đăng Facebook mỗi sáng 9h", "tự động đăng bài mỗi ngà
 ### Tạo lịch
 
 ```
-web_fetch "http://127.0.0.1:20200/api/fb/schedule/create?postTime=09:00&leadMinutes=120&prompt=<prompt-tạo-ảnh>&caption=<caption>&label=<tên>&imageSize=1024x1024"
+web_fetch "http://127.0.0.1:20200/api/fb/schedule/create?postTime=09:00&leadMinutes=60&prompt=<prompt-tạo-ảnh>&caption=<caption>&label=<tên>&imageSize=1024x1024"
 ```
 
 - `postTime` (BẮT BUỘC): giờ đăng, dạng HH:MM (VD: `09:00`)
-- `leadMinutes`: tạo ảnh trước bao nhiêu phút (mặc định 120 = 2 tiếng)
+- `leadMinutes`: gửi preview trước bao nhiêu phút (mặc định 60 = 1 tiếng). HỎI CEO: "Anh muốn nhận preview trước bao lâu? Mặc định 1 tiếng."
 - `prompt`: prompt tạo ảnh (TIẾNG ANH, chi tiết)
 - `caption`: nội dung bài đăng Facebook
 - `assetNames`: brand assets dùng (JSON array, VD: `["mascot-removebg.png"]`)

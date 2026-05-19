@@ -42,8 +42,13 @@ function clearCachedZcaBin() { _cachedZcaBin = null; } // called on stopZalo / a
 //  SEND CEO ALERT
 // ============================================
 
-// Send an alert to CEO via Telegram. Zalo outbound to CEO is not possible
-// (CEO's Zalo account IS the bot — can't message yourself).
+/**
+ * Send an alert to CEO via Telegram. Zalo outbound to CEO is not possible
+ * (CEO's Zalo account IS the bot — can't message yourself).
+ * Falls back to disk log when Telegram fails.
+ * @param {string} text - Alert message text
+ * @returns {Promise<boolean>} True if delivered via Telegram
+ */
 async function sendCeoAlert(text) {
   const opts = { skipFilter: true, skipPauseCheck: true };
   let delivered = false;
@@ -56,7 +61,9 @@ async function sendCeoAlert(text) {
   if (!delivered) {
     // Telegram failed — write to disk as last resort so nothing is silently lost
     try {
-      const logsDir = path.join(getWorkspace(), 'logs');
+      const ws = getWorkspace();
+      if (!ws) { console.error('[sendCeoAlert] Telegram failed AND workspace not available'); return delivered; }
+      const logsDir = path.join(ws, 'logs');
       fs.mkdirSync(logsDir, { recursive: true });
       const missedFile = path.join(logsDir, 'ceo-alerts-missed.log');
       const entry = `${new Date().toISOString()} — UNDELIVERED: ${text.slice(0, 500)}\n`;
@@ -88,7 +95,7 @@ async function sendMemoryWriteAlert({ senderId, action, details }) {
     'update-frontmatter': 'cập nhật thông tin',
   };
   const actionLabel = actionLabels[action] || action;
-  const customerRef = details?.customerName || `khách ${senderId ? senderId.slice(-6) : '?'}`;
+  const customerRef = details?.customerName || `khách ${senderId ? senderId.slice(-6) : 'không rõ'}`;
   const sourceLabel = details?.source === 'dashboard-ipc' ? 'Dashboard' : 'Bot';
 
   const text = `📝 ${sourceLabel} vừa ${actionLabel} hồ sơ khách *${customerRef}*`;
@@ -106,11 +113,16 @@ async function sendMemoryWriteAlert({ senderId, action, details }) {
 function getStickyChatIdPath() {
   return path.join(ctx.HOME, '.openclaw', 'modoroclaw-sticky-chatid.json');
 }
+/** Compute a 16-char SHA-256 fingerprint of a bot token for sticky chatId verification. */
+function _tokenFingerprint(token) {
+  if (!token) return null;
+  return require('crypto').createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
 function persistStickyChatId(token, chatId) {
   try {
     if (!chatId) return;
     const file = getStickyChatIdPath();
-    const fp = token ? require('crypto').createHash('sha256').update(token).digest('hex').slice(0, 16) : null;
+    const fp = _tokenFingerprint(token);
     // D20: Compare-then-write to avoid file system thrash. getTelegramConfig
     // is called from EVERY sendTelegram + every cron fire — we'd otherwise
     // rewrite this file dozens of times per minute with identical content.
@@ -139,7 +151,7 @@ function loadStickyChatId(token) {
     // If we know the token, verify the fingerprint matches — otherwise the
     // sticky value might belong to a different bot.
     if (token && data.tokenFingerprint) {
-      const fp = require('crypto').createHash('sha256').update(token).digest('hex').slice(0, 16);
+      const fp = _tokenFingerprint(token);
       if (fp !== data.tokenFingerprint) return null;
     }
     return data.chatId || null;
@@ -238,7 +250,9 @@ async function getTelegramConfigWithRecovery() {
   const sync = getTelegramConfig();
   if (sync.chatId) return sync;
   if (sync.token) {
-    console.warn('[getTelegramConfigWithRecovery] telegram allowFrom is missing; refusing getUpdates chat recovery');
+    // REMOVED: getUpdates recovery disabled to avoid 409 Conflict with gateway's own poller.
+    // See CLAUDE.md "Telegram polling rule" — two pollers = lost messages.
+    console.warn('[getTelegramConfigWithRecovery] telegram allowFrom is missing; getUpdates recovery disabled (409 risk)');
   }
   return sync;
 }
@@ -282,7 +296,33 @@ async function sendToGatewaySession(sessionKey, message) {
 // ============================================
 //  SHARED OUTPUT FILTER — same patterns for Telegram + Zalo
 // ============================================
-// Mirrors the 47 block patterns from the modoro-zalo fork send.ts so BOTH
+// Mirrors the 66 block patterns from the modoro-zalo fork send.ts so BOTH
+// Transport-layer process-description strip for ALL Zalo sends.
+// Applied in sendZaloTo() BEFORE pattern filter — catches agent meta-commentary
+// regardless of which code path called sendZaloTo.
+const _processDescFullRe = /^\s*(?:dạ\s+)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy|kiểm\s*tra|tạo)\s+(?:theo|nhiều|quy\s*trình|luồng|lần\s*lượt|từng\s*bước|các\s*bước|workflow)/i;
+const _processAckFullRe = /^\s*(?:dạ\s+)?(?:vâng\s*[,.]?\s*)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy)\s+(?:luôn|ngay|liền|rồi)\s*[.!ạ]*\s*$/i;
+const _processStatusFullRe = /^\s*(?:dạ\s+)?em\s+đang\s+(?:xử\s*lý|thực\s*hiện|chạy)\s*[.!ạ]*\s*$/i;
+const _bareAckFullRe = /^\s*(?:dạ|vâng|dạ vâng)\s*[,.]?\s*(?:ạ\s*[.!]?)?\s*$/i;
+const _doneSentinelRe = /^\s*DONE\s*[.!]?\s*$/i;
+function _stripZaloProcessText(text) {
+  if (!text) return '';
+  const t = text.trim();
+  if (_doneSentinelRe.test(t)) return '';
+  if (_processDescFullRe.test(t)) return '';
+  if (_processAckFullRe.test(t)) return '';
+  if (_processStatusFullRe.test(t)) return '';
+  if (_bareAckFullRe.test(t)) return '';
+  // Per-line strip for multi-line messages
+  const lines = t.split('\n');
+  const cleaned = lines.filter(l => {
+    const lt = l.trim();
+    if (!lt) return true;
+    return !_processAckFullRe.test(lt) && !_processStatusFullRe.test(lt) && !_bareAckFullRe.test(lt) && !_processDescFullRe.test(lt);
+  });
+  return cleaned.join('\n').trim();
+}
+
 // channels get the same defense-in-depth. Zalo's transport-layer filter in
 // send.ts is the primary defense for Zalo; this function covers Telegram
 // sends from main.js (cron delivery, alerts) and sendZalo() direct sends.
@@ -353,7 +393,9 @@ const _outputFilterPatterns = [
   { name: 'meta-vi-memory-claim', re: /(?<![a-zA-Z0-9_])(đã (?:lưu|ghi|cập nhật|update) (?:vào |trong )?(?:bộ nhớ|memory|hồ sơ|file|database)|stored (?:in|to) memory|saved to (?:file|memory))(?![a-zA-Z0-9_])/i },
   { name: 'meta-vi-tool-action', re: /\b(em (?:vừa|đã) (?:edit|write|read|chạy|gọi) (?:file|tool|công cụ)|em (?:vừa|đã) (?:cập nhật|sửa|đọc) (?:file|memory|database))\b/i },
   { name: 'meta-vi-fact-claim', re: /(?<![a-zA-Z0-9_])(em đã (?:cập nhật|ghi (?:nhận|chú)|lưu(?: lại)?) (?:rằng|thêm rằng|sở thích|preference|là anh|là chị|là mình)|đã (?:cập nhật|ghi nhận|lưu) (?:thêm )?rằng)(?![a-zA-Z0-9_])/i },
-  // Layer D: all-Latin / no-Vietnamese-diacritic (>200 chars, no URL)
+  // Layer D: all-Latin / no-Vietnamese-diacritic (>200 chars, no URL).
+  // Strategy: negative lookahead rejects text containing ANY Vietnamese diacritical character.
+  // If the text is >200 chars, all-Latin, and contains no URL → likely English CoT leakage.
   // Threshold raised 40→200: product listings like "iPhone 15 Pro 256GB: 25,900,000 VND"
   // are all-Latin but legitimate CS replies. CoT leaks are long walls of English text (>200c).
   { name: 'no-vietnamese-diacritic', re: /^(?!.*https?:\/\/)(?=[\s\S]{200,})(?!.*[àáảãạâấầẩẫậăắằẳẵặèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠÂẤẦẨẪẬĂẮẰẲẴẶÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]).+/s },
@@ -380,8 +422,8 @@ const _outputFilterPatterns = [
   // commitment it cannot honor, which creates legal + reputation risk.
   { name: 'fake-order-confirm', re: /(?:đã\s+(?:xác\s*nhận|tạo|lưu|ghi\s*nhận)\s*đơn|đơn\s*(?:của\s+(?:anh|chị|mình|bạn))?\s*(?:đã|được)\s+(?:tạo|xác\s*nhận|lưu|ghi))/i },
   { name: 'fake-shipping-fee', re: /(?:phí\s*ship|ship\s*phí|phí\s*vận\s*chuyển|tiền\s*ship)\s*[:=]?\s*\d{1,3}[.,]?\d{3}/i },
-  { name: 'fake-total-amount', re: /tổng\s*(?:tiền|cộng|đơn\s*hàng|thanh\s*toán|cần\s*thanh\s*toán)\s*[:=]?\s*\d{1,3}[.,]?\d{3}/i },
-  { name: 'fake-discount-percent', re: /(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
+  { name: 'fake-total-amount', re: /(?:đã\s+)?(?:tạo|xác\s*nhận|lưu).*tổng\s*(?:tiền|cộng|đơn\s*hàng|thanh\s*toán|cần\s*thanh\s*toán)\s*[:=]?\s*\d{1,3}[.,]?\d{3}/i },
+  { name: 'fake-discount-percent', re: /(?:đã\s+)?(?:tạo|xác\s*nhận|áp\s*dụng).*(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
   { name: 'fake-booking-confirmed', re: /(?:đã\s*(?:đặt|book|giữ|xác\s*nhận))\s*(?:lịch|bàn|phòng|chỗ|slot|lịch\s*hẹn|cuộc\s*hẹn)/i },
   { name: 'fake-payment-received', re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
   // Layer I: gateway system messages — internal restart/abort notices must never
@@ -409,7 +451,20 @@ const _outputFilterPatterns = [
   // legitimate CS replies that contain real content after an ack line.
   { name: 'process-ack-bare-vi', re: /^\s*(?:dạ\s+)?(?:vâng\s*[,.]?\s*)?(?:dạ\s*[,.]?\s*)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy)\s+(?:luôn|ngay|liền|rồi)\s*[.!ạ]*\s*$/is },
   { name: 'process-status-bare-vi', re: /^\s*(?:dạ\s+)?em\s+đang\s+(?:xử\s*lý|thực\s*hiện|chạy)\s*[.!ạ]*\s*$/is },
+  { name: 'process-desc-vi', re: /^\s*(?:dạ\s+)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy|kiểm\s*tra)\s+(?:theo|nhiều|quy\s*trình|luồng|lần\s*lượt|từng\s*bước|các\s*bước)/is },
 ];
+
+const TELEGRAM_MAX_MSG_LENGTH = 4000;
+const TELEGRAM_MIN_SPLIT_POS = 200;
+const ZALO_MIN_SPLIT_POS = 200;
+
+// Startup self-test: verify all output filter patterns compile and don't throw on empty string.
+// Protects against ReDoS from future regex changes during development.
+try {
+  for (const p of _outputFilterPatterns) { p.re.test(''); }
+} catch (e) {
+  console.error('[output-filter] STARTUP SELF-TEST FAILED — a regex threw on empty string:', e.message);
+}
 
 const _outputFilterSafeMsgs = [
   'Dạ em xin lỗi, cho em một phút em rà lại thông tin rồi báo lại mình ạ.',
@@ -417,16 +472,25 @@ const _outputFilterSafeMsgs = [
   'Dạ em đang xác nhận lại thông tin, mình chờ em xíu nha.',
 ];
 
+/**
+ * Filter sensitive/leaked content from outbound messages.
+ * Returns a replacement safe message when blocked.
+ * @param {string} text - The message text to check
+ * @returns {{ blocked: boolean, text: string, pattern?: string }}
+ */
 function filterSensitiveOutput(text) {
   if (!text || typeof text !== 'string') return { blocked: false, text };
   for (const p of _outputFilterPatterns) {
     if (p.re.test(text)) {
       const safeMsg = _outputFilterSafeMsgs[Math.floor(Math.random() * _outputFilterSafeMsgs.length)];
       try {
-        const logDir = path.join(getWorkspace(), 'logs');
-        fs.mkdirSync(logDir, { recursive: true });
-        fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
-          JSON.stringify({ t: new Date().toISOString(), event: 'output_blocked', pattern: p.name, channel: 'main-process', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+        const ws = getWorkspace();
+        if (ws) {
+          const logDir = path.join(ws, 'logs');
+          fs.mkdirSync(logDir, { recursive: true });
+          fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
+            JSON.stringify({ t: new Date().toISOString(), event: 'output_blocked', pattern: p.name, channel: 'main-process', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+        }
       } catch {}
       return { blocked: true, pattern: p.name, text: safeMsg };
     }
@@ -566,7 +630,7 @@ function pauseChannel(channel, durationMin = 30) {
 function resumeChannel(channel) {
   const p = _getPausePath(channel);
   if (!p) return false;
-  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { console.warn(`[pause] ${channel} resume unlink failed:`, e?.message); }
   console.log(`[pause] ${channel} resumed`);
   return true;
 }
@@ -592,11 +656,13 @@ function getChannelPauseStatus(channel) {
 //  SEND FUNCTIONS
 // ============================================
 
-// skipFilter: bypass output filter for system alerts (cron errors, boot pings)
-// that are OUR messages, not AI-generated. Blocking these would cause silent failures.
-// R1: strip Telegram Markdown v1 syntax tokens so plain-text send doesn't
-// leak raw `*` / backtick / triple-backtick into CEO's alert output.
-// sendCeoAlert call sites use `*bold*` + ``` code fences historically.
+/**
+ * Send a Telegram message to the configured CEO chat.
+ * Applies output filter (unless skipFilter), pause check, 429 retry, and 4KB split.
+ * @param {string} text - Message text to send
+ * @param {{ skipFilter?: boolean, skipPauseCheck?: boolean }} [opts]
+ * @returns {Promise<boolean|null>} true on success, null on failure
+ */
 async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false } = {}) {
   // Check pause state — skip send if Telegram is paused
   if (!skipPauseCheck && isChannelPaused('telegram')) {
@@ -614,10 +680,13 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
     // Bypass audit — so we can later verify bypass isn't abused.
     console.log('[sendTelegram] filter BYPASSED for system alert');
     try {
-      const logDir = path.join(getWorkspace(), 'logs');
-      fs.mkdirSync(logDir, { recursive: true });
-      fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
-        JSON.stringify({ t: new Date().toISOString(), event: 'output_bypass', channel: 'telegram', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+      const ws = getWorkspace();
+      if (ws) {
+        const logDir = path.join(ws, 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        fs.appendFileSync(path.join(logDir, 'security-output-filter.jsonl'),
+          JSON.stringify({ t: new Date().toISOString(), event: 'output_bypass', channel: 'telegram', bodyPreview: text.slice(0, 200), bodyLength: text.length }) + '\n', 'utf-8');
+      }
     } catch {}
   }
   const { token, chatId } = getTelegramConfig();
@@ -631,12 +700,12 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
   // cron drop. We now send plain text (no parse_mode) — safe for all content.
   // Strip Markdown syntax since we send without parse_mode (plain text)
   text = stripTelegramMarkdown(text);
-  if (text.length > 4000) {
+  if (text.length > TELEGRAM_MAX_MSG_LENGTH) {
     // Filter runs on FULL text above (before this split), so chunks skip filter safely
-    let c = text.lastIndexOf('\n\n', 4000);
-    if (c < 200) c = text.lastIndexOf('\n', 4000);
-    if (c < 200) c = text.lastIndexOf(' ', 4000);
-    if (c < 200) c = 4000;
+    let c = text.lastIndexOf('\n\n', TELEGRAM_MAX_MSG_LENGTH);
+    if (c < TELEGRAM_MIN_SPLIT_POS) c = text.lastIndexOf('\n', TELEGRAM_MAX_MSG_LENGTH);
+    if (c < TELEGRAM_MIN_SPLIT_POS) c = text.lastIndexOf(' ', TELEGRAM_MAX_MSG_LENGTH);
+    if (c < TELEGRAM_MIN_SPLIT_POS) c = TELEGRAM_MAX_MSG_LENGTH;
     await sendTelegram(text.slice(0, c), { skipFilter: true, skipPauseCheck });
     await new Promise(r => setTimeout(r, 300));
     return sendTelegram(text.slice(c).trimStart(), { skipFilter: true, skipPauseCheck });
@@ -701,6 +770,17 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
 }
 
 async function sendTelegramPhoto(imagePath, caption, _retryCount = 0) {
+  if (isChannelPaused('telegram')) {
+    console.log('[sendTelegramPhoto] channel paused — skipping');
+    return false;
+  }
+  if (caption) {
+    const filtered = filterSensitiveOutput(caption);
+    if (filtered.blocked) {
+      console.warn('[sendTelegramPhoto] caption blocked:', filtered.pattern);
+      caption = filtered.text;
+    }
+  }
   const { token, chatId } = getTelegramConfig();
   if (!token || !chatId) return false;
   if (!fs.existsSync(imagePath)) return false;
@@ -751,10 +831,12 @@ async function sendTelegramPhoto(imagePath, caption, _retryCount = 0) {
   });
 }
 
-// Send a direct Zalo message to the CEO's personal Zalo account via openzca CLI.
-// Mirrors sendTelegram() for parity. Used by cron alerts and fallback delivery.
+/**
+ * @deprecated Zalo outbound disabled — CEO's Zalo account IS the bot, can't message self.
+ * Alerts route via Telegram only (sendCeoAlert). Kept for interface parity.
+ * @returns {null} Always returns null
+ */
 async function sendZalo(text, opts = {}) {
-  // Zalo outbound disabled — owner system removed. Alerts go via Telegram only.
   return null;
 }
 
@@ -776,9 +858,14 @@ function isZaloListenerAlive() {
   return _zaloListenerAlive;
 }
 
-// Send a Zalo message to an arbitrary target (user or group), unlike sendZalo()
-// which only ever talks to the configured CEO owner. Used by appointment push
-// targets so bot/cron can push meeting links into any group or friend.
+/**
+ * Send a Zalo message to an arbitrary target (user or group).
+ * Applies output filter, pause check, blocklist, and multi-chunk splitting.
+ * @param {string|{id:string, isGroup:boolean}} target - Zalo target ID or object
+ * @param {string} text - Message text to send
+ * @param {{ skipFilter?: boolean, skipPauseCheck?: boolean, skipListenerCheck?: boolean, profile?: string }} [opts]
+ * @returns {Promise<{ok:boolean, error?:string, mode?:string}>}
+ */
 async function sendZaloTo(target, text, opts = {}) {
   let targetId, isGroup;
   if (typeof target === 'string') {
@@ -811,6 +898,12 @@ async function sendZaloTo(target, text, opts = {}) {
   }
   if (!skipFilter) {
     text = sanitizeZaloText(text);
+    // Strip process descriptions at transport layer (catches all paths)
+    text = _stripZaloProcessText(text);
+    if (!text || text.length < 3) {
+      console.log('[sendZaloTo] stripped to empty — skipping (process description only)');
+      return { ok: true, stripped: true };
+    }
     const filtered = filterSensitiveOutput(text);
     if (filtered.blocked) {
       console.warn(`[sendZaloTo] output filter blocked (${filtered.pattern})`);
@@ -847,14 +940,19 @@ async function sendZaloTo(target, text, opts = {}) {
     while (remaining.length > ZALO_CHUNK) {
       let cut = ZALO_CHUNK;
       const paraBreak = remaining.lastIndexOf('\n\n', ZALO_CHUNK);
-      if (paraBreak > 200) { cut = paraBreak + 2; }
+      if (paraBreak > ZALO_MIN_SPLIT_POS) { cut = paraBreak + 2; }
       else {
         const sentBreak = remaining.slice(0, ZALO_CHUNK).search(/[.!?][^.!?]*$/);
-        if (sentBreak > 200) { cut = sentBreak + 1; }
+        if (sentBreak > ZALO_MIN_SPLIT_POS) { cut = sentBreak + 1; }
         else {
           const spaceBreak = remaining.lastIndexOf(' ', ZALO_CHUNK);
-          if (spaceBreak > 200) { cut = spaceBreak + 1; }
+          if (spaceBreak > ZALO_MIN_SPLIT_POS) { cut = spaceBreak + 1; }
         }
+      }
+      // Don't split in the middle of a surrogate pair (emoji etc.)
+      if (cut > 0 && cut < remaining.length) {
+        const cc = remaining.charCodeAt(cut - 1);
+        if (cc >= 0xD800 && cc <= 0xDBFF) cut--;
       }
       chunks.push(remaining.slice(0, cut).trimEnd());
       remaining = remaining.slice(cut).trimStart();
@@ -1310,6 +1408,80 @@ function findOpenzcaListenerPid() {
   return null;
 }
 
+// Read the last N bytes of openclaw.log looking for modoro-zalo / openzca
+// errors.  Called ONLY when the probe detects "listener not running" — not on
+// every tick.  Returns { hint, lines } or null.
+let _gwLogDiagCache = null;
+let _gwLogDiagCacheAt = 0;
+let _gwLogDiagLoggedOnce = false;
+const _GW_LOG_DIAG_TTL = 60000; // re-read at most once per minute
+function resetGatewayZaloDiag() {
+  _gwLogDiagCache = null;
+  _gwLogDiagCacheAt = 0;
+  _gwLogDiagLoggedOnce = false;
+}
+function _readGatewayZaloDiagnostic() {
+  const now = Date.now();
+  if (_gwLogDiagCache && (now - _gwLogDiagCacheAt) < _GW_LOG_DIAG_TTL) return _gwLogDiagCache;
+  _gwLogDiagCache = null;
+  try {
+    const logPath = path.join(ctx.userDataDir, 'logs', 'openclaw.log');
+    if (!fs.existsSync(logPath)) return null;
+    const stat = fs.statSync(logPath);
+    // Read last 32KB — enough to capture recent boot errors
+    const readSize = Math.min(stat.size, 32768);
+    const fd = fs.openSync(logPath, 'r');
+    const buf = Buffer.alloc(readSize);
+    try {
+      fs.readSync(fd, buf, 0, readSize, Math.max(0, stat.size - readSize));
+    } finally {
+      fs.closeSync(fd);
+    }
+    const tail = buf.toString('utf-8');
+    const lines = tail.split('\n');
+
+    // Scan for error patterns related to modoro-zalo / openzca
+    const errorPatterns = [
+      /error.*modoro.?zalo/i,
+      /modoro.?zalo.*error/i,
+      /error.*openzca/i,
+      /openzca.*error/i,
+      /openzca.*ENOENT/i,
+      /openzca.*spawn/i,
+      /openzca.*crash/i,
+      /openzca.*exit/i,
+      /plugin.*compile|compile.*plugin/i,
+      /TypeScript.*error|TS\d{4,}/i,
+      /cannot find module.*openzca/i,
+      /ECONNREFUSED.*openzca/i,
+      /modoro.?zalo.*fail/i,
+      /modoro.?zalo.*disabled/i,
+      /plugin.*modoro.?zalo.*not.*load/i,
+    ];
+    const matched = [];
+    for (let i = lines.length - 1; i >= 0 && matched.length < 8; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      for (const pat of errorPatterns) {
+        if (pat.test(line)) { matched.unshift(line.slice(0, 300)); break; }
+      }
+    }
+    if (matched.length === 0) {
+      // No explicit error — check if modoro-zalo was ever mentioned at all
+      const mentionsPlugin = lines.some(l => /modoro.?zalo/i.test(l));
+      if (!mentionsPlugin) {
+        _gwLogDiagCache = { hint: 'Gateway log không đề cập modoro-zalo — plugin có thể không được load. Kiểm tra openclaw.json plugins.entries.', lines: [] };
+        _gwLogDiagCacheAt = now;
+        return _gwLogDiagCache;
+      }
+      return null;
+    }
+    _gwLogDiagCache = { hint: matched[0], lines: matched };
+    _gwLogDiagCacheAt = now;
+    return _gwLogDiagCache;
+  } catch { return null; }
+}
+
 async function probeZaloReady() {
   try {
     const state = _readZaloChannelStateFn ? _readZaloChannelStateFn() : { enabled: true, profile: 'default' };
@@ -1374,7 +1546,7 @@ async function probeZaloReady() {
         const owner = JSON.parse(fs.readFileSync(ownerFile, 'utf-8'));
         if (owner.pid) ownerPid = owner.pid;
         else ownerErr = 'lock file thiếu pid';
-      } catch (e) { ownerErr = 'lock file hỏng: ' + e.message; }
+      } catch (e) { ownerErr = 'lock file hỏng: ' + e.message; console.warn('[probeZaloReady] listener-owner.json parse error:', e.message); }
     }
 
     // Cookie cache freshness — youngest mtime in the profile dir as proxy.
@@ -1434,10 +1606,46 @@ async function probeZaloReady() {
       // Cookie maxAge check removed — Zalo sessions persist indefinitely
       // while the listener keeps the WebSocket alive. The maxAge field in
       // credentials.json is misleading (openzca refreshes internally).
+      //
+      // Gateway-side diagnostic: read openclaw.log for modoro-zalo / openzca
+      // errors so the probe result tells the user (and us) WHY the listener
+      // didn't start, not just that it didn't.
+      const gwDiag = _readGatewayZaloDiagnostic();
+      const baseMsg = 'Listener chưa chạy.';
+      let diagMsg;
+      if (gwDiag?.hint) {
+        // Produce a user-friendly summary from the raw hint
+        const h = gwDiag.hint;
+        if (/TypeScript|TS\d{4}/i.test(h)) {
+          diagMsg = `${baseMsg} Plugin Zalo lỗi TypeScript khi biên dịch. Thử tắt app, mở lại.`;
+        } else if (/ENOENT|cannot find module/i.test(h)) {
+          diagMsg = `${baseMsg} Thiếu file plugin Zalo. Thử tắt app, mở lại.`;
+        } else if (/disabled|not.*load/i.test(h)) {
+          diagMsg = `${baseMsg} Plugin Zalo bị tắt trong cấu hình.`;
+        } else if (/không đề cập modoro-zalo/i.test(h)) {
+          diagMsg = `${baseMsg} Gateway không nhận diện plugin Zalo. Thử tắt app, mở lại.`;
+        } else {
+          diagMsg = `${baseMsg} ${h.slice(0, 120)}`;
+        }
+      } else {
+        diagMsg = `${baseMsg} Đợi gateway khởi động Zalo channel (~10-15 giây sau khi mở app).`;
+      }
+      if (gwDiag) {
+        // Log once so main.log captures the finding — visible even without
+        // the customer sending openclaw.log.
+        if (!_gwLogDiagLoggedOnce) {
+          _gwLogDiagLoggedOnce = true;
+          console.warn('[zalo-diagnostic] openzca not running — gateway log hint:', gwDiag.hint);
+          if (gwDiag.lines.length > 1) {
+            console.warn('[zalo-diagnostic] related lines:', gwDiag.lines.join(' | '));
+          }
+        }
+      }
       return {
         ready: false,
-        error: 'Listener chưa chạy. Đợi gateway khởi động Zalo channel (~10-15 giây sau khi mở app).',
+        error: diagMsg,
         cacheAgeMin,
+        gatewayDiag: gwDiag || undefined,
       };
     }
 
@@ -1806,7 +2014,7 @@ module.exports = {
   // Probes
   isZaloListenerAlive, getReadyGateState,
   finalizeTelegramReadyProbe, finalizeZaloReadyProbe,
-  probeTelegramReady, findOpenzcaListenerPid, probeZaloReady,
+  probeTelegramReady, findOpenzcaListenerPid, probeZaloReady, resetGatewayZaloDiag,
   // Broadcast
   broadcastChannelStatusOnce, startChannelStatusBroadcast,
   // Telegram commands

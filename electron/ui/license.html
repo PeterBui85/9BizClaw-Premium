@@ -376,7 +376,7 @@
         <img src="9bizclaw-mascot.png" alt="9BizClaw" class="lk-brand-logo-img" onerror="this.style.display='none'">
         <div>
           <div class="lk-brand-name">9BizClaw</div>
-          <div class="lk-brand-tag">Premium Edition</div>
+          <div class="lk-brand-tag">Phiên bản Premium</div>
         </div>
       </div>
 
@@ -387,26 +387,26 @@
       </div>
 
       <div class="lk-brand-foot">
-        Bản quyền gắn với máy tính của anh/chị. Dán key vào ô bên phải để kích hoạt.
+        Bản quyền gắn với máy tính của anh/chị. Dán mã vào ô bên phải để kích hoạt.
       </div>
     </aside>
 
     <main class="lk-form-panel">
       <div class="lk-form-content">
         <h2>Kích hoạt bản quyền</h2>
-        <p class="lk-step-desc">Dán license key đã nhận từ 9Biz để kích hoạt phiên bản Premium.</p>
+        <p class="lk-step-desc">Dán mã bản quyền đã nhận từ 9Biz để kích hoạt phiên bản Premium.</p>
 
         <div class="lk-key-group">
-          <label class="lk-key-label">License key</label>
-          <textarea class="lk-key-textarea" id="key-input" placeholder="CLAW-eyJlIjoiZW1haWxAZXhhb..." spellcheck="false" autocomplete="off"></textarea>
-          <div class="lk-machine-id" id="machine-id" title="Nhấn để copy">
-            <span class="lk-machine-id-label">Machine ID:</span>
-            <span class="lk-machine-id-value" id="machine-id-value">loading...</span>
-            <span class="lk-machine-id-hint">nhấn để copy</span>
+          <label class="lk-key-label">Mã bản quyền</label>
+          <textarea class="lk-key-textarea" id="key-input" placeholder="Dán mã bản quyền vào đây (CLAW-...)" spellcheck="false" autocomplete="off"></textarea>
+          <div class="lk-machine-id" id="machine-id" title="Nhấn để sao chép">
+            <span class="lk-machine-id-label">Mã máy:</span>
+            <span class="lk-machine-id-value" id="machine-id-value">Đang tải...</span>
+            <span class="lk-machine-id-hint">nhấn để sao chép</span>
           </div>
         </div>
 
-        <button class="lk-btn" id="btn-activate" disabled>Kích hoạt</button>
+        <button class="lk-btn" id="btn-activate" disabled title="Kích hoạt bản quyền với mã đã nhập">Kích hoạt</button>
 
         <div class="lk-status" id="status-msg">
           <span class="lk-status-icon" id="status-icon"></span>
@@ -475,11 +475,11 @@
 
     // ===== Error messages =====
     var ERROR_MESSAGES = {
-      invalid_key: 'Key không hợp lệ. Vui lòng kiểm tra lại.',
-      expired: 'Key đã hết hạn. Liên hệ hỗ trợ để gia hạn.',
-      write_failed: 'Không ghi được license. Kiểm tra quyền truy cập thư mục.',
-      revoked: 'Key đã bị thu hồi. Liên hệ hỗ trợ.',
-      machine_mismatch: 'Key này đã được bind tới máy khác. Liên hệ tech@modoro.com.vn để chuyển máy.',
+      invalid_key: 'Mã không hợp lệ. Vui lòng kiểm tra lại.',
+      expired: 'Mã đã hết hạn. Liên hệ hỗ trợ để gia hạn.',
+      write_failed: 'Không lưu được bản quyền. Kiểm tra quyền truy cập thư mục.',
+      revoked: 'Mã đã bị thu hồi. Liên hệ hỗ trợ.',
+      machine_mismatch: 'Mã này đã được gắn với máy khác. Liên hệ tech@modoro.com.vn để chuyển máy.',
     };
 
     // ===== Activate =====
@@ -549,11 +549,11 @@
 
     machineIdEl.addEventListener('click', function() {
       var mid = machineIdValue.textContent;
-      if (mid && mid !== 'loading...' && mid !== '---') {
+      if (mid && mid !== 'Đang tải...' && mid !== '---') {
         navigator.clipboard.writeText(mid).then(function() {
           var hint = machineIdEl.querySelector('.lk-machine-id-hint');
-          hint.textContent = 'đã copy!';
-          setTimeout(function() { hint.textContent = 'nhấn để copy'; }, 2000);
+          hint.textContent = 'đã sao chép!';
+          setTimeout(function() { hint.textContent = 'nhấn để sao chép'; }, 2000);
         });
       }
     });

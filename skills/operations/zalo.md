@@ -181,7 +181,7 @@ phone: (chỉ khi khách tự cung cấp)
 
 Xin lỗi 1 lần — "Em ghi nhận" — escalate `khiếu nại` — "Em đã chuyển sếp."
 
-**BẮT BUỘC:** reply PHẢI chứa cụm **"để em báo sếp"** hoặc **"em đã chuyển sếp"** — hệ thống detect từ khóa để forward CEO. Không có cụm này → CEO không nhận được escalation alert.
+**BẮT BUỘC:** reply PHẢI chứa ít nhất 1 trong 8 cụm theo AGENTS.md: **"em đã chuyển sếp"**, **"em sẽ chuyển sếp"**, **"để em báo sếp"**, **"em sẽ báo sếp"**, **"cần sếp xử lý"**, **"cần sếp hỗ trợ"**, **"ngoài khả năng"**, **"không thuộc phạm vi"** — hệ thống detect từ khóa để forward CEO. Không có cụm này → CEO không nhận được escalation alert.
 
 ## CHECKLIST MỖI REPLY
 

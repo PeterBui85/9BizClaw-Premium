@@ -2,9 +2,9 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 113,
-    "ipcHandlers": 171,
-    "preloadBridges": 163,
-    "dashboardPages": 15,
+    "ipcHandlers": 184,
+    "preloadBridges": 176,
+    "dashboardPages": 16,
     "capabilityContracts": 5
   },
   "apiRoutes": [
@@ -1068,6 +1068,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "clear-chat-history",
+      "source": "electron/lib/chat.js"
+    },
+    {
       "channel": "compact-all-sessions",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1077,6 +1081,10 @@
     },
     {
       "channel": "create-appointment",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "create-backup",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1109,6 +1117,10 @@
     },
     {
       "channel": "delete-document",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "delete-fb-schedule",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1168,6 +1180,14 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "get-brain-graph",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-brain-node-detail",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "get-ceo-memories",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1201,6 +1221,10 @@
     },
     {
       "channel": "get-fb-recent-posts",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-fb-schedules",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1492,7 +1516,15 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "log-chat-feedback",
+      "source": "electron/lib/chat.js"
+    },
+    {
       "channel": "mark-guide-complete",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "open-backup-file-dialog",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1532,6 +1564,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "rebuild-brain-graph",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "refresh-zalo-cache",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1545,6 +1581,14 @@
     },
     {
       "channel": "resolve-zalo-target",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "restore-backup-apply",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "restore-backup-preview",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1660,6 +1704,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "stop-chat-generation",
+      "source": "electron/lib/chat.js"
+    },
+    {
       "channel": "telegram-self-test",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1690,6 +1738,10 @@
     {
       "channel": "upload-brand-asset",
       "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "upload-chat-file",
+      "source": "electron/lib/chat.js"
     },
     {
       "channel": "upload-knowledge-file",
@@ -1764,8 +1816,18 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "clearChatHistory",
+      "channel": "clear-chat-history",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "createAppointment",
       "channel": "create-appointment",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "createBackup",
+      "channel": "create-backup",
       "source": "electron/preload.js"
     },
     {
@@ -1801,6 +1863,11 @@
     {
       "name": "deleteDocument",
       "channel": "delete-document",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "deleteFbSchedule",
+      "channel": "delete-fb-schedule",
       "source": "electron/preload.js"
     },
     {
@@ -1874,6 +1941,16 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "getBrainGraph",
+      "channel": "get-brain-graph",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getBrainNodeDetail",
+      "channel": "get-brain-node-detail",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "getCeoMemories",
       "channel": "get-ceo-memories",
       "source": "electron/preload.js"
@@ -1911,6 +1988,11 @@
     {
       "name": "getFbRecentPosts",
       "channel": "get-fb-recent-posts",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getFbSchedules",
+      "channel": "get-fb-schedules",
       "source": "electron/preload.js"
     },
     {
@@ -2269,8 +2351,18 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "logChatFeedback",
+      "channel": "log-chat-feedback",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "markGuideComplete",
       "channel": "mark-guide-complete",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "openBackupFileDialog",
+      "channel": "open-backup-file-dialog",
       "source": "electron/preload.js"
     },
     {
@@ -2314,6 +2406,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "rebuildBrainGraph",
+      "channel": "rebuild-brain-graph",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "refreshZaloCache",
       "channel": "refresh-zalo-cache",
       "source": "electron/preload.js"
@@ -2331,6 +2428,16 @@
     {
       "name": "resolveZaloTarget",
       "channel": "resolve-zalo-target",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "restoreBackupApply",
+      "channel": "restore-backup-apply",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "restoreBackupPreview",
+      "channel": "restore-backup-preview",
       "source": "electron/preload.js"
     },
     {
@@ -2464,6 +2571,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "stopChatGeneration",
+      "channel": "stop-chat-generation",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "telegramSelfTest",
       "channel": "telegram-self-test",
       "source": "electron/preload.js"
@@ -2504,6 +2616,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "uploadChatFile",
+      "channel": "upload-chat-file",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "uploadKnowledgeFile",
       "channel": "upload-knowledge-file",
       "source": "electron/preload.js"
@@ -2532,6 +2649,10 @@
   "dashboardPages": [
     {
       "id": "9router",
+      "source": "electron/ui/dashboard.html"
+    },
+    {
+      "id": "brain",
       "source": "electron/ui/dashboard.html"
     },
     {
@@ -2621,39 +2742,39 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 559833
+      "bytes": 605175
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 240729
+      "bytes": 252970
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 142349
-    },
-    {
-      "path": "electron/ui/wizard.html",
-      "bytes": 115665
+      "bytes": 145531
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 113801
+      "bytes": 123778
+    },
+    {
+      "path": "electron/ui/wizard.html",
+      "bytes": 116314
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 84244
-    },
-    {
-      "path": "electron/lib/knowledge.js",
-      "bytes": 77313
-    },
-    {
-      "path": "electron/lib/runtime-installer.js",
-      "bytes": 76243
+      "bytes": 93447
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 73240
+      "bytes": 79037
+    },
+    {
+      "path": "electron/lib/runtime-installer.js",
+      "bytes": 77811
+    },
+    {
+      "path": "electron/lib/knowledge.js",
+      "bytes": 77511
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -2661,51 +2782,59 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 52210
+      "bytes": 53962
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 46914
+      "bytes": 48942
     },
     {
-      "path": "electron/lib/fb-schedule.js",
-      "bytes": 45784
+      "path": "electron/lib/vendor-patches.js",
+      "bytes": 45358
     },
     {
       "path": "electron/lib/skill-manager.js",
       "bytes": 44212
     },
     {
-      "path": "electron/lib/nine-router.js",
-      "bytes": 42065
+      "path": "electron/lib/fb-schedule.js",
+      "bytes": 43962
     },
     {
-      "path": "electron/lib/vendor-patches.js",
-      "bytes": 35698
+      "path": "electron/lib/nine-router.js",
+      "bytes": 42730
     },
     {
       "path": "electron/lib/zalo-plugin.js",
-      "bytes": 35420
+      "bytes": 37523
     },
     {
       "path": "electron/lib/boot.js",
-      "bytes": 35084
+      "bytes": 36280
     },
     {
       "path": "electron/lib/media-library.js",
-      "bytes": 30376
+      "bytes": 31008
     },
     {
       "path": "electron/lib/google-api.js",
       "bytes": 29709
     },
     {
+      "path": "electron/ui/splash.html",
+      "bytes": 26978
+    },
+    {
       "path": "electron/lib/conversation.js",
       "bytes": 26324
     },
     {
-      "path": "electron/ui/splash.html",
-      "bytes": 25078
+      "path": "electron/lib/brain-graph.js",
+      "bytes": 26223
+    },
+    {
+      "path": "electron/ui/brain.js",
+      "bytes": 24668
     }
   ]
 }

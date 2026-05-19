@@ -1,3 +1,10 @@
+---
+name: giao-duc
+description: Kỹ năng chuyên ngành giáo dục và đào tạo — quản lý học viên, lịch học, tuyển sinh
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Giáo dục và Đào tạo
 
 ## Nhắc nhở vận hành

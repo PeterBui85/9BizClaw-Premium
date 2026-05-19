@@ -28,8 +28,9 @@ const SHARED_VERSIONS = (() => {
     return JSON.parse(require('fs').readFileSync(
       require('path').join(__dirname, '..', 'scripts', 'versions.json'), 'utf-8'
     ));
-  } catch {
-    return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12', gog: 'v0.13.0', node: '22.22.2' };
+  } catch (e) {
+    console.warn('[runtime-installer] versions.json not found, using defaults:', e?.message);
+    return { openclaw: '2026.4.14', openzca: '0.1.59', nineRouter: '0.4.12', gog: 'v0.13.0', node: '22.22.2' };
   }
 })();
 
@@ -408,9 +409,6 @@ function buildEnvWithGitPath(extra) {
     const shimGit = findGitBin();
     env.npm_config_git = shimGit || '/usr/bin/false';
     console.log('[runtime-installer] npm_config_git =', env.npm_config_git);
-  } else if (!macHasXcodeCLT()) {
-    const shimGit = findGitBin();
-    env.npm_config_git = shimGit || '/usr/bin/false';
   }
   // Isolate npm cache from system ~/.npm — avoids EACCES when ~/.npm has
   // root-owned files from a previous sudo npm install.
@@ -703,6 +701,7 @@ async function downloadFile(url, destPath, onProgress) {
       const fetchTimeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
       fetch(url, { signal: controller.signal }).then(async (response) => {
         if (!response.ok) {
+          clearTimeout(fetchTimeout);
           const body = await response.text().catch(() => '');
           reject(attachHint(new Error(`HTTP ${response.status} ${response.statusText}: ${body.slice(0, 200)}`)));
           return;
@@ -1038,24 +1037,44 @@ function getRuntimeNpmCommand(nodeBin = null) {
 }
 
 function killOrphanVendorNodeProcesses() {
-  if (process.platform !== 'win32') return;
-  try {
-    const nodeHome = getRuntimeNodeHomeDir();
-    const nodeBin = path.join(nodeHome, 'node.exe');
-    if (!fs.existsSync(nodeBin)) return;
-    const escaped = nodeBin.replace(/\\/g, '\\\\');
-    const out = execSync(
-      `wmic process where "ExecutablePath='${escaped}'" get ProcessId /format:list`,
-      { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'] }
-    );
-    const pids = out.match(/ProcessId=(\d+)/g)?.map(m => m.split('=')[1]) || [];
-    const myPid = String(process.pid);
-    for (const pid of pids) {
-      if (pid === myPid) continue;
-      try { execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 }); } catch {}
-    }
-    if (pids.length) console.log('[runtime-installer] killed orphan vendor node process(es):', pids.filter(p => p !== myPid).join(', '));
-  } catch {}
+  const isWin = process.platform === 'win32';
+  if (isWin) {
+    try {
+      const nodeHome = getRuntimeNodeHomeDir();
+      const nodeBin = path.join(nodeHome, 'node.exe');
+      if (!fs.existsSync(nodeBin)) return;
+      const escaped = nodeBin.replace(/\\/g, '\\\\');
+      const out = execSync(
+        `wmic process where "ExecutablePath='${escaped}'" get ProcessId /format:list`,
+        { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'] }
+      );
+      const pids = out.match(/ProcessId=(\d+)/g)?.map(m => m.split('=')[1]) || [];
+      const myPid = String(process.pid);
+      for (const pid of pids) {
+        if (pid === myPid) continue;
+        try { execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 }); } catch {}
+      }
+      if (pids.length) console.log('[runtime-installer] killed orphan vendor node process(es):', pids.filter(p => p !== myPid).join(', '));
+    } catch {}
+  } else {
+    try {
+      const nodeBin = getRuntimeNodeBinPath();
+      if (!nodeBin || !fs.existsSync(nodeBin)) return;
+      const out = execSync(
+        `pgrep -f "${nodeBin.replace(/"/g, '\\"')}" 2>/dev/null || true`,
+        { encoding: 'utf-8', timeout: 3000, shell: '/bin/sh' }
+      );
+      const myPid = process.pid;
+      const killed = [];
+      for (const line of out.trim().split('\n')) {
+        const pid = parseInt(line.trim(), 10);
+        if (pid && pid !== myPid) {
+          try { process.kill(pid, 'SIGKILL'); killed.push(pid); } catch {}
+        }
+      }
+      if (killed.length) console.log('[runtime-installer] killed orphan vendor node process(es):', killed.join(', '));
+    } catch {}
+  }
 }
 
 // npm stages packages in dirs like `.9router-n9xAfFdg` then renames them.
@@ -1081,22 +1100,39 @@ function cleanNpmStagingDirs(nodeModulesDir) {
 }
 
 function killOrphan9RouterProcesses() {
-  if (process.platform !== 'win32') return;
-  try {
-    const { execSync } = require('child_process');
-    const vendorDir = getRuntimeNodeModulesDir();
-    if (!vendorDir) return;
-    const nrDir = path.join(vendorDir, '9router');
-    if (!fs.existsSync(nrDir)) return;
-    const out = execSync('wmic process where "CommandLine like \'%9router%\'" get ProcessId /format:list', {
-      encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore']
-    });
-    const pids = out.match(/ProcessId=(\d+)/g)?.map(m => m.split('=')[1]) || [];
-    for (const pid of pids) {
-      try { execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 }); } catch {}
-    }
-    if (pids.length) console.log('[runtime-installer] killed orphan 9router process(es):', pids.join(', '));
-  } catch {}
+  const isWin = process.platform === 'win32';
+  if (isWin) {
+    try {
+      const { execSync } = require('child_process');
+      const vendorDir = getRuntimeNodeModulesDir();
+      if (!vendorDir) return;
+      const nrDir = path.join(vendorDir, '9router');
+      if (!fs.existsSync(nrDir)) return;
+      const psCmd = `powershell -NoProfile -Command "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*9router*' }).ProcessId"`;
+      const out = execSync(psCmd, { encoding: 'utf-8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'] });
+      const pids = out.split(/\r?\n/).map(l => l.trim()).filter(p => /^\d+$/.test(p));
+      for (const pid of pids) {
+        try { execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 }); } catch {}
+      }
+      if (pids.length) console.log('[runtime-installer] killed orphan 9router process(es):', pids.join(', '));
+    } catch {}
+  } else {
+    try {
+      const out = execSync(
+        'pgrep -f "9router" 2>/dev/null || true',
+        { encoding: 'utf-8', timeout: 3000, shell: '/bin/sh' }
+      );
+      const myPid = process.pid;
+      const killed = [];
+      for (const line of out.trim().split('\n')) {
+        const pid = parseInt(line.trim(), 10);
+        if (pid && pid !== myPid) {
+          try { process.kill(pid, 'SIGKILL'); killed.push(pid); } catch {}
+        }
+      }
+      if (killed.length) console.log('[runtime-installer] killed orphan 9router process(es):', killed.join(', '));
+    } catch {}
+  }
 }
 
 async function installNpmPackages(versions, onProgress) {
@@ -1177,10 +1213,10 @@ async function installNpmPackages(versions, onProgress) {
     await new Promise((resolve, reject) => {
       const child = spawn(
         npm.command,
-        [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts', '--omit=optional'],
+        [...npm.argsPrefix, 'install', '--prefix', vendorDir, ...specs, '--save', '--no-fund', '--no-audit', '--ignore-scripts', '--omit=optional', '--loglevel', 'http'],
         {
           encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
-          env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_node_gyp: 'echo' }),
+          env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_node_gyp: 'echo', npm_config_progress: 'true' }),
         }
       );
       let settled = false;
@@ -1188,7 +1224,7 @@ async function installNpmPackages(versions, onProgress) {
       let stderr = '';
       let lastSubStep = '';
       let lastActivityAt = Date.now();
-      const ACTIVITY_TIMEOUT_MS = 90000;
+      const ACTIVITY_TIMEOUT_MS = 180000;
       // spawn() ignores the timeout option — implement manually via kill timer
       const killTimer = setTimeout(() => {
         console.error('[runtime-installer] npm install timed out after ' + (NPM_INSTALL_TIMEOUT_MS / 1000) + 's — killing');
@@ -1197,7 +1233,7 @@ async function installNpmPackages(versions, onProgress) {
         settle(reject, new Error('npm install timed out after ' + (NPM_INSTALL_TIMEOUT_MS / 1000) + 's'));
       }, NPM_INSTALL_TIMEOUT_MS);
       killTimer.unref();
-      // Activity watchdog: kill if npm produces no output for 90s (likely hung)
+      // Activity watchdog: kill if npm produces no output for 180s (likely hung)
       const activityWd = setInterval(() => {
         if (Date.now() - lastActivityAt > ACTIVITY_TIMEOUT_MS) {
           console.error('[runtime-installer] npm install silent for ' + (ACTIVITY_TIMEOUT_MS / 1000) + 's — killing (hung?)');

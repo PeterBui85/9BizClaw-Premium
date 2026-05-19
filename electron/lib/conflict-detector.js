@@ -160,9 +160,13 @@ async function getPackageConflict(pkgName) {
         ['list', '-g', pkgName, '--depth=0', '--json'],
         { timeout: 10000, encoding: 'utf-8', shell: isWin }
       );
-      const info = JSON.parse(lsOut);
+      // npm may prepend warnings before JSON output; try to extract JSON portion
+      let jsonStr = lsOut;
+      const jsonStart = lsOut.indexOf('{');
+      if (jsonStart > 0) jsonStr = lsOut.slice(jsonStart);
+      const info = JSON.parse(jsonStr);
       installedVersion = info[pkgName]?.version || null;
-    } catch {}
+    } catch (e) { /* npm ls may fail if package not installed — expected */ }
 
     return {
       name: pkgName,

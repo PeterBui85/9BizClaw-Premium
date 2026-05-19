@@ -16,7 +16,7 @@ let _zaloReady = false;
 let _zaloPluginInFlight = null;
 let _groupHistorySeedInFlight = false;
 let _cachedOpenzcaCliJs = null;
-const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.0';
+const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.4';
 
 // ============================================
 //  GETTERS
@@ -290,23 +290,57 @@ memberCount: ${memberCount}
         try { prevFingerprint = JSON.parse(fs.readFileSync(seedFlagPath, 'utf-8')).fingerprint || ''; } catch {}
       }
       const isAccountSwitch = prevFingerprint && fingerprint && prevFingerprint !== fingerprint;
-      const needsSeed = cacheHasContent && (!fs.existsSync(seedFlagPath) || isAccountSwitch);
+      const isLegacyFlag = fs.existsSync(seedFlagPath) && !prevFingerprint;
+      // Also re-seed if ANY new friend is not covered by blocklist (catch-all safety)
+      let hasUncoveredFriends = false;
+      if (cacheHasContent && allFriendIds.length > 0) {
+        try {
+          const blPath = path.join(workspace, 'zalo-blocklist.json');
+          if (fs.existsSync(blPath)) {
+            const bl = JSON.parse(fs.readFileSync(blPath, 'utf-8'));
+            if (Array.isArray(bl)) {
+              const blSet = new Set(bl.map(x => String(x).trim()));
+              hasUncoveredFriends = allFriendIds.some(id => !blSet.has(id));
+            }
+          } else {
+            hasUncoveredFriends = true;
+          }
+        } catch {}
+      }
+      const needsSeed = cacheHasContent && (!fs.existsSync(seedFlagPath) || isAccountSwitch || isLegacyFlag || hasUncoveredFriends);
       if (needsSeed) {
         if (isAccountSwitch) console.log('[seed-defaults] Zalo account switch detected — re-seeding defaults');
-        // 1. Stranger policy → ignore (don't reply to unknown DMs)
+        // 1. Stranger policy → ignore (default). CEO can change in Dashboard.
         const spPath = path.join(workspace, 'zalo-stranger-policy.json');
-        fs.writeFileSync(spPath, JSON.stringify({ mode: 'ignore' }, null, 2), 'utf-8');
-        // 2. All discovered groups → off, default new group mode → off
+        if (!fs.existsSync(spPath)) {
+          fs.writeFileSync(spPath, JSON.stringify({ mode: 'ignore' }, null, 2), 'utf-8');
+        }
+        // 2. Groups: MERGE new groups as OFF, preserve existing settings
         const gsPath = path.join(workspace, 'zalo-group-settings.json');
         let gs = {};
+        try { if (fs.existsSync(gsPath)) gs = JSON.parse(fs.readFileSync(gsPath, 'utf-8')); } catch {}
+        if (typeof gs !== 'object' || Array.isArray(gs)) gs = {};
         gs.__default = { mode: 'off' };
         for (const gid of allGroupIds) {
-          gs[gid] = { mode: 'off' };
+          if (!gs[gid]) gs[gid] = { mode: 'off' };
         }
         fs.writeFileSync(gsPath, JSON.stringify(gs, null, 2), 'utf-8');
-        // 3. Blocklist = ALL friend IDs (everyone OFF by default)
+        // 3. Blocklist: MERGE new friends into existing blocklist (never overwrite)
+        // On fresh install: creates blocklist with all friend IDs
+        // On account switch: adds new friends without removing old ones
+        // On partial cache load: adds what's available, re-runs later for the rest
         const blocklistPath = path.join(workspace, 'zalo-blocklist.json');
-        fs.writeFileSync(blocklistPath, JSON.stringify(allFriendIds, null, 2), 'utf-8');
+        let existingBl = [];
+        try { if (fs.existsSync(blocklistPath)) existingBl = JSON.parse(fs.readFileSync(blocklistPath, 'utf-8')); } catch {}
+        if (!Array.isArray(existingBl)) existingBl = [];
+        const blSet = new Set(existingBl.map(x => String(x).trim()));
+        let added = 0;
+        for (const fid of allFriendIds) {
+          if (!blSet.has(fid)) { blSet.add(fid); added++; }
+        }
+        const mergedBl = [...blSet];
+        fs.writeFileSync(blocklistPath, JSON.stringify(mergedBl, null, 2), 'utf-8');
+        if (added > 0) console.log(`[seed-defaults] added ${added} new friends to blocklist (total: ${mergedBl.length})`);
         fs.writeFileSync(seedFlagPath, JSON.stringify({
           seededAt: new Date().toISOString(),
           fingerprint,
@@ -583,14 +617,19 @@ async function _ensureZaloPluginImpl() {
       return;
     }
 
-    // PRIMARY SOURCE: packages/modoro-zalo/ (our fork, shipped in-tree)
+    // PRIMARY SOURCE: packages/modoro-zalo/ (our fork, shipped in-tree — dev mode)
     const packagesSource = path.join(__dirname, '..', 'packages', 'modoro-zalo');
-    // FALLBACK: vendor/node_modules/modoro-zalo/ (bundled in vendor)
+    // SECONDARY: extraResources/modoro-zalo/ (prebuild bundle — packaged app)
+    const extraResSource = process.resourcesPath
+      ? path.join(process.resourcesPath, 'modoro-zalo')
+      : null;
+    // FALLBACK: vendor/node_modules/modoro-zalo/ (upstream npm — last resort)
     const vendorSource = vendorDir ? path.join(vendorDir, 'node_modules', 'modoro-zalo') : null;
 
-    const sourceDir = fs.existsSync(path.join(packagesSource, 'openclaw.plugin.json'))
-      ? packagesSource
-      : (vendorSource && fs.existsSync(path.join(vendorSource, 'openclaw.plugin.json')) ? vendorSource : null);
+    const _hasPlugin = (d) => d && fs.existsSync(path.join(d, 'openclaw.plugin.json'));
+    const sourceDir = _hasPlugin(packagesSource) ? packagesSource
+      : _hasPlugin(extraResSource) ? extraResSource
+      : _hasPlugin(vendorSource) ? vendorSource : null;
 
     if (sourceDir) {
       try {

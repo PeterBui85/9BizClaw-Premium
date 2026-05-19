@@ -2,6 +2,12 @@
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Check whether a filename resolves to a path inside baseDir (prevents traversal).
+ * @param {string} baseDir - The root directory to constrain to
+ * @param {string} filename - The filename or relative path to check
+ * @returns {boolean} True if resolved path is within baseDir
+ */
 function isPathSafe(baseDir, filename) {
   if (!filename || typeof filename !== 'string') return false;
   if (filename.includes('\0')) return false;
@@ -10,6 +16,13 @@ function isPathSafe(baseDir, filename) {
 }
 
 let _atomicWriteCounter = 0;
+/**
+ * Atomically write JSON data to a file (write to tmp + rename).
+ * @param {string} filePath - Destination file path
+ * @param {*} data - Data to JSON.stringify and write
+ * @returns {boolean} True on success
+ * @throws {Error} On disk-full or unrecoverable write failure
+ */
 function writeJsonAtomic(filePath, data) {
   const serialized = JSON.stringify(data, null, 2) + '\n';
   const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}.${++_atomicWriteCounter}`;
@@ -29,7 +42,6 @@ function writeJsonAtomic(filePath, data) {
         try {
           const msg = `[writeJsonAtomic] rename fail: ${filePath} — ${e2.message} (tmp=${tmp})`;
           if (typeof console !== 'undefined') console.error(msg);
-          try { if (typeof logToFile === 'function') logToFile(msg); } catch {}
         } catch {}
         try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
         const err = new Error(
@@ -47,10 +59,18 @@ function writeJsonAtomic(filePath, data) {
         try { fs.unlinkSync(tmp); } catch {}
       }
     } catch {}
+    if (e.code === 'ENOSPC') {
+      console.error('[writeJsonAtomic] DISK FULL — cannot write:', filePath);
+    }
     throw e;
   }
 }
 
+/**
+ * Tokenize a shell-like command string into arguments, respecting quotes.
+ * @param {string} command - The shell command string to tokenize
+ * @returns {string[]|null} Array of tokens, or null if quotes are unclosed
+ */
 function tokenizeShellish(command) {
   const tokens = [];
   let cur = '';
@@ -109,8 +129,10 @@ function sanitizeZaloText(text) {
   out = out.replace(/^\s*\d+[.)]\s+/gm, '');                       // 1. numbered
   out = out.replace(/\|([^|\n]+)\|/g, '$1');                       // | table |
   out = out.replace(/<\/?[a-zA-Z][^>]*>/g, '');                    // HTML tags
-  out = out.replace(/[​-‏‪-‮﻿]/g, '');    // zero-width + RLO/LRO
-  out = out.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, ''); // strip ALL emoji
+  // Strip zero-width spaces, joiners, RLO/LRO bidi overrides
+  out = out.replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, '');
+  // Strip ALL emoji — intentional per brand guidelines (no cheap emojis in Zalo replies)
+  out = out.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '');
   out = out.replace(/\n{3,}/g, '\n\n');                             // collapse newlines
   return out.trim();
 }

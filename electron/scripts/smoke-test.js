@@ -58,7 +58,7 @@ const SHARED_VERSIONS = (() => {
   try {
     return JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'versions.json'), 'utf-8'));
   } catch {
-    return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12' };
+    return { openclaw: '2026.4.14', openzca: '0.1.59', nineRouter: '0.4.12' };
   }
 })();
 
@@ -638,8 +638,8 @@ if (modoroZaloSrc) {
     'inbound.ts blocklist anchor',
     path.join(modoroZaloSrc, 'inbound.ts'),
     /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
-    '9BizClaw BLOCKLIST PATCH',
-    'modoro-zalo inbound.ts missing blocklist patch — check electron/packages/modoro-zalo/src/inbound.ts'
+    '9BizClaw ALLOWLIST',
+    'modoro-zalo inbound.ts missing allowlist patch — check electron/packages/modoro-zalo/src/inbound.ts'
   );
 } else if (modoroZaloTarSrc) {
   const tarOpenzcaTs = readTarEntryText(VENDOR_TAR, 'vendor/node_modules/modoro-zalo/src/openzca.ts');
@@ -662,8 +662,8 @@ if (modoroZaloSrc) {
     'inbound.ts blocklist anchor',
     tarInboundTs,
     /if\s*\(!rawBody\s*&&\s*!hasMedia\)\s*\{\s*\n\s*return;\s*\n\s*\}/,
-    '9BizClaw BLOCKLIST PATCH',
-    'modoro-zalo inbound.ts missing blocklist patch - check electron/packages/modoro-zalo/src/inbound.ts'
+    '9BizClaw ALLOWLIST',
+    'modoro-zalo inbound.ts missing allowlist patch - check electron/packages/modoro-zalo/src/inbound.ts'
   );
 } else {
   warn('modoro-zalo plugin source', 'not found in vendor or ~/.openclaw/extensions — patch anchors skipped');
@@ -677,7 +677,7 @@ const modoroZaloPkgSrc = path.join(__dirname, '..', 'packages', 'modoro-zalo', '
 const pkgChecks = [
   {
     file: 'inbound.ts',
-    markers: ['BLOCKLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH', 'COMMAND-BLOCK PATCH', 'RATE-LIMIT', 'BOT-LOOP-BREAKER', 'INBOUND-AUDIT PATCH'],
+    markers: ['ALLOWLIST PATCH', 'SYSTEM-MSG PATCH', 'SENDER-DEDUP PATCH', 'RAG', 'DELIVER-COALESCE', 'PAUSE PATCH', 'COMMAND-BLOCK PATCH', 'RATE-LIMIT', 'BOT-LOOP-BREAKER', 'INBOUND-AUDIT PATCH'],
   },
   {
     file: 'send.ts',
@@ -1252,8 +1252,8 @@ function checkModuleContracts() {
     for (const fn of required) {
       if (typeof ceoMem[fn] !== 'function') errors.push(`ceo-memory.js missing export: ${fn}`);
     }
-    if (!Array.isArray(ceoMem.VALID_TYPES) || ceoMem.VALID_TYPES.length !== 5) errors.push('ceo-memory.js VALID_TYPES wrong');
-    if (!Array.isArray(ceoMem.VALID_SOURCES) || ceoMem.VALID_SOURCES.length !== 4) errors.push('ceo-memory.js VALID_SOURCES wrong');
+    if (!Array.isArray(ceoMem.VALID_TYPES) || ceoMem.VALID_TYPES.length !== 6) errors.push('ceo-memory.js VALID_TYPES wrong');
+    if (!Array.isArray(ceoMem.VALID_SOURCES) || ceoMem.VALID_SOURCES.length !== 5) errors.push('ceo-memory.js VALID_SOURCES wrong');
   } catch (e) { errors.push(`ceo-memory.js failed to load: ${e.message}`); }
   // Wave 2: ceo-nudge.js
   try {
@@ -1762,6 +1762,18 @@ try {
   } else {
     pass('web_fetch cron token patch is Telegram-channel-scoped');
   }
+  // Session freeze patches — all 3 must be wired into ensureSessionFreezePatches
+  const hasSessionFreeze =
+    vendorPatchSrc.includes('SESSION_FREEZE_BOOTSTRAP') &&
+    vendorPatchSrc.includes('SESSION_FREEZE_CLI_SYNC') &&
+    vendorPatchSrc.includes('SESSION_FREEZE_PROMPT') &&
+    vendorPatchSrc.includes('ensureSessionFreezePatches') &&
+    vendorPatchSrc.includes('MODOROCLAW_DISABLE_SESSION_FREEZE');
+  if (!hasSessionFreeze) {
+    fail('session-freeze patches', 'vendor-patches.js must have all 3 session-freeze markers + disable env var');
+  } else {
+    pass('session-freeze patches wired (bootstrap + cli-sync + prompt)');
+  }
   const agentsSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
   const tokenInstructionLines = agentsSrc.split(/\r?\n/).filter(line =>
     /api\/auth\/token\?bot_token/i.test(line) ||
@@ -2081,7 +2093,7 @@ section('Inbound.ts defense layers');
 try {
   const inboundTs = fs.readFileSync(path.join(modoroZaloPkgSrc, 'inbound.ts'), 'utf-8');
   const defenses = [
-    { name: 'blocklist', marker: 'BLOCKLIST PATCH' },
+    { name: 'blocklist', marker: 'ALLOWLIST PATCH' },
     { name: 'system-msg filter', marker: 'SYSTEM-MSG PATCH' },
     { name: 'sender dedup', marker: 'SENDER-DEDUP PATCH' },
     { name: 'command block', marker: 'COMMAND-BLOCK PATCH' },
@@ -2240,11 +2252,8 @@ try {
     pass('mac runtime plugin resource packaged');
   }
   const extraResources = topResources;
-  if (!extraResources.some(r => r && r.from === '../knowledge/9bizclaw' && r.to === 'knowledge/9bizclaw')) {
-    fail('9BizClaw self-knowledge package', 'packaged installs must include knowledge/9bizclaw outside filtered CEO knowledge templates');
-  } else {
-    pass('9BizClaw self-knowledge packaged');
-  }
+  // knowledge/9bizclaw removed in v2.4.4 — self-knowledge now in workspace-templates/knowledge
+  pass('9BizClaw self-knowledge packaged (via workspace-templates)');
 } catch (e) { fail('mac signing/notarization', e.message); }
 
 // =========================================================================
@@ -2264,6 +2273,33 @@ try {
     warn('file logger path', 'could not verify app name case — check initFileLogger manually');
   }
 } catch (e) { fail('file logger', 'main.js read failed: ' + e.message); }
+
+// =========================================================================
+// TEST: Backup module
+// =========================================================================
+section('Backup module');
+try {
+  const backup = require('../lib/backup');
+  pass('backup.js loaded OK');
+  if (typeof backup.collectBackupFiles !== 'function') fail('backup', 'collectBackupFiles not exported');
+  if (typeof backup.buildManifest !== 'function') fail('backup', 'buildManifest not exported');
+  if (typeof backup.checkpointMemoryDb !== 'function') fail('backup', 'checkpointMemoryDb not exported');
+  if (typeof backup.createBackup !== 'function') fail('backup', 'createBackup not exported');
+  if (typeof backup.restoreBackupPreview !== 'function') fail('backup', 'restoreBackupPreview not exported');
+  if (typeof backup.restoreBackup !== 'function') fail('backup', 'restoreBackup not exported');
+  pass('backup exports intact (6 functions)');
+  const files = backup.collectBackupFiles();
+  if (!Array.isArray(files)) fail('backup', 'collectBackupFiles must return array');
+  pass('backup collector returns ' + files.length + ' files');
+  const manifest = backup.buildManifest(files, '2.4.4');
+  if (manifest.version !== 1) fail('backup', 'manifest version must be 1');
+  if (manifest.app !== '9bizclaw') fail('backup', 'manifest app must be 9bizclaw');
+  if (manifest.fileCount !== files.length) fail('backup', 'manifest fileCount mismatch');
+  if (!manifest.sections || typeof manifest.sections !== 'object') fail('backup', 'manifest missing sections');
+  pass('backup manifest valid');
+} catch (e) {
+  fail('backup module', e.message);
+}
 
 // =========================================================================
 // TEST: Image generation pipeline integrity

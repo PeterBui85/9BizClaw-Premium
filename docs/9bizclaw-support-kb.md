@@ -1,1328 +1,597 @@
-# 9BizClaw v2.4 — Hướng Dẫn Sử Dụng & Xử Lý Sự Cố Toàn Diện
+# 9BizClaw v2.4.4 — Cơ sở kiến thức xử lý sự cố
 
-> Tài liệu này dành cho bot hỗ trợ khách hàng 9BizClaw. Mọi thông tin đều dựa trên trạng thái thực tế của phần mềm phiên bản 2.4.x.
-
----
-
-## PHẦN 1: TỔNG QUAN SẢN PHẨM
-
-### 9BizClaw là gì?
-
-9BizClaw là phần mềm trợ lý AI dành cho chủ doanh nghiệp Việt Nam. Phần mềm chạy trên máy tính cá nhân (Windows hoặc Mac), kết nối với Telegram và Zalo để:
-
-- Tự động trả lời khách hàng trên Zalo (hỗ trợ sản phẩm, tư vấn, giá cả)
-- Nhận lệnh và gửi báo cáo cho CEO qua Telegram
-- Chạy lịch tự động (báo cáo sáng, tối, tuần, tháng, nhắc khách chưa trả lời)
-- Quản lý tài liệu doanh nghiệp (PDF, Word, Excel — bot tự đọc và dùng khi trả lời)
-- Tạo ảnh AI, đăng bài Facebook Fanpage
-- Kết nối Google Workspace (Gmail, Calendar, Sheets, Drive, Docs, Contacts, Tasks)
-
-**Toàn bộ dữ liệu lưu trên máy tính của bạn.** Không gửi lên cloud của 9Biz. Không cần tài khoản online nào ngoài ChatGPT (miễn phí hoặc Plus đều được).
-
-### Dành cho ai?
-
-- Chủ doanh nghiệp vừa và nhỏ tại Việt Nam
-- Chủ shop, chủ salon/spa, chủ nhà hàng, chủ chuỗi cửa hàng
-- Giám đốc công ty BĐS, giáo dục, sản xuất, thương mại, dịch vụ
-- Bất kỳ CEO nào muốn tự động hóa CSKH + báo cáo + marketing
-
-### Yêu cầu hệ thống
-
-| Yêu cầu | Chi tiết |
-|----------|----------|
-| Hệ điều hành | Windows 10 trở lên hoặc macOS 11 trở lên |
-| RAM | Tối thiểu 4GB, khuyến nghị 8GB |
-| Dung lượng đĩa | ~300MB cho app + ~170MB tải lần đầu |
-| Kết nối mạng | Cần internet khi cài đặt lần đầu và khi bot hoạt động |
-| Tài khoản ChatGPT | Miễn phí hoặc Plus (cả hai đều hoạt động) |
-| Telegram | Cần tài khoản Telegram + tạo bot qua BotFather |
-| Zalo | Cần tài khoản Zalo đang đăng nhập trên cùng máy |
-
-### Tính năng chính
-
-| Tính năng | Mô tả |
-|-----------|-------|
-| Tự động trả lời Zalo | Bot trả lời khách hàng về sản phẩm, giá cả, chính sách |
-| Quản lý qua Telegram | CEO ra lệnh, nhận báo cáo, kiểm soát bot mọi lúc |
-| Lịch tự động (Cron) | 8 lịch có sẵn + tạo thêm không giới hạn |
-| Tài liệu doanh nghiệp | Upload PDF/Word/Excel → bot tự đọc và dùng |
-| 26 kỹ năng có sẵn | Vận hành, marketing, theo ngành (BĐS, F&B, spa...) |
-| Tạo ảnh AI | Tạo ảnh thương hiệu, poster, banner |
-| Facebook Fanpage | Đăng bài lên Fanpage qua lệnh Telegram |
-| Google Workspace | Gmail, Calendar, Sheets, Drive, Docs, Contacts, Tasks |
-| Ghi nhớ khách hàng | Bot tự ghi lại tên, sở thích, lịch sử để phục vụ tốt hơn |
-| Escalation tự động | Chuyển vấn đề phức tạp cho CEO |
-| Dashboard quản lý | Bảng điều khiển trực quan trên máy |
+> Bot hỗ trợ tra cứu bằng keyword từ tin nhắn khách: error code, triệu chứng tiếng Việt, tên màn hình.
+> Mỗi mục: Triệu chứng → Nguyên nhân → Cách sửa → Nếu vẫn lỗi.
 
 ---
 
-## PHẦN 2: CÀI ĐẶT VÀ THIẾT LẬP LẦN ĐẦU
-
-### Tải về và cài đặt
-
-**Windows:**
-1. Mở file `.exe` đã nhận từ 9Biz (khoảng 50-80MB)
-2. Chờ cài đặt hoàn tất (1-2 phút)
-3. Ứng dụng tự mở sau khi cài xong
-
-**macOS:**
-1. Mở file `.dmg` (khoảng 140MB)
-2. Kéo icon 9BizClaw vào thư mục Applications
-3. Mở 9BizClaw từ Applications
-4. Nếu macOS chặn: vào System Settings → Privacy & Security → nhấn "Open Anyway"
-
-### Lần chạy đầu tiên — Tải runtime
-
-Lần đầu mở app, bạn thấy **màn hình splash** với thanh tiến trình. App cần tải thêm:
-
-- Node.js runtime (~20MB)
-- Các gói cần thiết (~145MB)
-- Tổng: ~170MB
-
-**Thời gian:** 2-10 phút tùy tốc độ mạng.
-
-Sau khi tải xong, app chuyển sang **Wizard thiết lập** (4 bước).
-
-### Chi tiết màn hình splash (tải runtime lần đầu)
-
-**Thanh tiêu đề:** "9BizClaw — Đang cài đặt" với chấm trạng thái nhấp nháy + nút Thu nhỏ + Đóng
-
-**Bố cục:**
-- **Phần trên:** Logo 9BizClaw + phần trăm tiến độ lớn (0% → 100%) + thanh tiến trình ngang màu cam
-- **Phần giữa:** 6 bước cài đặt, mỗi bước hiện icon tròn số + tiêu đề + mô tả chi tiết
-
-**6 bước hiển thị:**
-
-| Bước | Tiêu đề | Mô tả khi chạy |
-|------|---------|-----------------|
-| 1 | Node.js Runtime | "Đang kiểm tra hệ thống..." → "Đang tải Node.js v22..." |
-| 2 | Cài đặt packages | "Đang cài openclaw, 9router, openzca..." |
-| 3 | Plugin Zalo | "Đang cài plugin modoro-zalo..." |
-| 4 | gogcli | "Đang tải gogcli (Google Workspace)..." |
-| 5 | Mô hình AI | "Kiểm tra mô hình AI..." |
-| 6 | Hoàn tất | "Cài đặt xong!" |
-
-**Trạng thái mỗi bước (màu sắc):**
-- **Xám** = chưa đến lượt (số xám nhạt)
-- **Cam** = đang chạy (nền cam, chữ đậm, spinner quay)
-- **Xanh lá** = xong (dấu tích ✓ xanh)
-- **Đỏ** = lỗi (icon đỏ + thông báo lỗi)
-
-**Khi gặp lỗi:** Hiện panel chẩn đoán tự động với 7 mục kiểm tra:
-1. Kết nối Internet — tự phát hiện lỗi DNS, timeout, network
-2. Quyền ghi thư mục — tự phát hiện permission denied
-3. Dung lượng ổ đĩa — tự phát hiện disk full
-4. Node.js runtime — tự phát hiện node not found
-5. Phần mềm diệt virus — tự phát hiện file bị khóa (EBUSY)
-6. Tường lửa / Proxy — tự phát hiện SSL, firewall, proxy 407/403
-7. Xcode Command Line Tools (chỉ Mac) — tự phát hiện thiếu Xcode CLT
-
-Mỗi mục: ✓ xanh = OK, ✗ đỏ = có vấn đề. Có nút **"Thử lại"** và **"Thoát"**.
-
-Có nút **"Chi tiết kỹ thuật"** mở rộng để xem thông báo lỗi đầy đủ (gửi cho support nếu cần).
-
-### Lỗi thường gặp khi tải runtime lần đầu
-
-**Thanh tiến trình đứng im (mạng chậm hoặc bị chặn)**
-- Kiểm tra kết nối internet
-- Nếu đang dùng VPN hoặc proxy công ty, thử tắt VPN
-- Nếu dùng mạng công ty có firewall, đảm bảo `registry.npmjs.org` không bị chặn
-
-**Báo "Connection refused" hoặc "ETIMEDOUT"**
-- Mạng bị firewall chặn kết nối đến server tải
-- Thử đổi mạng (dùng 4G điện thoại chia sẻ hotspot)
-- App sẽ tự thử lại 3 lần
-
-**Báo "Disk full" hoặc "ENOSPC"**
-- Ổ đĩa không đủ dung lượng
-- Giải phóng ít nhất 500MB trên ổ C: (Windows) hoặc ổ chính (Mac)
-
-**Báo "Permission denied" hoặc "EACCES"**
-- Không đủ quyền ghi file
-- Windows: thử chạy app bằng cách chuột phải → "Run as administrator"
-- Mac: kiểm tra quyền thư mục Applications
-
-**Báo "EBUSY" hoặc "File in use" (chỉ Windows)**
-- Windows Defender đang quét file trong quá trình cài
-- Thêm thư mục `%APPDATA%\9bizclaw` vào danh sách Exclusions của Windows Security
-- Hoặc chờ 30 giây rồi thử lại — app tự retry 4 lần
-
-**Báo "CERT_HAS_EXPIRED" hoặc lỗi SSL**
-- Mạng công ty có proxy chặn HTTPS
-- Liên hệ IT công ty hoặc đổi sang mạng khác
-
-### Wizard thiết lập — Bước 1: Thông tin cơ bản
-
-**Tiêu đề trên màn hình:** "Chào mừng đến với 9BizClaw"
-
-Nhập 4 thông tin:
-
-1. **Họ và tên anh/chị** (bắt buộc)
-   - Tên CEO hoặc chủ doanh nghiệp
-   - Ví dụ: "Nguyễn Văn A"
-
-2. **Tên công ty / cửa hàng** (không bắt buộc)
-   - Tên doanh nghiệp của bạn
-
-3. **Tên trợ lý ảo** (không bắt buộc)
-   - Đặt tên riêng cho bot
-   - Để trống thì bot tự xưng "em"
-   - Ví dụ: "Momo", "Linh", "Claw"
-   - Khách Zalo sẽ thấy bot tự giới thiệu bằng tên này
-
-4. **Trợ lý gọi anh/chị là** (bắt buộc)
-   - Cách bot xưng hô khi nhắn bạn qua Telegram
-   - Ví dụ: "anh", "chị", "sếp", "thầy", "cô", "giám đốc"
-
-**Lỗi có thể gặp:**
-- Bỏ trống họ tên → hiện lỗi "Vui lòng nhập họ tên của anh/chị."
-- Bỏ trống cách xưng hô → hiện lỗi "Vui lòng nhập cách trợ lý gọi anh/chị."
-
-**Ghi chú cuối trang:** "Thông tin chi tiết về sản phẩm, dịch vụ, khách hàng sẽ được anh/chị tải lên qua Dashboard → Knowledge sau khi hoàn tất cài đặt."
-
-### Wizard thiết lập — Bước 2: Kết nối trí tuệ nhân tạo
-
-**Tiêu đề trên màn hình:** "Kết nối trí tuệ nhân tạo"
-
-Bot cần kết nối với ChatGPT để hoạt động. Gồm 2 phần:
-
-**Phần 1 — Kết nối ChatGPT:**
-1. Nhấn nút **"Kết nối ChatGPT"**
-2. Trình duyệt mặc định mở trang kết nối
-3. Đăng nhập bằng tài khoản ChatGPT của bạn (miễn phí hoặc Plus đều được)
-4. Nhấn **"Connect"** bên cạnh ChatGPT trên trang đó
-5. Quay lại app
-
-Nếu thấy trang đăng nhập 9Router thay vì ChatGPT: nhập mật khẩu **123456** rồi tiếp tục.
-
-**Phần 2 — Kiểm tra kết nối:**
-1. Nhấn nút **"Kiểm tra kết nối"**
-2. **Thành công:** Hiện "ChatGPT đã kết nối. Model [tên model] sẵn sàng." (chữ xanh lá)
-3. **Thất bại:** Hiện "Chưa tìm thấy kết nối ChatGPT."
-
-**Lỗi thường gặp bước 2:**
-
-| Triệu chứng | Nguyên nhân | Cách khắc phục |
-|-------------|-------------|----------------|
-| "Chưa tìm thấy kết nối ChatGPT. Nhấn 'Kết nối ChatGPT' ở trên, đăng nhập trên trình duyệt, rồi quay lại nhấn 'Kiểm tra kết nối'." | Chưa đăng nhập ChatGPT trên trình duyệt | Làm theo đúng hướng dẫn trong thông báo |
-| "Chưa kết nối ChatGPT. Nhấn 'Kết nối ChatGPT' rồi 'Kiểm tra kết nối' ở trên." (khi nhấn Tiếp tục mà chưa kết nối) | Cố bỏ qua bước 2 | Phải hoàn tất kết nối ChatGPT trước — không bỏ qua được |
-| Trang kết nối không mở | Trình duyệt mặc định bị chặn hoặc chưa cài | Cài Chrome hoặc Edge làm trình duyệt mặc định |
-| Lỗi 500 khi kiểm tra | Lỗi kỹ thuật 9Router nội bộ | Đóng app, mở lại, thử bước 2 lần nữa. App tự sửa lần thử tiếp. Nếu vẫn 500 sau 3 lần: liên hệ support |
-| Không mở được trang kết nối | App chưa khởi động xong | Chờ 10-15 giây rồi thử lại |
-
-**Tất cả các bước wizard đều bắt buộc — không bỏ qua được bước nào.** Chỉ có thể chuyển sang bước 3 khi "Kiểm tra kết nối" thành công (hiện chữ xanh). Nút "Quay lại" có trên bước 2 và 3 để quay về bước trước.
-
-### Wizard thiết lập — Bước 3: Kết nối Telegram
-
-**Tiêu đề trên màn hình:** "Kết nối Telegram để dùng 9BizClaw mọi lúc, mọi nơi"
-
-Bước này có nhiều màn hình con. Thời gian ước tính: ~2 phút.
-
-**Màn hình 3.1 — Giới thiệu lợi ích:**
-- Nhận báo cáo doanh nghiệp hàng ngày trên điện thoại
-- Hỏi đáp với trợ lý ngay trên Telegram, không cần mở app
-- Cảnh báo quan trọng gửi tức thì (khách mới, sự cố, cron)
-- Ghi chú: "An toàn 100% — Toàn bộ dữ liệu lưu trên máy anh/chị, không gửi lên cloud."
-- Nhấn **"Bắt đầu kết nối"** để tiếp
-
-**Màn hình 3.2 — Tạo Bot Telegram qua BotFather:**
-
-Gồm 4 bước nhỏ:
-
-Bước 3.2.1 — Mở BotFather:
-- Nhấn **"Mở trong App"** (mở Telegram trên máy) hoặc **"Mở trên Web"** (mở t.me/BotFather trên trình duyệt)
-- Nhấn "Tôi đã mở rồi"
-
-Bước 3.2.2 — Tạo bot mới:
-- Trong chat với BotFather, gõ: `/newbot`
-- BotFather hỏi **tên hiển thị** — đặt tên bạn muốn. Ví dụ: "Trợ Lý của Anh Tuấn"
-- BotFather hỏi **username** — phải kết thúc bằng "bot". Ví dụ: "troly_anh_tuan_bot"
-- BotFather gửi lại tin nhắn chứa **Mã kết nối** (Bot Token) — dòng dài dạng: `7104958362:BBHxR93kLmNpQwErTyUiOp`
-- **Sao chép toàn bộ dòng mã này** (nhấn vào để copy)
-
-Bước 3.2.3 — Dán Mã kết nối:
-- Quay lại app, dán token vào ô **"Dán Mã kết nối từ BotFather..."**
-- App kiểm tra tự động:
-  - Hợp lệ: hiện dấu tích xanh + "Mã hợp lệ."
-  - Không hợp lệ: hiện viền đỏ + "Mã này không đúng định dạng. Anh/chị copy lại từ BotFather giúp em."
-- Định dạng đúng: 8-12 chữ số, dấu hai chấm, 35 ký tự chữ + số
-
-Bước 3.2.4 — Kích hoạt bot:
-- Trong tin nhắn BotFather, nhấn vào **link bot** (dạng t.me/TenBotCuaBan)
-- Trang bot mở ra → nhấn nút **"Start"**
-- **Sẽ KHÔNG có phản hồi gì — đúng rồi, không cần lo**
-- Quay lại app, nhấn **"Đã nhấn Start, tiếp tục"**
-
-**Màn hình 3.3 — Lấy Mã nhận diện (User ID):**
-
-Bước 3.3.1 — Mở @userinfobot:
-- Nhấn "Mở trong App" hoặc "Mở trên Web" → mở chat với @userinfobot
-
-Bước 3.3.2 — Lấy ID:
-- Gõ `/start` trong chat với @userinfobot
-- Bot trả về thông tin của bạn, trong đó có dòng **Id:** với dãy số (ví dụ: `5738291046`)
-- Nhấn vào dãy số để copy
-
-Bước 3.3.3 — Dán mã:
-- Quay lại app, dán dãy số vào ô **"Dán dãy số (VD: 5738291046)"**
-- App kiểm tra: chỉ chấp nhận 7-12 chữ số
-- Nếu sai: "Mã nhận diện chỉ gồm số (7-12 chữ số). Kiểm tra lại nhé."
-
-**Màn hình 3.4 — Kiểm tra kết nối:**
-
-Khi chạy: hiện spinner + "Đang gửi tin nhắn thử..." + "Đang gửi tới Telegram của anh/chị để xác nhận kết nối."
-
-- **Thành công:** Icon tích xanh + "Kết nối thành công!" + "Em vừa gửi tin vào Telegram của anh/chị. Mở Telegram xem nhé." + nút "Hoàn tất thiết lập →"
-- **Thất bại:** Icon cảnh báo cam + "Chưa nhận được tin?" + "Kiểm tra vài điều rồi thử lại:" kèm checklist:
-  - ☐ Đã nhấn Start trong Trợ Lý chưa?
-  - ☐ Mã kết nối có thể bị thiếu ký tự
-  - ☐ Mã nhận diện có thể không đúng
-  - Nút **"Thử lại"** + nút **"Quay lại sửa"** (quay về bước 3.2)
-
-Nếu token không hợp lệ (Telegram API từ chối): "Bot Token chưa hợp lệ — Telegram trả lỗi: [chi tiết lỗi]. Anh kiểm tra lại Token rồi thử tiếp."
-
-**Lỗi thường gặp bước 3:**
-
-| Triệu chứng | Nguyên nhân | Cách khắc phục |
-|-------------|-------------|----------------|
-| Tin thử không đến Telegram | Chưa nhấn Start trên bot | Mở lại link bot → nhấn Start → quay lại thử lại |
-| "Mã không đúng định dạng" | Copy thiếu ký tự từ BotFather | Copy lại TOÀN BỘ dòng token (bao gồm cả phần số trước dấu hai chấm và phần sau) |
-| "Mã nhận diện chỉ gồm số" | Copy nhầm username thay vì số ID | Gõ lại `/start` trong @userinfobot, copy đúng dòng "Id:" (chỉ số, không chữ) |
-| Không tìm thấy @userinfobot | Telegram hạn chế tìm kiếm | Tìm "userinfobot" (viết liền) trong thanh tìm kiếm Telegram |
-| BotFather không phản hồi | Telegram bị lỗi tạm thời | Chờ 1-2 phút rồi thử lại. BotFather là bot chính thức của Telegram, luôn hoạt động |
-
-**Chỉ có thể chuyển sang bước 4 khi tin thử gửi thành công.**
-
-### Wizard thiết lập — Bước 4: Hoàn tất
-
-**Tiêu đề trên màn hình:** "Sẵn sàng hoạt động"
-
-Hiển thị tóm tắt 3 dòng:
-- Người dùng: [tên bạn]
-- AI: Đã kết nối (xanh lá)
-- Telegram: Đã kết nối (xanh lá)
-
-Nhấn **"Khởi động trợ lý"** → chuyển sang Dashboard.
-
-**Bước tiếp theo sau wizard:** Mở Telegram → tìm bot vừa tạo → gửi bất kỳ tin nhắn nào → trợ lý trả lời trong vài giây.
+## A. CÀI ĐẶT LẦN ĐẦU (MÀN HÌNH SPLASH)
+
+Khi mở app lần đầu, màn hình splash tải Node.js (~20MB) + packages (~145MB) + gogcli (~5MB). Tổng ~170MB. Cần internet ổn định.
+
+### A1. Splash đứng im — thanh % không tăng
+**Keyword:** splash đứng, không chạy, đứng im, không tải
+**Nguyên nhân:** Mạng chậm hoặc bị chặn.
+**Sửa:**
+1. Kiểm tra internet — mở trình duyệt vào web bất kỳ
+2. Tắt VPN nếu đang bật
+3. Thử dùng 4G hotspot từ điện thoại
+4. Nếu mạng công ty: hỏi IT mở `registry.npmjs.org` và `nodejs.org`
+**Nếu vẫn lỗi:** Nhấn **Copy lỗi** trên splash → gửi support.
+
+### A2. ETIMEDOUT / Connection refused / ECONNREFUSED
+**Keyword:** ETIMEDOUT, connection refused, ECONNREFUSED, ENETUNREACH, timeout
+**Hiển thị:** "Kết nối quá chậm hoặc timeout" hoặc "Máy chủ từ chối kết nối"
+**Sửa:**
+1. Đổi mạng (4G hotspot)
+2. Tắt VPN
+3. Mạng công ty: hỏi IT mở `registry.npmjs.org`, `nodejs.org`, `github.com`
+4. App tự retry 4 lần — chờ 2-3 phút
+**Nếu vẫn lỗi:** Copy lỗi → gửi support kèm tên nhà mạng.
+
+### A3. ENOSPC / Disk full / Ổ đĩa đầy
+**Keyword:** ENOSPC, disk full, no space, ổ đĩa đầy, không đủ dung lượng
+**Hiển thị:** "Ổ đĩa gần đầy. Giải phóng ít nhất 500 MB"
+**Sửa:**
+1. Dọn ổ C: (Windows) hoặc ổ chính (Mac) — xóa file tạm, dọn thùng rác
+2. Cần ít nhất **500MB** trống
+3. Kiểm tra: Windows chuột phải ổ C: → Properties; Mac: Apple → About This Mac → Storage
+**Nếu vẫn lỗi:** Xóa folder `%APPDATA%\9bizclaw\vendor` rồi mở lại app.
+
+### A4. EACCES / Permission denied / Không có quyền
+**Keyword:** EACCES, permission denied, access denied, không có quyền, EPERM
+**Hiển thị:** "Không có quyền ghi vào thư mục"
+**Sửa:**
+- **Windows:** Chuột phải 9BizClaw → "Run as administrator"
+- **Mac:** System Preferences → Security & Privacy → cho phép 9BizClaw
+- **Máy công ty:** Liên hệ IT cấp quyền ghi `%APPDATA%` (Win) / `~/Library/Application Support/` (Mac)
+
+### A5. EBUSY / File in use / Bị khóa (Windows)
+**Keyword:** EBUSY, file in use, resource busy, bị khóa, locked
+**Hiển thị:** "File đang bị khóa (thường do Windows Defender quét)"
+**Sửa:**
+1. Chờ 30 giây — app tự retry 4 lần
+2. Thêm thư mục vào Exclusions: Windows Security → Virus & threat protection → Exclusions → Add Folder → `C:\Users\[tên]\AppData\Roaming\9bizclaw`
+3. Đóng app, mở lại
+
+### A6. SSL / Certificate / Chứng chỉ lỗi
+**Keyword:** CERT_HAS_EXPIRED, SSL, certificate, UNABLE_TO_VERIFY, chứng chỉ, self-signed
+**Hiển thị:** "Chứng chỉ TLS hết hạn" hoặc "Lỗi xác thực chứng chỉ TLS"
+**Sửa:**
+1. Kiểm tra ngày giờ máy tính — phải đúng
+2. Mạng công ty có proxy HTTPS: liên hệ IT
+3. Thử mạng khác (4G hotspot)
+
+### A7. DNS / Không phân giải được
+**Keyword:** ENOTFOUND, DNS, getaddrinfo, không phân giải
+**Hiển thị:** "Không phân giải được địa chỉ máy chủ"
+**Sửa:**
+1. Đổi DNS: dùng Google DNS 8.8.8.8 hoặc Cloudflare 1.1.1.1
+2. Windows: Control Panel → Network → Change adapter → IPv4 → DNS
+3. Mac: System Preferences → Network → Advanced → DNS
+4. Thử mạng khác
+
+### A8. npm cert error / npm SSL
+**Keyword:** npm ERR! code CERT, npm cert, npm SSL, strict-ssl
+**Hiển thị:** "npm không xác thực được chứng chỉ — có thể do proxy corporate"
+**Sửa:**
+1. Nếu mạng công ty có proxy: hỏi IT
+2. Hoặc thử mạng 4G hotspot
+3. App sẽ tự cấu hình npm ssl sau khi đổi mạng
+
+### A9. npm ECONNRESET / Mạng bị ngắt giữa chừng
+**Keyword:** ECONNRESET, reset kết nối, socket hang up
+**Hiển thị:** "npm bị reset kết nối — proxy hoặc mạng không ổn định"
+**Sửa:** Mạng không ổn định. App tự retry. Nếu lặp → đổi mạng.
+
+### A10. SHA256 không khớp / File download bị sửa
+**Keyword:** SHA256, hash, checksum, không khớp, corrupt
+**Hiển thị:** "Node.js archive SHA256 không khớp sau 2 lần tải"
+**Nguyên nhân:** Proxy/firewall sửa nội dung file tải về, hoặc file bị hỏng.
+**Sửa:**
+1. Đổi mạng — proxy đang can thiệp vào download
+2. Tắt VPN
+3. Thử 4G hotspot
+
+### A11. Node.js giải nén lỗi
+**Keyword:** giải nén, extract, extraction failed, tar, zip
+**Hiển thị:** "Không giải nén được Node.js"
+**Sửa:**
+1. Kiểm tra dung lượng ổ đĩa (cần 500MB trống)
+2. Antivirus có thể chặn giải nén → thêm Exclusions (xem A5)
+3. Đóng app, mở lại — app tự xóa file hỏng và tải lại
+
+### A12. npm install timeout (>15 phút)
+**Keyword:** timed out, 900s, quá lâu, 15 phút
+**Hiển thị:** "npm install timed out after 900s"
+**Sửa:** Mạng quá chậm. Đổi sang mạng nhanh hơn (Wi-Fi 5GHz hoặc 4G).
+
+### A13. npm install đứng (không output 90 giây)
+**Keyword:** hung, no output, đứng, treo
+**Hiển thị:** "npm install hung — no output for 90s"
+**Sửa:** App tự kill process và retry. Nếu lặp → antivirus đang quét. Thêm Exclusions (xem A5).
+
+### A14. Package version sai sau cài
+**Keyword:** verification failed, expected version, version mismatch
+**Hiển thị:** "Verification failed for [package]: expected [ver]"
+**Sửa:** Xóa folder `%APPDATA%\9bizclaw\vendor\node_modules` → mở lại app để cài lại.
+
+### A15. Plugin modoro-zalo không tìm thấy
+**Keyword:** modoro-zalo not found, plugin missing
+**Hiển thị:** "modoro-zalo plugin not found"
+**Nguyên nhân:** File cài đặt (.exe/.dmg) bị lỗi.
+**Sửa:** Tải lại file cài đặt mới nhất từ support.
+
+### A16. gogcli tải lỗi
+**Keyword:** gogcli, google workspace cli
+**Hiển thị:** "Không tải được gogcli"
+**Sửa:** Không nghiêm trọng — Google Workspace features sẽ không hoạt động nhưng bot vẫn chạy bình thường. Đóng app mở lại để thử tải lại.
+
+### A17. Cài xong nhưng lần sau mở phải cài lại
+**Keyword:** cài lại, lặp lại, mỗi lần mở
+**Nguyên nhân:** Antivirus xóa file trong `vendor/`, hoặc ổ đĩa đầy không ghi được marker file.
+**Sửa:**
+1. Thêm `%APPDATA%\9bizclaw` vào Exclusions antivirus (xem A5)
+2. Kiểm tra dung lượng ổ đĩa (xem A3)
+
+### A18. "Installation already in progress"
+**Keyword:** already in progress, đang cài
+**Sửa:** App đang cài ở cửa sổ khác. Đóng tất cả → mở lại 1 lần.
 
 ---
 
-## PHẦN 3: BẢNG ĐIỀU KHIỂN (DASHBOARD)
-
-Dashboard là giao diện chính để quản lý bot, mở ra sau khi hoàn tất wizard. Thanh bên trái là menu các tab.
-
-### Thanh bên trái (Sidebar)
-
-**Phần trên:** Trạng thái bot + nút điều khiển
-- **Chấm trạng thái:** Xanh lá (đang chạy) / Đỏ (đã dừng) / Xám nhấp nháy (đang kiểm tra)
-- **Chữ:** "Đang kiểm tra..." khi khởi động, sau đó hiện trạng thái
-
-**Menu chính (theo thứ tự từ trên xuống):**
-- Tổng quan
-- Chat
-- **Kênh** (tiêu đề nhóm, mở rộng):
-  - Telegram (có chấm xanh/đỏ/xám bên phải = trạng thái kết nối)
-  - Zalo (có chấm xanh/đỏ/xám bên phải = trạng thái kết nối)
-  - Facebook
-  - Google
-- **Trợ lý AI** (tiêu đề nhóm):
-  - Tài liệu
-  - Tính cách bot
-  - Skills
-  - Tài sản hình ảnh
-  - AI Models
-- **Tự động hóa** (tiêu đề nhóm):
-  - Lịch tự động
-- **Cài đặt** (tiêu đề nhóm):
-  - Giao diện: 3 nút radio "Sáng" / "Tối" / "Hệ thống" + checkbox "Ẩn xuống tray khi mở"
-  - Nâng cao: mở cấu hình nâng cao
-  - Kiểm tra cập nhật
-
-**Chấm trạng thái Telegram/Zalo trên sidebar:**
-- **Xanh lá + phát sáng** = kênh sẵn sàng nhận tin
-- **Đỏ + phát sáng** = kênh mất kết nối
-- **Xám + nhấp nháy** = đang kiểm tra kết nối
-
-### Tab "Tổng quan"
-
-Trang đầu khi mở Dashboard:
-
-- **Lời chào:** Hiện tên CEO, trạng thái bot (online/offline)
-- **3 thẻ thống kê:**
-  - "Khách mới Zalo hôm nay" — số khách Zalo nhắn lần đầu
-  - "Sự kiện hôm nay" — số event bot ghi nhận
-  - "Cron OK hôm nay" — số lịch tự động chạy thành công
-- **"Bot đã học"** — những gì bot ghi nhớ từ hội thoại gần đây
-- **"Lịch hôm nay"** — lịch tự động sắp chạy
-- **"Hoạt động gần đây"** (bên phải) — log sự kiện: khởi động, cron chạy, tin bị lọc...
-
-Nếu mới cài: "Chưa có hoạt động" là bình thường — sẽ xuất hiện sau khi bot bắt đầu nhận tin.
-
-Auto-refresh mỗi 30 giây khi đang ở tab này.
-
-### Tab "Chat"
-
-Giao diện nhắn tin trực tiếp với bot ngay trong app (không cần mở Telegram).
-
-- Nhập tin nhắn vào ô "Nhập tin nhắn..." ở dưới
-- Nhấn Enter hoặc nút gửi (Shift+Enter để xuống dòng)
-- Bot trả lời ngay trong cửa sổ chat
-- Lịch sử chat được lưu tự động, giữ lại khi đóng/mở app
-
-**Khi chưa có tin nhắn nào (empty state):**
-- Tiêu đề: "Chat"
-- Phụ đề: "Trò chuyện trực tiếp với trợ lý AI"
-- 3 gợi ý nhanh (prompt chips): "Báo cáo hôm nay", "Kiểm tra đơn hàng", "Tình hình Zalo" — nhấn vào để gửi nhanh
-
-### Tab "Telegram"
-
-Quản lý kênh Telegram:
-
-**Trạng thái kết nối:** Chấm xanh = sẵn sàng, chấm đỏ = mất kết nối, chấm xám = đang kiểm tra
-
-**Nút thao tác:**
-- **"Kiểm tra"** — Kiểm tra lại kết nối ngay
-- **"Đổi tài khoản"** — Thay Bot Token và User ID
-- **"Tạm dừng"** — Dừng bot tạm thời. Chọn thời gian: 15 phút, 30 phút, 1 giờ, 2 giờ, 8 giờ, 24 giờ
-- **"Tiếp tục"** — Bật lại bot sau khi tạm dừng
-
-Khi tạm dừng, hiện banner: "Bot Telegram đang tạm dừng. [thời gian còn lại]"
-
-**Cài đặt bên trái:**
-
-| Cài đặt | Tùy chọn |
-|---------|----------|
-| Người lạ nhắn tin | Trả lời bình thường / Chào + hướng dẫn liên hệ CEO / Bỏ qua |
-| Hành vi nhóm mới | Chỉ khi @mention / Mọi tin nhắn / Tắt |
-| Giới hạn lịch sử | 10 tin / 20 tin / 30 tin / 50 tin (tối đa) |
-| Thời gian gộp tin | 0s / 1s / 2s / 3s (mặc định) / 4s / 5s |
-
-"Thời gian gộp tin" giúp gom nhiều tin nhắn gửi liền thành 1 để bot trả lời gọn hơn.
-
-Nhấn **"Lưu cấu hình"** sau khi thay đổi.
-
-**Khả năng bot (phần giữa):** Hiển thị chip các tính năng bot có thể làm qua Telegram — CSKH Zalo, Báo cáo, Tra cứu tài liệu, Quản lý cron, Gửi tin Zalo, Tạm dừng bot, Marketing, Cố vấn C-Level, Nhớ khách hàng, Đọc hình ảnh, Escalate CEO.
-
-**Câu lệnh mẫu (phần dưới):** Danh sách lệnh CEO có thể gửi qua Telegram, chia theo nhóm: Báo cáo, Cron, Khách hàng, Hệ thống, Marketing, Cố vấn. Có nút copy để sao chép nhanh.
-
-### Tab "Zalo"
-
-Quản lý kênh Zalo:
-
-**Trạng thái kết nối:** Chấm xanh = listener đang chạy, chấm đỏ = listener dừng
-
-**Toggle chính:** "Bật Zalo" — bật/tắt kênh Zalo hoàn toàn.
-Cảnh báo khi bật/tắt: "Thay đổi sẽ khởi động lại gateway. Telegram sẽ gián đoạn 10-15 giây."
-
-**Nút thao tác:** Refresh, Đổi tài khoản, Tạm dừng / Tiếp tục (giống Telegram)
-
-**Cài đặt bên trái:**
-
-| Cài đặt | Tùy chọn |
-|---------|----------|
-| Chế độ trả lời | Tự động trả lời / Chỉ đọc + tóm tắt cuối ngày |
-| Người lạ nhắn tin | Trả lời bình thường / Chỉ chào 1 lần / Không trả lời |
-| Hành vi nhóm mới | @mention (chỉ reply khi tag) / Mọi tin / Tắt |
-| Gộp tin khách | 0s / 1s / 2s / 3s (mặc định) / 4s / 5s |
-
-**Tab "Nhóm" (bên phải):**
-Danh sách nhóm Zalo bot tham gia. Mỗi nhóm có 3 chế độ:
-- **Xanh = mọi tin** — bot trả lời tất cả tin trong nhóm
-- **Vàng = @mention** — bot chỉ trả lời khi được tag tên
-- **Đỏ = tắt** — bot im lặng trong nhóm
-
-Có nút "Bật tất cả" và "Tắt tất cả" để thao tác hàng loạt.
-Có ô tìm kiếm: "Tìm nhóm..."
-
-**Tab "Bạn bè" (bên phải):**
-Danh sách bạn bè Zalo. Bật/tắt từng người.
-Hiện số lượng: "Đang tắt: [số]"
-Có nút "Bật tất cả" / "Tắt tất cả"
-Có ô tìm kiếm: "Tìm theo tên hoặc số điện thoại..."
-
-### Tab "Facebook"
-
-Kết nối và đăng bài lên Facebook Fanpage:
-
-- **Trạng thái:** Hiện tên Fanpage đã kết nối (hoặc "Chưa kết nối")
-- **Ô nhập** (dạng mật khẩu — ký tự bị che): "Paste Page Access Token từ Meta Business Suite"
-- **Nút "Kết nối":** Xác thực token
-- **Hướng dẫn chi tiết:** Mở rộng để xem cách lấy Page Access Token:
-  - Bước 0: Tạo Fanpage (nếu chưa có) tại facebook.com/pages/create
-  - Bước 1: Tạo Facebook App tại developers.facebook.com/apps/creation
-  - Bước 2: Thêm permissions trong App Dashboard (pages_manage_posts)
-
-### Tab "Google" (Google Workspace)
-
-Kết nối Google Account. Có 8 tab con:
-
-| Tab | Chức năng |
-|-----|----------|
-| Lịch | Xem Google Calendar theo tháng/tuần/ngày, tạo sự kiện mới |
-| Email | Đọc/gửi email qua Gmail |
-| Tài liệu | Duyệt Google Drive |
-| Docs | Đọc/ghi Google Docs |
-| Sheets | Đọc/ghi Google Sheets |
-| Liên hệ | Google Contacts |
-| Công việc | Google Tasks |
-| Cài đặt | Cấu hình kết nối OAuth |
-
-**Yêu cầu:** Cần thiết lập Google Cloud Desktop OAuth client + bật Drive API và Sheets API. Hướng dẫn có trong tab Cài đặt.
-
-**Tab Lịch:** Hiện full calendar, nút "Tạo sự kiện" (nhập tiêu đề, thời gian, người tham dự). Empty state: "Không có sự kiện trong khung thời gian này."
-
-### Tab "Tài liệu" (Knowledge)
-
-Upload tài liệu doanh nghiệp để bot tự đọc và dùng khi trả lời khách.
-
-**3 thư mục:**
-- Công ty — Giới thiệu, chính sách, quy định
-- Sản phẩm — Catalog, bảng giá, thông số kỹ thuật
-- Nhân viên — Thông tin nội bộ (không chia sẻ với khách)
-
-**Upload file:**
-1. Chọn thư mục bên trái
-2. Chọn mức hiển thị:
-   - **Công khai** (mặc định) — bot dùng khi trả lời khách
-   - **Nội bộ** — chỉ CEO + nhân viên thấy
-   - **Chỉ mình tôi** — chỉ CEO qua Telegram
-3. Kéo file vào vùng upload hoặc nhấn để chọn file
-4. Hỗ trợ: PDF, Word (.docx), Excel (.xlsx), TXT, CSV, JPG, PNG
-5. Kích thước tối đa: 100MB mỗi file
-6. Bot tự tóm tắt nội dung sau khi upload (chờ vài giây)
-
-Mỗi file hiện **badge mức hiển thị** bên cạnh tên: "Công khai" (xám), "Nội bộ" (vàng), "Chỉ mình tôi" (đỏ).
-
-**Ghi chú dưới vùng upload:** "Bot tự đọc và nhớ nội dung file..."
-
-### Tab "Tính cách bot" (Persona Mix)
-
-Tùy chỉnh cách bot giao tiếp với khách:
-
-**Giọng bot + giới tính:**
-- Em (nữ trẻ) — bot xưng "em", giọng nữ trẻ
-- Em (nam trẻ) — bot xưng "em", giọng nam trẻ
-- Chị (trung niên) — bot xưng "chị"
-- Anh (trung niên) — bot xưng "anh"
-- Mình (trung tính) — bot xưng "mình"
-
-**Cách gọi khách:**
-- Anh/chị — lịch sự, phổ biến nhất
-- Quý khách — trang trọng (spa, khách sạn)
-- Mình — thân mật (shop thời trang, F&B)
-
-**Tính cách (chọn 3-5 trong 15):**
-Sáng tạo, Thực tế, Linh hoạt, Chỉn chu, Chu đáo, Kiên nhẫn, Năng động, Điềm tĩnh, Chủ động, Ấm áp, Đồng cảm, Thẳng thắn, Chuyên nghiệp, Thân thiện, Tinh tế
-
-**Độ trang trọng:** Thanh trượt 1-10
-- 1 = "Rất thân mật" (dùng từ lóng, emoji)
-- 10 = "Rất trang trọng" (lịch sự, formal)
-
-### Tab "Skills" (Kỹ năng)
-
-Xem và quản lý kỹ năng bot:
-
-- **Bên trái:** Danh sách kỹ năng (26 có sẵn + tùy chỉnh CEO tạo)
-- **Bên phải:** Chi tiết kỹ năng được chọn
-- **Nút tạo mới:** Tạo kỹ năng tùy chỉnh
-- **Nút xóa:** Xóa kỹ năng tùy chỉnh (không xóa được kỹ năng có sẵn)
-- **Tìm kiếm:** Tìm kỹ năng theo tên
-
-### Tab "Tài sản hình ảnh"
-
-Quản lý hình ảnh thương hiệu, 3 phần:
-
-1. **Tài sản thương hiệu** — Logo, mascot, style reference cho tạo ảnh AI. Nút "Upload"
-2. **Hình sản phẩm cho Zalo** — Ảnh sản phẩm bot gửi cho khách khi hỏi. Nút "Upload sản phẩm"
-3. **Ảnh AI và Knowledge hình ảnh** — Ảnh AI đã tạo, ảnh upload qua Knowledge, PDF pages OCR. Nút "Upload PDF/ảnh" + "Làm mới"
-
-### Tab "AI Models" (9Router)
-
-Quản lý AI provider, model, API key:
-
-- Giao diện web 9Router nhúng trong app
-- **Mật khẩu mặc định: `123456`** (hiển thị rõ ở header tab)
-- Nút **"Reload"** — tải lại giao diện
-- Nút **"Mở trong browser"** — mở tại http://127.0.0.1:20128/
-
-### Tab "Lịch tự động" (Schedules)
-
-Quản lý lịch bot chạy tự động:
-
-- **Tiêu đề:** "Lịch tự động" / "Lịch bot chạy hàng ngày"
-- **Danh sách lịch:** Hiện tất cả cron (có sẵn + tự tạo)
-- **Mỗi lịch:** Thời gian, nội dung, nút bật/tắt, xóa, test fire
-- **Nút làm mới:** Reload danh sách
-
-### Cài đặt (góc dưới thanh bên trái)
-
-- **Giao diện:** Sáng / Tối / Theo hệ thống + toggle "Thu nhỏ xuống khay hệ thống"
-- **Nâng cao:** Cấu hình nâng cao
-- **Kiểm tra cập nhật:** Kiểm tra phiên bản mới
-
-### Menu hỗ trợ (nút tròn góc dưới phải Dashboard)
-
-5 tùy chọn:
-- **Liên hệ 9Biz** — Mở nhóm Telegram hỗ trợ
-- **Xem lại hướng dẫn sử dụng** — Chạy lại wizard hướng dẫn
-- **Xuất dữ liệu (backup)** — Sao lưu toàn bộ workspace thành 1 file
-- **Khôi phục từ file** — Phục hồi từ file backup đã xuất
-- **Xóa sạch dữ liệu (Factory Reset)** — Xóa hết dữ liệu, bắt đầu lại từ đầu.
-  - Xác nhận 2 lớp: nhấn nút → popup yêu cầu gõ "xóa" (hoặc "xoa" cho bàn phím không dấu) → nút xóa mới bật
-  - **Sẽ xóa:** workspace, config, phiên Zalo, token Telegram, key 9Router, token Google OAuth
-  - Nút xóa màu đỏ — không thể hoàn tác
+## B. KÍCH HOẠT LICENSE
+
+### B1. "Key không hợp lệ" / Invalid key
+**Keyword:** key không hợp lệ, invalid key, sai key
+**Sửa:**
+1. Key đúng format: `CLAW-...` (chữ hoa + số + dấu gạch)
+2. Copy từ email gốc — KHÔNG gõ tay
+3. Không có dấu cách ở đầu/cuối
+4. Thử paste vào Notepad trước để kiểm tra
+
+### B2. "Key đã hết hạn" / Expired
+**Keyword:** hết hạn, expired, key hết
+**Sửa:** Liên hệ support để gia hạn hoặc mua key mới. Email: tech@modoro.com.vn
+
+### B3. "Key đã được kích hoạt trên máy khác" / Machine mismatch
+**Keyword:** máy khác, machine mismatch, already activated, đã kích hoạt
+**Nguyên nhân:** Key bị khóa vào phần cứng máy cũ (hardware lock).
+**Sửa:** Liên hệ support để reset key — cung cấp email đăng ký + tên máy cũ.
+
+### B4. "Key đã bị thu hồi" / Revoked
+**Keyword:** thu hồi, revoked, bị khóa
+**Sửa:** Liên hệ support. Email: tech@modoro.com.vn
+
+### B5. "Không ghi được license" / Write failed
+**Keyword:** write failed, không ghi được, không lưu
+**Nguyên nhân:** Không có quyền ghi vào thư mục app data.
+**Sửa:** Windows: Run as administrator. Mac: kiểm tra quyền thư mục.
+
+### B6. "Không kết nối được máy chủ" / Offline
+**Keyword:** offline, không kết nối, server, máy chủ
+**Hiển thị:** "Không kết nối được máy chủ kiểm tra bản quyền"
+**Sửa:** Kiểm tra internet. Kích hoạt cần mạng để verify key lần đầu.
+
+### B7. License file bị sửa / seal_broken
+**Keyword:** seal broken, tampered, bị sửa
+**Nguyên nhân:** File `license.json` bị chỉnh sửa hoặc copy từ máy khác.
+**Sửa:** Xóa file `license.json` → mở app → nhập key lại.
+- Windows: `%APPDATA%\9bizclaw\license.json`
+- Mac: `~/Library/Application Support/9bizclaw/license.json`
 
 ---
 
-## PHẦN 4: TELEGRAM — KÊNH CỦA CEO
+## C. WIZARD THIẾT LẬP
 
-### Telegram dùng để làm gì trong 9BizClaw?
+### C1. Bước 1 — Không biết lấy Telegram Bot Token
+**Keyword:** token, BotFather, lấy token, token ở đâu, tạo bot
+**Hướng dẫn:**
+1. Mở Telegram → tìm **@BotFather** (có dấu tick xanh)
+2. Gửi `/newbot`
+3. Đặt tên bot (VD: "Trợ Lý ABC")
+4. Đặt username (VD: `troly_abc_bot` — PHẢI kết thúc bằng `bot`)
+5. BotFather gửi token dạng `1234567890:ABCdefGHI...` → copy TOÀN BỘ
+6. Paste vào ô "Bot Token" trong wizard
 
-Telegram là kênh chính để CEO điều khiển bot:
+### C2. Bước 1 — "Token không hợp lệ"
+**Keyword:** token không hợp lệ, token sai, invalid token
+**Sửa:**
+1. BotFather → `/mybots` → chọn bot → API Token → copy lại
+2. Copy TOÀN BỘ dòng (số + dấu : + chữ)
+3. Không có dấu cách đầu/cuối
+4. Format đúng: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
 
-- Nhận báo cáo doanh nghiệp hàng ngày (sáng, tối, tuần, tháng)
-- Ra lệnh cho bot (tạo lịch tự động, gửi tin Zalo, đăng Facebook, tạo ảnh)
-- Nhận cảnh báo (khách mới, cron thất bại, escalation từ khách Zalo)
-- Hỏi đáp với trợ lý AI mọi lúc mọi nơi
-- Gửi tin nhắn Zalo cho khách/nhóm thông qua Telegram (không cần mở app)
+### C3. Bước 1 — "Chưa có Mã nhận diện (User ID)"
+**Keyword:** user ID, mã nhận diện, ID Telegram, lấy ID
+**Hướng dẫn lấy Telegram User ID:**
+1. Mở Telegram → tìm **@userinfobot**
+2. Gửi `/start` → bot trả về User ID (dãy số ~10 chữ số)
+3. Copy dãy số đó → paste vào ô "User ID" trong wizard
 
-### Cách bắt đầu dùng
+### C4. Bước 1 — "User ID chỉ gồm chữ số"
+**Keyword:** user ID sai, chữ số, format ID
+**Sửa:** User ID chỉ có số (VD: `5738291046`). Không có chữ, không có @.
 
-Sau wizard:
-1. Mở Telegram trên điện thoại hoặc máy tính
-2. Tìm bot bạn vừa tạo (tên đặt ở wizard)
-3. Gửi bất kỳ tin nhắn nào (ví dụ: "Chào bot")
-4. Bot sẽ trả lời trong vài giây (lần đầu có thể mất 30-60 giây để gateway khởi động)
+### C5. Bước 2 — Lỗi 500 khi thiết lập AI
+**Keyword:** lỗi 500, 500, thiết lập AI, 9Router lỗi, AI không phản hồi
+**Hiển thị:** Nhấn "Kiểm tra kết nối" → lỗi 500.
+**Nguyên nhân:** 9Router (proxy AI) lỗi nội bộ — thường do better-sqlite3 không tương thích CPU.
+**Sửa:**
+1. Đóng app, mở lại → thử bước 2 lần nữa (app có auto-fix)
+2. Nếu vẫn 500 sau 3 lần: nhấn **"Mở thư mục log"** → gửi `9router.log` cho support
+3. Vị trí log: Windows `%APPDATA%\9bizclaw\logs\9router.log` / Mac `~/Library/Application Support/9bizclaw/logs/9router.log`
 
-### Ví dụ lệnh CEO gửi qua Telegram
+### C6. Bước 2 — "Đang kết nối..." chạy mãi
+**Keyword:** đang kết nối, chạy mãi, loading, xoay mãi
+**Sửa:**
+1. Chờ 30-60 giây (9Router cần thời gian khởi động lần đầu)
+2. Nếu > 2 phút: đóng app → mở lại → thử bước 2 lại
+3. Kiểm tra mạng internet
 
-**Báo cáo:**
-- "Tóm tắt hôm nay"
-- "Báo cáo tuần này"
-- "Có gì mới không?"
+### C7. Bước 2 — "Chưa tìm thấy kết nối ChatGPT"
+**Keyword:** chưa tìm thấy, ChatGPT chưa kết nối, đăng nhập ChatGPT
+**Hiển thị:** "Chưa tìm thấy kết nối ChatGPT. Nhấn Kết nối ChatGPT..."
+**Sửa:**
+1. Nhấn nút "Kết nối ChatGPT" → trình duyệt mở trang đăng nhập
+2. Đăng nhập tài khoản ChatGPT (miễn phí hoặc Plus đều được)
+3. Sau khi đăng nhập xong → quay lại app → nhấn "Kiểm tra kết nối"
+4. Nếu dùng nhiều trình duyệt: đảm bảo đăng nhập trên trình duyệt MẶC ĐỊNH
 
-**Quản lý lịch tự động:**
-- "Tạo cron gửi nhóm KHÁCH VIP mỗi sáng 9h: Chào buổi sáng!"
-- "Xem danh sách cron"
-- "Xóa cron báo cáo sáng"
-- "Test cron báo cáo tối"
+### C8. Bước 2 — Ollama key lỗi 401
+**Keyword:** 401, unauthorized, key sai, Ollama lỗi
+**Hiển thị:** "Ollama trả về 401"
+**Sửa:**
+1. Vào ollama.com/settings/keys → tạo key mới
+2. Copy key mới → paste lại trong wizard
+3. Nếu chắc chắn key đúng: có thể firewall/Cloudflare chặn → thử đổi mạng (4G, VPN khác)
 
-**Gửi tin Zalo từ Telegram:**
-- "Nhắn Zalo cho Nguyễn Văn A: Em gửi báo giá ạ"
-- "Gửi nhóm NHÂN VIÊN: Họp 3h chiều nay"
+### C9. Bước 2 — "Ollama không có model nào"
+**Keyword:** không có model, empty, rỗng, chưa subscribe
+**Hiển thị:** "Key hợp lệ nhưng không có model nào"
+**Sửa:** Tài khoản Ollama chưa subscribe gói. Vào ollama.com → chọn gói → thử lại.
 
-**Quản lý hệ thống:**
-- "Tạm dừng bot 30 phút"
-- "Tiếp tục bot"
-- "Trạng thái hệ thống"
+### C10. Bước 2 — "Ollama rate limit 429"
+**Keyword:** 429, rate limit, quá nhiều request, too many
+**Hiển thị:** "Ollama trả về 429 (rate limit)"
+**Sửa:** Đợi 1-2 phút rồi thử lại. Nếu lặp → đang dùng quá nhiều thiết bị cùng lúc.
 
-**Marketing:**
-- "Tạo ảnh banner giảm giá 50%"
-- "Đăng bài Facebook: Khuyến mãi cuối tuần..."
+### C11. Bước 2 — "Captive portal" / Mạng Wi-Fi quán cafe
+**Keyword:** captive portal, Wi-Fi khách sạn, quán cafe, trang đăng nhập
+**Hiển thị:** "Phản hồi không đúng định dạng — có thể đang ở mạng captive portal"
+**Sửa:** Mở trình duyệt → đăng nhập Wi-Fi → quay lại app thử lại. Hoặc dùng 4G.
 
-**Google Workspace:**
-- "Đọc email mới"
-- "Tạo sự kiện Calendar ngày mai 10h: Họp khách hàng"
-- "Đọc Sheet doanh thu tháng 5"
+### C12. Bước 3 — Zalo QR không hiện
+**Keyword:** QR không hiện, QR trống, Zalo QR, bước 3
+**Sửa:**
+1. Chờ 10-15 giây — cần thời gian khởi động
+2. Nhấn "Refresh QR" nếu có
+3. Đóng app → mở lại → wizard tự quay lại bước 3
 
-### Trạng thái kết nối Telegram
+### C13. Bước 3 — Quét QR nhưng lỗi
+**Keyword:** quét QR lỗi, QR không nhận, scan QR
+**Sửa:**
+1. Zalo trên điện thoại phải đang mở và đã đăng nhập
+2. Tắt Zalo Web/PC trên máy khác (chỉ 1 phiên web/PC)
+3. Refresh QR → quét lại
 
-Trên Dashboard → tab Telegram:
-- **Chấm xanh** + "Sẵn sàng nhận tin · @tên_bot · kiểm tra HH:MM:SS" = hoạt động bình thường
-- **Chấm đỏ** + thông báo lỗi = mất kết nối
-- **Chấm xám** + "Đang kiểm tra kết nối..." = đang kiểm tra
-
-Trạng thái tự kiểm tra lại mỗi 45 giây. Nhấn "Kiểm tra" để kiểm tra ngay.
-
-### Tạm dừng và tiếp tục Telegram
-
-**Tạm dừng:** Dashboard → Telegram → nút "Tạm dừng" → chọn thời gian
-- Trong thời gian tạm dừng: bot KHÔNG trả lời tin nhắn Telegram
-- Banner hiện: "Bot Telegram đang tạm dừng. [thời gian còn lại]"
-- Tự bật lại sau hết thời gian
-
-**Tiếp tục sớm:** Nhấn nút "Tiếp tục" trên banner
-
----
-
-## PHẦN 5: ZALO — KÊNH KHÁCH HÀNG
-
-### Zalo dùng để làm gì trong 9BizClaw?
-
-Zalo là kênh bot tự động trả lời khách hàng:
-
-- Tư vấn sản phẩm, giá cả, chính sách
-- Hỗ trợ khách đặt hàng, đặt lịch, hỏi thông tin
-- Chào khách mới, follow-up khách cũ
-- Quản lý nhóm Zalo (trả lời trong nhóm)
-- Chuyển vấn đề phức tạp cho CEO (escalation)
-
-### Kết nối Zalo
-
-Zalo kết nối tự động qua plugin openzca:
-- App tự phát hiện phiên Zalo trên máy
-- Không cần scan QR lại sau lần đầu
-- Phiên Zalo duy trì ổn định
-
-### 3 chế độ bạn bè
-
-Cài đặt trên Dashboard → Zalo → "Người lạ nhắn tin":
-- **Trả lời bình thường** (mặc định) — Bot trả lời mọi tin nhắn từ bạn bè
-- **Chỉ chào 1 lần** — Bot chào lần đầu, sau đó im lặng
-- **Không trả lời** — Bot hoàn toàn im lặng
-
-Ngoài ra, trên tab "Bạn bè" có thể bật/tắt từng người cụ thể.
-
-### 3 chế độ nhóm
-
-Cài đặt trên Dashboard → Zalo → tab "Nhóm":
-- **Xanh = Mọi tin** — Bot trả lời tất cả tin nhắn trong nhóm
-- **Vàng = @mention** — Bot chỉ trả lời khi được tag tên
-- **Đỏ = Tắt** — Bot im lặng hoàn toàn trong nhóm
-
-Nút "Bật tất cả" / "Tắt tất cả" để thao tác hàng loạt.
-
-**Đổi tài khoản Zalo (popup "Đăng nhập Zalo"):**
-- Tiêu đề: "Đăng nhập Zalo"
-- Hướng dẫn: "Mở app Zalo trên điện thoại, vào Quét QR và quét mã bên dưới"
-- Hiện mã QR để quét
-- Nút "Làm mới" (refresh QR nếu hết hạn)
-- Nút "Đóng"
-
-**Hồ sơ khách (popup khi nhấn vào tên bạn bè):**
-- Hiện thông tin khách: tên, lịch sử tóm tắt, tags
-- Nút "Xóa hồ sơ (archive)" để lưu trữ
-
-### Blocklist (danh sách chặn)
-
-Chặn người dùng Zalo cụ thể qua Dashboard. Người bị chặn không nhận được bất kỳ phản hồi nào từ bot, bot không xử lý tin nhắn của họ.
-
-### Cách bot hành xử trên Zalo
-
-**Bot CHỈ hỗ trợ về sản phẩm và dịch vụ của doanh nghiệp.** Bot sẽ KHÔNG:
-- Viết code, dịch thuật, viết bài
-- Tư vấn pháp lý, y tế, tài chính
-- Giải toán, làm bài tập
-- Thảo luận chính trị, tôn giáo
-- Tiết lộ thông tin nội bộ (file, cấu hình, lệnh bot)
-
-Khi khách hỏi ngoài phạm vi: "Dạ em chỉ hỗ trợ sản phẩm và dịch vụ công ty thôi ạ."
-
-**Phong cách trả lời:**
-- Ngắn gọn: 1-2 câu mỗi tin
-- Tiếng Việt có dấu đầy đủ
-- Giọng thân thiện, chuyên nghiệp (tùy Persona Mix)
-- Không bao giờ nhắc đến file, tool, API, AGENTS.md hay bất kỳ chi tiết kỹ thuật nào
-- Tra cứu tài liệu Knowledge trước khi trả lời — nếu không tìm thấy: "Dạ cái này em chưa có thông tin chính thức ạ"
-
-**Escalation tự động:** Khi gặp khiếu nại, đàm phán giá, hợp đồng, vấn đề phức tạp → bot nói với khách "Để em báo sếp xử lý" → gửi thông báo cho CEO qua Telegram.
-
-**Ghi nhớ khách:** Bot tự ghi lại tên, lịch sử hội thoại, sở thích, tags. Lần sau khách nhắn, bot dùng thông tin cũ. Bot KHÔNG nhắc với khách rằng "em đã ghi nhớ" — tự nhiên sử dụng thông tin.
-
-**Bảo mật:** Bot KHÔNG BAO GIỜ tiết lộ thông tin khách A cho khách B.
-
-### Tạm dừng và tiếp tục Zalo
-
-Giống Telegram: Dashboard → Zalo → nút "Tạm dừng" → chọn thời gian. Bot im lặng trong thời gian tạm dừng. Tự bật lại sau.
+### C14. Bước 4 — "Thiếu thông tin" / "Thiết lập chưa hoàn tất"
+**Keyword:** thiếu thông tin, chưa hoàn tất, bước 4 lỗi
+**Sửa:** Quay lại kiểm tra các bước trước — có bước nào bỏ qua hoặc chưa kết nối.
 
 ---
 
-## PHẦN 6: TỰ ĐỘNG HÓA (CRON / LỊCH TỰ ĐỘNG)
-
-### Lịch tự động là gì?
-
-Cron (lịch tự động) là công việc bot chạy định kỳ mà không cần CEO ra lệnh. Ví dụ: gửi báo cáo mỗi sáng, nhắc nhóm mỗi tuần, follow-up khách chưa trả lời.
-
-### 8 lịch có sẵn
-
-| Lịch | Mô tả |
-|------|-------|
-| Báo cáo sáng | Tóm tắt hoạt động qua đêm + lịch hôm nay → gửi CEO qua Telegram |
-| Tóm tắt tối | Tóm tắt hoạt động cả ngày |
-| Báo cáo tuần | Tóm tắt tuần vừa qua |
-| Báo cáo tháng | Tóm tắt tháng vừa qua |
-| Theo dõi khách | Phát hiện khách chưa reply > 48h → follow-up |
-| Heartbeat | Kiểm tra bot còn hoạt động |
-| Thiền | Nhắc CEO nghỉ ngơi (tùy chỉnh) |
-| Dọn bộ nhớ | Lưu trữ hồ sơ cũ, dọn dẹp file tạm |
-
-Cron có sẵn cấu hình trong Dashboard → Lịch tự động.
-
-### Tạo lịch tự động mới
-
-CEO tạo qua Telegram chat. Ví dụ:
-
-- "Tạo cron gửi nhóm KHÁCH VIP mỗi sáng 9h: Chào buổi sáng các anh chị! Hôm nay shop có gì mới?"
-- "Tạo cron nhắc nhóm NHÂN VIÊN lúc 8h sáng thứ 2: Nhớ nộp báo cáo tuần"
-- "Tạo cron mỗi 2 giờ kiểm tra đơn hàng mới và báo cáo"
-
-**Hai loại cron:**
-1. **Tin cố định** — Bot gửi đúng nội dung bạn nhập (không thay đổi mỗi lần)
-2. **Agent mode** — Bot chạy AI để tạo nội dung mới mỗi lần (ví dụ: tóm tắt tin mới, phân tích dữ liệu)
-
-Bot tự phân biệt dựa trên nội dung lệnh.
-
-### Quản lý lịch tự động
-
-**Trên Dashboard → tab "Lịch tự động":**
-- Xem danh sách tất cả cron
-- Bật/tắt từng cron
-- Xóa cron
-- Test fire — chạy thử ngay lập tức
-
-**Qua Telegram:**
-- "Xem danh sách cron"
-- "Xóa cron [tên]"
-- "Tắt cron [tên]"
-- "Bật cron [tên]"
-- "Test cron [tên]"
-
-### Cron gửi nhóm Zalo
-
-CEO có thể tạo cron gửi nội dung định kỳ vào nhóm Zalo:
-- Chỉ rõ tên nhóm khi tạo
-- Nếu 2 nhóm trùng tên: app yêu cầu chỉ rõ nhóm nào (hiện 4 số cuối groupId)
-- Bot xác nhận lại nhóm + nội dung trước khi lưu
-
----
-
-## PHẦN 7: TÀI LIỆU (KNOWLEDGE)
-
-### Cách hoạt động
-
-1. Upload file vào tab Tài liệu trên Dashboard
-2. Bot tự đọc và tóm tắt nội dung (chờ vài giây đến 1 phút tùy kích thước)
-3. Khi khách Zalo hỏi về sản phẩm/dịch vụ, bot tra cứu tài liệu để trả lời chính xác
-4. Bot KHÔNG bịa thông tin — nếu không tìm thấy: "Dạ cái này em chưa có thông tin chính thức ạ" rồi escalate cho CEO
-
-### 3 thư mục và mức hiển thị
-
-| Thư mục | Dùng cho | Khách thấy không? |
-|---------|---------|-------------------|
-| Công ty | Giới thiệu, chính sách, giờ mở cửa, địa chỉ | Có (nếu file Công khai) |
-| Sản phẩm | Bảng giá, catalog, thông số kỹ thuật | Có (nếu file Công khai) |
-| Nhân viên | Thông tin nội bộ, quy trình nội bộ | Không (chỉ CEO) |
-
-| Mức hiển thị | Ai xem được |
-|-------------|-------------|
-| Công khai | Bot dùng khi trả lời khách Zalo + CEO Telegram |
-| Nội bộ | Chỉ CEO + nhân viên |
-| Chỉ mình tôi | Chỉ CEO qua Telegram |
-
-### Định dạng file hỗ trợ
-
-PDF, Word (.docx), Excel (.xlsx), TXT, CSV, JPG, PNG. Tối đa 100MB mỗi file.
-
----
-
-## PHẦN 8: KỸ NĂNG BOT (26 SKILLS)
-
-Bot có 26 kỹ năng có sẵn chia 3 nhóm. Hệ thống tự kích hoạt kỹ năng phù hợp khi nhận tin nhắn — CEO không cần bật/tắt thủ công.
-
-### Vận hành bot (15 kỹ năng)
-
-| # | Kỹ năng | Mô tả |
-|---|---------|-------|
-| 1 | Zalo (CSKH + nhóm + reply rules) | Xử lý MỌI tin Zalo — bộ lọc phòng thủ 19 trigger + format + nhóm + memory + escalate |
-| 2 | Quản lý lịch tự động | Tạo/sửa/xóa cron, lên lịch gửi tin định kỳ |
-| 3 | Tra cứu kiến thức | Tìm kiếm tài liệu doanh nghiệp để trả lời khách chính xác |
-| 4 | Theo dõi khách hàng | Follow-up khách chưa phản hồi > 48 giờ hoặc khách có tag hot/lead |
-| 5 | Quản lý kênh | Tạm dừng/tiếp tục Telegram + Zalo, quản lý blocklist |
-| 6 | Hành vi veteran | Nhận diện khách cũ, điều chỉnh giọng theo vùng miền + tier khách |
-| 7 | Kênh CEO Telegram | Tư duy cố vấn + gửi tin Zalo từ Telegram (nhóm/cá nhân) |
-| 8 | Workspace API | Đọc/ghi file nội bộ workspace |
-| 9 | CEO File API | Đọc/ghi file trên máy CEO (Excel, JSON, text) |
-| 10 | Bộ nhớ CEO | Lưu/tìm/xóa ghi nhớ của bot qua lệnh CEO |
-| 11 | Tạo ảnh + Brand assets | Tạo ảnh AI, quản lý logo/mascot/ảnh sản phẩm |
-| 12 | Google Workspace | Gmail, Calendar, Drive, Docs, Sheets, Contacts, Tasks |
-| 13 | Chuỗi workflow | Nối nhiều thao tác tự động (Sheet → ảnh → Facebook; Sheet → Zalo) |
-| 14 | Tạo skill mới | CEO tạo kỹ năng tùy chỉnh qua chat hoặc Dashboard |
-| 15 | Sinh script tự động | Tạo Python/Node script cho tác vụ lặp lại (Excel, scrape, OCR...) |
-
-### Marketing (2 kỹ năng)
-
-| # | Kỹ năng | Mô tả |
-|---|---------|-------|
-| 16 | Zalo Post Workflow | Tạo ảnh AI rồi gửi vào nhóm Zalo — chỉ CEO Telegram |
-| 17 | Facebook Post Workflow | Tạo ảnh AI rồi đăng lên Fanpage — chỉ CEO Telegram |
-
-### Theo ngành (9 kỹ năng)
-
-| # | Kỹ năng | Mô tả |
-|---|---------|-------|
-| 18 | Quản lý lịch hẹn CEO | Lịch hẹn khách, tự động nhắc, push Zalo group |
-| 19 | Bất động sản | Môi giới BĐS, dự án, hợp đồng, công chứng, tracking thanh toán |
-| 20 | Công nghệ / IT | SaaS, sprint, SLA, hỗ trợ kỹ thuật, release notes |
-| 21 | Dịch vụ (spa/salon/clinic) | Đặt lịch, nhắc tái sử dụng, chứng chỉ hành nghề |
-| 22 | F&B | Mở/đóng cửa checklist, đặt bàn, menu, khuyến mãi |
-| 23 | Giáo dục / Đào tạo | Lịch học, tuyển sinh, học phí, phụ huynh, tiến độ lớp |
-| 24 | Sản xuất | Đơn sản xuất, nguyên liệu, QC, BHXH, kiểm kê |
-| 25 | Thương mại / Bán lẻ | Tồn kho, đơn hàng, đổi trả, NCC, doanh thu |
-| 26 | Tổng quát (đa ngành) | Công việc chung không thuộc ngành cụ thể |
-
-### Tạo kỹ năng tùy chỉnh
-
-CEO có thể dạy bot kỹ năng mới:
-
-**Qua Telegram:**
-1. Nhắn "tạo skill mới" cho bot
-2. Bot hỏi: tên skill, mô tả, quy trình cụ thể
-3. Bot đề xuất tất cả thông tin cùng lúc → CEO xác nhận 1 lần
-4. Skill tự kích hoạt khi khách hỏi đúng chủ đề
-
-**Qua Dashboard:**
-Dashboard → Skills → nút tạo mới → nhập thông tin → lưu
-
-Kỹ năng tùy chỉnh CEO tạo sẽ hiện ở tab Skills bên cạnh 26 kỹ năng có sẵn.
-
----
-
-## PHẦN 9: TÍNH NĂNG NÂNG CAO
-
-### Tạo ảnh AI
-
-CEO gửi qua Telegram: "tạo ảnh [mô tả chi tiết]"
-
-Quy trình:
-1. Bot tạo ảnh AI dựa trên brand assets đã upload (logo, mascot, sản phẩm)
-2. Gửi preview cho CEO qua Telegram
-3. CEO xác nhận → gửi Zalo hoặc đăng Facebook
-
-Bot KHÔNG tự ý tạo ảnh cho khách Zalo — chỉ CEO mới dùng được tính năng này.
-
-### Đăng bài Facebook Fanpage
-
-CEO gửi qua Telegram: "đăng bài Facebook: [nội dung bài viết]"
-
-Yêu cầu:
-- Đã kết nối Facebook Fanpage trên Dashboard
-- Cần Facebook App + Page Access Token
-
-Quy trình:
-1. Bot soạn bài → hiện preview cho CEO
-2. CEO xác nhận "đăng đi" → bot đăng lên Fanpage
-3. Bot báo lại link bài đăng thành công
-
-Bot KHÔNG bao giờ tự ý đăng — luôn đợi CEO xác nhận.
-
-### Google Workspace
-
-Kết nối Google Account để sử dụng qua Telegram:
-
-- **Gmail:** "Đọc email mới" / "Gửi email cho abc@gmail.com: ..."
-- **Calendar:** "Tạo sự kiện ngày mai 10h: Họp khách hàng" / "Lịch tuần này"
-- **Sheets:** "Đọc Sheet doanh thu tháng 5" / "Thêm hàng vào Sheet..."
-- **Drive:** "Tìm file báo cáo Q1"
-- **Contacts:** "Tìm số điện thoại Anh Tùng"
-
-Yêu cầu: Google Cloud Desktop OAuth client + Drive API + Sheets API enabled. Hướng dẫn có trong Dashboard → Google → tab Cài đặt.
-
-### Escalation (chuyển vấn đề cho CEO)
-
-Khi khách Zalo gặp vấn đề bot không giải quyết được:
-
-1. Bot trả lời khách: "Để em báo sếp xử lý, sếp sẽ liên hệ lại mình sớm nhất ạ"
-2. Bot gửi thông báo cho CEO qua Telegram (và Zalo nếu cấu hình)
-3. CEO nhận: tên khách + nội dung vấn đề + ID cuộc hội thoại
-
-**Bot tự escalate khi gặp:**
-- Khiếu nại, tranh chấp
-- Đàm phán giá
-- Hợp đồng, tài chính
-- Vấn đề kỹ thuật phức tạp
-- Thông tin không có trong tài liệu Knowledge
-- Spam (3+ lần liên tiếp)
-
-### Follow-up tự động
-
-Cron chạy hàng ngày (mặc định 09:30), tự phát hiện khách chưa trả lời > 48 giờ hoặc có tag "hot"/"lead":
-- Gửi tin nhắn nhắc nhẹ cho khách
-- Báo cho CEO biết danh sách khách cần follow-up
-
-### Vision (đọc hình ảnh)
-
-Bot hỗ trợ đọc ảnh khách gửi qua Zalo:
-- Khách gửi ảnh sản phẩm → bot nhận diện và tư vấn
-- Khách gửi ảnh lỗi/hỏng → bot ghi nhận và escalate
-
----
-
-## PHẦN 10: KÍCH HOẠT BẢN QUYỀN
-
-### Màn hình kích hoạt — bố cục chi tiết
-
-Khi mở app chưa có license (hoặc license hết hạn), hiện màn hình 2 nửa:
-
-**Nửa trái (~60%):** Nền tối, logo 9BizClaw, tiêu đề "Unlock all Premium features", mô tả: "Activating your license gives you unlimited access to all Premium features including AI assistant, customer management, and automated business reports." Ghi chú: "Your license is tied to your computer."
-
-**Nửa phải (~40%):** Form kích hoạt:
-- Tiêu đề: "Activate License"
-- Hướng dẫn: "Paste the license key you received from 9Biz to activate your Premium edition"
-- **Ô nhập key** (textarea nhiều dòng, font monospace) — placeholder: `CLAW-eyJlIjoiZW1haWxAZXhhb...`
-- **Machine ID** hiện bên dưới — nhấn vào để copy (hiện "đã copy!" rồi đổi lại sau 2 giây)
-- **Nút "Kích hoạt"** — mặc định xám/tắt, chỉ bật khi key có ít nhất 20 ký tự
-- Liên hệ: tech@modoro.com.vn
-
-**Góc phải trên:** Nút toggle sáng/tối (đổi giao diện)
-
-### Cách kích hoạt
-
-1. Nhận license key từ đội ngũ 9Biz (dạng `CLAW-eyJlIjoiZW1haWxA...`)
-2. Dán key vào ô nhập (nút "Kích hoạt" tự bật lên khi key đủ dài)
-3. Nhấn **"Kích hoạt"** hoặc Enter
-4. Chờ spinner quay — xác thực (cần internet lần đầu)
-5. **Thành công:** Hiện "Kích hoạt thành công. Đang chuyển hướng..." (chữ xanh)
-   - Nếu chưa thiết lập: tự mở Wizard
-   - Nếu đã thiết lập trước đó: tự mở Dashboard
-
-Sau khi kích hoạt lần đầu, app hoạt động offline không cần internet cho phần license.
-
-### Lỗi kích hoạt thường gặp
-
-| Thông báo lỗi (chữ đỏ dưới nút) | Ý nghĩa | Cách xử lý |
-|----------------------------------|---------|-----------|
-| "Key không hợp lệ. Vui lòng kiểm tra lại." | Key sai hoặc copy thiếu ký tự | Copy lại toàn bộ key (từ CLAW- đến hết), đảm bảo không thiếu/thừa ký tự |
-| "Key đã hết hạn. Liên hệ hỗ trợ để gia hạn." | License đã hết hạn | Liên hệ tech@modoro.com.vn để gia hạn |
-| "Key này đã được bind tới máy khác. Liên hệ tech@modoro.com.vn để chuyển máy." | Key đã kích hoạt trên máy khác | Liên hệ support kèm Machine ID cũ + mới để chuyển máy |
-| "Key đã bị thu hồi. Liên hệ hỗ trợ." | Key đã bị hủy bởi admin | Liên hệ tech@modoro.com.vn |
-| "Không ghi được license. Kiểm tra quyền truy cập thư mục." | Không ghi được file license | Chạy app với quyền Administrator (Windows) hoặc kiểm tra quyền thư mục (Mac) |
-
-### Chuyển sang máy tính mới
-
-License khóa theo phần cứng máy (hostname + MAC address + platform). Khi đổi máy:
-
-1. Trên máy cũ: ghi lại Machine ID (hiện trên màn hình kích hoạt hoặc Dashboard)
-2. Trên máy mới: mở app → ghi lại Machine ID mới
-3. Gửi email cho tech@modoro.com.vn kèm: email đăng ký + Machine ID cũ + Machine ID mới
-4. Support chuyển license → kích hoạt lại trên máy mới
-
-**Lưu ý:** KHÔNG copy file `license.json` sang máy khác — file này được mã hóa theo phần cứng, sẽ bị từ chối trên máy khác.
-
-### License hết hạn
-
-Khi hết hạn:
-- App hiện lại màn hình kích hoạt
-- Bot ngừng hoạt động
-- Dữ liệu (tài liệu, memory, cấu hình) vẫn giữ nguyên
-- Gia hạn xong → mọi thứ hoạt động lại bình thường
-
----
-
-## PHẦN 11: XỬ LÝ SỰ CỐ TOÀN DIỆN
-
-Phần này liệt kê tất cả triệu chứng thường gặp, nguyên nhân thật, và cách khắc phục đã được kiểm chứng.
-
-### Bot không trả lời tin nhắn Telegram
-
-| # | Nguyên nhân | Cách nhận biết | Cách khắc phục |
-|---|-----------|----------------|----------------|
-| 1 | App chưa khởi động xong | Mở app < 60 giây | Chờ 30-60 giây sau khi mở app rồi thử lại |
-| 2 | Token Telegram sai | Dashboard → Telegram → chấm đỏ | Dashboard → Telegram → "Đổi tài khoản" → nhập lại token từ BotFather |
-| 3 | Chưa nhấn Start trên bot | Gửi tin nhưng không có phản hồi gì | Mở bot trên Telegram → nhấn nút Start |
-| 4 | ChatGPT chưa kết nối | Dashboard → tổng quan → bot offline | Chạy lại wizard bước 2 hoặc Dashboard → AI Models → kết nối lại |
-| 5 | Bot đang tạm dừng | Dashboard → Telegram → banner "đang tạm dừng" | Nhấn "Tiếp tục" trên Dashboard |
-| 6 | Mạng internet đứt | Không load được gì trên trình duyệt | Kiểm tra kết nối mạng |
-| 7 | Gateway đang restart | Bot reply "Gateway is restarting. Please wait..." | Chờ 30 giây. Nếu lặp liên tục → đóng app hoàn toàn → mở lại |
-
-### Bot không trả lời tin nhắn Zalo
-
-| # | Nguyên nhân | Cách nhận biết | Cách khắc phục |
-|---|-----------|----------------|----------------|
-| 1 | Zalo listener chưa chạy | Dashboard → Zalo → chấm đỏ | Nhấn Refresh. Nếu vẫn đỏ → đóng app mở lại |
-| 2 | Kênh Zalo bị tắt | Dashboard → Zalo → toggle "Bật Zalo" đang tắt | Bật toggle (lưu ý: gateway restart 10-15 giây) |
-| 3 | Người gửi bị chặn | Người nằm trong blocklist | Kiểm tra blocklist trên Dashboard → Zalo |
-| 4 | Chế độ nhóm = Tắt | Nhóm có chấm đỏ | Đổi chế độ nhóm sang @mention hoặc Mọi tin |
-| 5 | Chế độ bạn bè = Không trả lời | Tên người gửi bị tắt trên tab Bạn bè | Bật lại trên Dashboard → Zalo → Bạn bè |
-| 6 | Bot đang tạm dừng | Banner "Bot Zalo đang tạm dừng" | Nhấn "Tiếp tục" |
-| 7 | Listener cần thời gian khởi động | Mở app < 15 giây + Zalo chấm xám | Chờ 15-30 giây — chấm tự chuyển xanh |
-| 8 | Tin nhắn ngoài phạm vi | Khách hỏi viết code/dịch thuật/pháp lý | Bot đúng khi im lặng — chỉ hỗ trợ sản phẩm/dịch vụ |
-
-### Gateway restart liên tục
-
-**Triệu chứng:** Bot trả lời "Gateway is restarting" nhiều lần, không trả lời nội dung thật.
-
-**Nguyên nhân gốc:** Heartbeat phát hiện gateway chậm → kill → restart → chậm lại → kill... (vòng lặp).
-
-**Cách khắc phục:**
-1. Đóng app **hoàn toàn** — bao gồm cả icon trong khay hệ thống (system tray)
+## D. BOT KHÔNG TRẢ LỜI
+
+### D1. Bot Telegram im lặng
+**Keyword:** Telegram im lặng, bot không trả lời, không reply, Telegram không phản hồi
+**Kiểm tra theo thứ tự:**
+1. App đã mở chưa? → Mở 9BizClaw trên máy tính
+2. Dashboard → sidebar → chấm Telegram **xanh** chưa? → Nếu đỏ: kiểm tra token (bước 3 wizard)
+3. Đã nhấn **/start** trên bot Telegram chưa? → Mở bot → nhấn Start
+4. Bot đang tạm dừng? → Dashboard → Telegram → bấm "Tiếp tục"
+5. Gateway restart? → Đóng app hoàn toàn (cả system tray) → chờ 5s → mở lại → chờ 60s
+6. ChatGPT/AI đã kết nối? → Dashboard → AI Models → kiểm tra
+
+### D2. Bot Zalo im lặng
+**Keyword:** Zalo im lặng, Zalo không trả lời, khách nhắn không reply
+**Kiểm tra theo thứ tự:**
+1. Dashboard → Zalo → chấm **xanh** chưa? → Nếu đỏ: đóng app mở lại
+2. Kênh Zalo bật chưa? → Dashboard → toggle Zalo = **Bật**
+3. Khách bị chặn? → Dashboard → Zalo → Blocklist → kiểm tra
+4. Chế độ nhóm = Tắt? → Đổi sang **@mention** hoặc **Mọi tin**
+5. Chế độ bạn bè? → Dashboard → Zalo → Bạn bè → kiểm tra toggle
+6. Bot tạm dừng? → Dashboard → Zalo → bấm "Tiếp tục"
+7. Vừa mở app? → Chờ 15-30 giây cho listener khởi động
+
+### D3. Bot trả lời "Gateway is restarting"
+**Keyword:** gateway restarting, đang restart, please wait, khởi động lại
+**Sửa:**
+1. Đóng app **hoàn toàn** — cả icon trong system tray (Windows) hoặc dock (Mac)
 2. Chờ 5 giây
-3. Mở lại app
-4. Chờ 60 giây để gateway khởi động hoàn chỉnh
-5. Nếu vẫn lặp sau 3 lần restart: Factory Reset → thiết lập lại
+3. Mở lại → chờ 60 giây
+4. Nếu lặp 3+ lần: chụp màn hình console → gửi support
 
-### Lỗi 500 khi thiết lập AI (bước 2 wizard)
+### D4. Bot trả lời rất chậm (> 30 giây)
+**Keyword:** chậm, lâu, 30 giây, mất lâu, slow
+**Giải thích:** Tin nhắn đầu tiên trong phiên luôn chậm hơn (~20-30s) vì bot cần khởi tạo. Tin tiếp theo sẽ nhanh hơn (~5-15s nhờ session freeze cache).
+**Nếu luôn chậm:**
+1. Kiểm tra mạng internet
+2. AI provider (ChatGPT/Ollama) có thể đang quá tải
+3. Đóng app → mở lại để reset session
 
-**Triệu chứng:** Nhấn "Kiểm tra kết nối" → lỗi 500 hoặc không phản hồi.
+### D5. Bot reply tiếng Anh hoặc nội dung lạ
+**Keyword:** tiếng Anh, English, nội dung lạ, trả lời sai
+**Sửa:** Đóng app → mở lại. Nếu vẫn lỗi: liên hệ support (có thể file AGENTS.md bị sửa).
 
-**Nguyên nhân:** 9Router gặp lỗi kỹ thuật nội bộ (thường do better-sqlite3 không tương thích CPU).
+### D6. "Mất kết nối mạng — đang khởi động lại..."
+**Keyword:** mất kết nối, tự khởi động lại, network, reconnect
+**Giải thích:** App tự phát hiện mạng đứt và restart. Đây là hành vi bình thường.
+**Nếu lặp quá nhiều:** Kiểm tra mạng internet ổn định. Nếu mạng OK mà vẫn lặp: đóng app mở lại.
 
-**Cách khắc phục:**
-1. Đóng app, mở lại, thử bước 2 lần nữa — app có auto-fix tích hợp
-2. Nếu vẫn 500 sau 2-3 lần: nhấn nút **"Mở thư mục log"** (nếu hiện) → gửi file `9router.log` cho support
-3. **Vị trí log:** Windows: `%APPDATA%\modoro-claw\logs\9router.log` — Mac: `~/Library/Application Support/modoro-claw/logs/9router.log`
+### D7. "Đã thử khởi động lại nhiều lần — đợi 10 phút"
+**Keyword:** nhiều lần, 10 phút, rate limit, đợi
+**Nguyên nhân:** App restart quá nhiều lần trong 1 giờ (>5 lần) → tự cooldown 10 phút.
+**Sửa:** Chờ 10 phút. Nếu vẫn lỗi sau 10 phút → đóng app hoàn toàn → kiểm tra mạng → mở lại.
 
-### Tin nhắn Zalo bị chia đôi hoặc bị cắt
-
-**Triệu chứng:** Bot gửi 1 tin nhưng khách nhận 2 tin (nửa đầu + nửa sau), hoặc chỉ nhận phần đầu.
-
-**Nguyên nhân:** Tin dài hơn giới hạn Zalo. App tự chia nhỏ (tối đa 780 ký tự/tin, 800ms giữa mỗi tin).
-
-**Nếu vẫn bị cắt:** Cập nhật app lên phiên bản mới nhất. Tăng "Gộp tin khách" lên 3-5 giây trên Dashboard.
-
-### Knowledge tab — upload xong nhưng file không hiện
-
-**Triệu chứng:** Upload thành công (không báo lỗi) nhưng danh sách file trống.
-
-**Nguyên nhân:** Database nội bộ gặp lỗi tương thích. File đã lưu trên đĩa nhưng database không hiện.
-
-**Cách khắc phục:**
-1. Đóng app, mở lại — app tự sửa database mỗi lần khởi động
-2. File vẫn lưu trên đĩa, sẽ tự xuất hiện sau khi database được sửa
-3. Nếu sau 2 lần restart vẫn không hiện: liên hệ support
-
-### Knowledge tab — PDF báo lỗi extract
-
-**Triệu chứng:** Upload PDF → lỗi "PDF extract failed: DOMMatrix is not defined"
-
-**Cách khắc phục:** Cập nhật app. Hoặc convert PDF sang Word (.docx) hoặc TXT trước khi upload.
-
-### Cron không chạy trên macOS (máy ngủ hoặc đóng nắp)
-
-**Triệu chứng:** Lịch tự động được cấu hình nhưng không fire khi MacBook đóng nắp.
-
-**Nguyên nhân:** macOS App Nap suspend ứng dụng nền.
-
-**Trạng thái:** App v2.4+ có powerSaveBlocker tích hợp chống App Nap. Nếu vẫn bị:
-- System Settings → Battery → bỏ tick "Prevent automatic sleeping when the display is off"
-- Luôn giữ app mở (có thể thu nhỏ, không cần focus)
-
-### Cron gửi nhầm nhóm Zalo
-
-**Triệu chứng:** CEO tạo cron cho nhóm A, tin đến nhóm B.
-
-**Nguyên nhân:** Hai nhóm có tên giống hoặc trùng nhau.
-
-**Trạng thái:** App v2.4+ có 3 lớp bảo vệ:
-1. Từ chối tạo cron nếu tên nhóm trùng — yêu cầu đổi tên nhóm hoặc chỉ rõ ID
-2. Kiểm tra chéo groupId ↔ groupName — reject nếu mismatch
-3. Hiển thị 4 số cuối groupId để CEO xác nhận trước khi lưu
-
-### Bot trả lời tin nhắn hệ thống trong nhóm Zalo
-
-**Triệu chứng:** Bot reply "X đã thêm Y vào nhóm", "X đã rời nhóm", v.v.
-
-**Trạng thái:** App có bộ lọc code-level cho 9 pattern tin hệ thống Zalo (thêm/rời nhóm, đổi tên nhóm, pin tin, đổi ảnh đại diện...). Cập nhật app lên phiên bản mới nhất nếu vẫn gặp.
-
-### Bot trả lời 2 lần cho cùng 1 tin Zalo
-
-**Triệu chứng:** Khách gửi 1 tin, bot reply 2 tin giống hệt.
-
-**Nguyên nhân:** Zalo đôi khi gửi trùng sự kiện (network retry).
-
-**Trạng thái:** App có bộ dedup — nếu cùng senderId + cùng nội dung trong vòng 3 giây → drop tin trùng. Cập nhật app nếu vẫn gặp.
-
-### Bot Zalo phản hồi bot khác (bot-loop)
-
-**Triệu chứng:** 2 bot trong nhóm Zalo reply qua lại liên tục.
-
-**Trạng thái:** App có 6 tín hiệu phát hiện bot: prefix tự động, template lặp, không có đại từ nhân xưng, reply < 2 giây, format dữ liệu, FAQ template. Nếu vẫn loop: tắt chế độ nhóm cho nhóm đó (đỏ = tắt).
-
-### Bot Zalo nói "chuyển cho sếp" nhưng CEO không nhận gì
-
-**Triệu chứng:** Bot hứa chuyển cho CEO nhưng CEO không nhận alert.
-
-**Trạng thái:** App v2.4+ có bộ phát hiện escalation 9 pattern + bot được hướng dẫn dùng cụm từ chuẩn. CEO nhận alert qua Telegram + Zalo trong 30 giây.
-
-Nếu vẫn không nhận:
-1. Kiểm tra Telegram kết nối (chấm xanh trên Dashboard)
-2. Nếu cả 2 kênh mất kết nối: alert ghi vào `logs/ceo-alerts-missed.log` — kiểm tra khi có mạng lại
-
-### Mật khẩu 9Router / AI Models không đăng nhập được
-
-**Mật khẩu mặc định:** `123456`
-
-Nếu không vào được:
-1. Kiểm tra đúng mật khẩu: `123456` (không dấu cách, không chữ hoa)
-2. Nhấn **Reload** trên Dashboard → tab AI Models
-3. Nếu vẫn không được: đóng app mở lại (app reset password về mặc định mỗi lần khởi động)
-
-### App bị Windows Defender / SmartScreen chặn
-
-**Triệu chứng:** "Windows protected your PC" khi mở app.
-
-**Cách xử lý:**
-1. Nhấn **"More info"**
-2. Nhấn **"Run anyway"**
-3. Chỉ cần làm 1 lần — Windows ghi nhớ
-
-### App bị macOS Gatekeeper chặn
-
-**Triệu chứng:** "9BizClaw can't be opened because the developer cannot be verified"
-
-**Cách xử lý:**
-1. System Settings → Privacy & Security
-2. Cuộn xuống → nhấn **"Open Anyway"** bên cạnh thông báo 9BizClaw
-
-### Cron agent trả về kết quả trống hoặc CEO nhận prompt thay vì kết quả
-
-**Triệu chứng:** CEO nhận câu lệnh gốc thay vì kết quả AI.
-
-**Nguyên nhân:** Cron chạy ở chế độ tin cố định thay vì agent mode.
-
-**Cách khắc phục:** Khi tạo cron qua Telegram, nói rõ: "tóm tắt" hoặc "phân tích" hoặc "kiểm tra" — bot sẽ hiểu cần dùng AI agent.
-
-### Thanh tiến trình cài đặt đứng im > 10 phút
-
-**Cách khắc phục theo thứ tự:**
-1. Kiểm tra internet (mở trình duyệt thử)
-2. Tắt VPN/proxy nếu có
-3. Đóng app hoàn toàn → mở lại (app tự retry từ chỗ dừng)
-4. Nếu dùng mạng công ty: hỏi IT bỏ chặn `registry.npmjs.org` và `nodejs.org`
-5. Thử dùng 4G điện thoại chia sẻ hotspot
-
-### Dashboard hiện "Chưa có hoạt động" sau khi cài xong
-
-**Bình thường** khi mới cài. Hoạt động sẽ hiện sau khi:
-- Bot nhận/gửi tin nhắn đầu tiên
-- Cron chạy lần đầu
-- Gateway khởi động xong (log event "gateway_ready")
-
-Kiểm tra: `logs/audit.jsonl` có entry `gateway_ready` không.
-
-### Không thể embed 9Router hoặc OpenClaw trong Dashboard (webview trắng)
-
-**Triệu chứng:** Tab AI Models hoặc OpenClaw hiện trắng.
-
-**Nguyên nhân cũ:** X-Frame-Options header chặn iframe. App v2.4+ strip header cho local origins.
-
-**Nếu vẫn trắng:** Nhấn nút **"Mở trong browser"** để dùng giao diện trên trình duyệt riêng.
-
-### Lỗi khi sleep/resume trên Windows (cron bị miss)
-
-**Triệu chứng:** Máy Windows ngủ (sleep) rồi thức dậy, cron lẽ ra phải chạy trong lúc ngủ bị bỏ qua.
-
-**Trạng thái:** App v2.4+ có **sleep catch-up** — khi máy thức dậy, app quét lại khoảng thời gian bị miss và chạy bù các cron đã lỡ.
+### D8. Zalo listener thoát / chấm đỏ
+**Keyword:** listener thoát, Zalo đỏ, Zalo chấm đỏ, reconnecting
+**Hiển thị:** "Listener đã thoát" hoặc chấm Zalo chuyển đỏ
+**Sửa:**
+1. App tự reconnect trong 1-3 giây
+2. Nếu đỏ kéo dài > 30 giây: đóng app → mở lại
+3. Kiểm tra Zalo trên điện thoại vẫn đang đăng nhập
 
 ---
 
-## PHẦN 12: CÂU HỎI THƯỜNG GẶP (FAQ)
+## E. DASHBOARD
 
-### Cài đặt và thiết lập
+### E1. Dashboard trang trắng
+**Keyword:** trang trắng, blank, không hiện gì, white screen
+**Sửa:** Đóng app → mở lại. Nếu vẫn trắng: xóa thư mục Cache trong `%APPDATA%\9bizclaw\` (Win) / `~/Library/Application Support/9bizclaw/` (Mac).
 
-**Cần internet không?**
-Cần internet khi: cài đặt lần đầu (170MB), khi bot hoạt động (kết nối ChatGPT + Telegram + Zalo). KHÔNG cần internet cho: mở Dashboard, xem cài đặt, xem file Knowledge đã upload.
+### E2. Tab 9Router / OpenClaw hiện trắng
+**Keyword:** 9Router trắng, OpenClaw trắng, webview trắng, iframe lỗi
+**Sửa:** Đóng app → mở lại. Nếu vẫn lỗi → cập nhật lên version mới nhất.
 
-**ChatGPT miễn phí được không?**
-Được. ChatGPT miễn phí hoạt động bình thường. ChatGPT Plus cho phản hồi nhanh hơn nhưng không bắt buộc.
-
-**Dùng Claude / Gemini / Ollama thay ChatGPT được không?**
-9Router hỗ trợ nhiều AI provider. Mặc định dùng ChatGPT. Cấu hình provider khác: Dashboard → AI Models → đăng nhập → thêm provider.
-
-**Sau wizard, bao lâu bot sẵn sàng?**
-30-60 giây để gateway khởi động. Sau đó bot sẵn sàng nhận tin.
-
-**Cài trên nhiều máy được không?**
-Mỗi license key khóa theo 1 máy. Cần license riêng cho mỗi máy, hoặc liên hệ support chuyển máy.
-
-### Sử dụng hàng ngày
-
-**Có cần mở app liên tục không?**
-Có. Bot chỉ hoạt động khi app đang mở (có thể thu nhỏ xuống khay hệ thống, không cần focus).
-
-**Bot có hoạt động khi tắt màn hình?**
-Có, miễn app vẫn chạy. Mac có bộ chống App Nap tích hợp.
-
-**Bot trả lời chậm (>30 giây)?**
-Phụ thuộc: tốc độ ChatGPT, mạng, độ phức tạp câu hỏi. Bình thường: 3-10 giây. Nếu > 30 giây: kiểm tra internet và trạng thái ChatGPT.
-
-**Bot có đọc ảnh khách gửi không?**
-Có. Bot hỗ trợ vision — phân tích ảnh khách Zalo gửi và trả lời về nội dung ảnh.
-
-**Dữ liệu có an toàn không?**
-Toàn bộ dữ liệu lưu trên máy bạn. Không gửi lên cloud của 9Biz. Hội thoại đi qua ChatGPT (theo chính sách bảo mật OpenAI).
-
-**Bot có tiết lộ thông tin nội bộ cho khách không?**
-Không. Bot có bộ lọc output — chặn file path, API key, nội dung kỹ thuật, suy luận tiếng Anh. Tài liệu "Nội bộ" hoặc "Chỉ mình tôi" không bao giờ chia sẻ với khách.
-
-### Zalo
-
-**Bot có tự reply nhóm Zalo không?**
-Tùy cài đặt: Mọi tin = reply tất cả, @mention = chỉ khi tag, Tắt = im lặng. Cấu hình trên Dashboard → Zalo → tab Nhóm.
-
-**Khách spam nhóm, bot reply hết à?**
-Không. Bot có bộ lọc phòng thủ 19 trigger — phát hiện spam, trashtalk, bot khác, tin hệ thống → im lặng hoặc escalate.
-
-**Bot có nhớ khách cũ không?**
-Có. Bot ghi nhớ tên, lịch sử, sở thích. Lần sau nhắn: bot dùng thông tin cũ tự nhiên (không nhắc "em đã ghi nhớ").
-
-**Bot chào khách mới bao nhiêu lần?**
-1 lần duy nhất (first greeting). Sau đó không chào lại.
-
-### Cron / Lịch tự động
-
-**Cron có chạy khi app tắt không?**
-Không. Cron chỉ chạy khi app đang mở.
-
-**Tạo cron gửi nhóm Zalo được không?**
-Được. Nhắn Telegram: "tạo cron gửi nhóm [tên nhóm] mỗi sáng 9h: [nội dung]"
-
-**Giới hạn số cron?**
-Không giới hạn. Tần suất tối thiểu: 5 phút/lần.
-
-**Cron có chạy bù sau khi máy ngủ không?**
-Có (Windows). App phát hiện sleep gap → chạy bù cron đã lỡ.
-
-### Facebook
-
-**Bot có tự đăng Facebook không?**
-Không bao giờ tự ý. Luôn đợi CEO xác nhận trước khi publish.
-
-**Cần gì để kết nối Facebook?**
-Fanpage + Facebook App (tạo tại developers.facebook.com) + Page Access Token. Hướng dẫn: Dashboard → Facebook.
-
-### Bản quyền
-
-**License hết hạn thì sao?**
-App hiện màn hình kích hoạt. Bot ngừng. Dữ liệu vẫn giữ. Gia hạn xong → hoạt động lại.
-
-**Đổi máy thì sao?**
-Liên hệ tech@modoro.com.vn kèm Machine ID cũ + mới.
-
-**Mất key thì sao?**
-Liên hệ tech@modoro.com.vn kèm email đã đăng ký. Support cấp lại.
-
-### Khắc phục nhanh
-
-**Cách nhanh nhất sửa hầu hết lỗi?**
-Đóng app hoàn toàn (cả icon khay hệ thống) → mở lại. App tự phát hiện và sửa nhiều lỗi khi khởi động lại.
-
-**Factory Reset ở đâu?**
-Nút tròn góc dưới phải Dashboard → "Xóa sạch dữ liệu". Gõ "xóa" để xác nhận. Xóa hết, phải thiết lập lại.
-
-**Backup dữ liệu?**
-Nút tròn góc dưới phải → "Xuất dữ liệu (backup)". Phục hồi: cùng menu → "Khôi phục từ file".
-
-**Liên hệ hỗ trợ?**
-- Email: tech@modoro.com.vn
-- Telegram: nhóm hỗ trợ 9Biz (link trong Dashboard → menu hỗ trợ → "Liên hệ 9Biz")
+### E3. Tab AI Models — "combo rỗng" / không có model
+**Keyword:** combo rỗng, không có model, AI Models trống
+**Hiển thị:** Console có "combo 'main' has 0 models"
+**Sửa:** Dashboard → AI Models → kiểm tra kết nối ChatGPT/Ollama. Nếu chưa kết nối → chạy lại wizard bước 2.
 
 ---
 
-## PHỤ LỤC: GIỚI HẠN CỦA BOT
+## F. CRON / LỊCH TỰ ĐỘNG
 
-Bot 9BizClaw **KHÔNG** làm được những việc sau trên kênh Zalo (khách hàng):
+### F1. Báo cáo sáng/tối không gửi
+**Keyword:** báo cáo không gửi, cron không chạy, sáng không gửi, tối không gửi
+**Kiểm tra:**
+1. App đang mở trên máy tính? → Cron chỉ chạy khi app mở
+2. Dashboard → Lịch → cron tương ứng **enabled** (bật)?
+3. Máy tính có sleep/hibernate lúc giờ cron? → Để máy không sleep
+4. Mac đóng nắp? → Cron miss khi Mac sleep (dù đã có powerSaveBlocker)
 
-- Viết code, dịch thuật, viết bài văn
-- Tư vấn pháp lý, y tế, tài chính
-- Giải toán, làm bài tập
-- Thảo luận chính trị, tôn giáo
-- Truy cập URL bên ngoài, tải file
-- Tạo/sửa/xóa lịch tự động
-- Thay đổi cấu hình hệ thống
-- Tiết lộ thông tin nội bộ (file, API, cấu hình)
-- Chiến lược kinh doanh, nghiên cứu thị trường
+### F2. Cron fail — "require is not defined"
+**Keyword:** require is not defined, ReferenceError, cron lỗi require
+**Nguyên nhân:** Session freeze patches phiên bản cũ dùng `require()` trong ESM.
+**Sửa:** Cập nhật app lên version **>= 2.4.4**. Lỗi đã được fix.
 
-Khi khách hỏi ngoài phạm vi: "Dạ em chỉ hỗ trợ sản phẩm và dịch vụ công ty thôi ạ."
+### F3. Cron fail — "session file locked"
+**Keyword:** session file locked, timeout 10000ms, locked, file lock
+**Nguyên nhân:** File lock từ lần chạy trước bị crash.
+**Sửa:** Đóng app → mở lại. Lock file tự xóa khi restart.
 
-Các tính năng nâng cao (tạo ảnh, đăng Facebook, quản lý cron, Google Workspace, tạo skill...) chỉ CEO dùng được qua Telegram.
+### F4. Cron fail — "thất bại sau 3 lần"
+**Keyword:** thất bại sau 3 lần, 3 retries, retry failed
+**Sửa:**
+1. Kiểm tra mạng internet
+2. Kiểm tra AI provider đã kết nối (Dashboard → AI Models)
+3. Đóng app → mở lại
+4. Nếu vẫn fail: copy error từ Telegram → gửi support
+
+### F5. Cron Zalo bị chặn — "Zalo đang tạm dừng"
+**Keyword:** cron bị chặn, Zalo tạm dừng, cron Zalo không gửi
+**Sửa:** Dashboard → Zalo → bấm "Tiếp tục" để bỏ tạm dừng.
+
+### F6. schedules.json bị lỗi
+**Keyword:** schedules.json corrupt, lỗi JSON, lịch bị hỏng
+**Hiển thị:** "Cảnh báo: schedules.json bị lỗi JSON"
+**Sửa:** App tự backup file hỏng và fall back về lịch mặc định. Vào Dashboard → Lịch để kiểm tra lại.
+
+---
+
+## G. KNOWLEDGE / TÀI LIỆU
+
+### G1. Upload PDF lỗi "DOMMatrix is not defined"
+**Keyword:** DOMMatrix, PDF lỗi, PDF extract failed
+**Sửa:** Cập nhật app — version mới dùng pdf-parse 1.1.1 (đã fix).
+
+### G2. Upload file nhưng không thấy trong danh sách
+**Keyword:** upload xong không thấy, file biến mất, danh sách trống
+**Nguyên nhân:** Database (better-sqlite3) bị lỗi ABI. File vẫn còn trên ổ đĩa.
+**Sửa:** Đóng app → mở lại (app tự fix ABI mismatch + backfill từ disk).
+
+### G3. Knowledge tab trống sau update
+**Keyword:** knowledge trống, tài liệu biến mất, mất tài liệu
+**Sửa:** File vẫn còn trên disk. Mở lại app → hệ thống tự backfill.
+
+### G4. Upload file quá lớn
+**Keyword:** quá lớn, file size, giới hạn, limit
+**Giới hạn:** Tối đa 10MB/file. Nếu file lớn hơn → chia nhỏ hoặc tóm tắt trước khi upload.
+
+### G5. "Ổ đĩa đầy — không lưu được chỉ mục"
+**Keyword:** ổ đĩa đầy, không lưu, RAG, chỉ mục
+**Sửa:** Giải phóng 500MB → khởi động lại app.
+
+---
+
+## H. FACEBOOK
+
+### H1. "Token Facebook trống" / Chưa kết nối
+**Keyword:** Facebook chưa kết nối, token trống, chưa kết nối Facebook
+**Sửa:** Dashboard → Facebook → "Kết nối Fanpage" → đăng nhập Facebook → chọn Fanpage.
+
+### H2. "Không tìm thấy Fanpage có quyền"
+**Keyword:** không tìm thấy Fanpage, quyền, permission, Fanpage
+**Nguyên nhân:** Token không có quyền publish trên Fanpage.
+**Sửa:** Kết nối lại → khi Facebook hỏi quyền → tick **tất cả** quyền cho Fanpage.
+
+### H3. Post Facebook lỗi
+**Keyword:** post lỗi, đăng bài lỗi, Graph API error, Facebook API
+**Sửa:**
+1. Kiểm tra token còn hợp lệ: Dashboard → Facebook → "Kiểm tra kết nối"
+2. Nếu hết hạn: kết nối lại
+3. Nếu rate limit (429): đợi 10 phút rồi thử lại
+
+### H4. "CEO chưa duyệt trước giờ đăng"
+**Keyword:** chưa duyệt, skipped, bỏ qua, chưa approve
+**Giải thích:** Bài Facebook lên lịch nhưng CEO chưa reply "fb ok" trước giờ đăng → bài bị skip.
+**Sửa:** Reply "fb ok" trên Telegram để duyệt. Duyệt muộn vẫn đăng được (đăng ngay).
+
+### H5. Không nhận được preview ảnh Facebook
+**Keyword:** preview không nhận, ảnh không gửi, fb preview
+**Nguyên nhân:** Lead time mặc định 30 phút. Preview gửi 30 phút trước giờ đăng.
+**Sửa:** Tạo lịch cách giờ đăng ít nhất 30 phút. Hoặc tạo lịch sát giờ → preview gửi ngay.
+
+---
+
+## I. GOOGLE WORKSPACE
+
+### I1. "Google API chưa được bật"
+**Keyword:** API chưa bật, Google API, enable API
+**Hiển thị:** "Google API cho [service] chưa được bật trong Google Cloud"
+**Sửa:** Vào Google Cloud Console → APIs & Services → Enable API → bật API cần dùng (Gmail, Calendar, Drive...).
+
+### I2. File OAuth JSON sai loại
+**Keyword:** OAuth JSON, service account, Desktop app, client_secret
+**Hiển thị:** "File này là Service Account JSON" hoặc "không đúng loại"
+**Sửa:** Cần tạo **OAuth Client ID** loại **Desktop app** (không phải Service Account):
+1. Google Cloud Console → Credentials → Create → OAuth Client ID
+2. Application type: **Desktop app**
+3. Download JSON → upload vào Dashboard → Google
+
+### I3. "gog binary not found"
+**Keyword:** gog not found, gogcli, Google không hoạt động
+**Nguyên nhân:** gogcli chưa được tải (bỏ qua lúc cài đặt hoặc tải fail).
+**Sửa:** Đóng app → mở lại (app tự tải lại gogcli). Nếu vẫn lỗi: kiểm tra mạng.
+
+---
+
+## J. MAC RIÊNG
+
+### J1. "9BizClaw.app is damaged" / Không mở được
+**Keyword:** damaged, bị hỏng, không mở được, app is damaged, quarantine
+**Nguyên nhân:** macOS Gatekeeper chặn app chưa notarize (bản unsigned).
+**Sửa:**
+1. Mở **Terminal** (Applications → Utilities → Terminal)
+2. Chạy lệnh: `xattr -dr com.apple.quarantine /Applications/9BizClaw.app`
+3. Nhấn Enter → mở lại app
+
+### J2. Cron bị miss khi Mac sleep / đóng nắp
+**Keyword:** cron miss, Mac sleep, đóng nắp, App Nap
+**Giải thích:** App đã có powerSaveBlocker nhưng khi Mac sleep hoàn toàn (đóng nắp) thì mọi timer đều dừng.
+**Sửa:**
+1. Để Mac không sleep: System Preferences → Energy Saver → Prevent computer from sleeping
+2. Hoặc để nắp mở (có thể tắt màn hình)
+
+### J3. "Bad CPU type in executable" (Intel Mac)
+**Keyword:** bad CPU type, Intel, x64, arm64
+**Nguyên nhân:** Cài bản arm64 (Apple Silicon) trên máy Intel hoặc ngược lại.
+**Sửa:** Tải đúng bản: Apple Silicon (M1/M2/M3/M4) = arm64, Intel (trước 2020) = x64.
+
+### J4. Mac không tìm thấy Node.js khi mở từ Finder
+**Keyword:** Node not found, Finder, không tìm thấy Node
+**Nguyên nhân:** Mở app từ Finder không có shell PATH (nvm/volta không load).
+**Sửa:** App đã có tự động tìm Node ở nhiều vị trí. Nếu vẫn lỗi → cài Node từ nodejs.org (không qua nvm).
+
+### J5. Xcode Command Line Tools
+**Keyword:** Xcode, xcode-select, Command Line Tools, CLT
+**Hiển thị:** macOS hiện hộp thoại "Install Xcode Command Line Tools"
+**Sửa:** Nhấn **"Install"** trong hộp thoại macOS. Đợi 2-5 phút. App tự tiếp tục sau khi cài xong. Nếu bỏ qua: app vẫn hoạt động (dùng git shim thay thế).
+
+---
+
+## K. WINDOWS RIÊNG
+
+### K1. Windows Defender chặn cài đặt / chạy app
+**Keyword:** Windows Defender, antivirus, bị chặn, SmartScreen
+**Sửa:**
+1. Windows Security → Virus & threat protection → Manage settings → Exclusions
+2. Add Folder → `C:\Users\[tên]\AppData\Roaming\9bizclaw`
+3. Nếu SmartScreen chặn khi mở: "More info" → "Run anyway"
+
+### K2. App không tự khởi động cùng Windows
+**Keyword:** tự khởi động, startup, mở máy, khởi động cùng Windows
+**Sửa:** Dashboard → Cài đặt → bật "Tự khởi động cùng Windows" (nếu có).
+
+### K3. Nhiều process node.exe chạy
+**Keyword:** nhiều process, node.exe, task manager, chạy nhiều
+**Giải thích:** Bình thường — 9BizClaw chạy 3-4 process Node (gateway, 9Router, openzca, cron agent). Không phải lỗi.
+
+---
+
+## L. CẬP NHẬT
+
+### L1. Cách cập nhật
+**Keyword:** cập nhật, update, nâng cấp, version mới
+1. Tải file cài đặt mới từ support
+2. Chạy file — ghi đè app cũ, **giữ nguyên** toàn bộ dữ liệu
+3. Wizard KHÔNG hiện lại — chỉ hiện lần đầu
+
+### L2. Mất dữ liệu sau cập nhật?
+**Keyword:** mất dữ liệu, mất memory, mất tài liệu, mất config
+**Trả lời:** KHÔNG. Dữ liệu (memory, knowledge, config, lịch sử) nằm ở `%APPDATA%\9bizclaw\` (Win) / `~/Library/Application Support/9bizclaw/` (Mac), không bị ghi đè khi cài app mới.
+
+### L3. Migration từ v2.3.x lên v2.4.x
+**Keyword:** migration, nâng cấp 2.3, chuyển đổi
+**Giải thích:** App tự phát hiện version cũ → backup dữ liệu → chuyển sang runtime install mới. Quá trình tự động, không cần thao tác.
+**Nếu migration lỗi:** Dữ liệu đã được backup. Liên hệ support kèm file log.
+
+---
+
+## M. THÔNG TIN CHO SUPPORT
+
+### Vị trí file — Windows
+| Thứ | Đường dẫn |
+|-----|-----------|
+| App | `C:\Users\[tên]\AppData\Local\Programs\modoro-claw\` |
+| Dữ liệu + Vendor | `C:\Users\[tên]\AppData\Roaming\9bizclaw\` |
+| Logs | `...\9bizclaw\logs\` |
+| Config | `C:\Users\[tên]\.openclaw\openclaw.json` |
+| Zalo | `C:\Users\[tên]\.openzca\profiles\default\` |
+| License | `...\9bizclaw\license.json` |
+
+### Vị trí file — Mac
+| Thứ | Đường dẫn |
+|-----|-----------|
+| App | `/Applications/9BizClaw.app/` |
+| Dữ liệu + Vendor | `~/Library/Application Support/9bizclaw/` |
+| Logs | `.../9bizclaw/logs/` |
+| Config | `~/.openclaw/openclaw.json` |
+| Zalo | `~/.openzca/profiles/default/` |
+| License | `.../9bizclaw/license.json` |
+
+### Log files quan trọng
+| File | Chứa gì | Khi nào cần |
+|------|---------|------------|
+| `main.log` | Electron main process | App crash, boot lỗi |
+| `openclaw.log` | Gateway AI agent | Bot không reply, chậm |
+| `9router.log` | AI proxy | Wizard bước 2 lỗi 500 |
+| `openzca.log` | Zalo listener | Zalo không kết nối |
+| `audit.jsonl` | Lịch sử hoạt động | Debug cron, events |
+| `cron-runs.jsonl` | Kết quả cron | Cron fail |
+| `ceo-alerts-missed.log` | Alert CEO thất bại | CEO không nhận cảnh báo |
+
+### Cách lấy log gửi support
+1. Mở thư mục logs:
+   - **Windows:** nhấn `Win+R` → gõ `%APPDATA%\9bizclaw\logs` → Enter
+   - **Mac:** Finder → Go → Go to Folder → `~/Library/Application Support/9bizclaw/logs`
+2. Nén (zip) toàn bộ thư mục `logs`
+3. Gửi file zip cho support qua email: **tech@modoro.com.vn**
+
+### Factory Reset (xóa sạch, cài lại từ đầu)
+**CHỈ dùng khi support yêu cầu:**
+1. Đóng app
+2. Xóa thư mục: `%APPDATA%\9bizclaw\` (Win) / `~/Library/Application Support/9bizclaw/` (Mac)
+3. Xóa thư mục: `%USERPROFILE%\.openclaw\` (Win) / `~/.openclaw/` (Mac)
+4. Mở app — sẽ hiện wizard như lần đầu cài

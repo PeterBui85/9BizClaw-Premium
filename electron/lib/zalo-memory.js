@@ -290,6 +290,7 @@ function getZaloGroupsDir() {
 
 // === Security Layer 1 (scoped) — File permission hardening ===
 function getZaloBlocklistPath() { return path.join(getWorkspace(), 'zalo-blocklist.json'); }
+function getZaloAllowlistPath() { return path.join(getWorkspace(), 'zalo-allowlist.json'); }
 
 function cleanBlocklist() {
   // NO-OP: previously this wiped zalo-blocklist.json to [] every boot,
@@ -307,6 +308,6 @@ module.exports = {
   invalidateZaloFriendsCache, getZaloFriendsCached, setZaloFriendsCached,
   runZaloCacheRefresh, startZaloCacheAutoRefresh,
   getZaloUsersDir, ensureZaloUsersDir, sanitizeZaloUserId, parseZaloUserMemoryMeta,
-  getZaloGroupsDir, getZaloBlocklistPath, cleanBlocklist,
+  getZaloGroupsDir, getZaloBlocklistPath, getZaloAllowlistPath, cleanBlocklist,
   cleanupZaloMemoryTimers,
 };

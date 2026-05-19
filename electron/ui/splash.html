@@ -109,6 +109,10 @@
     overflow: hidden;
     min-height: 0;
   }
+  body.error-state .content {
+    overflow: visible;
+    overflow-y: auto;
+  }
 
   /* Logo */
   .logo-row {
@@ -418,10 +422,12 @@
   .env-detail-box.open { display: block; }
 
   /* ── Scrollbar ── */
-  ::-webkit-scrollbar { width: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+  body.error-state ::-webkit-scrollbar-thumb { background: rgba(248,113,113,0.4); }
+  body.error-state ::-webkit-scrollbar-thumb:hover { background: rgba(248,113,113,0.6); }
 </style>
 </head>
 <body>
@@ -484,36 +490,36 @@
       <div class="step" id="step-node">
         <div class="step-icon" id="icon-node">1</div>
         <div class="step-content">
-          <div class="step-title">Node.js Runtime</div>
+          <div class="step-title">Trình chạy Node.js</div>
           <div class="step-desc" id="desc-node">Đang kiểm tra...</div>
         </div>
       </div>
       <div class="step" id="step-packages">
         <div class="step-icon" id="icon-packages">2</div>
         <div class="step-content">
-          <div class="step-title">Cài đặt packages</div>
-          <div class="step-desc" id="desc-packages">openclaw, 9router, openzca</div>
+          <div class="step-title">Cài đặt gói phần mềm</div>
+          <div class="step-desc" id="desc-packages">OpenClaw, 9Router, OpenZCA</div>
         </div>
       </div>
       <div class="step" id="step-plugin">
         <div class="step-icon" id="icon-plugin">3</div>
         <div class="step-content">
           <div class="step-title">Plugin Zalo</div>
-          <div class="step-desc" id="desc-plugin">modoro-zalo</div>
+          <div class="step-desc" id="desc-plugin">modoro-zalo (kết nối Zalo)</div>
         </div>
       </div>
       <div class="step" id="step-gog">
         <div class="step-icon" id="icon-gog">4</div>
         <div class="step-content">
-          <div class="step-title">gogcli (Google Workspace)</div>
-          <div class="step-desc" id="desc-gog">Google Calendar, Gmail, Drive...</div>
+          <div class="step-title">Google Workspace</div>
+          <div class="step-desc" id="desc-gog">Lịch, Email, Drive Google...</div>
         </div>
       </div>
       <div class="step" id="step-model">
         <div class="step-icon" id="icon-model">5</div>
         <div class="step-content">
           <div class="step-title">Mô hình AI</div>
-          <div class="step-desc" id="desc-model">Embedding model (~450 MB)</div>
+          <div class="step-desc" id="desc-model">Mô hình nhúng (~450 MB)</div>
         </div>
       </div>
       <div class="step" id="step-complete">
@@ -608,7 +614,7 @@
     else if (data.step === 'node-done') {
       setStepDone('node');
       setStepActive('packages');
-      steps.packages.desc.textContent = 'Đang cài openclaw, 9router, openzca...';
+      steps.packages.desc.textContent = 'Đang cài OpenClaw, 9Router, OpenZCA...';
       animateTo(15);
     }
     else if (data.step === 'git') {
@@ -621,7 +627,7 @@
     }
     else if (data.step === 'packages') {
       setStepActive('packages');
-      steps.packages.desc.textContent = data.subStep || data.message || 'Đang cài packages...';
+      steps.packages.desc.textContent = data.subStep || data.message || 'Đang cài gói phần mềm...';
       if (typeof data.percent === 'number') animateTo(15 + data.percent * 0.4);
     }
     else if (data.step === 'packages-done') {
@@ -641,7 +647,7 @@
     }
     else if (data.step === 'gog') {
       setStepActive('gog');
-      steps.gog.desc.textContent = data.message || 'Đang cài gogcli...';
+      steps.gog.desc.textContent = data.message || 'Đang cài công cụ Google Workspace...';
       if (typeof data.percent === 'number') animateTo(65 + data.percent * 0.1);
     }
     else if (data.step === 'gog-done') {
@@ -703,9 +709,11 @@
   }
 
   window.splash.onError((message) => {
-    title.textContent = 'Môi trường cài đặt chưa sẵn sàng';
+    document.body.classList.add('error-state');
+    window.splash.resizeForError();
+    title.textContent = 'Cài đặt gặp lỗi';
     title.style.color = '#f87171';
-    subtitle.textContent = 'Máy tính của bạn cần một số điều kiện để chạy 9BizClaw.';
+    subtitle.textContent = 'Vui lòng kiểm tra mạng Internet hoặc thử lại.';
     progressLabel.textContent = 'Lỗi';
     percentEl.textContent = '!';
     percentEl.classList.add('error');
@@ -740,9 +748,9 @@
       ).join('') +
       '</ul>' +
       '<div class="env-detail-toggle" onclick="var b=this.nextElementSibling;var a=this.querySelector(\'.arrow\');if(b.classList.contains(\'open\')){b.classList.remove(\'open\');a.classList.remove(\'open\')}else{b.classList.add(\'open\');a.classList.add(\'open\')}">' +
-        '<span class="arrow">&#9654;</span> Xem chi tiết kỹ thuật' +
+        '<span class="arrow open">&#9654;</span> Chi tiết kỹ thuật' +
       '</div>' +
-      '<div class="env-detail-box">' + (message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
+      '<div class="env-detail-box open">' + (message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
 
     // Retry / Quit buttons
     let actions = document.getElementById('error-actions');
@@ -750,6 +758,17 @@
       actions = document.createElement('div');
       actions.id = 'error-actions';
       actions.style.cssText = 'display:flex;gap:12px;justify-content:center;margin-top:16px;';
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = 'Sao chép lỗi';
+      copyBtn.style.cssText = 'padding:8px 24px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.7);cursor:pointer;font-size:13px;';
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(message || '').then(() => {
+          copyBtn.textContent = 'Đã sao chép!';
+          copyBtn.style.borderColor = '#4ade80';
+          copyBtn.style.color = '#4ade80';
+          setTimeout(() => { copyBtn.textContent = 'Sao chép lỗi'; copyBtn.style.borderColor = ''; copyBtn.style.color = ''; }, 2000);
+        }).catch(() => {});
+      };
       const retryBtn = document.createElement('button');
       retryBtn.textContent = 'Thử lại';
       retryBtn.style.cssText = 'padding:8px 24px;border-radius:8px;border:none;background:#3b82f6;color:#fff;cursor:pointer;font-size:13px;font-weight:600;';
@@ -758,11 +777,24 @@
       quitBtn.textContent = 'Thoát';
       quitBtn.style.cssText = 'padding:8px 24px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:rgba(255,255,255,0.7);cursor:pointer;font-size:13px;';
       quitBtn.onclick = () => window.splash.quit();
+      actions.appendChild(copyBtn);
       actions.appendChild(retryBtn);
       actions.appendChild(quitBtn);
       panel.appendChild(actions);
     }
   });
+
+  // Watchdog: if install takes more than 5 minutes total, show timeout warning
+  setTimeout(() => {
+    // If progress hasn't reached 'complete', show a warning
+    if (!fill.classList.contains('complete') && !document.getElementById('timeout-warning')) {
+      const warn = document.createElement('div');
+      warn.id = 'timeout-warning';
+      warn.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(251,146,60,0.15);border:1px solid rgba(251,146,60,0.4);color:#fb923c;padding:10px 20px;border-radius:8px;font-size:13px;z-index:100;text-align:center;';
+      warn.textContent = 'Cài đặt quá lâu. Kiểm tra kết nối mạng hoặc thử lại.';
+      document.body.appendChild(warn);
+    }
+  }, 5 * 60 * 1000);
 </script>
 </body>
 </html>

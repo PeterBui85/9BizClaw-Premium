@@ -1219,7 +1219,7 @@
       </div>
 
       <div class="wz-brand-foot">
-        Toàn bộ dữ liệu lưu local trên máy anh/chị, không gửi lên cloud.
+        Toàn bộ dữ liệu lưu trên máy anh/chị, không gửi ra ngoài.
       </div>
     </aside>
 
@@ -1253,13 +1253,13 @@
             </div>
             <div class="wz-field">
               <label class="wz-label">Tên trợ lý ảo (không bắt buộc)</label>
-              <input type="text" class="wz-input" id="bot-name" placeholder="Để trống = bot tự xưng 'em'. Ví dụ: Momo, Linh, Claw">
-              <p class="wz-help">Đây là tên riêng của trợ lý AI. Khách Zalo sẽ thấy bot tự giới thiệu bằng tên này.</p>
+              <input type="text" class="wz-input" id="bot-name" placeholder="Để trống = trợ lý tự xưng 'em'. Ví dụ: Momo, Linh, Claw">
+              <p class="wz-help">Đây là tên riêng của trợ lý AI. Khách Zalo sẽ thấy trợ lý tự giới thiệu bằng tên này.</p>
             </div>
             <div class="wz-field" style="margin-top:8px">
               <label class="wz-label">Trợ lý gọi anh/chị là <span style="color:var(--danger)">*</span></label>
               <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp, thầy, cô, giám đốc">
-              <p class="wz-help">Bot sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram.</p>
+              <p class="wz-help">Trợ lý sẽ dùng cách xưng hô này khi nhắn anh/chị qua Telegram.</p>
             </div>
 
             <p class="wz-help" style="margin-top:-4px;color:var(--text-tertiary,#888);font-size:13px;">
@@ -1283,7 +1283,7 @@
                 <p>Nhấn <strong>Connect</strong> bên cạnh <strong>ChatGPT</strong> và đăng nhập bằng tài khoản ChatGPT của anh/chị.</p>
               </div>
               <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-primary" onclick="openChatGPTConnect()" id="open-chatgpt-btn" type="button">
+                <button class="wz-btn wz-btn-primary" onclick="openChatGPTConnect()" id="open-chatgpt-btn" type="button" title="Mở trang kết nối ChatGPT trong trình duyệt">
                   Kết nối ChatGPT
                 </button>
                 <p id="login-fallback-hint" class="wz-hidden" style="margin-top:8px;font-size:12px;color:var(--text-tertiary)">Nếu thấy trang đăng nhập, nhập mật khẩu: <strong style="font-family:monospace;user-select:all">123456</strong></p>
@@ -1299,7 +1299,7 @@
                 <p>Sau khi đăng nhập ChatGPT xong, quay lại đây và nhấn nút bên dưới.</p>
               </div>
               <div style="margin-top:14px;padding-left:40px">
-                <button class="wz-btn wz-btn-secondary" onclick="verifyChatGPTConnection()" id="verify-chatgpt-btn" type="button">
+                <button class="wz-btn wz-btn-secondary" onclick="verifyChatGPTConnection()" id="verify-chatgpt-btn" type="button" title="Xác nhận ChatGPT đã kết nối thành công">
                   Kiểm tra kết nối
                 </button>
                 <div id="router-auto-result" class="wz-hidden" style="margin-top:12px"></div>
@@ -1335,7 +1335,7 @@
 
               <div class="trust-block">
                 <div class="trust-block-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-                <div class="trust-block-text"><strong>An toàn 100%</strong> -- Toàn bộ dữ liệu lưu trên máy anh/chị, không gửi lên cloud.</div>
+                <div class="trust-block-text"><strong>An toàn 100%</strong> -- Toàn bộ dữ liệu lưu trên máy anh/chị, không gửi lên đám mây.</div>
               </div>
 
               <div class="time-estimate">
@@ -1453,7 +1453,7 @@
                       <svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L5.85 2.36a.5.5 0 0 0-.35-.15z"/><path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L5.85 2.36a.5.5 0 0 0-.35-.15z" fill="none" stroke="#333" stroke-width="0.5"/></svg>
                     </div>
                     <div class="tg-ripple" id="token-ripple"></div>
-                    <div class="tg-copied-tip" id="token-copied-tip">Copied!</div>
+                    <div class="tg-copied-tip" id="token-copied-tip">Đã sao chép!</div>
                   </div>
 
                   <div class="wz-field" style="margin-top:12px">
@@ -1641,7 +1641,7 @@
                       <svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L5.85 2.36a.5.5 0 0 0-.35-.15z"/><path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L5.85 2.36a.5.5 0 0 0-.35-.15z" fill="none" stroke="#333" stroke-width="0.5"/></svg>
                     </div>
                     <div class="tg-ripple" id="id-ripple"></div>
-                    <div class="tg-copied-tip" id="id-copied-tip">Copied!</div>
+                    <div class="tg-copied-tip" id="id-copied-tip">Đã sao chép!</div>
                   </div>
 
                   <button class="wz-btn-confirm" onclick="advancePD('3-3', 2)" type="button">
@@ -1966,7 +1966,9 @@
       btn.disabled = true; btn.classList.add('loading');
       try {
         const res = await window.claw.setup9RouterAuto({ openCodexAuthed: true });
-        if (res.loginFailed) {
+        if (!res.success) {
+          showError(res.error || '9Router không khởi động được. Đợi vài giây rồi thử lại.');
+        } else if (res.loginFailed) {
           document.getElementById('login-fallback-hint').classList.remove('wz-hidden');
         }
       } catch (e) {
@@ -2002,18 +2004,25 @@
       result.classList.remove('wz-hidden');
       result.className = 'wz-alert';
       result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('refresh-cw',18)}</span><div><strong>Đang kiểm tra kết nối ChatGPT...</strong></div>`;
-      const res = await window.claw.setup9RouterAuto({ detectChatGPT: true });
-      btn.disabled = false; btn.classList.remove('loading');
-      if (res.success && res.selectedModel) {
-        window._aiModelReady = true;
-        document.getElementById('router-api-key').value = res.apiKey || '';
-        result.className = 'wz-alert success';
-        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div><strong>ChatGPT đã kết nối.</strong> Model <code>${esc(res.selectedModel)}</code> sẵn sàng.</div>`;
-      } else {
+      try {
+        const res = await window.claw.setup9RouterAuto({ detectChatGPT: true });
+        if (res.success && res.selectedModel) {
+          window._aiModelReady = true;
+          document.getElementById('router-api-key').value = res.apiKey || '';
+          result.className = 'wz-alert success';
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('check',18)}</span><div><strong>ChatGPT đã kết nối.</strong> Model <code>${esc(res.selectedModel)}</code> sẵn sàng.</div>`;
+        } else {
+          window._aiModelReady = false;
+          const errMsg = res.error || 'Chưa tìm thấy kết nối ChatGPT. Nhấn "Kết nối ChatGPT" ở trên, đăng nhập trên trình duyệt, rồi quay lại nhấn "Kiểm tra kết nối".';
+          result.className = 'wz-alert error';
+          result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>${esc(errMsg)}</div>`;
+        }
+      } catch (e) {
         window._aiModelReady = false;
-        const errMsg = res.error || 'Chưa tìm thấy kết nối ChatGPT. Nhấn "Kết nối ChatGPT" ở trên, đăng nhập trên trình duyệt, rồi quay lại nhấn "Kiểm tra kết nối".';
         result.className = 'wz-alert error';
-        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>${esc(errMsg)}</div>`;
+        result.innerHTML = `<span style="flex-shrink:0;margin-top:1px">${icon('lightbulb',18)}</span><div>${esc(e.message || 'Lỗi kiểm tra kết nối. Thử lại.')}</div>`;
+      } finally {
+        btn.disabled = false; btn.classList.remove('loading');
       }
     }
 
@@ -2074,7 +2083,7 @@
       const helper = document.getElementById('token-helper');
       const btn = document.getElementById('btn-token-next');
       if (!val) { input.classList.remove('valid', 'invalid'); helper.style.display = 'none'; btn.disabled = true; return; }
-      const valid = /^\d{8,12}:[A-Za-z0-9_-]{35}$/.test(val);
+      const valid = /^\d{8,12}:[A-Za-z0-9_-]{30,50}$/.test(val);
       helper.style.display = 'flex';
       if (valid) {
         input.classList.add('valid'); input.classList.remove('invalid');
@@ -2101,7 +2110,7 @@
       const helper = document.getElementById('userid-helper');
       const btn = document.getElementById('btn-to-3-4');
       if (!val) { input.classList.remove('valid', 'invalid'); helper.style.display = 'none'; btn.disabled = true; return; }
-      const valid = /^\d{7,12}$/.test(val);
+      const valid = /^\d{5,15}$/.test(val);
       helper.style.display = 'flex';
       if (valid) {
         input.classList.add('valid'); input.classList.remove('invalid');

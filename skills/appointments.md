@@ -1,3 +1,10 @@
+---
+name: appointments
+description: Quản lý lịch hẹn, đặt lịch và nhắc nhở cuộc họp cho CEO
+metadata:
+  version: 1.0.0
+---
+
 # Quản lý lịch hẹn cho CEO
 
 File `workspace/appointments.json` (array). Dispatcher tick 60s. CHỈ CEO được tạo/sửa/xóa.

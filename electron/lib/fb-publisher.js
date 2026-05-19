@@ -16,8 +16,10 @@ const TIMESTAMP_FILE = path.join(process.platform === 'win32'
   ? path.join(process.env.APPDATA || os.homedir(), '9bizclaw')
   : path.join(os.homedir(), '.9bizclaw'), 'fb-last-post.json');
 let _lastPostAt = _loadLastPostAt();
+// Sequential queue: each post chains onto the previous via `.then()` so
+// concurrent callers execute one at a time. Prevents Facebook rate-limit 429.
 let _postQueue = Promise.resolve();
-const POST_QUEUE_TIMEOUT_MS = 90000;
+const POST_QUEUE_TIMEOUT_MS = 15 * 60 * 1000;
 
 function _withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
@@ -44,7 +46,19 @@ function _saveLastPostAt(ts) {
   } catch {}
 }
 
-function graphRequest(method, endpoint, token, body) {
+async function graphRequest(method, endpoint, token, body) {
+  try {
+    return await _graphRequestOnce(method, endpoint, token, body);
+  } catch (e) {
+    if (e._httpStatus && e._httpStatus >= 500 && e._httpStatus < 600) {
+      console.warn('[fb-publisher] Graph API 5xx — retrying in 3s:', e.message);
+      await new Promise(r => setTimeout(r, 3000));
+      return await _graphRequestOnce(method, endpoint, token, body);
+    }
+    throw e;
+  }
+}
+function _graphRequestOnce(method, endpoint, token, body) {
   return new Promise((resolve, reject) => {
     const url = `/${API_VERSION}${endpoint}`;
     const isPost = method === 'POST';
@@ -210,7 +224,7 @@ function postText(pageId, token, message) {
     _saveLastPostAt(_lastPostAt);
     return { postId: data.id, postUrl: formatPostUrl(data.id) };
   })(), POST_QUEUE_TIMEOUT_MS));
-  _postQueue = job.catch(() => {});
+  _postQueue = job.catch(e => console.error('[fb-publisher] queue error:', e?.message));
   return job;
 }
 
@@ -223,7 +237,7 @@ function postPhoto(pageId, token, message, imageBuffer, imagePath) {
     const postId = data.post_id || data.id;
     return { postId, postUrl: formatPostUrl(postId) };
   })(), POST_QUEUE_TIMEOUT_MS));
-  _postQueue = job.catch(() => {});
+  _postQueue = job.catch(e => console.error('[fb-publisher] queue error:', e?.message));
   return job;
 }
 

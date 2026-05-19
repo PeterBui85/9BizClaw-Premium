@@ -78,9 +78,22 @@ function readIndex() {
   if (!fs.existsSync(fp)) return { version: MEDIA_INDEX_VERSION, assets: [] };
   try {
     const parsed = JSON.parse(fs.readFileSync(fp, 'utf-8'));
+    let assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+    const seenPaths = new Map();
+    const deduped = [];
+    for (const a of assets) {
+      const key = a.path ? path.resolve(a.path) : a.id;
+      if (seenPaths.has(key)) continue;
+      seenPaths.set(key, true);
+      deduped.push(a);
+    }
+    if (deduped.length < assets.length) {
+      console.log(`[media] deduped index: ${assets.length} → ${deduped.length} entries`);
+      assets = deduped;
+    }
     return {
       version: parsed.version || MEDIA_INDEX_VERSION,
-      assets: Array.isArray(parsed.assets) ? parsed.assets : [],
+      assets,
     };
   } catch (e) {
     try {
@@ -188,7 +201,12 @@ function withIndexLock(fn) {
 
 function upsertAsset(asset) {
   const index = readIndex();
-  const i = index.assets.findIndex(a => a.id === asset.id);
+  let i = index.assets.findIndex(a => a.id === asset.id);
+  if (i < 0 && asset.path) {
+    const resolved = path.resolve(asset.path);
+    i = index.assets.findIndex(a => a.path && path.resolve(a.path) === resolved);
+    if (i >= 0) asset.id = index.assets[i].id;
+  }
   const now = new Date().toISOString();
   const next = { ...asset, updatedAt: now };
   if (i >= 0) index.assets[i] = { ...index.assets[i], ...next };

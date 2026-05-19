@@ -1,3 +1,10 @@
+---
+name: fnb
+description: Kỹ năng chuyên ngành F&B — nhà hàng, quán cà phê, dịch vụ ăn uống
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: F&B (Nhà hàng, Quán cà phê, Quán ăn)
 
 ## Nhắc nhở vận hành hàng ngày

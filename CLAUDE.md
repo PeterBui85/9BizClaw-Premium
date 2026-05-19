@@ -266,7 +266,7 @@
 4. Phụ: `startOpenClaw()` không có re-entrant guard — heartbeat + UI button + boot có thể spawn 2-3 gateway tranh port 18789.
 5. Phụ: Boot ping Telegram fire mỗi restart → CEO thấy "MODOROClaw đã sẵn sàng" lặp đi lặp lại.
 **Fix:**
-- `isGatewayAlive(timeoutMs=8000)` — default 8s thay 2s, nhận tham số.
+- `isGatewayAlive(timeoutMs=15000)` — default 15s thay 2s, nhận tham số.
 - Heartbeat đọc `time` từ schedules.json, parse "Mỗi N phút" → `*/N * * * *` (clamp tối thiểu 5 phút).
 - Heartbeat yêu cầu **2 lần fail liên tiếp** với 5s gap mới restart. 1 lần fail = "slow but alive — skipping".
 - `startOpenClaw()` wrap với `_startOpenClawInFlight` flag, gọi đến `_startOpenClawImpl` body — block reentrant calls.
@@ -313,12 +313,12 @@
 **Fix:**
 - **Shared output filter:** `filterSensitiveOutput(text)` trong main.js — cùng 19 block patterns (file paths, API keys, English CoT, meta-commentary, compaction). Apply cho cả `sendTelegram()` và `sendZalo()`. Audit log ghi vào `security-output-filter.jsonl`.
 - **Channel pause:** `pauseChannel(channel, minutes)` / `resumeChannel(channel)` / `isChannelPaused(channel)` / `getChannelPauseStatus(channel)` — file-based (`{channel}-paused.json`), symmetric cho cả 2 kênh. IPC handlers: `pause-telegram`, `resume-telegram`, `get-telegram-pause-status`, `pause-zalo`, `resume-zalo`, `get-zalo-pause-status`. Dashboard có nút "Tạm dừng" / "Tiếp tục" trên cả 2 page. `sendTelegram()` và `sendZalo()` check pause state trước khi gửi.
-- **Zalo send:** `sendZalo(text)` — gửi tin nhắn trực tiếp cho CEO qua openzca CLI (`openzca msg send <ownerUserId> <text>`). Output filter + pause check đầy đủ.
-- **Cron dual delivery:** `sendCeoAlert(text)` gửi song song cả Telegram + Zalo. Cron error alerts dùng `sendCeoAlert` thay vì `sendTelegram`.
+- **Zalo send:** `sendZalo(text)` — disabled (CEO's Zalo account IS the bot — can't message yourself). Returns null.
+- **CEO alerts:** `sendCeoAlert(text)` gửi qua Telegram only (Zalo disabled vì lý do trên). Fail → ghi `logs/ceo-alerts-missed.log`. Cron error alerts dùng `sendCeoAlert`.
 - **AGENTS.md v13:** Pause rule áp dụng cả Telegram (AI-level: bot check `telegram-paused.json`) + Zalo (code-level: inbound.ts patch).
 - **Channel status broadcast:** Thêm `paused` field vào broadcast data để Dashboard hiện trạng thái pause.
 **Auto-apply:** Tất cả trong `electron/main.js` source — chạy mỗi startup. Preload bridges mới cho 6 IPC handlers.
-**Verify:** Dashboard → Telegram/Zalo page → bấm "Tạm dừng" → banner hiện → bấm "Tiếp tục" → banner ẩn. Cron thất bại → CEO nhận alert trên cả Telegram + Zalo.
+**Verify:** Dashboard → Telegram/Zalo page → bấm "Tạm dừng" → banner hiện → bấm "Tiếp tục" → banner ẩn. Cron thất bại → CEO nhận alert trên Telegram.
 
 ### Embed 9Router + OpenClaw web UI in dashboard
 **Bug:** OpenClaw gateway dùng `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` → không thể embed iframe
@@ -355,8 +355,8 @@
 
 ### Cron self-test proactive CEO alert (RISK-4)
 **Risk:** `selfTestOpenClawAgent()` ran at startup but never alerted CEO on failure — CEO discovered broken cron only when first scheduled job was missed (potentially hours later).
-**Fix:** Added `_agentCliVersionOk` flag (true only when `--version` call exits 0 with version string). `startCronJobs()` now awaits self-test and calls `sendCeoAlert()` (dual Telegram+Zalo) if `_agentCliVersionOk === false` after the test. Non-blocking — cron jobs still start regardless.
-**Verify:** Delete/corrupt openclaw binary → restart Electron → within 15s CEO receives "[Cảnh báo cron] Không chạy được openclaw CLI..." on both Telegram + Zalo.
+**Fix:** Added `_agentCliVersionOk` flag (true only when `--version` call exits 0 with version string). `startCronJobs()` now awaits self-test and calls `sendCeoAlert()` (Telegram) if `_agentCliVersionOk === false` after the test. Non-blocking — cron jobs still start regardless.
+**Verify:** Delete/corrupt openclaw binary → restart Electron → within 15s CEO receives "[Cảnh báo cron] Không chạy được openclaw CLI..." on Telegram.
 
 ### Corrupt pause file fails closed (RISK-5)
 **Risk:** `isChannelPaused()` catch block returned `false` on JSON parse error — corrupt `{channel}-paused.json` silently unpaused the channel, ignoring CEO's pause intent.
@@ -373,7 +373,7 @@
 
 ### Zalo long message split (RISK-2)
 **Bug:** `sendZalo()` silently truncated messages > 800 chars to 780+"..." — customer lost second half of bot reply with no indication content was cut.
-**Fix:** Replaced truncation with multi-message split at paragraph → sentence → word boundaries. Sends each chunk sequentially with 800ms gap (rate limit). Maximum chunk size 780 chars.
+**Fix:** Replaced truncation with multi-message split at paragraph → sentence → word boundaries. Sends each chunk sequentially with 800ms gap (rate limit). Maximum chunk size 2000 chars.
 **Auto-apply:** In `sendZalo()` in `electron/main.js`.
 
 ### Zalo memory file size cap (RISK-3)
@@ -386,8 +386,8 @@
 **Fix:** `seedWorkspace()` now explicitly creates both `memory/zalo-users/` AND `memory/zalo-groups/` at both the primary workspace and the openclaw agent workspace.
 
 ### `sendCeoAlert` last-resort disk log (RISK-5)
-**Bug:** If both Telegram and Zalo fail simultaneously (network down, both channels misconfigured), `sendCeoAlert` returned `false` silently — cron failures and boot errors were lost with no trace.
-**Fix:** When `Promise.allSettled` shows both channels failed → append to `logs/ceo-alerts-missed.log` with ISO timestamp. Dashboard and next boot can surface missed alerts.
+**Bug:** If Telegram send fails, `sendCeoAlert` returned `false` silently — cron failures and boot errors were lost with no trace.
+**Fix:** When Telegram fails → append to `logs/ceo-alerts-missed.log` with ISO timestamp. Dashboard and next boot can surface missed alerts.
 
 ### Per-sender dedup guard — Zalo double-delivery quirk (RISK-10)
 **Bug:** Zalo's delivery layer occasionally fires the same message event twice within milliseconds (network retry on the Zalo side). Both events reach `inbound.ts` independently, both dispatch to the agent, agent processes with same context and sends two identical replies to the customer.
@@ -426,7 +426,7 @@
 ### SECURITY: Zalo channel admin command isolation (v2.3.47.3)
 **Vulnerability:** Gateway agent shares ONE tools.allow config for ALL channels (Telegram + Zalo). Any tool available = available to ALL users. Previously `exec`, `process`, `cron` were in tools.allow → ANY Zalo stranger could execute shell commands, create crons, spawn processes.
 **Fix (3-layer defense-in-depth):**
-1. **tools.allow hardened** — global allowlist reduced to: `message`, `web_search`, `web_fetch`, `update_plan`. Removed: `exec` (RCE), `process` (spawn), `cron` (schedule abuse). Affects ALL channels equally.
+1. **tools.allow** includes: `message`, `web_search`, `web_fetch`, `update_plan`, `read_file`, `list_files`, `search_files`, `exec`, `write_file`, `apply_patch`, `memory`. CEO Telegram has full access. Zalo restriction is input-level: COMMAND-BLOCK in inbound.ts rewrites admin patterns before they reach the agent. Removed from tools.allow: `cron`, `process`, `read`, `write` (BANNED_TOOLS).
 2. **COMMAND-BLOCK PATCH in inbound.ts** (`electron/patches/openzalo-fork/inbound.ts`) — code-level rawBody rewrite for 8 admin command patterns (cron, broadcast, exec, openzca msg send). Agent never sees original command text. Zalo-only (Telegram has separate plugin). Applied via `applyOpenzaloFork()` on every startup.
 3. **AGENTS.md soft rules** — backup layer instructing bot to refuse cron/admin from Zalo, redirect to Telegram.
 **One-way cron (CEO Telegram → Zalo groups):** Local HTTP Cron API on port 20200 (`startCronApi()`). Bot uses `web_fetch` tool (in tools.allow) to call `http://127.0.0.1:20200/api/cron/*`. API validates groupId against groups.json, validates cronExpr, writes custom-crons.json, restarts cron scheduler. **4-layer protection against Zalo abuse:** (a) command-block rewrites rawBody for admin patterns AND API URL mentions (`127.0.0.1:20200`, `/api/cron/`), (b) cron/exec tools removed from tools.allow, (c) rotating auth token (48 hex chars, regenerated every boot, stored in `cron-api-token.txt` — repo is open-source so static secrets are useless), (d) API binds localhost only. Write operations serialized via async mutex to prevent race conditions.
@@ -438,6 +438,7 @@
 - CEO Telegram sends "tạo cron gửi nhóm X mỗi sáng 9h" → bot calls web_fetch API → cron created → appears in Dashboard
 - `curl http://127.0.0.1:20200/api/cron/list` → returns crons + groups JSON
 - Console: `[cron-api] listening on http://127.0.0.1:20200`
+**Note (v2.4.4):** DM gating now uses an allowlist model (`zalo-allowlist.json`) instead of the blocklist for Zalo DM access control.
 
 ### Dashboard cron delete for OpenClaw-sourced crons
 **Bug:** `deleteCustomCron()` only filtered from `customCrons` array and saved to `custom-crons.json`, but OpenClaw crons live in `~/.openclaw/cron/jobs.json`. On next Dashboard reload, deleted crons reappeared.
@@ -582,7 +583,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **KHÔNG BAO GIỜ tạo Telegram `getUpdates` poller thứ 2.** Gateway openclaw ĐÃ poll `getUpdates` — 2 poller = 409 Conflict = tin nhắn bị mất hoàn toàn. Mọi Telegram command phải đi qua: gateway → AI agent → AGENTS.md route → `web_fetch` gọi internal API. Đây là bài học từ bug FB schedule approval: CEO nhắn "fb ok" 3 ngày liên tiếp, không bao giờ được nhận vì poller 409.
 
 ### FB schedule architecture (v2.4.4)
-- Default lead: 30 phút. Tạo schedule sát giờ → generate preview ngay.
+- Default lead: 60 phút. Tạo schedule sát giờ → generate preview ngay.
 - Approval: CEO reply "fb ok" → AI agent gọi `POST /api/fb/schedule/telegram-command { text: "ok" }`
 - Late approval: CEO duyệt sau postTime → vẫn đăng ngay (status skipped → approved → publish)
 - Poller `_peekTelegramUpdates` đã DISABLED — routing qua AGENTS.md

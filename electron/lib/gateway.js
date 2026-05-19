@@ -17,7 +17,7 @@ const {
 const { ensureDefaultConfig } = require('./config');
 const {
   broadcastChannelStatusOnce, sendCeoAlert, sendTelegram,
-  findOpenzcaListenerPid, registerTelegramCommands,
+  findOpenzcaListenerPid, registerTelegramCommands, resetGatewayZaloDiag,
 } = require('./channels');
 const { start9Router, stop9Router, getRouterProcess, ensure9RouterApiKeySync } = require('./nine-router');
 const {
@@ -46,6 +46,7 @@ function setKnowledgeCallbacks(cbs) { Object.assign(_knowledgeCallbacks, cbs); }
 // ============================================
 //  FAST WATCHDOG STATE
 // ============================================
+// Naming convention: FW_ = constants, _fw = mutable state
 let _fastWatchdogInterval = null;
 let _fastWatchdogBootTimeout = null;
 let _fwTickInFlight = false; // C6: prevent overlapping ticks
@@ -58,6 +59,9 @@ let _fwRestartTimestamps = []; // track restart times for rate limiting
 let _fwKnowledgeHttpDead = 0;
 let _fwRouterProbeCount = 0;
 let _fwRouterHealthFails = 0;
+
+const GATEWAY_READY_DEADLINE_MS = 240000;
+const WATCHDOG_BOOT_GRACE_MS = 360000;
 
 // ============================================
 //  KILL HELPERS
@@ -88,14 +92,18 @@ function killAllOpenClawProcesses() {
   try {
     const { execSync } = require('child_process');
     if (process.platform === 'win32') {
-      // Kill any node process running openclaw or openzca
       try { execSync('taskkill /f /fi "WINDOWTITLE eq openclaw*" 2>nul', { stdio: 'ignore', timeout: 3000, windowsHide: true }); } catch {}
       try {
-        const out = execSync('wmic process where "CommandLine like \'%openclaw%gateway%\'" get ProcessId /format:csv', { encoding: 'utf-8', timeout: 5000, windowsHide: true });
-        for (const line of out.split('\n')) {
-          const pid = line.trim().split(',').pop();
-          if (pid && /^\d+$/.test(pid) && pid !== '0') {
-            try { execSync(`taskkill /f /pid ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true }); } catch {}
+        // PowerShell avoids cmd.exe %var% expansion bug that silently broke
+        // the old wmic LIKE query (wmic "CommandLine like '%openclaw%gateway%'"
+        // → cmd.exe expands %openclaw% as env var → empty → matches nothing).
+        const psCmd = `powershell -NoProfile -Command "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openclaw*gateway*' }).ProcessId"`;
+        const out = execSync(psCmd, { encoding: 'utf-8', timeout: 8000, windowsHide: true });
+        const myPid = String(process.pid);
+        for (const line of out.split(/\r?\n/)) {
+          const pid = line.trim();
+          if (pid && /^\d+$/.test(pid) && pid !== '0' && pid !== myPid) {
+            try { execSync(`taskkill /f /t /pid ${pid}`, { stdio: 'ignore', timeout: 3000, windowsHide: true }); } catch {}
           }
         }
       } catch {}
@@ -110,7 +118,12 @@ function killAllOpenClawProcesses() {
 //  GATEWAY ALIVE PROBE
 // ============================================
 
-// Check if gateway is already running on port 18789
+/**
+ * Check if gateway is already running on port 18789.
+ * Any 2xx/3xx/4xx status counts as alive (connection itself is what we care about).
+ * @param {number} [timeoutMs=15000] - HTTP GET timeout in milliseconds
+ * @returns {Promise<boolean>} True if gateway responds
+ */
 function isGatewayAlive(timeoutMs = 15000) {
   // Generous timeout (15s default) — gateway can be busy serving a cloud-model
   // AI completion cold-start and not return the index page in time. An 8s
@@ -145,6 +158,7 @@ function ensureOpenclawPricingFix() { vendorPatches.ensureOpenclawPricingFix(get
 function ensureOpenclawPrewarmFix() { vendorPatches.ensureOpenclawPrewarmFix(getBundledVendorDir()); }
 function ensureOpenclawUpdateUiDisabled() { vendorPatches.ensureOpenclawUpdateUiDisabled(getBundledVendorDir(), ctx.HOME); }
 function ensureAuthCacheTtlExtension() { vendorPatches.ensureAuthCacheTtlExtension(getBundledVendorDir()); }
+function ensureSessionFreezePatches() { vendorPatches.ensureSessionFreezePatches(getBundledVendorDir()); }
 
 // ============================================
 //  IPC DRAIN + BOOT GUARD
@@ -192,6 +206,10 @@ function rejectIfBooting(handlerName) {
 
 let _startOpenClawPromise = null;
 let _gatewayIntentionalStopDepth = 0;
+/**
+ * Start the openclaw gateway. Re-entrant guard prevents concurrent spawns.
+ * @param {{ silent?: boolean, ignoreCooldown?: boolean }} [opts]
+ */
 async function startOpenClaw(opts = {}) {
   if (ctx.botRunning) return;
   // Prevent re-entrant start while a previous start is still spawning. Without
@@ -268,6 +286,7 @@ async function _startOpenClawImpl(opts = {}) {
   } else {
     global._suppressBootPing = false;
   }
+  resetGatewayZaloDiag();
   try { backupWorkspace(); } catch (e) { console.error('[backup] failed:', e.message); }
   purgeAgentSessions('startOpenClaw');
   auditLog('startOpenClaw_begin', {});
@@ -300,6 +319,7 @@ async function _startOpenClawImpl(opts = {}) {
     ensureOpenclawPrewarmFix,
     ensureOpenclawUpdateUiDisabled,
     ensureAuthCacheTtlExtension,
+    ensureSessionFreezePatches,
     cleanBlocklist,
     ensureOpenzcaFriendEventFix,
     ensureVisionFix,
@@ -313,7 +333,7 @@ async function _startOpenClawImpl(opts = {}) {
 
   // Sync persona + shop-state into bootstrap files (SOUL.md, USER.md) so bot
   // receives them automatically without needing to read separate files.
-  syncAllBootstrapData();
+  try { syncAllBootstrapData(); } catch (e) { console.error('[boot] syncAllBootstrapData error:', e?.message); }
 
   // Rebuild memory DB — fire-and-forget (perf: save 1-3s on boot). Result is a
   // cache warm-up, not a correctness gate. Orphan kill + gateway spawn don't
@@ -346,12 +366,12 @@ async function _startOpenClawImpl(opts = {}) {
       // Phase 1: 10×200ms (fast), Phase 2: 10×500ms (medium), Phase 3: 10×1000ms (slow).
       // Total: 30 checks, 17s max. Covers 80% of cases in phase 1 (2s).
       let stillAlive = true;
-      const delays = [
+      const ORPHAN_KILL_DELAYS = [
         ...Array(10).fill(200),
         ...Array(10).fill(500),
         ...Array(10).fill(1000),
       ];
-      for (const delay of delays) {
+      for (const delay of ORPHAN_KILL_DELAYS) {
         await new Promise(r => setTimeout(r, delay));
         if (!(await isGatewayAlive(1500))) { stillAlive = false; break; }
       }
@@ -454,6 +474,7 @@ async function _startOpenClawImpl(opts = {}) {
   }
   if (!nineRouterReady) {
     console.warn(`[boot] T+${Date.now() - t0}ms 9Router DID NOT respond within 60s — gateway will spawn anyway, first reply may be slow`);
+    try { auditLog('9router_timeout', { waitMs: Date.now() - t0, msg: '9Router did not respond within 60s' }); } catch {}
   } else if (nineRouterModelCount === 0) {
     // LOUD alert: empty combo means EVERY cron fire + EVERY user message will
     // 404 until the user manually fixes it in the 9Router tab. Fire-and-forget
@@ -674,7 +695,7 @@ async function _startOpenClawImpl(opts = {}) {
   // slow machines with Windows Defender scanning vendor files on first install
   // can take 2-3 minutes before gateway binds port 18789).
   const gwStartMs = Date.now();
-  const gwReadyDeadline = Date.now() + 240000;
+  const gwReadyDeadline = Date.now() + GATEWAY_READY_DEADLINE_MS;
   let gwReady = false;
   let probeAttempts = 0;
   let lastBootingEmitAt = 0;
@@ -915,7 +936,18 @@ async function _startOpenClawImpl(opts = {}) {
       }
       // Zalo marker — "openzca connected" means WebSocket connected but
       // inbound pipeline may still be initializing. Delay before confirming.
+      // Also re-seed friends/groups defaults + notify Dashboard to refresh.
       if (!notifyState.zalo.markerSeen && /\[(?:openzalo|modoro-zalo)\]\s*\[\w+\]\s*openzca connected/i.test(text)) {
+        setTimeout(() => {
+          try {
+            const { seedZaloCustomersFromCache } = require('./zalo-plugin');
+            seedZaloCustomersFromCache();
+            console.log('[ready-notify] Zalo connected — re-seeded friends/groups defaults');
+            if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+              ctx.mainWindow.webContents.send('zalo-friends-refreshed');
+            }
+          } catch (e) { console.warn('[ready-notify] post-connect seed error:', e?.message); }
+        }, 8000);
         notifyState.zaloReady = true;
         notifyState.zalo.markerSeen = true;
         notifyState.zalo.markerSeenAt = Date.now();
@@ -1001,6 +1033,72 @@ async function _startOpenClawImpl(opts = {}) {
   ctx.openclawProcess.stderr.on('data', scanForReadiness);
   ctx.openclawProcess.stdout.on('data', scanForConnectFailure);
   ctx.openclawProcess.stderr.on('data', scanForConnectFailure);
+
+  // POST-BOOT ZALO DIAGNOSTIC: 45s after gateway WS ready, check if openzca
+  // started.  If not, read openclaw.log for errors and log a clear diagnostic
+  // to main.log.  Without this, "Zalo chưa sẵn sàng" is a black box — the
+  // customer and support have zero visibility into WHY the listener didn't
+  // start (the answer is always in openclaw.log which nobody reads).
+  if (gwReady) {
+    setTimeout(() => {
+      try {
+        const zlPid = findOpenzcaListenerPid();
+        if (zlPid) {
+          console.log(`[zalo-boot-check] openzca listener running (pid=${zlPid}) — Zalo OK`);
+          return;
+        }
+        console.warn('[zalo-boot-check] openzca listener NOT running 45s after gateway ready');
+        // Read openclaw.log for clues
+        try {
+          const gwLogPath = path.join(ctx.userDataDir, 'logs', 'openclaw.log');
+          if (fs.existsSync(gwLogPath)) {
+            const stat = fs.statSync(gwLogPath);
+            const readSize = Math.min(stat.size, 32768);
+            const fd = fs.openSync(gwLogPath, 'r');
+            const buf = Buffer.alloc(readSize);
+            fs.readSync(fd, buf, 0, readSize, Math.max(0, stat.size - readSize));
+            fs.closeSync(fd);
+            const tail = buf.toString('utf-8');
+            const errorLines = tail.split('\n').filter(l =>
+              /error|fail|crash|ENOENT|cannot find|TypeScript|TS\d{4}/i.test(l) &&
+              /modoro.?zalo|openzca|openzalo|plugin/i.test(l)
+            ).slice(-5);
+            if (errorLines.length > 0) {
+              console.warn('[zalo-boot-check] openclaw.log errors:');
+              for (const l of errorLines) console.warn('  ', l.trim().slice(0, 300));
+            } else {
+              // Check if plugin was mentioned at all
+              const mentionsPlugin = tail.includes('modoro-zalo') || tail.includes('openzalo');
+              if (!mentionsPlugin) {
+                console.warn('[zalo-boot-check] openclaw.log has NO mention of modoro-zalo — plugin likely not loaded');
+                console.warn('[zalo-boot-check] check: openclaw.json plugins.entries["modoro-zalo"].enabled, and ~/.openclaw/extensions/modoro-zalo/ exists');
+              } else {
+                console.warn('[zalo-boot-check] openclaw.log mentions modoro-zalo but no clear error — openzca may have crashed silently');
+              }
+            }
+          } else {
+            console.warn('[zalo-boot-check] openclaw.log not found at:', gwLogPath);
+          }
+        } catch (e) { console.warn('[zalo-boot-check] log read error:', e?.message); }
+        // Check config
+        try {
+          const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+          const channelEnabled = cfg?.channels?.['modoro-zalo']?.enabled;
+          const pluginEnabled = cfg?.plugins?.entries?.['modoro-zalo']?.enabled;
+          const pluginDir = path.join(ctx.HOME, '.openclaw', 'extensions', 'modoro-zalo');
+          const pluginExists = fs.existsSync(pluginDir);
+          console.warn(`[zalo-boot-check] config: channels.modoro-zalo.enabled=${channelEnabled}, plugins.entries.modoro-zalo.enabled=${pluginEnabled}, plugin dir exists=${pluginExists}`);
+          if (pluginEnabled === false || channelEnabled === false) {
+            console.warn('[zalo-boot-check] LIKELY CAUSE: Zalo channel or plugin is disabled in config');
+          }
+          if (!pluginExists) {
+            console.warn('[zalo-boot-check] LIKELY CAUSE: modoro-zalo plugin directory missing');
+          }
+        } catch (e) { console.warn('[zalo-boot-check] config read error:', e?.message); }
+      } catch (e) { console.warn('[zalo-boot-check] diagnostic error:', e?.message); }
+    }, 45000);
+  }
 
   ctx.openclawProcess.on('exit', (code) => {
     ctx.botRunning = false;
@@ -1177,6 +1275,10 @@ async function _startOpenClawImpl(opts = {}) {
   });
 }
 
+/**
+ * Stop the openclaw gateway and wait for process exit + port release.
+ * @returns {Promise<void>}
+ */
 // [restart-guard] stopOpenClaw is now async and waits for the gateway process
 // to ACTUALLY exit before resolving. Without this, a caller that does
 // `await stopOpenClaw(); await new Promise(r => setTimeout(r, 2000)); await startOpenClaw();`
@@ -1334,7 +1436,7 @@ async function fastWatchdogTick() {
     // (gateway "ready" at 70s is misleading; channels start 3:30+ later when
     // openrouter.ai fetch stuck on slow DNS/TCP — see ensureOpenclawPricingFix).
     // Even with pricing-fix, leaving 6min grace for worst-case slow boots.
-    if (global._gatewayStartedAt && (Date.now() - global._gatewayStartedAt) < 360000) {
+    if (global._gatewayStartedAt && (Date.now() - global._gatewayStartedAt) < WATCHDOG_BOOT_GRACE_MS) {
       // Gateway still booting — skip watchdog this tick
       _fwGatewayFailCount = 0;
       return;

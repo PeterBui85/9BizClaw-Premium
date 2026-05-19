@@ -23,17 +23,21 @@ let _runCronAgentPrompt = null;
 function setRunCronAgentPrompt(fn) { _runCronAgentPrompt = fn; }
 
 function getFollowUpQueuePath() {
-  return path.join(getWorkspace(), 'follow-up-queue.json');
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, 'follow-up-queue.json');
 }
 
 function readFollowUpQueue() {
   const p = getFollowUpQueuePath();
-  if (!fs.existsSync(p)) return [];
+  if (!p || !fs.existsSync(p)) return [];
   try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return []; }
 }
 
 function writeFollowUpQueue(queue) {
-  writeJsonAtomic(getFollowUpQueuePath(), queue);
+  const p = getFollowUpQueuePath();
+  if (!p) return;
+  writeJsonAtomic(p, queue);
 }
 
 async function processFollowUpQueue() {

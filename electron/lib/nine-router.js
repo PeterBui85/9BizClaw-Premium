@@ -19,8 +19,13 @@ let routerProcess = null;
 
 let _routerLogFd = null;
 
-const PROVIDER_KEYS_PATH = () => path.join(appDataDir(), 'modoroclaw-provider-keys.json');
-const RTK_DEFAULT_MARKER_PATH = () => path.join(appDataDir(), 'modoroclaw-rtk-default-applied.json');
+/** @returns {string} Path to modoroclaw provider keys backup file */
+function getProviderKeysPath() { return path.join(appDataDir(), 'modoroclaw-provider-keys.json'); }
+/** @returns {string} Path to RTK default enablement marker file */
+function getRtkDefaultMarkerPath() { return path.join(appDataDir(), 'modoroclaw-rtk-default-applied.json'); }
+
+/** @returns {string} Path to 9Router's db.json settings file */
+function get9RouterDbPath() { return path.join(appDataDir(), '9router', 'db.json'); }
 
 let _9routerSqliteFixAttempted = false;
 let _cached9RouterCliToken = null;
@@ -98,7 +103,7 @@ function get9RouterCliToken() {
 // when a non-null password field is present.
 function ensure9RouterDefaultPassword() {
   try {
-    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    const dbPath = get9RouterDbPath();
     if (!fs.existsSync(dbPath)) return;
     const raw = fs.readFileSync(dbPath, 'utf-8');
     const db = JSON.parse(raw);
@@ -122,7 +127,7 @@ function ensure9RouterDefaultPassword() {
 
 function saveProviderKey(provider, apiKey) {
   try {
-    const p = PROVIDER_KEYS_PATH();
+    const p = getProviderKeysPath();
     let keys = {};
     if (fs.existsSync(p)) keys = JSON.parse(fs.readFileSync(p, 'utf-8'));
     keys[provider] = apiKey;
@@ -141,11 +146,12 @@ function saveProviderKey(provider, apiKey) {
 // Idempotent: only writes openclaw.json when the keys actually differ.
 function ensure9RouterApiKeySync() {
   try {
-    const dbPath = path.join(appDataDir(), '9router', 'db.json');
-    const ocPath = path.join(require('os').homedir(), '.openclaw', 'openclaw.json');
+    const dbPath = get9RouterDbPath();
+    const ocPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(dbPath) || !fs.existsSync(ocPath)) return { skipped: 'files-missing' };
-    const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-    const oc = JSON.parse(fs.readFileSync(ocPath, 'utf-8'));
+    let db, oc;
+    try { db = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); } catch (e) { console.warn('[9router] db.json parse error:', e?.message); return { error: 'db.json parse: ' + e?.message }; }
+    try { oc = JSON.parse(fs.readFileSync(ocPath, 'utf-8')); } catch (e) { console.warn('[9router] openclaw.json parse error:', e?.message); return { error: 'openclaw.json parse: ' + e?.message }; }
     // Prefer the entry named "9BizClaw" if present; else first active key.
     const apiKeys = Array.isArray(db.apiKeys) ? db.apiKeys : [];
     let active = apiKeys.find(k => k && k.isActive !== false && k.name === '9BizClaw');
@@ -172,7 +178,7 @@ function ensure9RouterApiKeySync() {
 // Idempotent: skips silently if a combo named "zalo" already exists.
 function ensure9RouterZaloCombo() {
   try {
-    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    const dbPath = get9RouterDbPath();
     if (!fs.existsSync(dbPath)) return;
     const raw = fs.readFileSync(dbPath, 'utf-8');
     const db = JSON.parse(raw);
@@ -193,8 +199,8 @@ function ensure9RouterZaloCombo() {
 
 function ensure9RouterProviderKeys() {
   try {
-    const dbPath = path.join(appDataDir(), '9router', 'db.json');
-    const keysPath = PROVIDER_KEYS_PATH();
+    const dbPath = get9RouterDbPath();
+    const keysPath = getProviderKeysPath();
     if (!fs.existsSync(dbPath) || !fs.existsSync(keysPath)) return;
     const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
     const savedKeys = JSON.parse(fs.readFileSync(keysPath, 'utf-8'));
@@ -218,7 +224,7 @@ function ensure9RouterProviderKeys() {
 function writeRtkDefaultMarker(meta = {}) {
   try {
     fs.writeFileSync(
-      RTK_DEFAULT_MARKER_PATH(),
+      getRtkDefaultMarkerPath(),
       JSON.stringify({ appliedAt: new Date().toISOString(), ...meta }, null, 2),
       'utf-8'
     );
@@ -229,10 +235,10 @@ function writeRtkDefaultMarker(meta = {}) {
 
 function tryWrite9RouterRtkDefaultToDb() {
   try {
-    const markerPath = RTK_DEFAULT_MARKER_PATH();
+    const markerPath = getRtkDefaultMarkerPath();
     if (fs.existsSync(markerPath)) return { changed: false, skipped: 'already-applied' };
 
-    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    const dbPath = get9RouterDbPath();
     if (!fs.existsSync(dbPath)) return { changed: false, skipped: 'db-missing' };
 
     const raw = fs.readFileSync(dbPath, 'utf-8');
@@ -258,7 +264,7 @@ function tryWrite9RouterRtkDefaultToDb() {
 // The marker lets users later disable RTK in 9Router without our startup code
 // flipping it back.
 async function ensure9RouterRtkDefaultEnabled() {
-  const markerPath = RTK_DEFAULT_MARKER_PATH();
+  const markerPath = getRtkDefaultMarkerPath();
   if (fs.existsSync(markerPath)) return false;
 
   const dbResult = tryWrite9RouterRtkDefaultToDb();
@@ -282,7 +288,7 @@ async function ensure9RouterRtkDefaultEnabled() {
 function schedule9RouterRtkDefaultEnablement() {
   const timer = setTimeout(async () => {
     try {
-      if (fs.existsSync(RTK_DEFAULT_MARKER_PATH())) return;
+      if (fs.existsSync(getRtkDefaultMarkerPath())) return;
       const ready = await waitFor9RouterReady(30000);
       if (!ready) {
         console.warn('[9router] RTK default enablement deferred: 9Router not ready');
@@ -686,12 +692,15 @@ async function autoFix9RouterSqlite() {
     }
     // Strategy 3: npx prebuild-install — downloads prebuild-install if not in .bin.
     // This handles 9router versions that don't ship prebuild-install as a dep.
-    const npxBin = path.join(path.dirname(nodeBin), 'npx');
+    // Windows: bare `npx` in vendor/node/ is a bash script — must use npx.cmd
+    // (or invoke node with npx-cli.js). shell:false + bash script = ENOENT on Win.
+    const isWin = process.platform === 'win32';
+    const npxBin = path.join(path.dirname(nodeBin), isWin ? 'npx.cmd' : 'npx');
     if (fs.existsSync(npxBin)) {
       try {
         console.log('[9router-autofix] trying npx prebuild-install...');
         execFileSync(npxBin, ['--yes', 'prebuild-install', '-r', 'node', '-t', nodeVer, '--arch', arch], {
-          cwd: bsqlDir, timeout: 90000, shell: false,
+          cwd: bsqlDir, timeout: 90000, shell: isWin,
           env: { ...process.env, npm_config_arch: arch },
         });
         if (fs.existsSync(bsqlBin)) {
@@ -705,13 +714,13 @@ async function autoFix9RouterSqlite() {
     // Strategy 4: npm rebuild from the 9router app dir (compiles from source).
     // Needs Xcode CLT on Mac, but that's the last resort.
     const vendorDir2 = getBundledVendorDir();
-    const npmBin = path.join(path.dirname(nodeBin), 'npm');
+    const npmBin = path.join(path.dirname(nodeBin), isWin ? 'npm.cmd' : 'npm');
     if (vendorDir2 && fs.existsSync(npmBin)) {
       try {
         console.log('[9router-autofix] trying npm rebuild better-sqlite3...');
         execFileSync(npmBin, ['rebuild', 'better-sqlite3', `--arch=${arch}`], {
           cwd: path.join(vendorDir2, 'node_modules', '9router', 'app'),
-          timeout: 180000, shell: false,
+          timeout: 180000, shell: isWin,
           env: { ...process.env, npm_config_arch: arch, npm_config_target: nodeVer, npm_config_runtime: 'node' },
         });
         if (fs.existsSync(bsqlBin)) {
@@ -944,7 +953,7 @@ async function detectChatgptPlusOAuth() {
     // Support/9router/, Linux: ~/.config/9router/). Previous `HOME/.9router/`
     // was wrong — existsSync always false → every install defaults to 'fast'
     // even for ChatGPT Plus OAuth users (bug flagged by code quality review).
-    const dbPath = path.join(appDataDir(), '9router', 'db.json');
+    const dbPath = get9RouterDbPath();
     if (!fs.existsSync(dbPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
     const providers = cfg?.providers || [];

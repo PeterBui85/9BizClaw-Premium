@@ -20,13 +20,14 @@ const BRAND_ASSET_MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 // Default schedules (also used as template when seeding fresh install)
 const DEFAULT_SCHEDULES_JSON = [
-  // `icon` legacy field kept empty — Dashboard uses lucide icons via SCHEDULE_ICON_MAP, not emoji.
+  // TODO: remove icon field entirely in next schema version — Dashboard uses lucide icons via SCHEDULE_ICON_MAP, not emoji.
   { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: true, icon: '', description: 'Doanh thu, lịch họp, việc cần xử lý' },
   { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true, icon: '', description: 'Kết quả ngày, vấn đề tồn đọng' },
   // heartbeat removed — fast watchdog (gateway.js, 20s interval) is strictly superior
   { id: 'meditation', label: 'Tối ưu ban đêm', time: '01:00', enabled: true, icon: '', description: 'Bot tự review bài học, tối ưu bộ nhớ' },
   { id: 'weekly', label: 'Báo cáo tuần', time: '08:00', enabled: true, icon: '', description: 'Tổng kết tuần, khách mới, ưu tiên tuần tới' },
   { id: 'monthly', label: 'Báo cáo tháng', time: '08:30', enabled: true, icon: '', description: 'Tổng kết tháng, trend, kế hoạch tháng tới' },
+  { id: 'afternoon-nudge', label: 'Gợi ý chiều', time: '14:00', enabled: true, icon: '', description: 'Gợi ý hành động cụ thể + dạy tính năng mới cho CEO' },
   { id: 'zalo-followup', label: 'Follow-up khách Zalo', time: '09:30', enabled: true, icon: '', description: 'Nhắc CEO khách mới chưa tương tác, khách hỏi chưa reply' },
   { id: 'memory-cleanup', label: 'Dọn dẹp memory', time: '02:00', enabled: false, icon: '', description: 'Tổng hợp journal cũ, dọn dẹp memory rời rạc' },
 ];
@@ -94,7 +95,7 @@ function getWorkspace() {
         _workspaceCached = path.join(process.env.XDG_CONFIG_HOME || path.join(HOMETMP, '.config'), APP_DIR);
       }
     }
-    try { fs.mkdirSync(_workspaceCached, { recursive: true }); } catch {}
+    try { fs.mkdirSync(_workspaceCached, { recursive: true }); } catch (e) { console.error('[getWorkspace] CRITICAL: cannot create workspace dir:', e?.message); }
     try {
       const { guardWritable } = require('./preflight');
       guardWritable('getWorkspace', _workspaceCached);
@@ -251,7 +252,7 @@ function seedWorkspace() {
       const sp = path.join(src, entry.name), tp = path.join(dst, entry.name);
       if (entry.isDirectory()) copyDirRecursive(sp, tp);
       else if (!fs.existsSync(tp)) {
-        try { fs.copyFileSync(sp, tp); } catch {}
+        try { fs.copyFileSync(sp, tp); } catch (e) { console.warn('[seed] copy failed:', sp, e?.message); }
       }
     }
   };
@@ -652,6 +653,30 @@ function seedWorkspace() {
   if (!fs.existsSync(blocklistFile)) {
     try { writeJsonAtomic(blocklistFile, []); } catch {}
   }
+  const allowlistFile = path.join(ws, 'zalo-allowlist.json');
+  if (!fs.existsSync(allowlistFile)) {
+    try {
+      let allowlist = [];
+      if (fs.existsSync(blocklistFile)) {
+        const bl = JSON.parse(fs.readFileSync(blocklistFile, 'utf-8'));
+        if (Array.isArray(bl) && bl.length > 0) {
+          const blSet = new Set(bl.map(x => String(x).trim()));
+          const cacheDir = path.join(require('os').homedir(), '.openzca', 'profiles', 'default', 'cache');
+          const friendsPath = path.join(cacheDir, 'friends.json');
+          if (fs.existsSync(friendsPath)) {
+            const raw = JSON.parse(fs.readFileSync(friendsPath, 'utf-8'));
+            const friends = Array.isArray(raw) ? raw : (Array.isArray(raw?.friends) ? raw.friends : []);
+            allowlist = friends.map(f => String(f.userId || f.uid || f.id || '')).filter(id => id && !blSet.has(id));
+          }
+        }
+      }
+      writeJsonAtomic(allowlistFile, allowlist);
+      console.log(`[seedWorkspace] migrated blocklist→allowlist: ${allowlist.length} friends allowed`);
+    } catch (e) {
+      try { writeJsonAtomic(allowlistFile, []); } catch {}
+      console.warn('[seedWorkspace] allowlist migration error:', e?.message);
+    }
+  }
 
   // Zalo per-user memory dir (bot writes <senderId>.md per customer).
   // Bot's actual workspace is in openclaw.json -> agents.defaults.workspace,
@@ -705,6 +730,9 @@ function seedWorkspace() {
       console.log('[seedWorkspace] removed stale knowledge/9bizclaw/ (not shipped from v2.4.4)');
     }
   } catch {}
+
+  // Hermes memory: inject CEO memories into AGENTS.md (must be LAST — after template refresh)
+  try { require('./ceo-memory').injectMemoryIntoAgentsMd(); } catch {}
 
   return ws;
 }

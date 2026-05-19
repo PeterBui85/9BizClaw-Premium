@@ -34,7 +34,7 @@ function startCeoMessageWatcher() {
   if (!ws) return;
   const auditPath = path.join(ws, 'logs', 'audit.jsonl');
   let lastSize = 0;
-  try { lastSize = fs.existsSync(auditPath) ? fs.statSync(auditPath).size : 0; } catch {}
+  try { lastSize = fs.existsSync(auditPath) ? fs.statSync(auditPath).size : 0; } catch (e) { console.warn('[nudge-watcher] stat error:', e?.message); }
 
   _watcherTimerId = setInterval(() => {
     try {
@@ -63,7 +63,7 @@ function startCeoMessageWatcher() {
           }
         } catch {}
       }
-    } catch {}
+    } catch (e) { console.warn('[nudge-watcher] tick error:', e?.message); }
   }, 10000);
 }
 
@@ -112,6 +112,23 @@ async function _runMemoryNudge(source) {
   if (!transcript || transcript.length < 50) {
     console.log('[nudge] skipped — no significant conversation to review');
     return;
+  }
+
+  // Task detection — write to memory if conversation involved completing something
+  const tLower = transcript.toLowerCase();
+  const taskHits = ['đã tạo', 'đã làm', 'đã gửi', 'đã xong', 'hoàn thành', 'đã lưu', 'đã upload', 'đã cập nhật', 'đã sửa', 'đã thêm'];
+  if (taskHits.some(p => tLower.includes(p))) {
+    try {
+      const { writeMemory } = require('./ceo-memory');
+      const botReply = (transcript.match(/(?:assistant|bot)[:\s]+([\s\S]{10,200}?)(?:\n(?:user|human|CEO)|$)/i) || [])[1] || '';
+      if (botReply) {
+        writeMemory({
+          type: 'task',
+          content: '[' + new Date().toLocaleDateString('vi-VN') + '] ' + botReply.slice(0, 150).replace(/\n/g, ' ').trim(),
+          source: 'auto',
+        }).catch(function(e) { console.warn('[nudge-memory] task write failed:', e?.message); });
+      }
+    } catch {}
   }
 
   const prompt = `Review the last conversation with CEO. Decide if anything is worth remembering long-term:

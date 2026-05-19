@@ -75,7 +75,7 @@ const {
   invalidateZaloFriendsCache, getZaloFriendsCached, setZaloFriendsCached,
   runZaloCacheRefresh, startZaloCacheAutoRefresh,
   getZaloUsersDir, ensureZaloUsersDir, sanitizeZaloUserId, parseZaloUserMemoryMeta,
-  getZaloGroupsDir, getZaloBlocklistPath, cleanBlocklist,
+  getZaloGroupsDir, getZaloBlocklistPath, getZaloAllowlistPath, cleanBlocklist,
 } = require('./zalo-memory');
 const { normalizeZaloBlocklist, resolveZaloBlocklistSave } = require('./zalo-settings');
 const {
@@ -190,7 +190,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         console.log('[setup-9router-auto] ensureRunning — starting 9router');
         start9Router();
       }
-      const ready = await waitFor9RouterReady(15000);
+      const ready = await waitFor9RouterReady(45000);
       return { success: ready, error: ready ? undefined : '9Router không khởi động được.' };
     }
 
@@ -199,8 +199,8 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         console.log('[setup-9router-auto] openCodexAuthed — starting 9router');
         start9Router();
       }
-      const ready = await waitFor9RouterReady(15000);
-      if (!ready) return { success: false, error: '9Router không khởi động được.' };
+      const ready = await waitFor9RouterReady(30000);
+      if (!ready) return { success: false, error: '9Router không khởi động được. Đợi vài giây rồi thử lại.' };
 
       let loginFailed = false;
       try {
@@ -252,8 +252,28 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
     // --- detectChatGPT: find codex provider + auto-create combo cx/gpt-5.4 ---
     if (opts.detectChatGPT) {
       if (!getRouterProcess()) start9Router();
-      const ready = await waitFor9RouterReady(10000);
-      if (!ready) return { success: false, error: '9Router chưa sẵn sàng. Thử lại sau vài giây.' };
+      let ready = await waitFor9RouterReady(30000);
+      if (!ready) {
+        // Same auto-fix as Ollama path: distinguish 5xx (native module crash)
+        // from ECONNREFUSED (process dead / never started).
+        const ping = await nineRouterApi('GET', '/api/settings', null, 1500);
+        if (ping.statusCode && ping.statusCode >= 500) {
+          console.log('[setup-9router-auto] detectChatGPT: 9router crash (HTTP', ping.statusCode, ') — attempting native module auto-fix');
+          const fixed = await autoFix9RouterSqlite();
+          if (fixed) {
+            stop9Router();
+            await new Promise(r => setTimeout(r, 2500));
+            try { killPort(20128); } catch {}
+            start9Router();
+            ready = await waitFor9RouterReady(30000);
+            if (!ready) return { success: false, error: '9Router vẫn không khởi động được sau khi tự sửa. Thử tắt app, mở lại.' };
+          } else {
+            return { success: false, error: '9Router gặp lỗi khởi động (HTTP 500) và không thể tự sửa. Thử tắt app, mở lại.' };
+          }
+        } else {
+          return { success: false, error: '9Router chưa sẵn sàng. Đợi vài giây rồi nhấn lại "Kiểm tra kết nối".' };
+        }
+      }
 
       const listRes = await nineRouterApi('GET', '/api/providers');
       const conns = listRes.data?.connections || listRes.data?.providers || listRes.data || [];
@@ -287,7 +307,10 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
         const createKey = await nineRouterApi('POST', '/api/keys', { name: '9BizClaw' });
         apiKeyValue = createKey.data?.key?.key || createKey.data?.key || null;
       }
-      return { success: true, apiKey: apiKeyValue || '', selectedModel: picked };
+      if (!apiKeyValue) {
+        return { success: false, error: 'Không tạo được API key. Thử nhấn lại "Kiểm tra kết nối".' };
+      }
+      return { success: true, apiKey: apiKeyValue, selectedModel: picked };
     }
 
     if (opts.ollamaKey) {
@@ -349,7 +372,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
               return { success: false, error: '9router gặp lỗi khởi động (HTTP 500) và không thể tự sửa native module. Mở thư mục log (9router.log) để xem chi tiết.' };
             }
           } else {
-            throw new Error('9router không khởi động được trong 10 giây — fallback file mode');
+            throw new Error('9Router không khởi động được trong 10 giây — chuyển sang chế độ tệp');
           }
         }
         console.log('[setup-9router-auto] 9router API reachable');
@@ -395,7 +418,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
           apiKey: opts.ollamaKey.trim(),
         });
         if (!createRes.success) {
-          throw new Error('Không tạo được provider: ' + (createRes.error || 'unknown'));
+          throw new Error('Không tạo được nhà cung cấp: ' + (createRes.error || 'không rõ'));
         }
         const providerId = createRes.data?.id || createRes.data?.connection?.id;
         if (!providerId) {
@@ -440,7 +463,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
             } else if (/ENOTFOUND|DNS/i.test(testErrMsg)) {
               viError = 'Không kết nối được ollama.com. Kiểm tra Internet hoặc thử đổi mạng.';
             } else if (/429|rate/i.test(testErrMsg)) {
-              viError = 'Ollama trả về 429 (rate limit). Đợi 1 phút rồi thử lại.';
+              viError = 'Ollama trả về 429 (quá giới hạn). Đợi 1 phút rồi thử lại.';
             } else if (/\b5\d{2}\b|internal.server.error/i.test(testErrMsg)) {
               viError = 'Ollama đang gặp sự cố tạm thời (HTTP 5xx). Thử lại sau vài phút hoặc kiểm tra status.ollama.com.';
             }
@@ -548,7 +571,7 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
     // Read existing or create fresh
     let db = {};
     if (fs.existsSync(dbPath)) {
-      try { db = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); } catch {}
+      try { db = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); } catch (e) { console.warn('[setup-9router] db.json parse error:', e?.message); }
     }
     if (!Array.isArray(db.providerConnections)) db.providerConnections = [];
     if (!Array.isArray(db.combos)) db.combos = [];
@@ -1030,14 +1053,19 @@ ipcMain.handle('list-zalo-friends', async () => {
 
 // Trigger openzca to refresh its cache from live Zalo server (manual)
 ipcMain.handle('refresh-zalo-cache', async () => {
-  const result = await runZaloCacheRefresh({ source: 'manual' });
-  return {
-    success: !!result?.ok,
-    skipped: !!result?.skipped,
-    rateLimited: !!result?.rateLimited,
-    retryAfterSec: result?.retryAfterSec || 0,
-    error: result?.error || null,
-  };
+  try {
+    const result = await runZaloCacheRefresh({ source: 'manual' });
+    return {
+      success: !!result?.ok,
+      skipped: !!result?.skipped,
+      rateLimited: !!result?.rateLimited,
+      retryAfterSec: result?.retryAfterSec || 0,
+      error: result?.error || null,
+    };
+  } catch (e) {
+    console.error('[zalo-cache] refresh error:', e?.message);
+    return { success: false, error: e?.message || 'refresh failed' };
+  }
 });
 
 ipcMain.handle('list-zalo-groups', async () => {
@@ -1294,29 +1322,35 @@ ipcMain.handle('get-zalo-manager-config', async () => {
     let blocklist = [];
     const bp = getZaloBlocklistPath();
     if (fs.existsSync(bp)) {
-      try { blocklist = JSON.parse(fs.readFileSync(bp, 'utf-8')); } catch {}
+      try { blocklist = JSON.parse(fs.readFileSync(bp, 'utf-8')); } catch (e) { console.warn('[zalo-manager] blocklist parse error:', e?.message); }
+    }
+    let allowlist = [];
+    const ap = getZaloAllowlistPath();
+    if (ap && fs.existsSync(ap)) {
+      try { allowlist = JSON.parse(fs.readFileSync(ap, 'utf-8')); } catch (e) { console.warn('[zalo-manager] allowlist parse error:', e?.message); }
     }
     let groupSettings = {};
     try {
       const gsPath = path.join(getWorkspace(), 'zalo-group-settings.json');
       if (fs.existsSync(gsPath)) groupSettings = JSON.parse(fs.readFileSync(gsPath, 'utf-8'));
-    } catch {}
+    } catch (e) { console.warn('[zalo-manager] groupSettings parse error:', e?.message); }
     let userSettings = {};
     try {
       const usPath = path.join(getWorkspace(), 'zalo-user-settings.json');
       if (fs.existsSync(usPath)) userSettings = JSON.parse(fs.readFileSync(usPath, 'utf-8'));
-    } catch {}
+    } catch (e) { console.warn('[zalo-manager] userSettings parse error:', e?.message); }
     let strangerPolicy = 'ignore';
     try {
       const spPath = path.join(getWorkspace(), 'zalo-stranger-policy.json');
       if (fs.existsSync(spPath)) strangerPolicy = JSON.parse(fs.readFileSync(spPath, 'utf-8')).mode || 'ignore';
-    } catch {}
+    } catch (e) { console.warn('[zalo-manager] strangerPolicy parse error:', e?.message); }
     return {
       enabled: zalo.enabled !== false,
       groupPolicy: zalo.groupPolicy || 'open',
       groupAllowFrom: Array.isArray(zalo.groupAllowFrom) ? zalo.groupAllowFrom.filter(x => x !== '*') : [],
       dmPolicy: zalo.dmPolicy || 'open',
       userBlocklist: normalizeZaloBlocklist(blocklist),
+      userAllowlist: Array.isArray(allowlist) ? allowlist.map(x => String(x || '').trim()).filter(Boolean) : [],
       groupSettings,
       userSettings,
       strangerPolicy,
@@ -1364,7 +1398,7 @@ function _mergeUserSettingsFile(userSettings) {
   }
 }
 
-function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy }) {
+function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, userAllowlist, userAllowlistTouched, groupSettings, userSettings, strangerPolicy }) {
   const bp = getZaloBlocklistPath();
   let existingBl = [];
   try {
@@ -1382,6 +1416,15 @@ function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, gro
     try { fs.copyFileSync(bp, bp + '.bak'); } catch {}
   } else if (bp && (blocklistSave.shouldWrite || !fs.existsSync(bp))) {
     writeJsonAtomic(bp, blocklistSave.blocklist);
+  }
+
+  // Allowlist (v2.4.4+): explicit list of friends CEO turned ON
+  if (userAllowlistTouched) {
+    const ap = getZaloAllowlistPath();
+    if (ap) {
+      const al = Array.isArray(userAllowlist) ? userAllowlist.map(x => String(x || '').trim()).filter(Boolean) : [];
+      writeJsonAtomic(ap, al);
+    }
   }
 
   if (groupSettings && typeof groupSettings === 'object') {
@@ -1467,14 +1510,14 @@ async function forceDisableZaloFailClosed(source = 'manager-disabled') {
   return { pauseOk, configOk, stickyOk };
 }
 
-ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy }) => {
+ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy, groupAllowFrom, userBlocklist, userBlocklistTouched, userAllowlist, userAllowlistTouched, groupSettings, userSettings, strangerPolicy }) => {
   invalidateZaloFriendsCache(); // PERF: bust friends cache on config save
   const booting = rejectIfBooting('save-zalo-manager-config');
   if (booting) {
     if (enabled === false) {
       ctx.ipcInFlightCount++;
       try {
-        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy });
+        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, userAllowlist, userAllowlistTouched, groupSettings, userSettings, strangerPolicy });
         const off = await forceDisableZaloFailClosed('manager-disabled-while-booting');
         return {
           success: off.pauseOk || off.configOk || off.stickyOk,
@@ -1491,7 +1534,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
       if (enabled !== false && isZaloChannelEnabled() === false) return booting;
       ctx.ipcInFlightCount++;
       try {
-        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, userSettings, strangerPolicy });
+        const realtime = saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, userAllowlist, userAllowlistTouched, groupSettings, userSettings, strangerPolicy });
         return {
           success: true,
           booting: true,
@@ -1580,7 +1623,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     }
     // 2. Workspace files are read realtime by inbound.ts patches. The helper
     // preserves an existing friend blocklist when autosave sends an untouched [].
-    saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, groupSettings, strangerPolicy });
+    saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, userAllowlist, userAllowlistTouched, groupSettings, strangerPolicy });
     // 3. CRIT #5: Persist ALL explicit modes (off/mention/all) — zalo-group-settings.json
     // is the single source of truth used by GROUP-SETTINGS PATCH v2. If user
     // sets 'mention' in Dashboard we must persist it so the patch enforces
@@ -2180,6 +2223,7 @@ ipcMain.handle('save-business-profile', async (_event, payload) => {
 // Batch config set (for complex nested objects like model providers)
 // Batch config set — write JSON directly
 ipcMain.handle('set-batch-config', async (_event, ops) => {
+  if (!Array.isArray(ops)) return { success: false, error: 'ops must be an array' };
   const booting = rejectIfBooting('set-batch-config');
   if (booting) return booting;
   ctx.ipcInFlightCount++;
@@ -2213,6 +2257,7 @@ ipcMain.handle('set-batch-config', async (_event, ops) => {
 
 // Save config by writing openclaw.json directly — no CLI dependency
 ipcMain.handle('save-wizard-config', async (_event, configs) => {
+  if (!Array.isArray(configs)) return { success: false, error: 'configs must be an array' };
   // Not gated by rejectIfBooting — wizard runs before boot by design.
   ctx.ipcInFlightCount++;
   try {
@@ -2266,6 +2311,8 @@ ipcMain.handle('save-wizard-config', async (_event, configs) => {
 // Add cron — save custom times to claw-schedules.json (bypasses broken CLI)
 ipcMain.handle('add-cron', async (_event, { name, cron, tz, message, channel }) => {
   try {
+    if (!name || typeof name !== 'string' || name.trim().length === 0) return { success: false, error: 'name is required' };
+    if (!cron || typeof cron !== 'string' || cron.trim().length === 0) return { success: false, error: 'cron expression is required' };
     // Parse cron expression to extract time (e.g., "30 7 * * *" → "07:30")
     const parts = (cron || '').split(/\s+/);
     if (parts.length >= 2) {
@@ -2520,7 +2567,8 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
 
 // --- IPC: appointments CRUD ---
 ipcMain.handle('list-appointments', async () => {
-  return readAppointments();
+  try { return readAppointments(); }
+  catch (e) { return []; }
 });
 
 ipcMain.handle('create-appointment', async (_e, data) => {
@@ -2808,16 +2856,20 @@ ipcMain.handle('save-telegram-behavior', async (_event, behavior) => {
 
 // --- Channel pause/resume (symmetric for both Telegram + Zalo) ---
 ipcMain.handle('pause-telegram', async (_e, { minutes } = {}) => {
-  return { success: pauseChannel('telegram', minutes || 30) };
+  try { return { success: pauseChannel('telegram', minutes || 30) }; }
+  catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('resume-telegram', async () => {
-  return { success: resumeChannel('telegram') };
+  try { return { success: resumeChannel('telegram') }; }
+  catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('get-telegram-pause-status', async () => {
-  return getChannelPauseStatus('telegram');
+  try { return getChannelPauseStatus('telegram'); }
+  catch (e) { return { paused: true, permanent: true, error: e.message }; }
 });
 ipcMain.handle('pause-zalo', async (_e, { minutes } = {}) => {
-  return { success: pauseChannel('zalo', minutes || 30) };
+  try { return { success: pauseChannel('zalo', minutes || 30) }; }
+  catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('resume-zalo', async () => {
   const booting = rejectIfBooting('resume-zalo');
@@ -2906,7 +2958,8 @@ ipcMain.handle('resume-zalo', async () => {
   } finally { ctx.ipcInFlightCount--; }
 });
 ipcMain.handle('get-zalo-pause-status', async () => {
-  return getChannelPauseStatus('zalo');
+  try { return getChannelPauseStatus('zalo'); }
+  catch (e) { return { paused: true, permanent: true, error: e.message }; }
 });
 
 // Inbound debounce — how long bot waits to coalesce rapid messages from
@@ -2984,11 +3037,12 @@ ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
 
 // App prefs (start minimized, etc.) — persisted in <userData>/app-prefs.json
 ipcMain.handle('get-app-prefs', async () => {
-  return loadAppPrefs();
+  try { return loadAppPrefs(); }
+  catch (e) { return {}; }
 });
 ipcMain.handle('set-app-prefs', async (_e, partial) => {
-  const next = saveAppPrefs(partial || {});
-  return next || loadAppPrefs();
+  try { const next = saveAppPrefs(partial || {}); return next || loadAppPrefs(); }
+  catch (e) { return { error: e.message }; }
 });
 
 // ─── Brand Assets IPC ────────────────────────────────────────────
@@ -3101,6 +3155,25 @@ ipcMain.handle('pick-media-asset-file', async () => {
 });
 
 // ─── Facebook IPC ────────────────────────────────────────────────
+ipcMain.handle('get-fb-schedules', async () => {
+  try {
+    const fbSched = require('./fb-schedule');
+    return fbSched.loadSchedules();
+  } catch { return []; }
+});
+
+ipcMain.handle('delete-fb-schedule', async (_event, id) => {
+  try {
+    const fbSched = require('./fb-schedule');
+    const schedules = fbSched.loadSchedules();
+    const filtered = schedules.filter(s => s.id !== id);
+    if (filtered.length === schedules.length) return { success: false, error: 'not_found' };
+    fbSched.saveSchedules(filtered);
+    auditLog('fb_schedule_deleted', { id });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('get-fb-config', async () => {
   const cfg = readFbConfig();
   if (!cfg) return null;
@@ -3161,8 +3234,9 @@ ipcMain.handle('get-fb-recent-posts', async () => {
 // The IPC handler itself simply writes immediately — it only appends, never overwrites.
 ipcMain.handle('queue-follow-up', async (_event, { channel, recipientId, recipientName, question, prompt, delayMinutes }) => {
   try {
+    const clampedDelay = Math.max(1, Math.min(Number(delayMinutes) || 15, 1440));
     const id = 'fu_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-    const fireAt = new Date(Date.now() + (delayMinutes || 15) * 60 * 1000).toISOString();
+    const fireAt = new Date(Date.now() + clampedDelay * 60 * 1000).toISOString();
     await queueFollowUpSafe({ id, channel: channel || 'zalo', recipientId, recipientName, question, prompt, fireAt });
     console.log('[follow-up] Queued:', id, 'fire at', fireAt);
     return { success: true, id, fireAt };
@@ -3193,7 +3267,8 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
 
     ensureKnowledgeFolders();
     const filesDir = path.join(getKnowledgeDir(category), 'files');
-    const safeName = (originalName || path.basename(filepath)).replace(/[\\/:*?"<>|]/g, '_');
+    let safeName = (originalName || path.basename(filepath)).replace(/[\\/:*?"<>|]/g, '_');
+    safeName = safeName.replace(/[\x00-\x1F\x7F]/g, '');
     const finalName = resolveUniqueFilename(filesDir, safeName);
     const dst = path.join(filesDir, finalName);
     fs.copyFileSync(filepath, dst);
@@ -3578,10 +3653,19 @@ ipcMain.handle('delete-knowledge-folder', async (_event, { id }) => {
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
-    // Clean DB entries
+    // Clean DB entries (documents + FTS + chunks)
     try {
       const db = getDocumentsDb();
-      if (db) { db.prepare('DELETE FROM documents WHERE category = ?').run(id); }
+      if (db) {
+        const rows = db.prepare('SELECT id, filename FROM documents WHERE category = ?').all(id);
+        const delChunks = db.prepare('DELETE FROM documents_chunks WHERE document_id = ?');
+        const delFts = db.prepare('DELETE FROM documents_fts WHERE filename = ?');
+        for (const row of rows) {
+          try { delChunks.run(row.id); } catch {}
+          try { delFts.run(row.filename); } catch {}
+        }
+        db.prepare('DELETE FROM documents WHERE category = ?').run(id);
+      }
     } catch {}
     purgeAgentSessions('knowledge-folder-delete');
     return { success: true };
@@ -3692,6 +3776,8 @@ ipcMain.handle('delete-document', async (_event, filename) => {
     if (!filename || /[\/\\]/.test(filename) || filename.includes('..')) return { success: false, error: 'Invalid filename' };
     const db = getDocumentsDb();
     if (db) {
+      const row = db.prepare('SELECT id FROM documents WHERE filename = ?').get(filename);
+      if (row) { try { db.prepare('DELETE FROM documents_chunks WHERE document_id = ?').run(row.id); } catch {} }
       db.prepare('DELETE FROM documents WHERE filename = ?').run(filename);
       db.prepare('DELETE FROM documents_fts WHERE filename = ?').run(filename);
     }
@@ -5308,6 +5394,158 @@ ipcMain.handle('download-and-install-update', async () => {
       }
       return { conflicts: layer1, semantic: layer2 };
     } catch (e) { return { conflicts: [], semantic: null, error: e.message }; }
+  });
+
+  // --- Brain tab (knowledge graph) ---
+  ipcMain.handle('get-brain-graph', async () => {
+    const ws = getWorkspace();
+    if (!ws) return null;
+    try {
+      const fp = path.join(ws, 'brain-graph.json');
+      if (!fs.existsSync(fp)) return null;
+      return JSON.parse(fs.readFileSync(fp, 'utf-8'));
+    } catch (e) { console.warn('[brain] get-brain-graph error:', e.message); return null; }
+  });
+
+  ipcMain.handle('get-brain-node-detail', async (_e, nodeId) => {
+    const ws = getWorkspace();
+    if (!ws || !nodeId) return null;
+    try {
+      let fp = null;
+      if (nodeId.startsWith('user:')) {
+        const segment = nodeId.slice(5);
+        if (!segment || /[\/\\]|\.\./.test(segment)) return null;
+        fp = path.join(ws, 'memory', 'zalo-users', segment + '.md');
+      }
+      else if (nodeId.startsWith('group:')) {
+        const segment = nodeId.slice(6);
+        if (!segment || /[\/\\]|\.\./.test(segment)) return null;
+        fp = path.join(ws, 'memory', 'zalo-groups', segment + '.md');
+      }
+      else if (nodeId.startsWith('doc:')) {
+        const cats = ['cong-ty', 'san-pham', 'nhan-vien'];
+        const fname = nodeId.slice(4);
+        if (!fname || /[\/\\]|\.\./.test(fname)) return null;
+        for (const cat of cats) {
+          const candidate = path.join(ws, 'knowledge', cat, 'files', fname);
+          if (fs.existsSync(candidate)) { fp = candidate; break; }
+        }
+      }
+      else if (nodeId.startsWith('learning:')) {
+        const lf = path.join(ws, '.learnings', 'LEARNINGS.md');
+        if (fs.existsSync(lf)) {
+          const content = fs.readFileSync(lf, 'utf-8');
+          const lid = nodeId.slice(9);
+          const re = new RegExp('### \\[\\d{4}-\\d{2}-\\d{2}\\] ID: ' + lid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s\\S]*?(?=### \\[|$)');
+          const match = content.match(re);
+          return match ? { content: match[0].trim(), meta: { type: 'learning' } } : null;
+        }
+        return null;
+      }
+      else if (nodeId.startsWith('skill:')) {
+        const sid = nodeId.slice(6);
+        if (!sid || /[\/\\]|\.\./.test(sid)) return null;
+        const candidates = [path.join(ws, 'user-skills', sid, 'SKILL.md'), path.join(ws, 'user-skills', sid + '.md')];
+        for (const c of candidates) { if (fs.existsSync(c)) { fp = c; break; } }
+      }
+      if (!fp || !fs.existsSync(fp)) return null;
+      return { content: fs.readFileSync(fp, 'utf-8'), meta: { type: nodeId.split(':')[0] } };
+    } catch (e) { console.warn('[brain] get-brain-node-detail error:', e.message); return null; }
+  });
+
+  let _brainBuildInFlight = false;
+  ipcMain.handle('rebuild-brain-graph', async () => {
+    if (_brainBuildInFlight) return { started: false, reason: 'already running' };
+    _brainBuildInFlight = true;
+    try {
+      const { buildBrainGraph } = require('./brain-graph');
+      buildBrainGraph(getWorkspace()).then(() => {
+        _brainBuildInFlight = false;
+        try { ctx.mainWindow?.webContents?.send('brain-graph-rebuilt'); } catch {}
+      }).catch(e => { _brainBuildInFlight = false; console.error('[brain] rebuild error:', e.message); });
+    } catch (e) { _brainBuildInFlight = false; console.error('[brain] rebuild require error:', e.message); }
+    return { started: true };
+  });
+
+  // === CEO Backup (encrypted .9bizclaw-backup) ===
+  let _backupInFlight = false;
+  ipcMain.handle('create-backup', async (_event, { password }) => {
+    if (_backupInFlight) return { ok: false, error: 'Đang sao lưu/khôi phục, vui lòng đợi' };
+    _backupInFlight = true;
+    try {
+      const { createBackup } = require('./backup');
+      const { BrowserWindow, dialog, app } = require('electron');
+      const parentWin = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+      const { filePath, canceled } = await dialog.showSaveDialog(parentWin, {
+        title: 'Sao lưu dữ liệu',
+        defaultPath: '9bizclaw-backup-' + new Date().toISOString().slice(0, 10) + '.9bizclaw-backup',
+        filters: [{ name: '9BizClaw Backup', extensions: ['9bizclaw-backup'] }],
+      });
+      if (canceled || !filePath) return { ok: false, canceled: true };
+      try { killAllOpenClawProcesses(); } catch {}
+      try { stop9Router(); } catch {}
+      await new Promise(r => setTimeout(r, 1000));
+      const result = createBackup(filePath, password, app.getVersion());
+      // Restart processes after backup
+      try { await startOpenClaw(); } catch (re) { console.warn('[backup] restart gateway failed:', re?.message); }
+      return { ok: true, filePath, ...result };
+    } catch (e) {
+      console.error('[backup] create error:', e?.message);
+      try { await startOpenClaw(); } catch {}
+      return { ok: false, error: e?.message };
+    } finally {
+      _backupInFlight = false;
+    }
+  });
+
+  ipcMain.handle('restore-backup-preview', async (_event, { filePath, password }) => {
+    try {
+      if (!filePath || typeof filePath !== 'string') return { ok: false, error: 'invalid filePath' };
+      if (!password || typeof password !== 'string') return { ok: false, error: 'invalid password' };
+      const { restoreBackupPreview } = require('./backup');
+      return restoreBackupPreview(filePath, password);
+    } catch (e) {
+      console.error('[backup] preview error:', e?.message);
+      return { ok: false, error: e?.message };
+    }
+  });
+
+  ipcMain.handle('restore-backup-apply', async (_event, { filePath, password }) => {
+    if (_backupInFlight) return { ok: false, error: 'Đang sao lưu/khôi phục, vui lòng đợi' };
+    _backupInFlight = true;
+    try {
+      if (!filePath || typeof filePath !== 'string') return { ok: false, error: 'invalid filePath' };
+      if (!password || typeof password !== 'string') return { ok: false, error: 'invalid password' };
+      const { restoreBackup } = require('./backup');
+      const { app } = require('electron');
+      try { killAllOpenClawProcesses(); } catch {}
+      try { stop9Router(); } catch {}
+      await new Promise(r => setTimeout(r, 1000));
+      const result = restoreBackup(filePath, password, app.getVersion());
+      setTimeout(() => { app.relaunch(); app.exit(0); }, 500);
+      return { ok: true, ...result };
+    } catch (e) {
+      console.error('[backup] restore error:', e?.message);
+      return { ok: false, error: e?.message };
+    } finally {
+      _backupInFlight = false;
+    }
+  });
+
+  ipcMain.handle('open-backup-file-dialog', async () => {
+    try {
+      const { BrowserWindow, dialog } = require('electron');
+      const parentWin = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+      const { filePaths, canceled } = await dialog.showOpenDialog(parentWin, {
+        title: 'Chọn file backup',
+        filters: [{ name: '9BizClaw Backup', extensions: ['9bizclaw-backup'] }],
+        properties: ['openFile'],
+      });
+      if (canceled || !filePaths?.length) return { ok: false, canceled: true };
+      return { ok: true, filePath: filePaths[0] };
+    } catch (e) {
+      return { ok: false, error: e?.message };
+    }
   });
 
 } // end registerAllIpcHandlers

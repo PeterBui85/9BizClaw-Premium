@@ -49,7 +49,7 @@ function getModelDir() {
         fs.renameSync(oldDir, dest);
         console.log('[model-downloader] migrated model from', oldDir, 'to', dest);
       } catch (e) {
-        console.warn('[model-downloader] migration failed, will re-download:', e.message);
+        console.warn('[model-downloader] migration renameSync failed (may be cross-device), will re-download:', e.message);
       }
     }
   }
@@ -252,7 +252,15 @@ async function downloadWithFallback(filename, destPath, options = {}) {
  */
 async function downloadModels(options = {}) {
   const { onProgress, onFileProgress } = options;
+  // Hard 30-minute timeout — prevents indefinite hang if network stalls
+  const MODEL_DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000;
+  let _downloadTimedOut = false;
+  const _downloadTimer = setTimeout(() => {
+    _downloadTimedOut = true;
+    console.error('[model-downloader] HARD TIMEOUT: download exceeded 30 minutes');
+  }, MODEL_DOWNLOAD_TIMEOUT_MS);
 
+  try {
   if (isModelDownloaded()) {
     console.log('[model-downloader] Model already downloaded');
     if (onProgress) onProgress({ percent: 100, message: 'Mô hình đã sẵn sàng' });
@@ -274,6 +282,10 @@ async function downloadModels(options = {}) {
   }
 
   for (let i = 0; i < missingFiles.length; i++) {
+    if (_downloadTimedOut) {
+      console.error('[model-downloader] Aborting remaining downloads — 30min hard timeout exceeded');
+      break;
+    }
     const filename = missingFiles[i];
     const destPath = getModelFilePath(filename);
     const expectedSize = EXPECTED_SIZES[filename] || 0;
@@ -347,7 +359,9 @@ async function downloadModels(options = {}) {
     alreadyDownloaded: false,
     allDownloaded,
     results,
+    timedOut: _downloadTimedOut,
   };
+  } finally { clearTimeout(_downloadTimer); }
 }
 
 // =====================================================================

@@ -9,6 +9,8 @@ const path = require('path');
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+// Uses homeDir param (not getWorkspace()) because this file is shared with prebuild-vendor.js
+// where workspace module is not available at build time.
 function _logPatchFailure(homeDir, functionName, detail) {
   try {
     const auditDir = path.join(homeDir, '.openclaw', 'logs');
@@ -604,6 +606,7 @@ function applyAllVendorPatches({ vendorDir, homeDir, workspaceDir }) {
   results.ssrf = _tryPatch('ssrf', () => ensureWebFetchLocalhostFix(vendorDir, homeDir));
   results.friendEvent = _tryPatch('friendEvent', () => ensureOpenzcaFriendEventFix(vendorDir, workspaceDir));
   results.authCacheTtl = _tryPatch('authCacheTtl', () => ensureAuthCacheTtlExtension(vendorDir));
+  results.sessionFreeze = _tryPatch('sessionFreeze', () => ensureSessionFreezePatches(vendorDir));
 
   return results;
 }
@@ -652,6 +655,199 @@ function ensureAuthCacheTtlExtension(vendorDir) {
 }
 
 // ---------------------------------------------------------------------------
+// Session Freeze: Bootstrap file cache (Patch 1/3)
+// ---------------------------------------------------------------------------
+
+function ensureBootstrapFileCache(vendorDir) {
+  if (!vendorDir) return;
+  const distDir = path.join(vendorDir, 'node_modules', 'openclaw', 'dist');
+  if (!fs.existsSync(distDir)) return;
+  const files = fs.readdirSync(distDir).filter(f => f.startsWith('bootstrap-files-') && f.endsWith('.js'));
+  for (const file of files) {
+    const fp = path.join(distDir, file);
+    let content;
+    try { content = fs.readFileSync(fp, 'utf-8'); } catch { continue; }
+    if (!content.includes('resolveBootstrapContextForRun')) continue;
+    const MARKER = '/* 9BizClaw SESSION_FREEZE_BOOTSTRAP */';
+    if (content.includes(MARKER)) {
+      console.log('[session-freeze] bootstrap-cache: already patched');
+      return;
+    }
+    // Replace the entire function (small, 10 lines) with a cached version
+    const originalFunc =
+      'async function resolveBootstrapContextForRun(params) {\n' +
+      '\tconst bootstrapFiles = await resolveBootstrapFilesForRun(params);\n' +
+      '\treturn {\n' +
+      '\t\tbootstrapFiles,\n' +
+      '\t\tcontextFiles: buildBootstrapContextFiles(bootstrapFiles, {\n' +
+      '\t\t\tmaxChars: resolveBootstrapMaxChars(params.config),\n' +
+      '\t\t\ttotalMaxChars: resolveBootstrapTotalMaxChars(params.config),\n' +
+      '\t\t\twarn: params.warn\n' +
+      '\t\t})\n' +
+      '\t};\n' +
+      '}';
+    if (!content.includes(originalFunc)) {
+      console.warn('[session-freeze] bootstrap-cache: full function anchor not found in ' + file + ' — upstream may have changed');
+      return;
+    }
+    const cachedFunc =
+      `async function resolveBootstrapContextForRun(params) { ${MARKER}\n` +
+      '\tconst __sfT0 = Date.now();\n' +
+      '\tconst __sfSyncFs = (await import(\'node:fs\')).default;\n' +
+      '\tconst __sfWs = params.workspaceDir || \'\';\n' +
+      '\tconst __sfCache = global.__mcBootstrapCache || (global.__mcBootstrapCache = new Map());\n' +
+      '\tconst __sfEntry = __sfCache.get(__sfWs);\n' +
+      '\tif (__sfEntry) {\n' +
+      '\t\tlet __sfOk = true;\n' +
+      '\t\tfor (const [__sfF, __sfMt] of Object.entries(__sfEntry.mt)) {\n' +
+      '\t\t\ttry { if (__sfSyncFs.statSync(__sfF).mtimeMs !== __sfMt) { __sfOk = false; break; } }\n' +
+      '\t\t\tcatch { __sfOk = false; break; }\n' +
+      '\t\t}\n' +
+      '\t\tif (__sfOk) { console.log(`[session-freeze] bootstrap CACHE HIT (${Date.now()-__sfT0}ms)`); return { bootstrapFiles: [...__sfEntry.r.bootstrapFiles], contextFiles: [...__sfEntry.r.contextFiles] }; }\n' +
+      '\t\tconsole.log(`[session-freeze] bootstrap CACHE MISS — mtime changed (${Date.now()-__sfT0}ms)`);\n' +
+      '\t}\n' +
+      '\tconst bootstrapFiles = await resolveBootstrapFilesForRun(params);\n' +
+      '\tconst result = {\n' +
+      '\t\tbootstrapFiles,\n' +
+      '\t\tcontextFiles: buildBootstrapContextFiles(bootstrapFiles, {\n' +
+      '\t\t\tmaxChars: resolveBootstrapMaxChars(params.config),\n' +
+      '\t\t\ttotalMaxChars: resolveBootstrapTotalMaxChars(params.config),\n' +
+      '\t\t\twarn: params.warn\n' +
+      '\t\t})\n' +
+      '\t};\n' +
+      '\tconst __sfMt = {};\n' +
+      '\tfor (const bf of bootstrapFiles) {\n' +
+      '\t\tif (bf.path) try { __sfMt[bf.path] = __sfSyncFs.statSync(bf.path).mtimeMs; } catch {}\n' +
+      '\t}\n' +
+      '\t__sfCache.set(__sfWs, { r: result, mt: __sfMt });\n' +
+      '\tconsole.log(`[session-freeze] bootstrap CACHE MISS — cold (${Date.now()-__sfT0}ms, ${bootstrapFiles.length} files)`);\n' +
+      '\treturn { bootstrapFiles: [...result.bootstrapFiles], contextFiles: [...result.contextFiles] };\n' +
+      '}';
+    const patched = content.replace(originalFunc, cachedFunc);
+    if (patched !== content) {
+      fs.writeFileSync(fp, patched, 'utf-8');
+      console.log(`[session-freeze] bootstrap-cache: applied to ${file}`);
+    }
+    return;
+  }
+  console.warn('[session-freeze] bootstrap-cache: no bootstrap-files file found');
+}
+
+// ---------------------------------------------------------------------------
+// Session Freeze: External CLI sync skip (Patch 2/3)
+// ---------------------------------------------------------------------------
+
+function ensureExternalCliSyncSkip(vendorDir) {
+  if (!vendorDir) return;
+  const distDir = path.join(vendorDir, 'node_modules', 'openclaw', 'dist');
+  if (!fs.existsSync(distDir)) return;
+  const files = fs.readdirSync(distDir).filter(f => f.startsWith('store-') && f.endsWith('.js'));
+  for (const file of files) {
+    const fp = path.join(distDir, file);
+    let content;
+    try { content = fs.readFileSync(fp, 'utf-8'); } catch { continue; }
+    if (!content.includes('shouldSyncExternalCliCredentials')) continue;
+    const MARKER = '/* 9BizClaw SESSION_FREEZE_CLI_SYNC */';
+    if (content.includes(MARKER)) {
+      console.log('[session-freeze] cli-sync-skip: already patched');
+      return;
+    }
+    const anchor = 'function shouldSyncExternalCliCredentials(options) {\n\treturn options?.syncExternalCli !== false;\n}';
+    if (!content.includes(anchor)) {
+      console.warn('[session-freeze] cli-sync-skip: anchor not found in ' + file);
+      return;
+    }
+    const patched = content.replace(anchor,
+      `function shouldSyncExternalCliCredentials(options) { ${MARKER}\n` +
+      `\tif (global.__mcCliSyncDone) { console.log('[session-freeze] cli-sync SKIPPED (already synced this boot)'); return false; }\n` +
+      `\treturn options?.syncExternalCli !== false;\n` +
+      `}`
+    );
+    if (patched !== content) {
+      fs.writeFileSync(fp, patched, 'utf-8');
+      console.log(`[session-freeze] cli-sync-skip: applied to ${file}`);
+    }
+    // Also mark sync as done after first successful sync
+    const syncAnchor = 'if (shouldSyncExternalCliCredentials(options)) syncExternalCliCredentialsTimed(asStore';
+    if (patched.includes(syncAnchor)) {
+      const syncPatched = patched.replace(syncAnchor,
+        'if (shouldSyncExternalCliCredentials(options)) { syncExternalCliCredentialsTimed(asStore'
+      ).replace(
+        'syncExternalCliCredentialsTimed(asStore, { log: !readOnly });',
+        'syncExternalCliCredentialsTimed(asStore, { log: !readOnly }); global.__mcCliSyncDone = true; }'
+      );
+      if (syncPatched !== patched) {
+        fs.writeFileSync(fp, syncPatched, 'utf-8');
+        console.log(`[session-freeze] cli-sync-done-marker: applied to ${file}`);
+      }
+    }
+    return;
+  }
+  console.warn('[session-freeze] cli-sync-skip: no store file found');
+}
+
+// ---------------------------------------------------------------------------
+// Session Freeze: System prompt freeze (Patch 3/3)
+// ---------------------------------------------------------------------------
+
+function ensureSystemPromptFreeze(vendorDir) {
+  if (!vendorDir) return;
+  const distDir = path.join(vendorDir, 'node_modules', 'openclaw', 'dist');
+  if (!fs.existsSync(distDir)) return;
+  const files = fs.readdirSync(distDir).filter(f => f.startsWith('pi-embedded-runner-') && f.endsWith('.js'));
+  for (const file of files) {
+    const fp = path.join(distDir, file);
+    let content;
+    try { content = fs.readFileSync(fp, 'utf-8'); } catch { continue; }
+    if (!content.includes('createSystemPromptOverride')) continue;
+    const MARKER = '/* 9BizClaw SESSION_FREEZE_PROMPT */';
+    if (content.includes(MARKER)) {
+      console.log('[session-freeze] prompt-freeze: already patched');
+      return;
+    }
+    const anchor = 'let systemPromptText = createSystemPromptOverride(appendPrompt)();';
+    if (!content.includes(anchor)) {
+      console.warn('[session-freeze] prompt-freeze: anchor not found in ' + file);
+      return;
+    }
+    const replacement = `${MARKER}
+\t\t\tconst __sfPT0 = Date.now();
+\t\t\tconst __sfPHash = crypto.createHash('sha256').update(appendPrompt).digest('hex');
+\t\t\tlet systemPromptText;
+\t\t\tif (global.__mcPromptHash === __sfPHash && global.__mcPromptText) {
+\t\t\t\tsystemPromptText = global.__mcPromptText;
+\t\t\t\tconsole.log(\`[session-freeze] prompt CACHE HIT (\${Date.now()-__sfPT0}ms, hash=\${__sfPHash.slice(0,8)})\`);
+\t\t\t} else {
+\t\t\t\tsystemPromptText = createSystemPromptOverride(appendPrompt)();
+\t\t\t\tglobal.__mcPromptHash = __sfPHash;
+\t\t\t\tglobal.__mcPromptText = systemPromptText;
+\t\t\t\tconsole.log(\`[session-freeze] prompt CACHE MISS (\${Date.now()-__sfPT0}ms, \${appendPrompt.length} chars, hash=\${__sfPHash.slice(0,8)})\`);
+\t\t\t}`;
+    const patched = content.replace(anchor, replacement);
+    if (patched !== content) {
+      fs.writeFileSync(fp, patched, 'utf-8');
+      console.log(`[session-freeze] prompt-freeze: applied to ${file}`);
+    }
+    return;
+  }
+  console.warn('[session-freeze] prompt-freeze: no pi-embedded-runner file found');
+}
+
+// ---------------------------------------------------------------------------
+// Session Freeze: apply all 3 patches
+// ---------------------------------------------------------------------------
+
+function ensureSessionFreezePatches(vendorDir) {
+  if (process.env.MODOROCLAW_DISABLE_SESSION_FREEZE === '1') {
+    console.log('[session-freeze] disabled via MODOROCLAW_DISABLE_SESSION_FREEZE=1');
+    return;
+  }
+  ensureBootstrapFileCache(vendorDir);
+  ensureExternalCliSyncSkip(vendorDir);
+  ensureSystemPromptFreeze(vendorDir);
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -665,5 +861,6 @@ module.exports = {
   ensureOpenclawUpdateUiDisabled,
   ensureOpenzcaFriendEventFix,
   ensureAuthCacheTtlExtension,
+  ensureSessionFreezePatches,
   applyAllVendorPatches,
 };

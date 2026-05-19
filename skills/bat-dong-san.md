@@ -1,3 +1,10 @@
+---
+name: bat-dong-san
+description: Kỹ năng chuyên ngành bất động sản — tư vấn, theo dõi khách hàng, quản lý dự án
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Bất động sản
 
 ## Nhắc nhở và lịch trình

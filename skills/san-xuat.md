@@ -1,3 +1,10 @@
+---
+name: san-xuat
+description: Kỹ năng chuyên ngành sản xuất — quản lý đơn hàng, nguyên liệu, kiểm soát chất lượng
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Sản xuất
 
 ## Nhắc nhở vận hành

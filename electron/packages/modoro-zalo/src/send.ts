@@ -38,14 +38,17 @@ export type ModoroZaloSendReceipt = {
   textPreview?: string;
 };
 
+/** Check if a string starts with http:// or https:// */
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
+/** Strip the "MEDIA:" prefix from a media reference string */
 function stripMediaPrefix(value: string): string {
   return value.replace(/^\s*MEDIA\s*:\s*/i, "").trim();
 }
 
+/** Expand ~ to os.homedir() in a path string */
 function expandHomePath(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -60,6 +63,7 @@ function expandHomePath(input: string): string {
   return trimmed;
 }
 
+/** Resolve the openclaw state dir. CLAWDBOT_STATE_DIR is legacy fallback from pre-rebrand. */
 function resolveStateDir(): string {
   const override = process.env.OPENCLAW_STATE_DIR?.trim() || process.env.CLAWDBOT_STATE_DIR?.trim();
   if (override) {
@@ -105,6 +109,8 @@ function isPathInsideRoot(candidate: string, root: string): boolean {
   const rootWithSep = normalizedRoot.endsWith(path.sep)
     ? normalizedRoot
     : normalizedRoot + path.sep;
+  // Windows: case-insensitive comparison needed because NTFS is case-preserving
+  // but case-insensitive. "C:\Users" and "c:\users" are the same path.
   if (process.platform === "win32") {
     const candidateLower = normalizedCandidate.toLowerCase();
     const rootLower = normalizedRoot.toLowerCase();
@@ -474,22 +480,43 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
         }
       }
       if (!__ofTransportBlocked) {
-        let __ofBlockedUsers: string[] = [];
-        for (const __ofBlockPath of __ofBlocklistPaths) {
+        // Allowlist v2: read allowlist first — if non-empty, it's the authority.
+        // Empty/missing allowlist = allow all DMs (blocklist ignored).
+        let __ofAllowlistActive = false;
+        let __ofAllowedUsers: string[] = [];
+        for (const __ofWsDir of __ofWorkspaceDirs) {
           try {
-            if (!__ofFs.existsSync(__ofBlockPath)) continue;
-            const __ofRaw = JSON.parse(__ofFs.readFileSync(__ofBlockPath, "utf-8"));
-            if (!Array.isArray(__ofRaw)) {
-              __ofTransportBlocked = true;
-              __ofBlockReason = "blocklist-invalid";
+            const __ofAlPath = __ofPath.join(__ofWsDir, "zalo-allowlist.json");
+            if (__ofFs.existsSync(__ofAlPath)) {
+              const __ofAlRaw = JSON.parse(__ofFs.readFileSync(__ofAlPath, "utf-8"));
+              if (Array.isArray(__ofAlRaw)) {
+                __ofAllowedUsers = __ofAlRaw.map((x: any) => String(x || "").trim()).filter(Boolean);
+                if (__ofAllowedUsers.length > 0) __ofAllowlistActive = true;
+              }
               break;
             }
-            __ofBlockedUsers = __ofRaw.map((x: any) => String(x || "").trim()).filter(Boolean);
-            break;
-          } catch {
-            __ofTransportBlocked = true;
-            __ofBlockReason = "blocklist-parse-error";
-            break;
+          } catch {}
+        }
+        let __ofBlockedUsers: string[] = [];
+        if (__ofAllowlistActive) {
+          // Allowlist is the authority — blocklist ignored
+        } else {
+          for (const __ofBlockPath of __ofBlocklistPaths) {
+            try {
+              if (!__ofFs.existsSync(__ofBlockPath)) continue;
+              const __ofRaw = JSON.parse(__ofFs.readFileSync(__ofBlockPath, "utf-8"));
+              if (!Array.isArray(__ofRaw)) {
+                __ofTransportBlocked = true;
+                __ofBlockReason = "blocklist-invalid";
+                break;
+              }
+              __ofBlockedUsers = __ofRaw.map((x: any) => String(x || "").trim()).filter(Boolean);
+              break;
+            } catch {
+              __ofTransportBlocked = true;
+              __ofBlockReason = "blocklist-parse-error";
+              break;
+            }
           }
         }
         const __ofTargetId = String(target.threadId || "").trim();
@@ -504,7 +531,10 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
               __ofTransportBlocked = true;
               __ofBlockReason = "group-not-allowed";
             }
-          } else if (__ofBlockedUsers.includes(__ofTargetId)) {
+          } else if (__ofAllowlistActive && !__ofAllowedUsers.includes(__ofTargetId)) {
+            __ofTransportBlocked = true;
+            __ofBlockReason = "user-not-in-allowlist";
+          } else if (!__ofAllowlistActive && __ofBlockedUsers.includes(__ofTargetId)) {
             __ofTransportBlocked = true;
             __ofBlockReason = "user-blocked";
           }
@@ -522,8 +552,8 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
         return { messageId: "transport-gated", kind: "text" as const };
       }
     } catch (__ofGateErr) {
-      try { logOutbound("error", "transport gate error — allowing send", { err: String(__ofGateErr) }); } catch {}
-      // Gate itself errored — fail-OPEN so messages still deliver
+      try { logOutbound("error", "transport gate error — blocking send (fail-closed)", { err: String(__ofGateErr) }); } catch {}
+      return { messageId: "transport-gate-error", kind: "text" as const };
     }
     // Internal groups skip the output filter — staff can see raw data.
     const __ofIsInternal = (() => {
@@ -539,7 +569,8 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
     // Patterns that MUST NEVER appear in a customer-facing Zalo reply.
     // Skipped for internal groups (staff can see technical details).
     if (!__ofIsInternal) {
-    const __ofSanitized = body.replace(/[​-‏‪-‮﻿­⁠⁡-⁤⁪-⁯]/g, '');
+    const __ofZwRe = new RegExp('[\\u200B-\\u200F\\u202A-\\u202E\\uFEFF\\u00AD\\u2060-\\u2064\\u206A-\\u206F]', 'g');
+    const __ofSanitized = body.replace(__ofZwRe, '');
     const __ofBlockPatterns: { name: string; re: RegExp }[] = [
       // --- Layer A: file paths + secrets ---
       { name: "file-path-memory", re: /\bmemory\/[\w\-./]*\.md\b/i },
@@ -613,8 +644,8 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
       // --- Layer H: fake commerce commitments ---
       { name: "fake-order-confirm", re: /(?:đã\s+(?:xác\s*nhận|tạo|lưu|ghi\s*nhận)\s*đơn|đơn\s*(?:của\s+(?:anh|chị|mình|bạn))?\s*(?:đã|được)\s+(?:tạo|xác\s*nhận|lưu|ghi))/i },
       { name: "fake-shipping-fee", re: /(?:phí\s*ship|ship\s*phí|phí\s*vận\s*chuyển|tiền\s*ship)\s*[:=]?\s*\d{1,3}[.,]?\d{3}/i },
-      { name: "fake-total-amount", re: /tổng\s*(?:tiền|cộng|đơn\s*hàng|thanh\s*toán|cần\s*thanh\s*toán)\s*[:=]?\s*\d{1,3}[.,]?\d{3}/i },
-      { name: "fake-discount-percent", re: /(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
+      { name: "fake-total-amount", re: /(?:đã\s+)?(?:tạo|xác\s*nhận|lưu).*tổng\s*(?:tiền|cộng|đơn\s*hàng|thanh\s*toán|cần\s*thanh\s*toán)\s*[:=]?\s*\d{1,3}[.,]?\d{3}/i },
+      { name: "fake-discount-percent", re: /(?:đã\s+)?(?:tạo|xác\s*nhận|áp\s*dụng).*(?:giảm\s*(?:giá)?|discount|khuyến\s*mãi|sale)\s*\d{1,2}\s*%/i },
       { name: "fake-booking-confirmed", re: /(?:đã\s*(?:đặt|book|giữ|xác\s*nhận))\s*(?:lịch|bàn|phòng|chỗ|slot|lịch\s*hẹn|cuộc\s*hẹn)/i },
       { name: "fake-payment-received", re: /(?:đã\s*nhận\s*(?:thanh\s*toán|tiền|chuyển\s*khoản)|payment\s*received)/i },
       { name: "gateway-restart-msg", re: /gateway\s+is\s+restart/i },
@@ -633,6 +664,7 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
       // --- Layer K: Vietnamese bot process acks (must never reach customers) ---
       { name: "process-ack-bare-vi", re: /^\s*(?:dạ\s+)?(?:vâng\s*[,.]?\s*)?(?:dạ\s*[,.]?\s*)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy)\s+(?:luôn|ngay|liền|rồi)\s*[.!ạ]*\s*$/is },
       { name: "process-status-bare-vi", re: /^\s*(?:dạ\s+)?em\s+đang\s+(?:xử\s*lý|thực\s*hiện|chạy)\s*[.!ạ]*\s*$/is },
+      { name: "process-desc-vi", re: /^\s*(?:dạ\s+)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy|kiểm\s*tra)\s+(?:theo|nhiều|quy\s*trình|luồng|lần\s*lượt|từng\s*bước|các\s*bước)/is },
     ];
     let __ofBlocked: string | null = null;
     for (const __ofP of __ofBlockPatterns) {
@@ -860,9 +892,94 @@ export async function sendMediaModoroZalo(
           (target as any).isGroup = true;
         }
       }
-    } catch {}
+    } catch (__gdErr) { try { logOutbound("warn", "GROUP-DETECT media lookup failed", { err: String(__gdErr) }); } catch {} }
   }
   // === END 9BizClaw GROUP-DETECT PATCH (media) ===
+  // === 9BizClaw TRANSPORT-GATE (media) ===
+  // Mirror the pause + channel-disabled + blocklist check from sendTextModoroZalo.
+  // Without this, pausing Zalo channel does NOT stop media messages.
+  try {
+    const __tgFs = require("node:fs");
+    const __tgPath = require("node:path");
+    const __tgHome = require("node:os").homedir();
+    const __tgWsDirs: string[] = [];
+    if (process.env['9BIZ_WORKSPACE']) __tgWsDirs.push(process.env['9BIZ_WORKSPACE']);
+    if (process.platform === "darwin") __tgWsDirs.push(__tgPath.join(__tgHome, "Library", "Application Support", "9bizclaw"));
+    else if (process.platform === "win32") __tgWsDirs.push(__tgPath.join(process.env.APPDATA || __tgPath.join(__tgHome, "AppData", "Roaming"), "9bizclaw"));
+    else __tgWsDirs.push(__tgPath.join(process.env.XDG_CONFIG_HOME || __tgPath.join(__tgHome, ".config"), "9bizclaw"));
+    __tgWsDirs.push(__tgPath.join(__tgHome, ".openclaw", "workspace"));
+    let __tgBlocked = false;
+    let __tgReason = "";
+    const __tgSeen = new Set<string>();
+    for (const __tgWs of __tgWsDirs) {
+      const __tgR = __tgPath.resolve(__tgWs);
+      if (__tgSeen.has(__tgR)) continue;
+      __tgSeen.add(__tgR);
+      try {
+        const __tgPauseFile = __tgPath.join(__tgR, "zalo-paused.json");
+        if (__tgFs.existsSync(__tgPauseFile)) {
+          const __tgPd = JSON.parse(__tgFs.readFileSync(__tgPauseFile, "utf-8"));
+          if (__tgPd?.permanent || (__tgPd?.pausedUntil && new Date(__tgPd.pausedUntil) > new Date())) {
+            __tgBlocked = true; __tgReason = "paused"; break;
+          }
+        }
+      } catch { __tgBlocked = true; __tgReason = "pause-parse-error"; break; }
+      if (!target.isGroup) {
+        // Allowlist v2: empty = allow all, non-empty = authority (blocklist ignored)
+        let __tgAlActive = false;
+        try {
+          const __tgAlFile = __tgPath.join(__tgR, "zalo-allowlist.json");
+          if (__tgFs.existsSync(__tgAlFile)) {
+            const __tgAl = JSON.parse(__tgFs.readFileSync(__tgAlFile, "utf-8"));
+            if (Array.isArray(__tgAl) && __tgAl.length > 0) {
+              __tgAlActive = true;
+              if (!__tgAl.some((x: any) => String(x).trim() === target.threadId)) {
+                __tgBlocked = true; __tgReason = "user-not-in-allowlist"; break;
+              }
+            }
+            break; // allowlist found (even if empty) — skip blocklist
+          }
+        } catch {}
+        if (!__tgAlActive) {
+          try {
+            const __tgBlFile = __tgPath.join(__tgR, "zalo-blocklist.json");
+            if (__tgFs.existsSync(__tgBlFile)) {
+              const __tgBl = JSON.parse(__tgFs.readFileSync(__tgBlFile, "utf-8"));
+              if (!Array.isArray(__tgBl)) { __tgBlocked = true; __tgReason = "blocklist-invalid"; break; }
+              if (__tgBl.some((x: any) => String(x) === target.threadId)) {
+                __tgBlocked = true; __tgReason = "user-blocked"; break;
+              }
+            }
+          } catch { __tgBlocked = true; __tgReason = "blocklist-parse-error"; break; }
+        }
+      }
+    }
+    let __tgZaloCfg: any = null;
+    if (!__tgBlocked) {
+      try {
+        const __tgCfg = JSON.parse(__tgFs.readFileSync(__tgPath.join(__tgHome, ".openclaw", "openclaw.json"), "utf-8"));
+        __tgZaloCfg = __tgCfg?.channels?.["modoro-zalo"] || {};
+        if (__tgZaloCfg.enabled === false) { __tgBlocked = true; __tgReason = "disabled"; }
+      } catch {}
+    }
+    if (!__tgBlocked && target.isGroup && __tgZaloCfg) {
+      const __tgGroupPolicy = __tgZaloCfg.groupPolicy || "open";
+      const __tgGroupAllow = Array.isArray(__tgZaloCfg.groupAllowFrom)
+        ? __tgZaloCfg.groupAllowFrom.map((x: any) => String(x)) : ["*"];
+      const __tgAllowAll = __tgGroupPolicy !== "allowlist" || __tgGroupAllow.includes("*");
+      if (!__tgAllowAll && !__tgGroupAllow.includes(String(target.threadId || ""))) {
+        __tgBlocked = true; __tgReason = "group-not-allowed";
+      }
+    }
+    if (__tgBlocked) {
+      try { logOutbound("info", "transport gated by zalo policy (media)", { to: target.threadId, isGroup: target.isGroup, reason: __tgReason }); } catch {}
+      return { messageId: "transport-gated", kind: "media" as const, receipts: [] };
+    }
+  } catch (__tgErr) {
+    try { logOutbound("error", "media transport gate error — blocking send", { err: String(__tgErr) }); } catch {}
+    return { messageId: "transport-gate-error", kind: "text" as const };
+  }
+  // === END 9BizClaw TRANSPORT-GATE (media) ===
   const rawSource = (mediaPath ?? mediaUrl ?? "").trim();
   if (!rawSource) {
     if (text?.trim()) {

@@ -313,7 +313,7 @@ function createWindow() {
   // If the main window shows while splash is still up, user sees both.
   ctx.mainWindow.once('ready-to-show', () => {
     let startMinimized = false;
-    try { startMinimized = !!loadAppPrefs().startMinimized; } catch {}
+    try { startMinimized = !!loadAppPrefs().startMinimized; } catch (e) { console.warn('[createWindow] loadAppPrefs failed:', e?.message); }
     if (startMinimized) {
       console.log('[createWindow] startMinimized=true → hiding window (tray only)');
       try { ctx.mainWindow.hide(); } catch {}
@@ -350,7 +350,7 @@ function createWindow() {
     try { seedWorkspace(); } catch (e) { console.error('[seedWorkspace early] error:', e.message); }
     if (!onboardingComplete) {
       setZaloChannelEnabled(false).catch((e) => { console.error('[createWindow] setZaloChannelEnabled error:', e.message); });
-      try { setChannelPermanentPause('zalo', 'review-required-before-autoboot'); } catch {}
+      try { setChannelPermanentPause('zalo', 'review-required-before-autoboot'); } catch (e) { console.warn('[createWindow] setChannelPermanentPause failed:', e?.message); }
       console.log('[createWindow] onboarding marker missing → dashboard only, skip auto-start');
     } else {
       // ORDER MATTERS — same 3-step chain as wizard-complete:
@@ -371,7 +371,10 @@ function createWindow() {
         try { await startOpenClaw(); } catch (e) { console.error('[boot] startOpenClaw error:', e?.message || e); }
         startRuntimeSidecars('boot');
         // Warm cookie age check 30s after boot, then broadcast loop handles daily cadence.
-        setTimeout(() => { try { checkZaloCookieAge(); } catch {} }, 30000);
+        setTimeout(() => { try { checkZaloCookieAge(); } catch (e) { console.warn('[boot] checkZaloCookieAge error:', e?.message); } }, 30000);
+        // Re-seed Zalo defaults 25s after boot — openzca cache should be populated by now.
+        // Catches the race where boot-time seed ran before listener connected.
+        setTimeout(() => { try { seedZaloCustomersFromCache(); } catch (e) { console.warn('[boot] seedZaloCustomers re-seed error:', e?.message); } }, 25000);
       })();
     }
   } else {
@@ -563,7 +566,7 @@ function installEmbedHeaderStripper() {
       try {
         session.fromPartition(partName).setWindowOpenHandler(({ url }) => {
           if (url && url.startsWith('http')) {
-            require('electron').shell.openExternal(url).catch(() => {});
+            require('electron').shell.openExternal(url).catch(e => console.warn('[openExternal] failed:', e?.message));
           }
           return { action: 'deny' };
         });
@@ -681,6 +684,15 @@ app.whenReady().then(async () => {
       });
       const { ipcMain } = require('electron');
       ipcMain.on('splash-minimize', () => { try { splashWindow.minimize(); } catch {} });
+      ipcMain.on('splash-resize-error', () => {
+        try {
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.setMinimumSize(540, 580);
+            splashWindow.setSize(540, 580, true);
+            splashWindow.center();
+          }
+        } catch {}
+      });
       ipcMain.on('splash-cancel', () => {
         _splashCancelRequested = true;
         try {
@@ -965,10 +977,10 @@ app.whenReady().then(async () => {
   }
 
   // Pre-install Zalo plugin in background (so QR is fast when user clicks)
-  ensureZaloPlugin().catch(() => {});
+  ensureZaloPlugin().catch(e => console.warn('[boot] ensureZaloPlugin late error:', e?.message));
   // Re-index any Knowledge files that exist on disk but are missing from DB
   // (e.g. uploaded while better-sqlite3 was broken). Non-blocking.
-  try { ensureKnowledgeFolders(); } catch {}
+  try { ensureKnowledgeFolders(); } catch (e) { console.warn('[boot] ensureKnowledgeFolders error:', e?.message); }
   // Always regenerate index.md from disk files at boot — even when DB is
   // broken (ABI mismatch after upgrade). rewriteKnowledgeIndex reads DB if
   // available, but merges in disk-only files so the bot's bootstrap context
@@ -982,6 +994,20 @@ app.whenReady().then(async () => {
     }
   } catch {}
   backfillKnowledgeFromDisk().catch(e => console.error('[knowledge] backfill error:', e.message));
+  // Brain tab: build knowledge graph 15s after boot (non-blocking), then every 30 min
+  setTimeout(() => {
+    try {
+      const { buildBrainGraph } = require('./lib/brain-graph');
+      const ws = require('./lib/workspace').getWorkspace();
+      if (ws) {
+        buildBrainGraph(ws).then(() => {
+          console.log('[brain] initial graph built');
+          try { ctx.mainWindow?.webContents?.send('brain-graph-rebuilt'); } catch {}
+        }).catch(e => console.warn('[brain] initial build error:', e?.message));
+        setInterval(() => { buildBrainGraph(ws).catch(e => console.warn('[brain] rebuild error:', e?.message)); }, 30 * 60 * 1000);
+      }
+    } catch (e) { console.warn('[brain] setup error:', e?.message); }
+  }, 15000);
   // K1: chunk-level backfill — fire-and-forget 10s after boot so gateway warmup
   // takes priority. Non-blocking; safe no-op if DB still broken.
   setTimeout(() => {

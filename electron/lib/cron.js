@@ -27,18 +27,27 @@ function getGateway() {
 //   CRON AGENT PIPELINE — Path B "must never silently fail"
 // ============================================================
 
+const CRON_AGENT_TIMEOUT_MS = 600000;
+const CRON_AGENT_MAX_RETRIES = 3;
+const CRON_TRANSIENT_BACKOFF_BASE_MS = 5000;
+const CRON_DEFAULT_BACKOFF_BASE_MS = 2000;
+
 let _agentFlagProfile = null;   // 'full' | 'medium' | 'minimal'
 let _agentCliHealthy = false;
 let _agentCliVersionOk = false; // true only when --version call succeeds
 let _selfTestAlertSent = false;
 let _selfTestPromise = null;
 
-function cronJournalPath() {
-  return path.join(getWorkspace(), 'logs', 'cron-runs.jsonl');
+/** @returns {string|null} Path to cron-runs.jsonl journal file */
+function getCronJournalPath() {
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, 'logs', 'cron-runs.jsonl');
 }
 function journalCronRun(entry) {
   try {
-    const file = cronJournalPath();
+    const file = getCronJournalPath();
+    if (!file) return;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, JSON.stringify({ t: new Date().toISOString(), ...entry }) + '\n', 'utf-8');
   } catch (e) {
@@ -49,6 +58,11 @@ function journalCronRun(entry) {
 // Wire journalCronRun into config.js so config can call it without circular dep
 setJournalCronRun(journalCronRun);
 
+/**
+ * Self-test the openclaw agent CLI — verifies --version works, caches flag profile.
+ * Alerts CEO via Telegram on failure. Runs once then caches for 30min.
+ * @returns {Promise<void>}
+ */
 async function selfTestOpenClawAgent() {
   if (_selfTestPromise) return _selfTestPromise;
   _selfTestPromise = (async () => {
@@ -121,6 +135,11 @@ async function selfTestOpenClawAgent() {
 // Expected JSON shape from openclaw agent --json:
 // { "result": { "payloads": [{ "text": "...", "mediaUrls": [...] }], ... } }
 
+/**
+ * Parse openclaw agent --json stdout into structured reply.
+ * @param {string} stdout - Raw stdout from openclaw agent process
+ * @returns {{ text: string, mediaUrls: string[] } | null}
+ */
 function parseAgentJsonOutput(stdout) {
   if (!stdout) return null;
   const trimmed = stdout.trim();
@@ -128,7 +147,7 @@ function parseAgentJsonOutput(stdout) {
     const parsed = JSON.parse(trimmed);
     // Look for result.payloads[0].text (openclaw's standard response shape)
     const payloads = parsed?.result?.payloads || parsed?.payloads || [];
-    if (payloads.length > 0) {
+    if (Array.isArray(payloads) && payloads.length > 0) {
       const first = payloads[0];
       return { text: first.text || '', mediaUrls: first.mediaUrls || first.mediaUrl || [] };
     }
@@ -146,11 +165,22 @@ function parseAgentJsonOutput(stdout) {
 // Uses sendZaloTo directly (same-process, same-permissions as the bot).
 // This is the reliable path: no HTTP, no auth token needed.
 
+// Match: "Em xử lý luôn.", "Dạ em sẽ thực hiện ngay!", "Vâng, em làm liền ạ."
+// No match: "Em xử lý đơn hàng cho mình ngay nhé" (has object after verb)
 const _processAckLineRe = /^\s*(?:dạ\s+)?(?:vâng\s*[,.]?\s*)?(?:dạ\s*[,.]?\s*)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy)\s+(?:luôn|ngay|liền|rồi)\s*[.!ạ]*\s*$/i;
+const _processDescRe = /^\s*(?:dạ\s+)?em\s+(?:sẽ\s+)?(?:xử\s*lý|thực\s*hiện|làm|chạy|kiểm\s*tra)\s+(?:theo|nhiều|quy\s*trình|luồng|lần\s*lượt|từng\s*bước|các\s*bước)/i;
+// Match: "Em đang xử lý.", "Dạ em đang chạy."
+// No match: "Em đang xử lý đơn hàng 1234" (has object)
 const _processStatusLineRe = /^\s*(?:dạ\s+)?em\s+đang\s+(?:xử\s*lý|thực\s*hiện|chạy)\s*[.!ạ]*\s*$/i;
+// Match: "Dạ", "Vâng", "Dạ vâng ạ."
+// No match: "Dạ em ghi nhận rồi ạ" (has content after ack)
 const _bareAckLineRe = /^\s*(?:dạ|vâng|dạ vâng)\s*[,.]?\s*(?:ạ\s*[.!]?)?\s*$/i;
 
 function _stripProcessAcks(text) {
+  // Full-message check: if entire text is a process description, strip it all
+  const full = text.trim();
+  if (_processDescRe.test(full)) return '';
+
   const lines = text.split('\n');
   const cleaned = lines.filter(line => {
     const t = line.trim();
@@ -163,8 +193,8 @@ function _stripProcessAcks(text) {
 async function deliverCronResultToZalo(replyText, zaloTarget, label) {
   if (!replyText) return true;
   const cleaned = _stripProcessAcks(String(replyText));
-  if (!cleaned || cleaned.length < 5) {
-    console.log(`[cron-agent] Zalo delivery for "${label}" skipped — reply was process ack only`);
+  if (!cleaned || cleaned.length < 5 || /^\s*DONE\s*[.!]?\s*$/i.test(cleaned)) {
+    console.log(`[cron-agent] Zalo delivery for "${label}" skipped — agent completed via tools (no customer-facing text)`);
     return true;
   }
   const target = zaloTarget || {};
@@ -192,13 +222,11 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
   }
 }
 
+/** Build openclaw agent CLI args. Defaults to 'full' profile if self-test hasn't run yet. */
 function buildAgentArgs(prompt, chatId, useJson = false) {
   const idStr = String(chatId);
   const base = ['agent', '--message', prompt];
   if (useJson) base.push('--json');
-  // Default to 'full' if self-test hasn't completed yet (e.g. chat IPC fires
-  // within the first ~10s of boot). Without --channel paired with --to,
-  // openclaw rejects the spawn.
   const profile = _agentFlagProfile || 'full';
   if (profile === 'full') {
     const args = [...base, '--channel', 'telegram', '--to', idStr];
@@ -228,7 +256,7 @@ function isFatalErr(stderr, exitCode) {
   const s = (stderr || '').toLowerCase();
   return s.includes('openclaw not found')
       || s.includes('cmd-shell fallback refused')
-      || s.includes('enoent') && (s.includes('openclaw') || s.includes('node'))
+      || (s.includes('enoent') && (s.includes('openclaw') || s.includes('node')))
       || s.includes('eacces')
       || s.includes('not authorized')
       || s.includes('invalid token')
@@ -321,7 +349,17 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
 
 let _cronAgentQueue = Promise.resolve();
 let _cronAgentQueueDepth = 0;
+/**
+ * Run a prompt through the openclaw agent with retry, journal, and CEO delivery.
+ * @param {string} prompt - The prompt text (or "exec: ..." for shell commands)
+ * @param {{ label?: string, zaloTarget?: { id: string, isGroup: boolean, label?: string }, timeoutMs?: number }} [opts]
+ * @returns {Promise<boolean>} True if delivered successfully
+ */
 async function runCronAgentPrompt(prompt, opts = {}) {
+  if (_cronAgentQueueDepth >= 10) {
+    console.warn(`[cron-agent] queue full (depth=${_cronAgentQueueDepth}) — rejecting "${opts?.label || 'cron'}"`);
+    return false;
+  }
   _cronAgentQueueDepth++;
   if (_cronAgentQueueDepth > 1) {
     console.log(`[cron-agent] queued (depth=${_cronAgentQueueDepth}) label="${opts?.label || 'cron'}"`);
@@ -331,7 +369,7 @@ async function runCronAgentPrompt(prompt, opts = {}) {
   return run;
 }
 
-async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 600000 } = {}) {
+async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = CRON_AGENT_TIMEOUT_MS } = {}) {
   const niceLabel = label || 'cron';
 
   // PAUSE CHECK 2026-05-15: if this cron targets Zalo and Zalo channel is
@@ -386,6 +424,11 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
       const alertFile = path.join(getWorkspace(), 'logs', 'cron-cannot-deliver.txt');
       fs.mkdirSync(path.dirname(alertFile), { recursive: true });
       fs.appendFileSync(alertFile, `${new Date().toISOString()} — Cron "${niceLabel}" cannot deliver: no telegram chatId in config, sticky file, or recent Telegram updates. Re-run wizard or have someone /start the bot.\n`, 'utf-8');
+    } catch (e) { console.warn('[cron-agent] cron-cannot-deliver.txt write error:', e?.message); }
+    // Surface to Dashboard overview via a flag file so next load can show alert
+    try {
+      const flagFile = path.join(getWorkspace(), 'logs', 'cron-delivery-blocked.flag');
+      fs.writeFileSync(flagFile, JSON.stringify({ label: niceLabel, ts: new Date().toISOString() }), 'utf-8');
     } catch {}
     return false;
   }
@@ -399,11 +442,16 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
     await new Promise(r => setTimeout(r, 15000));
   }
 
-  const args = buildAgentArgs(prompt, chatId, true); // --json, --deliver=false
+  // Wrap prompt for Zalo-targeted crons: instruct agent to output ONLY customer-facing content
+  let finalPrompt = prompt;
+  if (zaloTarget && zaloTarget.id) {
+    finalPrompt = prompt + '\n\n[Kết quả của task này sẽ được gửi trực tiếp đến Zalo. CHỈ output nội dung cuối cùng dành cho người nhận. TUYỆT ĐỐI KHÔNG mô tả quy trình, bước làm, workflow, hay giải thích cách em xử lý. Nếu đã hoàn thành qua tool call và không cần gửi thêm gì, chỉ output: DONE]';
+  }
+  const args = buildAgentArgs(finalPrompt, chatId, true);
   const promptHasNewline = prompt.includes('\n');
   let lastErr = '';
   let lastCode = -1;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= CRON_AGENT_MAX_RETRIES; attempt++) {
     const startedAt = Date.now();
     console.log(`[cron-agent] "${niceLabel}" attempt ${attempt}/3 (profile=${_agentFlagProfile}, prompt ${prompt.length}c, multiline=${promptHasNewline})`);
     const res = await spawnOpenClawSafe(args, {
@@ -422,6 +470,15 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
         zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
       }
       journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
+      try {
+        const { writeMemory } = require('./ceo-memory');
+        const replyPreview = (replyText || '').slice(0, 120).replace(/\n/g, ' ');
+        writeMemory({
+          type: 'task',
+          content: '[' + new Date().toLocaleDateString('vi-VN') + '] Cron "' + niceLabel + '": ' + (replyPreview || 'hoàn thành'),
+          source: 'auto',
+        }).catch(function(e) { console.warn('[cron-memory] write failed:', e?.message); });
+      } catch (e) { console.warn('[cron-memory] require failed:', e?.message); }
       console.log(`[cron-agent] "${niceLabel}" delivered${zaloTarget ? ' (Telegram+zalo)' : ' (Telegram only)'} in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);
       return zaloOk;
     }
@@ -446,14 +503,14 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
       return false;
     }
 
-    if (attempt < 3 && isConfigInvalidErr(lastErr)) {
+    if (attempt < CRON_AGENT_MAX_RETRIES && isConfigInvalidErr(lastErr)) {
       const healed = healOpenClawConfigInline(lastErr);
       console.log(`[cron-agent] config-invalid detected; inline heal ${healed ? 'WROTE' : 'noop'}, retrying immediately`);
       continue;
     }
 
-    if (attempt < 3) {
-      const backoffMs = isTransientErr(lastErr) ? attempt * 5000 : attempt * 2000;
+    if (attempt < CRON_AGENT_MAX_RETRIES) {
+      const backoffMs = isTransientErr(lastErr) ? attempt * CRON_TRANSIENT_BACKOFF_BASE_MS : attempt * CRON_DEFAULT_BACKOFF_BASE_MS;
       await new Promise((r) => setTimeout(r, backoffMs));
     }
   }
@@ -470,10 +527,10 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
 // ============================================================
 
 // Schedule management (CEO-friendly cron display)
-function getSchedulesPath() { return path.join(getWorkspace(), 'schedules.json'); }
-function getCustomCronsPath() { return path.join(getWorkspace(), 'custom-crons.json'); }
+function getSchedulesPath() { const ws = getWorkspace(); if (!ws) return null; return path.join(ws, 'schedules.json'); }
+function getCustomCronsPath() { const ws = getWorkspace(); if (!ws) return null; return path.join(ws, 'custom-crons.json'); }
 
-// Legacy paths for one-time migration from older installs
+// TODO: remove legacy migration after v2.5.0 when all users have upgraded
 const legacySchedulesPaths = [
   path.join(ctx.HOME, '.openclaw', 'workspace', 'schedules.json'),
   // appDataDir() not available here — workspace.js handles that
@@ -542,6 +599,7 @@ function parseCustomCronsJson(raw) {
 
 function loadSchedules() {
   const schedulesPath = getSchedulesPath();
+  if (!schedulesPath) return [];
   try {
     if (fs.existsSync(schedulesPath)) {
       const raw = fs.readFileSync(schedulesPath, 'utf-8');
@@ -549,10 +607,19 @@ function loadSchedules() {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) throw new Error('schedules.json must be an array');
         const hadHeartbeat = parsed.some(s => s.id === 'heartbeat');
-        const cleaned = parsed.filter(s => s.id !== 'heartbeat');
-        if (hadHeartbeat) {
+        let cleaned = parsed.filter(s => s.id !== 'heartbeat');
+        // Auto-inject new default schedule entries that existing users don't have
+        let injected = false;
+        for (const def of DEFAULT_SCHEDULES_JSON) {
+          if (!cleaned.some(s => s.id === def.id)) {
+            cleaned.push(def);
+            injected = true;
+            console.log(`[schedules] auto-injected new schedule: ${def.id}`);
+          }
+        }
+        if (hadHeartbeat || injected) {
           try { writeJsonAtomic(schedulesPath, cleaned); } catch {}
-          console.log('[schedules] removed legacy heartbeat entry');
+          if (hadHeartbeat) console.log('[schedules] removed legacy heartbeat entry');
         }
         return cleaned;
       } catch (parseErr) {
@@ -693,13 +760,32 @@ function buildMorningBriefingPrompt(timeStr) {
   const historyBlock = history
     ? `\n\n--- Lịch sử tin nhắn 24h qua ---\n${history}\n--- Hết ---\n\n`
     : `\n\n_(Chưa có tin nhắn nào trong 24h qua.)_\n\n`;
+
+  let taskHistory = '';
+  try {
+    const { listMemories } = require('./ceo-memory');
+    const memories = listMemories({ limit: 20 });
+    if (memories && memories.length > 0) {
+      const recent = memories.filter(m => {
+        const age = Date.now() - new Date(m.created_at).getTime();
+        return age < 48 * 3600000;
+      });
+      if (recent.length > 0) {
+        taskHistory = '\n\n--- HOẠT ĐỘNG 48H QUA (từ bộ nhớ bot) ---\n' +
+          recent.map(m => '- [' + m.type + '] ' + m.content).join('\n') +
+          '\n--- HẾT ---\n\n';
+      }
+    }
+  } catch {}
+
   const template = loadPromptTemplate('morning-briefing.md');
   if (template) {
     return template
       .replace('{{time}}', timeStr || '07:30')
-      .replace('{{historyBlock}}', historyBlock);
+      .replace('{{historyBlock}}', historyBlock)
+      .replace('{{taskHistory}}', taskHistory);
   }
-  return `Bây giờ là ${timeStr || '07:30'} sáng. Gửi báo cáo sáng cho CEO.` + historyBlock +
+  return `Bây giờ là ${timeStr || '07:30'} sáng. Gửi báo cáo sáng cho CEO.` + historyBlock + taskHistory +
     `Tóm tắt hôm qua, việc hôm nay, tin cần xử lý, cảnh báo. Tiếng Việt có dấu, không emoji.`;
 }
 
@@ -749,6 +835,23 @@ function buildEveningSummaryPrompt(timeStr) {
     }
   } catch {}
 
+  let taskHistory = '';
+  try {
+    const { listMemories } = require('./ceo-memory');
+    const memories = listMemories({ limit: 20 });
+    if (memories && memories.length > 0) {
+      const recent = memories.filter(m => {
+        const age = Date.now() - new Date(m.created_at).getTime();
+        return age < 48 * 3600000;
+      });
+      if (recent.length > 0) {
+        taskHistory = '\n\n--- HOẠT ĐỘNG 48H QUA (từ bộ nhớ bot) ---\n' +
+          recent.map(m => '- [' + m.type + '] ' + m.content).join('\n') +
+          '\n--- HẾT ---\n\n';
+      }
+    }
+  } catch {}
+
   let knowledgeGaps = '';
   try {
     const ws = getWorkspace();
@@ -779,11 +882,82 @@ function buildEveningSummaryPrompt(timeStr) {
       .replace('{{time}}', timeStr || '21:00')
       .replace('{{historyBlock}}', historyBlock)
       .replace('{{memoryInsights}}', memoryInsights)
+      .replace('{{taskHistory}}', taskHistory)
       .replace('{{knowledgeGaps}}', knowledgeGaps);
   }
   return `Bây giờ là ${timeStr || '21:00'}, cuối ngày. Tóm tắt hoạt động hôm nay cho CEO.` +
-    historyBlock + memoryInsights + knowledgeGaps +
+    historyBlock + memoryInsights + taskHistory + knowledgeGaps +
     `Tiếng Việt có dấu, không emoji, ngắn gọn.`;
+}
+
+function buildAfternoonNudgePrompt(timeStr) {
+  const sinceMs = Date.now() - 8 * 60 * 60 * 1000;
+  const history = extractConversationHistory({ sinceMs, maxMessages: 30, maxPerSender: 5 });
+  const historyBlock = history
+    ? `\n\n--- Tin nhắn hôm nay (8h qua) ---\n${history}\n--- Hết ---\n\n`
+    : `\n\n_(Chưa có tin nhắn nào hôm nay.)_\n\n`;
+
+  let pendingFollowUps = '';
+  let overduePayments = '';
+  try {
+    const ws = getWorkspace();
+    if (ws) {
+      // Scan follow-up queue
+      const fqPath = path.join(ws, 'follow-up-queue.json');
+      if (fs.existsSync(fqPath)) {
+        try {
+          const fq = JSON.parse(fs.readFileSync(fqPath, 'utf-8'));
+          const pending = (Array.isArray(fq) ? fq : []).filter(e => !e.firedAt);
+          if (pending.length > 0) {
+            pendingFollowUps = `\n\n--- FOLLOW-UP ĐANG CHỜ (${pending.length}) ---\n` +
+              pending.slice(0, 5).map(e => `- ${e.customerName || e.senderId}: ${(e.reason || '').slice(0, 80)}`).join('\n') +
+              `\n--- Hết ---\n\n`;
+          }
+        } catch {}
+      }
+      // Scan cong-no file
+      const cnPath = path.join(ws, 'cong-no.md');
+      if (fs.existsSync(cnPath)) {
+        try {
+          const cn = fs.readFileSync(cnPath, 'utf-8');
+          const overdueLines = cn.split('\n').filter(l => /quá hạn|overdue|chưa thanh toán/i.test(l));
+          if (overdueLines.length > 0) {
+            overduePayments = `\n\n--- CÔNG NỢ CẦN NHẮC ---\n${overdueLines.slice(0, 5).join('\n')}\n--- Hết ---\n\n`;
+          }
+        } catch {}
+      }
+      // Scan memory for customers messaged today but no follow-up
+      const memDir = path.join(ws, 'memory', 'zalo-users');
+      if (fs.existsSync(memDir)) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const recent = [];
+        for (const f of fs.readdirSync(memDir).filter(f => f.endsWith('.md')).slice(0, 50)) {
+          try {
+            const stat = fs.statSync(path.join(memDir, f));
+            if ((Date.now() - stat.mtimeMs) < 8 * 3600000) {
+              const content = fs.readFileSync(path.join(memDir, f), 'utf-8').slice(0, 500);
+              recent.push(`[${f.replace('.md', '')}] ${content.split('\n').filter(l => l.includes(todayStr)).slice(-2).join(' | ')}`);
+            }
+          } catch {}
+        }
+        if (recent.length > 0 && !pendingFollowUps) {
+          pendingFollowUps = `\n\n--- KHÁCH TƯƠNG TÁC HÔM NAY ---\n${recent.slice(0, 10).join('\n')}\n--- Hết ---\n\n`;
+        }
+      }
+    }
+  } catch {}
+
+  const template = loadPromptTemplate('afternoon-nudge.md');
+  if (template) {
+    return template
+      .replace('{{time}}', timeStr || '14:00')
+      .replace('{{historyBlock}}', historyBlock)
+      .replace('{{pendingFollowUps}}', pendingFollowUps)
+      .replace('{{overduePayments}}', overduePayments);
+  }
+  return `Bây giờ là ${timeStr || '14:00'} chiều. Gợi ý 1-2 hành động cụ thể cho CEO dựa trên data hôm nay.` +
+    historyBlock + pendingFollowUps + overduePayments +
+    `Tiếng Việt có dấu, không emoji, ngắn gọn, CEO reply 1 từ là em thực hiện.`;
 }
 
 async function buildWeeklyReportPrompt() {
@@ -1081,13 +1255,17 @@ function buildMemoryCleanupPrompt() {
 // ============================================================
 
 async function runCronViaSessionOrFallback(prompt, opts = {}) {
+  // When cron targets a Zalo group, session-send cannot deliver there (it only
+  // replies to the CEO's Telegram session). Always use runCronAgentPrompt which
+  // handles Zalo delivery with the actual agent reply text.
+  if (opts.zaloTarget || opts.groupId || opts.groupIds) {
+    return runCronAgentPrompt(prompt, opts);
+  }
   const sessionKey = await getCeoSessionKey();
   if (sessionKey) {
     const ok = await sendToGatewaySession(sessionKey, prompt);
     if (ok) {
       journalCronRun({ phase: 'ok', label: opts.label || 'cron', mode: 'session-send' });
-      // Zalo delivery skipped here — session-send only has the raw prompt, not the agent reply.
-      // The fallback path (runCronAgentPrompt) handles Zalo delivery with actual reply text.
       return true;
     }
     console.log('[cron] sessions.send failed, falling back to runCronAgentPrompt');
@@ -1248,7 +1426,7 @@ async function handleBaocaoCommand() {
     const prompt = buildMorningBriefingPrompt(timeStr);
     runCronViaSessionOrFallback(prompt, { label: 'manual-baocao' }).catch(e => {
       console.error('[/baocao] runCronViaSessionOrFallback failed:', e?.message || e);
-      sendTelegram('Xin lỗi, em chạy báo cáo bị lỗi. Thử lại sau vài phút giúp em.').catch(() => {});
+      sendTelegram('Xin lỗi, em chạy báo cáo bị lỗi. Thử lại sau vài phút giúp em.').catch(e => console.warn('[cron] telegram notify error:', e?.message));
     });
   } catch (e) {
     console.error('[/baocao] build prompt failed:', e?.message || e);
@@ -1738,6 +1916,27 @@ function _startCronJobsInner() {
             try { await sendCeoAlert(`Cron "Tóm tắt cuối ngày" lỗi: ${String(e?.message || e).slice(0, 200)}`); } catch {}
           } finally {
             global._cronInFlight?.delete('evening');
+          }
+        };
+        break;
+      }
+      case 'afternoon-nudge': {
+        const [h, m] = (s.time || '14:00').split(':');
+        cronExpr = `${m !== undefined && m !== '' ? m : 0} ${h !== undefined && h !== '' ? h : 14} * * *`;
+        handler = async () => {
+          console.log('[cron] Afternoon nudge triggered at', new Date().toISOString());
+          if (global._cronInFlight?.get('afternoon-nudge')) return;
+          global._cronInFlight?.set('afternoon-nudge', true);
+          try {
+            const prompt = buildAfternoonNudgePrompt(s.time);
+            await runCronViaSessionOrFallback(prompt, { label: 'afternoon-nudge' });
+            try { auditLog('cron_fired', { id: 'afternoon-nudge', label: s.label || 'Gợi ý chiều' }); } catch {}
+          } catch (e) {
+            console.error('[cron] Afternoon nudge threw:', e?.message || e);
+            try { auditLog('cron_failed', { id: 'afternoon-nudge', label: 'Gợi ý chiều', error: String(e?.message || e).slice(0, 200) }); } catch {}
+            try { await sendCeoAlert(`Cron "Gợi ý chiều" lỗi: ${String(e?.message || e).slice(0, 200)}`); } catch {}
+          } finally {
+            global._cronInFlight?.delete('afternoon-nudge');
           }
         };
         break;
@@ -2444,7 +2643,7 @@ function cleanupCronTimers() {
 
 module.exports = {
   // Agent pipeline
-  cronJournalPath, journalCronRun, selfTestOpenClawAgent,
+  cronJournalPath: getCronJournalPath, journalCronRun, selfTestOpenClawAgent,
   buildAgentArgs, isTransientErr, isConfigInvalidErr, isFatalErr,
   parseSafeOpenzcaMsgSend, runSafeExecCommand,
   runCronAgentPrompt,

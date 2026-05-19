@@ -5,6 +5,11 @@ const ctx = require('./context');
 const { getWorkspace, seedWorkspace, auditLog } = require('./workspace');
 const { normalizeZaloBlocklist } = require('./zalo-settings');
 
+/** Canonical path to openclaw.json — single source of truth. */
+function getOpenClawConfigPath() {
+  return path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+}
+
 // Late-binding for journalCronRun (still lives in main.js; will move to cron.js later)
 let _journalCronRunFn = null;
 function setJournalCronRun(fn) { _journalCronRunFn = fn; }
@@ -17,6 +22,7 @@ function setJournalCronRun(fn) { _journalCronRunFn = fn; }
 // are NOT in its schema. When we see "additional properties" error at the
 // modoro-zalo path, we strip these known-offenders. Expand this list as we learn.
 const KNOWN_BAD_ZALO_KEYS = ['streaming', 'streamMode', 'nativeStreaming', 'blockStreamingDefault'];
+const AGENTS_MD_BOOTSTRAP_MAX_CHARS = 40000;
 
 // Single-writer mutex for openclaw.json read-modify-write sequences.
 // Multiple IPC handlers (save-zalo-manager-config, save-wizard-config,
@@ -57,6 +63,11 @@ let _openClawConfigMutex = Promise.resolve();
 // Returns an array of { path: string[], key: string | null } objects.
 // A null `key` means "parent path detected but specific field unknown — use
 // whitelist diff at caller site".
+/**
+ * Parse openclaw stderr for schema violations that can be auto-healed.
+ * @param {string} stderr - stderr output from openclaw subprocess
+ * @returns {Array<{path: string[]|null, key: string|null}>} Parsed violations
+ */
 function parseUnrecognizedKeyErrors(stderr) {
   const out = [];
   if (!stderr) return out;
@@ -105,9 +116,14 @@ function parseUnrecognizedKeyErrors(stderr) {
 // (2) this function only DELETES keys — concurrent writers adding other keys
 // won't conflict, and if our delete is lost to a concurrent write the bad key
 // will trigger another heal on next cron attempt (self-correcting).
+/**
+ * Synchronously remove deprecated/invalid keys from openclaw.json.
+ * @param {string} [errStderr] - If provided, parse dynamic errors from openclaw stderr
+ * @returns {boolean} True if a write happened
+ */
 function healOpenClawConfigInline(errStderr) {
   try {
-    const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+    const configPath = getOpenClawConfigPath();
     if (!fs.existsSync(configPath)) return false;
     const raw = fs.readFileSync(configPath, 'utf-8');
     let config;
@@ -253,6 +269,24 @@ function sanitizeOpenClawConfigInPlace(config) {
   }
 }
 
+/** Strip keys not in validSet from obj, logging each removal. Returns true if any removed. */
+function _stripUnknownFields(obj, validSet, label) {
+  let changed = false;
+  for (const k of Object.keys(obj)) {
+    if (!validSet.has(k)) {
+      console.log(`[config] stripped unknown ${label} field: ${k}`);
+      delete obj[k];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Serialize access to openclaw.json read-modify-write sequences.
+ * @param {function(): Promise<*>} fn - Async function to execute under lock
+ * @param {number} [timeoutMs=30000] - Maximum time to hold the lock
+ */
 function withOpenClawConfigLock(fn, timeoutMs = 30000) {
   let fnResult;
   const run = _openClawConfigMutex.then(() => {
@@ -288,6 +322,12 @@ function withOpenClawConfigLock(fn, timeoutMs = 30000) {
 //   2. Reads the existing file as a Buffer.
 //   3. Only writes if the byte content actually differs.
 // Returns true if a write happened.
+/**
+ * Byte-for-byte safe write of openclaw.json — only writes if content actually changed.
+ * @param {string} configPath - Path to openclaw.json
+ * @param {object} config - The config object to serialize
+ * @returns {boolean} True if a write happened
+ */
 function writeOpenClawConfigIfChanged(configPath, config) {
   try {
     // Sanitize FIRST — strip any schema-invalid keys that may have crept in
@@ -300,7 +340,9 @@ function writeOpenClawConfigIfChanged(configPath, config) {
       return false;
     }
     if (fs.existsSync(configPath)) {
-      const existing = fs.readFileSync(configPath, 'utf-8');
+      let existing = fs.readFileSync(configPath, 'utf-8');
+      // Strip UTF-8 BOM if present (Notepad/PowerShell can add it)
+      if (existing.charCodeAt(0) === 0xFEFF) existing = existing.slice(1);
       // Exact byte match — skip
       if (existing === serialized) return false;
       // Trailing-newline-only diff — also skip. Current file may have been
@@ -332,6 +374,11 @@ function writeOpenClawConfigIfChanged(configPath, config) {
   }
 }
 
+/**
+ * Ensure openclaw.json has all required defaults, heal legacy keys, and seed workspace.
+ * Wrapped in global config mutex to prevent concurrent read-modify-write races.
+ * @returns {Promise<void>}
+ */
 async function ensureDefaultConfig() {
   // Wrap the entire read-modify-write in the global openclaw.json mutex.
   // This fn runs at boot AND reactively (startOpenClaw from heartbeat / save-zalo-manager
@@ -339,7 +386,7 @@ async function ensureDefaultConfig() {
   return withOpenClawConfigLock(async () => {
   console.log('[config-lock] ensureDefaultConfig acquired');
   // Patch openclaw.json directly — no CLI "restart to apply" issue
-  const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+  const configPath = getOpenClawConfigPath();
   try {
     if (!fs.existsSync(configPath)) return;
     let config;
@@ -481,7 +528,7 @@ async function ensureDefaultConfig() {
       changed = true;
     }
     // ALSO: if the modoro-zalo plugin files exist at ~/.openclaw/extensions/modoro-zalo/
-    // (either because bundled copy placed them there, or local install did),
+    // (copied by runtime installer on first launch, or local dev install),
     // make sure the plugin entry EXISTS. We sync its enabled state later from
     // channels['modoro-zalo'].enabled so "Tắt Zalo" is a real hard-off, not
     // merely a soft gate after the plugin already loaded.
@@ -555,13 +602,7 @@ async function ensureDefaultConfig() {
         'blockStreaming', 'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
         'threadBindings', 'actions', 'accounts', 'defaultAccount',
       ]);
-      for (const k of Object.keys(oz)) {
-        if (!MODORO_ZALO_VALID_FIELDS.has(k)) {
-          console.log('[config] stripped unknown modoro-zalo field: ' + k);
-          delete oz[k];
-          changed = true;
-        }
-      }
+      if (_stripUnknownFields(oz, MODORO_ZALO_VALID_FIELDS, 'modoro-zalo')) changed = true;
       // DO NOT set `zcaBinary` here: the modoro-zalo plugin's
       // resolveOpenzcaCliJs() on Windows only searches hardcoded npm global
       // paths and ignores the config value during resolve, then falls back to
@@ -649,13 +690,7 @@ async function ensureDefaultConfig() {
         'webhookCertPath', 'accounts', 'defaultAccount',
         'profile', 'sendTypingIndicators',
       ]);
-      for (const k of Object.keys(tg)) {
-        if (!TELEGRAM_VALID_FIELDS.has(k)) {
-          console.log('[config] stripped unknown telegram field: ' + k);
-          delete tg[k];
-          changed = true;
-        }
-      }
+      if (_stripUnknownFields(tg, TELEGRAM_VALID_FIELDS, 'telegram')) changed = true;
     }
     // Global default: openclaw 2026.4.x removed `agents.defaults.blockStreaming`
     // (boolean) and replaced it with `agents.defaults.blockStreamingDefault`
@@ -693,16 +728,15 @@ async function ensureDefaultConfig() {
     // of AGENTS.md is silently truncated — defense rules, cron rules, and channel
     // rules at the bottom get cut. Raise to 40K so the full file is always injected.
     // bootstrapTotalMaxChars default (150K) is generous and does not need changing.
-    if (config.agents.defaults.bootstrapMaxChars !== 40000) {
-      config.agents.defaults.bootstrapMaxChars = 40000;
+    if (config.agents.defaults.bootstrapMaxChars !== AGENTS_MD_BOOTSTRAP_MAX_CHARS) {
+      config.agents.defaults.bootstrapMaxChars = AGENTS_MD_BOOTSTRAP_MAX_CHARS;
       changed = true;
     }
     // contextPruning and thinkingDefault intentionally NOT set.
     // Both trade output quality for speed — unacceptable for CEO + customer-facing bot.
     // LLM PROVIDER CACHE: extend prefix cache TTL to 1hr. No quality tradeoff —
     // just tells the provider to keep the cached prompt prefix longer.
-    if (!config.agents) config.agents = {};
-    if (!config.agents.defaults) config.agents.defaults = {};
+    // (config.agents and config.agents.defaults already guaranteed above)
     if (!config.agents.defaults.params) config.agents.defaults.params = {};
     if (config.agents.defaults.params.cacheRetention !== 'long') {
       config.agents.defaults.params.cacheRetention = 'long';
@@ -720,8 +754,13 @@ async function ensureDefaultConfig() {
     //   Layer 2: AGENTS.md rules (exec/cron forbidden from Zalo context)
     //   Layer 3: Cron API token requires Telegram bot_token to acquire
     // cron tool still banned — cron management via web_fetch to local API only.
-    const REQUIRED_TOOLS = ['message', 'web_search', 'web_fetch', 'update_plan', 'read_file', 'list_files', 'search_files', 'exec'];
-    const BANNED_TOOLS = ['cron', 'process', 'read', 'write', 'apply_patch', 'memory', 'write_file'];
+    // CEO Telegram has FULL access to all tools. Zalo restriction is CODE-LEVEL:
+    //   Layer 1: COMMAND-BLOCK in inbound.ts (43+ regex, rewrites admin patterns)
+    //   Layer 2: Cron API Bearer token (only Telegram sessions get the header)
+    //   Layer 3: Output filter (blocks sensitive data in replies)
+    //   Layer 4: AGENTS.md rules (Zalo = CSKH only, no exec/file/cron)
+    const REQUIRED_TOOLS = ['message', 'web_search', 'web_fetch', 'update_plan', 'read_file', 'list_files', 'search_files', 'exec', 'write_file', 'apply_patch', 'memory'];
+    const BANNED_TOOLS = ['cron', 'process', 'read', 'write'];
     const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
     const merged = REQUIRED_TOOLS.filter(t => !BANNED_TOOLS.includes(t));
     if (JSON.stringify(existingAllow.slice().sort()) !== JSON.stringify(merged.slice().sort())) {
@@ -796,7 +835,8 @@ async function ensureDefaultConfig() {
       changed = true;
     }
 
-    // Remove any unknown keys that OpenClaw rejects
+    // Remove any unknown keys that OpenClaw rejects.
+    // NOTE: this list must be updated when openclaw adds new top-level config keys.
     const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'tools', 'messages', 'discovery'];
     for (const key of Object.keys(config)) {
       if (!validKeys.includes(key)) { delete config[key]; changed = true; }
@@ -875,6 +915,7 @@ async function ensureDefaultConfig() {
 }
 
 module.exports = {
+  getOpenClawConfigPath,
   parseUnrecognizedKeyErrors,
   healOpenClawConfigInline,
   isValidConfigKey,

@@ -1,3 +1,10 @@
+---
+name: cong-nghe
+description: Kỹ năng chuyên ngành công nghệ và IT — quản lý sprint, hỗ trợ khách hàng SaaS
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Công nghệ và IT
 
 ## Nhắc nhở vận hành

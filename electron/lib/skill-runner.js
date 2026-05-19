@@ -54,6 +54,7 @@ function _resolveRuntimeBin(runtime) {
 // Build restricted env. Strip secrets, set workspace marker, allow PATH.
 function _buildSafeEnv(extra) {
   const safe = {
+    ...extra,
     PATH: process.env.PATH,
     SystemRoot: process.env.SystemRoot, // Windows needs this
     TEMP: process.env.TEMP || process.env.TMP,
@@ -63,7 +64,6 @@ function _buildSafeEnv(extra) {
     LANG: process.env.LANG || 'en_US.UTF-8',
     PYTHONIOENCODING: 'utf-8',
     PYTHONUNBUFFERED: '1',
-    ...extra,
   };
   return safe;
 }
@@ -164,7 +164,12 @@ async function runScript(scriptPath, opts = {}) {
 
 // Test execution — isolated cwd in OS temp, lower limits, no audit.
 async function testRunScript(code, runtime, args, extraOpts) {
-  const tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), '9biz-skill-test-'));
+  let tempDir;
+  try {
+    tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), '9biz-skill-test-'));
+  } catch (e) {
+    return { exitCode: -1, stdout: '', stderr: 'Failed to create temp directory: ' + e.message, durationMs: 0 };
+  }
   let scriptName;
   if (runtime === 'python') scriptName = 'test_script.py';
   else if (runtime === 'node') scriptName = 'test_script.js';

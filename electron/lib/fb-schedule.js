@@ -24,14 +24,16 @@ function setOnScheduleChanged(cb) { _onScheduleChanged = cb; }
 // ─── Constants ─────────────────────────────────────────────────────
 const SCHEDULES_FILE = 'fb-scheduled-posts.json';
 const PENDING_DIR = 'fb-pending';
-const DEFAULT_LEAD_MINUTES = 30;
+const DEFAULT_LEAD_MINUTES = 60;
 const PENDING_TTL_DAYS = 7;
 const _generateInFlight = new Set();
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
-function getSchedulesPath() {
-  return path.join(getWorkspace(), SCHEDULES_FILE);
+function getFbSchedulesPath() {
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, SCHEDULES_FILE);
 }
 
 function getPendingDir() {
@@ -127,7 +129,7 @@ function timeToCronWithDays(timeStr, daysOfWeek) {
  */
 function loadSchedules() {
   try {
-    const raw = fs.readFileSync(getSchedulesPath(), 'utf-8');
+    const raw = fs.readFileSync(getFbSchedulesPath(), 'utf-8');
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed;
@@ -138,7 +140,7 @@ function loadSchedules() {
 
 function saveSchedules(schedules) {
   try {
-    const p = getSchedulesPath();
+    const p = getFbSchedulesPath();
     fs.writeFileSync(p, JSON.stringify(schedules, null, 2), 'utf-8');
     if (_onScheduleChanged) {
       try { _onScheduleChanged(); } catch (e) { console.warn('[fb-schedule] onScheduleChanged error:', e?.message); }
@@ -421,9 +423,9 @@ async function handlePublish(scheduleId) {
  */
 async function publishPending(pending, schedule) {
   const cfg = readFbConfig();
-  if (!cfg || !cfg.accessToken) {
+  if (!cfg || !cfg.accessToken || !cfg.pageId) {
     pending.status = 'skipped';
-    pending.error = 'Facebook chưa kết nối (không có token)';
+    pending.error = !cfg?.pageId ? 'Facebook chưa chọn Fanpage (không có pageId)' : 'Facebook chưa kết nối (không có token)';
     savePending(pending);
 
     auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: pending.error });
@@ -526,33 +528,35 @@ async function approvePending(scheduleId, dateStr) {
 
   if (pending.status === 'published') return { success: false, error: 'Bài đã được đăng' };
   if (pending.status === 'rejected') return { success: false, error: 'Bài đã bị hủy' };
-  if (pending.status === 'skipped') {
-    // CEO duyệt muộn sau postTime — cho phép approve + đăng ngay
-    pending.status = 'approved';
-    pending.approvedAt = new Date().toISOString();
-    pending.error = null;
-    savePending(pending);
+  const wasSkipped = pending.status === 'skipped';
+  pending.status = 'approved';
+  pending.approvedAt = new Date().toISOString();
+  if (wasSkipped) pending.error = null;
+  savePending(pending);
+
+  if (wasSkipped) {
     auditLog('fb_schedule_late_approve', { scheduleId, date, originalStatus: 'skipped' });
   }
 
-  pending.status = 'approved';
-  pending.approvedAt = new Date().toISOString();
-  savePending(pending);
-
   auditLog('fb_schedule_approved', { scheduleId, date });
 
-  // Check if we should publish immediately (past postTime)
+  // Check if we should publish immediately (past postTime on the pending's date)
   const schedules = loadSchedules();
   const schedule = schedules.find(s => s.id === scheduleId);
   const postTime = schedule?.postTime;
   if (postTime) {
     const parsed = parseTime(postTime);
     if (parsed) {
+      const today = todayStr();
+      const pendingDate = pending.date || date;
+      if (pendingDate > today) {
+        // Pending is for a future date (cross-midnight) — don't publish yet
+        return { success: true, published: false, message: 'Đã duyệt. Sẽ đăng lúc ' + postTime + ' ngày ' + pendingDate };
+      }
       const ict = nowInICT();
       const postMinutes = parsed.hour * 60 + parsed.minute;
       const nowMinutes = ict.hour * 60 + ict.minute;
       if (nowMinutes >= postMinutes) {
-        // Past post time — publish immediately
         await publishPending(pending, schedule);
         return { success: true, published: true, postId: pending.postId, postUrl: pending.postUrl };
       }
@@ -769,7 +773,7 @@ function handleRoute(urlPath, params, jsonResp, res) {
     auditLog('fb_schedule_created', { id, label: newSchedule.label, postTime });
 
     if (autoPost && _sendTelegram) {
-      _sendTelegram(`[FB Schedule] Đã tạo lịch "${newSchedule.label}" ở chế độ tự động đăng (không cần duyệt). Trả lời "tắt autopost ${id}" để bật duyệt thủ công.`).catch(() => {});
+      _sendTelegram(`[FB Schedule] Đã tạo lịch "${newSchedule.label}" ở chế độ tự động đăng (không cần duyệt). Trả lời "tắt autopost ${id}" để bật duyệt thủ công.`).catch(e => console.warn('[fb-schedule] notify error:', e?.message));
     }
 
     // Nếu giờ đăng còn dưới leadMinutes → generate preview ngay lập tức
@@ -1041,22 +1045,26 @@ function parseTelegramCommand(text) {
 async function handleTelegramCommand(cmd) {
   if (!cmd) return { handled: false };
 
-  const date = todayStr();
+  // Search today AND tomorrow to handle cross-midnight previews.
+  // When postTime is e.g. 01:00 with leadMinutes 120, the preview is generated
+  // at 23:00 Day N and the pending file is written for Day N+1. CEO replies
+  // "fb ok" at 23:05 still on Day N — we must find the Day N+1 pending.
+  const dates = [todayStr(), tomorrowStr()];
   const schedules = loadSchedules();
 
-  // Find the most recent pending post for today
   function findActivePending(specificId) {
-    if (specificId) {
-      const pending = loadPending(specificId, date);
-      const schedule = schedules.find(s => s.id === specificId);
-      if (pending && schedule) return { pending, schedule };
-      return null;
-    }
-    // Find first pending/approved post for today
-    for (const s of schedules) {
-      const pending = loadPending(s.id, date);
-      if (pending && (pending.status === 'pending' || pending.status === 'approved' || pending.status === 'regenerating')) {
-        return { pending, schedule: s };
+    for (const date of dates) {
+      if (specificId) {
+        const pending = loadPending(specificId, date);
+        const schedule = schedules.find(s => s.id === specificId);
+        if (pending && schedule) return { pending, schedule, date };
+      } else {
+        for (const s of schedules) {
+          const pending = loadPending(s.id, date);
+          if (pending && (pending.status === 'pending' || pending.status === 'approved' || pending.status === 'regenerating')) {
+            return { pending, schedule: s, date };
+          }
+        }
       }
     }
     return null;
@@ -1064,8 +1072,8 @@ async function handleTelegramCommand(cmd) {
 
   if (cmd.action === 'approve') {
     const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt hôm nay.' };
-    const result = await approvePending(found.pending.scheduleId, date);
+    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
+    const result = await approvePending(found.pending.scheduleId, found.date);
     if (!result.success) return { handled: true, response: result.error };
     if (result.published) {
       return { handled: true, response: `Đã duyệt và đăng thành công.\n${result.postUrl || ''}` };
@@ -1075,24 +1083,24 @@ async function handleTelegramCommand(cmd) {
 
   if (cmd.action === 'reject') {
     const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt hôm nay.' };
-    const result = rejectPending(found.pending.scheduleId, date);
+    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
+    const result = rejectPending(found.pending.scheduleId, found.date);
     if (!result.success) return { handled: true, response: result.error };
-    return { handled: true, response: `Đã hủy bài "${found.schedule.label}" hôm nay.` };
+    return { handled: true, response: `Đã hủy bài "${found.schedule.label}".` };
   }
 
   if (cmd.action === 'editCaption') {
     const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt hôm nay.' };
-    const result = editCaption(found.pending.scheduleId, cmd.caption, date);
+    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
+    const result = editCaption(found.pending.scheduleId, cmd.caption, found.date);
     if (!result.success) return { handled: true, response: result.error };
     return { handled: true, response: `Đã cập nhật caption:\n${cmd.caption}` };
   }
 
   if (cmd.action === 'regenerate') {
     const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt hôm nay.' };
-    const result = await regenerateImage(found.pending.scheduleId, date);
+    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
+    const result = await regenerateImage(found.pending.scheduleId, found.date);
     if (!result.success) return { handled: true, response: result.error };
     return { handled: true, response: 'Đang tạo ảnh mới. Sẽ gửi preview khi xong.' };
   }
@@ -1133,85 +1141,11 @@ function stopFbTelegramPoller() {
 }
 
 async function _pollTelegramForFbCommands() {
-  const date = todayStr();
-  const pending = listPendingForDate(date);
-  const hasActive = pending.some(p =>
-    p.status === 'pending' || p.status === 'approved' || p.status === 'regenerating');
-  if (!hasActive) return;
-
-  const { getTelegramConfig } = require('./channels');
-  const cfg = getTelegramConfig();
-  if (!cfg?.token || !cfg?.chatId) return;
-
-  let updates;
-  try {
-    updates = await _peekTelegramUpdates(cfg.token);
-  } catch {
-    return;
-  }
-  if (!updates || !updates.length) return;
-
-  for (const update of updates) {
-    if (_processedUpdateIds.has(update.update_id)) continue;
-    _processedUpdateIds.add(update.update_id);
-
-    const msg = update.message;
-    if (!msg?.text) continue;
-    if (String(msg.chat?.id) !== String(cfg.chatId)) continue;
-    if (msg.chat?.type !== 'private') continue;
-
-    const raw = msg.text.trim();
-    if (!/^fb\s+/i.test(raw)) continue;
-    const stripped = raw.replace(/^fb\s+/i, '');
-
-    const cmd = parseTelegramCommand(stripped);
-    if (!cmd) continue;
-
-    console.log(`[fb-schedule] Telegram command from CEO: "${raw}" → action: ${cmd.action}`);
-    try {
-      const result = await handleTelegramCommand(cmd);
-      if (result?.handled && result?.response && _sendTelegram) {
-        await _sendTelegram(result.response);
-      }
-    } catch (e) {
-      console.error('[fb-schedule] telegram command error:', e.message);
-    }
-  }
-
-  // Prune old IDs
-  if (_processedUpdateIds.size > 200) {
-    const ids = [..._processedUpdateIds].sort((a, b) => a - b);
-    _processedUpdateIds.clear();
-    for (const id of ids.slice(-100)) _processedUpdateIds.add(id);
-  }
+  return;
 }
 
-function _peekTelegramUpdates(token) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path: `/bot${token}/getUpdates?offset=-10&timeout=0&limit=10`,
-      method: 'GET',
-      timeout: 5000,
-    }, (res) => {
-      let body = '';
-      res.on('data', c => body += c);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(body);
-          if (parsed.error_code === 409) return resolve([]);
-          if (!parsed.ok || !Array.isArray(parsed.result)) return resolve([]);
-          resolve(parsed.result);
-        } catch { resolve([]); }
-      });
-    });
-    req.on('error', (e) => {
-      if (!/409/.test(e.message)) console.warn('[fb-schedule] telegram peek error:', e.message);
-      resolve([]);
-    });
-    req.on('timeout', () => { req.destroy(); resolve([]); });
-    req.end();
-  });
+function _peekTelegramUpdates(_token) {
+  return null;
 }
 
 // ─── Module exports ────────────────────────────────────────────────

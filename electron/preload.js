@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld('claw', {
   checkAllChannels: () => ipcRenderer.invoke('check-all-channels'),
   sendChatMessage: (text) => ipcRenderer.invoke('send-chat-message', text),
   getChatHistory: () => ipcRenderer.invoke('get-chat-history'),
+  clearChatHistory: () => ipcRenderer.invoke('clear-chat-history'),
+  stopChatGeneration: () => ipcRenderer.invoke('stop-chat-generation'),
+  logChatFeedback: (rating, msgTs) => ipcRenderer.invoke('log-chat-feedback', { rating, msgTs }),
+  uploadChatFile: (filePath, fileName) => ipcRenderer.invoke('upload-chat-file', { filePath, fileName }),
+  getFbSchedules: () => ipcRenderer.invoke('get-fb-schedules'),
+  deleteFbSchedule: (id) => ipcRenderer.invoke('delete-fb-schedule', id),
   getBotStatus: () => ipcRenderer.invoke('get-bot-status'),
   toggleBot: () => ipcRenderer.invoke('toggle-bot'),
 
@@ -80,6 +86,12 @@ contextBridge.exposeInMainWorld('claw', {
   },
   testCron: (type, id) => ipcRenderer.invoke('test-cron', { type, id }),
 
+  // Brain tab (knowledge graph)
+  getBrainGraph: () => ipcRenderer.invoke('get-brain-graph'),
+  getBrainNodeDetail: (id) => ipcRenderer.invoke('get-brain-node-detail', id),
+  rebuildBrainGraph: () => ipcRenderer.invoke('rebuild-brain-graph'),
+  onBrainGraphRebuilt: (cb) => { ipcRenderer.removeAllListeners('brain-graph-rebuilt'); ipcRenderer.on('brain-graph-rebuilt', cb); },
+
   // App version
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
@@ -134,6 +146,10 @@ contextBridge.exposeInMainWorld('claw', {
   onChannelStatus: (callback) => {
     ipcRenderer.removeAllListeners('channel-status');
     ipcRenderer.on('channel-status', (_, data) => callback(data));
+  },
+  onZaloFriendsRefreshed: (callback) => {
+    ipcRenderer.removeAllListeners('zalo-friends-refreshed');
+    ipcRenderer.on('zalo-friends-refreshed', () => callback());
   },
 
   // Appointments (local calendar)
@@ -276,4 +292,9 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.removeAllListeners('update-install-status');
     ipcRenderer.on('update-install-status', (_event, data) => cb(data));
   },
+  // CEO Backup
+  createBackup: (password) => ipcRenderer.invoke('create-backup', { password }),
+  restoreBackupPreview: (filePath, password) => ipcRenderer.invoke('restore-backup-preview', { filePath, password }),
+  restoreBackupApply: (filePath, password) => ipcRenderer.invoke('restore-backup-apply', { filePath, password }),
+  openBackupFileDialog: () => ipcRenderer.invoke('open-backup-file-dialog'),
 });

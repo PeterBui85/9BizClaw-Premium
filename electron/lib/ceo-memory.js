@@ -6,8 +6,8 @@ let _db = null;
 const CURRENT_MODEL_VERSION = 'e5-small-v1';
 const MAX_CONTENT_LENGTH = 500;
 const HOT_TIER_MAX_CHARS = 8000;
-const VALID_TYPES = ['rule', 'pattern', 'preference', 'fact', 'correction'];
-const VALID_SOURCES = ['nudge', 'ceo_correction', 'evening_summary', 'manual'];
+const VALID_TYPES = ['rule', 'pattern', 'preference', 'fact', 'correction', 'task'];
+const VALID_SOURCES = ['nudge', 'ceo_correction', 'evening_summary', 'manual', 'auto'];
 
 function getMemoryDb() {
   if (_db) return _db;
@@ -223,7 +223,19 @@ function _scheduleRegeneration() {
   }, 2000);
 }
 
+function trimOldTaskEntries() {
+  const db = getMemoryDb();
+  if (!db) return;
+  const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
+  try {
+    db.prepare("DELETE FROM ceo_memories WHERE type = 'task' AND created_at < ?").run(cutoff);
+  } catch (e) {
+    console.warn('[ceo-memory] trim old tasks error:', e?.message);
+  }
+}
+
 function regenerateCeoMemoryFile() {
+  trimOldTaskEntries();
   const db = getMemoryDb();
   if (!db) return;
   const { getWorkspace } = require('./workspace');
@@ -253,10 +265,11 @@ function regenerateCeoMemoryFile() {
     preference: 'Sở thích của sếp',
     pattern: 'Patterns khách hàng',
     fact: 'Sự kiện quan trọng',
+    task: 'Việc đã làm gần đây',
   };
 
   let md = '# Bộ nhớ bot\n\n';
-  for (const type of ['correction', 'rule', 'preference', 'pattern', 'fact']) {
+  for (const type of ['correction', 'rule', 'preference', 'pattern', 'fact', 'task']) {
     if (groups[type]?.length) {
       md += `## ${typeLabels[type]}\n`;
       for (const line of groups[type]) {
@@ -275,6 +288,63 @@ function regenerateCeoMemoryFile() {
   if (md.trim() !== current.trim()) {
     fs.writeFileSync(filePath, md, 'utf-8');
     console.log('[ceo-memory] CEO-MEMORY.md regenerated (' + totalChars + ' chars, ' + allRows.length + ' memories total)');
+  }
+  injectMemoryIntoAgentsMd();
+}
+
+// ---------------------------------------------------------------------------
+//  AGENTS.md memory injection
+// ---------------------------------------------------------------------------
+
+const MEMORY_SECTION_START = '<!-- MEMORY-CONTEXT-START -->';
+const MEMORY_SECTION_END = '<!-- MEMORY-CONTEXT-END -->';
+const MEMORY_MAX_CHARS = 2000;
+
+function injectMemoryIntoAgentsMd() {
+  try {
+    const { getWorkspace } = require('./workspace');
+    const ws = getWorkspace();
+    if (!ws) return;
+    const agentsPath = path.join(ws, 'AGENTS.md');
+    if (!fs.existsSync(agentsPath)) return;
+
+    const ceoMemPath = path.join(ws, 'CEO-MEMORY.md');
+    let memContent = '';
+    if (fs.existsSync(ceoMemPath)) {
+      memContent = fs.readFileSync(ceoMemPath, 'utf-8').trim();
+    }
+    if (!memContent || memContent.includes('Chưa có gì')) memContent = '';
+
+    if (memContent.length > MEMORY_MAX_CHARS) {
+      const lines = memContent.split('\n');
+      let trimmed = '';
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const candidate = lines[i] + '\n' + trimmed;
+        if (candidate.length > MEMORY_MAX_CHARS) break;
+        trimmed = candidate;
+      }
+      memContent = trimmed.trim();
+    }
+
+    const section = memContent
+      ? `\n\n${MEMORY_SECTION_START}\n<memory-context>\n${memContent}\n</memory-context>\n${MEMORY_SECTION_END}`
+      : `\n\n${MEMORY_SECTION_START}\n${MEMORY_SECTION_END}`;
+
+    let agents = fs.readFileSync(agentsPath, 'utf-8');
+    const startIdx = agents.indexOf(MEMORY_SECTION_START);
+    const endIdx = agents.indexOf(MEMORY_SECTION_END);
+    if (startIdx !== -1 && endIdx !== -1) {
+      agents = agents.slice(0, startIdx) + section.trim() + agents.slice(endIdx + MEMORY_SECTION_END.length);
+    } else {
+      agents = agents.trimEnd() + section;
+    }
+
+    const current = fs.readFileSync(agentsPath, 'utf-8');
+    if (agents !== current) {
+      fs.writeFileSync(agentsPath, agents, 'utf-8');
+    }
+  } catch (e) {
+    console.warn('[ceo-memory] inject into AGENTS.md failed:', e?.message);
   }
 }
 
@@ -298,6 +368,7 @@ module.exports = {
   regenerateCeoMemoryFile,
   scheduleRegeneration: _scheduleRegeneration,
   cleanupCeoMemoryTimers,
+  injectMemoryIntoAgentsMd,
   CURRENT_MODEL_VERSION,
   MAX_CONTENT_LENGTH,
   HOT_TIER_MAX_CHARS,

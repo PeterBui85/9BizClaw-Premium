@@ -64,7 +64,8 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   else bad('cron-api defines _requireCeoTelegram helper', 'helper missing');
 
   // Global gate must check non-public routes BEFORE any handler dispatch.
-  if (/PUBLIC_ROUTES/.test(src) && /if \(!PUBLIC_ROUTES\.has\(urlPath\)\)/.test(src)) ok('cron-api global default-deny gate present');
+  // Google routes also gated by _requireCeoTelegram (merged gate).
+  if (/PUBLIC_ROUTES/.test(src) && /if \(!PUBLIC_ROUTES\.has\(urlPath\)/.test(src)) ok('cron-api global default-deny gate present');
   else bad('cron-api global default-deny gate present', 'gate not wired');
 
   // Bearer regex must demand 48 hex (16 byte * 2 ascii each, plus +16 from extra randomBytes(24).toString).

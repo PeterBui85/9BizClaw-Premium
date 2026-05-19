@@ -261,7 +261,7 @@ function startAppointmentDispatcher() {
   }, 60 * 1000);
   _apptDispatcherInitialTimeout = setTimeout(() => {
     _apptDispatcherInitialTimeout = null;
-    apptDispatcherTick().catch(() => {});
+    apptDispatcherTick().catch(e => console.warn('[appointments] tick error:', e?.message));
   }, 10_000);
   console.log('[apptDispatcher] started (60s tick)');
 }

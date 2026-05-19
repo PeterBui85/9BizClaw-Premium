@@ -65,6 +65,7 @@ function isSupportedAssetImage(filePath) {
 
 function resolveAssetPath(brandAssetsDir, name) {
   if (!name || typeof name !== 'string') return null;
+  if (!brandAssetsDir) return null;
   if (isAssetPathSafe(brandAssetsDir, name)) {
     const resolved = path.resolve(brandAssetsDir, name);
     if (fs.existsSync(resolved) && isSupportedAssetImage(resolved)) return resolved;

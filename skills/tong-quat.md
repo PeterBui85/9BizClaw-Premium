@@ -1,3 +1,10 @@
+---
+name: tong-quat
+description: Kỹ năng tổng quát áp dụng cho mọi ngành — nhắc việc, trả lời khách, soạn báo cáo
+metadata:
+  version: 1.0.0
+---
+
 # Kỹ năng ngành: Tổng quát (Áp dụng cho mọi ngành)
 
 ## Nhắc nhở và lịch trình
