@@ -69,10 +69,18 @@ Lịch một lần:
 web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo&oneTimeAt=2026-04-22T09:00:00&groupId=123456&groupName=Tên+nhóm&content=Nội+dung!
 ```
 
-Agent mode:
+Agent mode (bot tự suy luận + thực hiện):
 ```
 web_fetch http://127.0.0.1:20200/api/cron/create?label=Báo+cáo+sáng&cronExpr=0+8+*+*+*&groupId=123456&groupName=Tên+nhóm&mode=agent&prompt=Tổng+hợp+hoạt+động+hôm+qua+và+gửi+báo+cáo+ngắn+gọn
 ```
+
+**GỬI ẢNH vào nhóm Zalo:** LUÔN dùng agent mode. KHÔNG dùng `content` với đường dẫn file — sẽ gửi đường dẫn dưới dạng text.
+```
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Ảnh+sáng+nhóm&cronExpr=30+8+*+*+*&groupId=123456&groupName=Tên+nhóm&mode=agent&prompt=[WORKFLOW]+Tạo+1+ảnh+poster+chào+buổi+sáng+rồi+gửi+vào+nhóm+Tên+nhóm
+```
+Bot sẽ tự: tạo ảnh → gửi ảnh thật (qua openzca msg image) → không bao giờ gửi đường dẫn file.
+
+**CẢNH BÁO: KHÔNG BAO GIỜ tạo cron text (`content`) chứa đường dẫn ảnh** như `brand-assets/generated/img_xxx.png`. Kết quả: gửi TEXT đường dẫn cho khách, không phải ảnh. Muốn gửi ảnh → agent mode + prompt mô tả ảnh.
 
 ## Bước 5: Xác nhận cron đã tạo (BẮT BUỘC)
 

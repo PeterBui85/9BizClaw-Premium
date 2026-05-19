@@ -489,37 +489,89 @@ export async function handleModoroZaloInbound(params: {
     } catch {}
     const __tkNow = Date.now();
     let __tkDirty = false;
+    const __tkTxDir = __tkPath.join(__tkWs, "zalo-takeover-transcripts");
+    const __tkTxFile = (tid: string) => __tkPath.join(__tkTxDir, tid + ".jsonl");
+    const __tkCtxFile = (tid: string) => __tkPath.join(__tkWs, "zalo-takeover-context-" + tid + ".txt");
+    const __tkLogTx = (tid: string, isOwner: boolean, body: string) => {
+      try {
+        if (!__tkFs.existsSync(__tkTxDir)) __tkFs.mkdirSync(__tkTxDir, { recursive: true });
+        __tkFs.appendFileSync(__tkTxFile(tid), JSON.stringify({ ts: new Date().toISOString(), isOwner, body: (body || "").slice(0, 500) }) + "\n");
+      } catch {}
+    };
+    const __tkFlushTx = (tid: string, isGroup: boolean) => {
+      const txf = __tkTxFile(tid);
+      if (!__tkFs.existsSync(txf)) return;
+      try {
+        const lines = __tkFs.readFileSync(txf, "utf-8").trim().split("\n").filter(Boolean);
+        if (lines.length === 0) { try { __tkFs.unlinkSync(txf); } catch {} return; }
+        const entries = lines.map((l: string) => JSON.parse(l));
+        const date = new Date().toISOString().slice(0, 10);
+        let summary = "";
+        for (const e of entries) {
+          const who = e.isOwner ? "CEO" : "Khách";
+          const t = new Date(e.ts).toTimeString().slice(0, 5);
+          summary += `- [${t}] ${who}: ${e.body}\n`;
+        }
+        const memDir = isGroup
+          ? __tkPath.join(__tkWs, "memory", "zalo-groups")
+          : __tkPath.join(__tkWs, "memory", "zalo-users");
+        const memFile = __tkPath.join(memDir, tid + ".md");
+        if (!__tkFs.existsSync(memDir)) __tkFs.mkdirSync(memDir, { recursive: true });
+        __tkFs.appendFileSync(memFile, `\n## ${date} — CEO tiếp quản (${entries.length} tin)\n${summary}`);
+        __tkFs.writeFileSync(__tkCtxFile(tid), summary);
+        try { __tkFs.unlinkSync(txf); } catch {}
+        runtime.log?.(`modoro-zalo: OWNER-TAKEOVER flushed ${entries.length} messages for thread ${tid}`);
+      } catch (e) {
+        runtime.log?.(`modoro-zalo: OWNER-TAKEOVER flush error: ${String(e)}`);
+      }
+    };
     for (const [k, v] of Object.entries(__tkMap)) {
       if (__tkNow - new Date((v as any).pausedAt).getTime() > __tkTTL) {
         delete __tkMap[k];
         __tkDirty = true;
+        __tkFlushTx(k, !!(v as any).isGroup);
         runtime.log?.(`modoro-zalo: OWNER-TAKEOVER auto-resumed thread ${k} (expired)`);
       }
     }
     if (__tkIsOwner && (__tkCmdLow === "/tamdung" || __tkCmdLow === "/tạm dừng" || __tkCmdLow === "tamdung")) {
-      __tkMap[__tkThread] = { pausedAt: new Date().toISOString() };
+      __tkMap[__tkThread] = { pausedAt: new Date().toISOString(), isGroup: !!message.isGroup };
       try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {}
       runtime.log?.(`modoro-zalo: OWNER-TAKEOVER paused thread ${__tkThread}`);
       return;
     }
     if (__tkIsOwner && (__tkCmdLow === "/tieptuc" || __tkCmdLow === "/tiếp tục" || __tkCmdLow === "tieptuc")) {
+      const __tkWasGroup = !!(__tkMap[__tkThread] as any)?.isGroup;
       delete __tkMap[__tkThread];
       try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {}
+      __tkFlushTx(__tkThread, __tkWasGroup);
       runtime.log?.(`modoro-zalo: OWNER-TAKEOVER resumed thread ${__tkThread}`);
       return;
     }
     if (__tkIsOwner && __tkMap[__tkThread]) {
+      __tkLogTx(__tkThread, true, __tkCmd);
       if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
       return;
     }
     if (__tkMap[__tkThread]) {
+      __tkLogTx(__tkThread, false, __tkCmd);
       if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
       runtime.log?.(`modoro-zalo: OWNER-TAKEOVER skip thread ${__tkThread} (paused)`);
       return;
     }
     if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
+    const __tkCtxPath = __tkCtxFile(__tkThread);
+    if (__tkFs.existsSync(__tkCtxPath)) {
+      try {
+        const __tkCtx = __tkFs.readFileSync(__tkCtxPath, "utf-8").trim();
+        if (__tkCtx) {
+          rawBody = `[Ghi chú hệ thống: CEO vừa trực tiếp trả lời trong cuộc chat này. Nội dung trao đổi:\n${__tkCtx}Hãy tiếp tục hỗ trợ khách dựa trên ngữ cảnh trên.]\n\n${rawBody || ""}`;
+        }
+        __tkFs.unlinkSync(__tkCtxPath);
+        runtime.log?.(`modoro-zalo: OWNER-TAKEOVER injected context for thread ${__tkThread}`);
+      } catch {}
+    }
   }
-  // === END 9BizClaw OWNER-TAKEOVER PATCH v1 ===
+  // === END 9BizClaw OWNER-TAKEOVER PATCH v2 ===
   // === 9BizClaw SKILL-NEUTRALIZE PATCH v1 ===
   if (typeof rawBody === 'string' && rawBody.includes('[[SKILL_')) {
     rawBody = rawBody.replace(/\[\[SKILL_/g, '[SKILL-blocked-');

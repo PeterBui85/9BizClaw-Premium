@@ -136,27 +136,47 @@ function getInstalledVersion() {
  * installer) after setup completes.
  */
 function isUpgradeFromV23() {
-  // Check version file in current primary userData — this is the authoritative signal.
-  // v2.3.x installers wrote:  %APPDATA%/9bizclaw/version.txt  = "2.3.x"
-  // v2.4.0 runtime installer writes:  %APPDATA%/9bizclaw/runtime-version.txt  = "2.4.0"
-  // These are DIFFERENT files, so there is no ambiguity.
-  try {
-    const versionFile = path.join(getUserDataDir(), 'version.txt');
-    if (fs.existsSync(versionFile)) {
-      const content = fs.readFileSync(versionFile, 'utf8').trim();
-      const match = content.match(/^(\d+)\.(\d+)/);
-      if (match) {
-        const major = parseInt(match[1], 10);
-        const minor = parseInt(match[2], 10);
-        // Upgrade from v2.3.x if we find an old-style version.txt that says < 2.4.0
-        if (major < 2 || (major === 2 && minor < 4)) {
+  // v2.3.x wrote vendor-version.txt (NOT version.txt) during tar extraction.
+  // Check BOTH files — the original code only checked version.txt which
+  // v2.3.x never created, so migration never triggered on real upgrades.
+  const ud = getUserDataDir();
+  const candidates = [
+    path.join(ud, 'version.txt'),
+    path.join(ud, 'vendor-version.txt'),
+  ];
+  for (const versionFile of candidates) {
+    try {
+      if (fs.existsSync(versionFile)) {
+        const content = fs.readFileSync(versionFile, 'utf8').trim();
+        const match = content.match(/^(\d+)\.(\d+)/);
+        if (match) {
+          const major = parseInt(match[1], 10);
+          const minor = parseInt(match[2], 10);
+          if (major < 2 || (major === 2 && minor < 4)) {
+            return true;
+          }
+        }
+        // vendor-version.txt may contain a hash/bundle version, not semver.
+        // If the file exists but content isn't semver, it's still a v2.3.x artifact.
+        if (versionFile.endsWith('vendor-version.txt') && content.length > 0) {
           return true;
         }
       }
+    } catch {}
+  }
+
+  // Fallback: if userData has an old bundled vendor/ with node_modules but
+  // NO runtime-version.txt, this is a v2.3.x install that never migrated.
+  try {
+    const runtimeMarker = path.join(ud, 'runtime-version.txt');
+    const oldVendor = path.join(ud, 'vendor', 'node_modules');
+    if (!fs.existsSync(runtimeMarker) && fs.existsSync(oldVendor)) {
+      console.log('[migration] detected v2.3.x vendor/ without runtime marker — triggering migration');
+      return true;
     }
   } catch {}
 
-  return false; // Likely fresh install or already on v2.4.0
+  return false;
 }
 
 /**

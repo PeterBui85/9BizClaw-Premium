@@ -1,68 +1,107 @@
 ---
 name: workflow-chains
-description: Kết hợp nhiều capability theo chuỗi khi CEO yêu cầu multi-domain workflow
+description: Tự tách và thực hiện workflow nhiều bước — không giới hạn số bước, tự compose từ API có sẵn
 metadata:
-  version: 1.0.0
+  version: 2.0.0
 ---
 
-# Workflow Chains — Kết hợp nhiều khả năng
+# Workflow Chains — Tự compose workflow từ API có sẵn
 
-**Khi CEO yêu cầu kết hợp nhiều domain** (VD: "đọc Sheet rồi tạo ảnh đăng Facebook", "lấy dữ liệu rồi gửi nhóm Zalo"):
+CEO có thể yêu cầu BẤT KỲ workflow nào kết hợp nhiều bước. Bot KHÔNG phụ thuộc vào danh sách chain cố định — tự tách bước, tự chọn API, tự chạy tuần tự.
 
-## Nguyên tắc
+## Quy tắc sắt
 
-1. **Tách thành bước rõ ràng** — mỗi bước = 1 API call, confirm kết quả trước khi bước tiếp
-2. **KHÔNG gộp** — không gọi 2 API cùng lúc, không đoán kết quả bước 1 để feed vào bước 2
-3. **Fail fast** — bước nào fail → dừng ngay, báo CEO rõ bước nào lỗi, không tiếp tục
-4. **Mỗi bước đọc skill tương ứng** — bước Google Sheet → đọc `skills/operations/google-workspace.md`, bước tạo ảnh → đọc `skills/operations/image-generation.md`
+1. **KHÔNG DỪNG GIỮA CHỪNG.** CEO nói "tạo ảnh rồi gửi nhóm Zalo" = 2 bước. Tạo ảnh xong → PHẢI gửi tiếp. Im ru sau bước 1 = lỗi nghiêm trọng.
+2. **Output bước N = input bước N+1.** Dữ liệu từ Sheet → làm prompt tạo ảnh. imagePath từ generate → gửi qua send-media. KHÔNG để mất data giữa các bước.
+3. **Fail fast, fail loud.** Bước nào fail → dừng ngay, báo CEO rõ bước nào lỗi. KHÔNG tiếp tục với data thiếu.
+4. **Không giới hạn số bước.** 3, 5, 7, 10 bước đều OK. CEO muốn gì thì compose từ API có sẵn.
 
-## Quy trình
+## API actions có sẵn (bot tự chọn)
 
-### Bước 0: Phân tích yêu cầu
+| Domain | Actions | Skill tham khảo |
+|--------|---------|-----------------|
+| Google Sheets | `sheets/get`, `sheets/update`, `sheets/append`, `sheets/create-formatted` | `google-workspace.md` |
+| Google Calendar | `calendar/events`, `calendar/create`, `calendar/free-slots` | `google-workspace.md` |
+| Google Gmail | `gmail/inbox`, `gmail/read`, `gmail/send` | `google-workspace.md` |
+| Google Drive | `drive/list`, `drive/download`, `drive/upload` | `google-workspace.md` |
+| Google Docs | `docs/read`, `docs/write`, `docs/create` | `google-workspace.md` |
+| Tạo ảnh | `image/generate`, `image/status`, `image/generate-and-send-zalo` | `image-generation.md` |
+| Gửi Zalo text | `openzca msg send` (qua cron hoặc sendZaloTo) | `telegram-ceo.md` |
+| Gửi Zalo ảnh | `zalo/send-media`, `image/generate-and-send-zalo` | `image-generation.md` |
+| Facebook post | `fb/schedule/create`, `fb/post` | `facebook-post-workflow.md` |
+| Đơn hàng | `order/create`, `order/list`, `order/update`, `order/summary` | `workspace-api.md` |
+| Tồn kho | `inventory/adjust`, `inventory/check`, `inventory/alerts` | `workspace-api.md` |
+| Nghỉ phép | `leave/request`, `leave/list`, `leave/summary` | `workspace-api.md` |
+| Báo cáo | `report/daily` | `workspace-api.md` |
+| CRM Sheet | `zalo-crm/export` | `zalo-followup-sheet.md` |
+| Workspace file | `workspace/read`, `workspace/append`, `workspace/list` | `workspace-api.md` |
+| CEO file | `file/read`, `file/write`, `file/list`, `file/exec` | `ceo-file-api.md` |
+| Memory | `memory/write`, `memory/search` | `ceo-memory-api.md` |
+| Cron | `cron/create`, `cron/list`, `cron/delete` | `cron-management.md` |
 
-Tách yêu cầu CEO thành danh sách bước, liệt kê cho CEO xác nhận:
+## Cách thực hiện (bất kỳ workflow nào)
 
-> Em hiểu yêu cầu gồm 3 bước:
-> 1. Đọc dữ liệu từ Google Sheet "Doanh thu T5"
-> 2. Tạo ảnh báo cáo dựa trên số liệu
-> 3. Đăng lên Facebook fanpage
+### Bước 0: Phân tích + liệt kê
+
+Tách yêu cầu CEO thành bước, chọn API cho mỗi bước, liệt kê:
+
+> Em hiểu yêu cầu gồm 4 bước:
+> 1. Đọc nội dung từ Google Sheet "Lịch đăng bài"
+> 2. Lấy nội dung hôm nay → soạn prompt tạo ảnh
+> 3. Tạo ảnh gửi vào nhóm Zalo "Khách VIP"
+> 4. Ghi lại trạng thái "đã gửi" vào Sheet
 >
-> Anh xác nhận em làm luôn?
+> Em làm luôn nhé?
 
-### Bước 1-N: Thực hiện tuần tự
+CEO confirm → chạy. CEO sửa → điều chỉnh.
+
+### Bước 1-N: Chạy tuần tự
 
 Mỗi bước:
-1. Đọc skill file tương ứng
-2. Gọi API theo đúng hướng dẫn trong skill
-3. Xác nhận kết quả thành công (response OK, có data/jobId/proof)
-4. Dùng output làm input cho bước kế tiếp
-5. Báo CEO kết quả từng bước ngắn gọn
+1. Gọi API → đợi response thành công
+2. Trích data cần thiết từ response (imagePath, spreadsheetId, content...)
+3. Dùng data đó cho bước tiếp theo
+4. Báo CEO ngắn gọn kết quả từng bước (KHÔNG đợi hết chain mới báo)
 
 ### Bước cuối: Tổng kết
 
-Báo CEO tóm tắt toàn bộ chain:
-> Xong 3/3 bước:
-> - Sheet: đọc 12 dòng doanh thu
-> - Ảnh: tạo xong (đã gửi preview Telegram)
-> - Facebook: đã đăng, post ID: 123456
+> Xong 4/4 bước:
+> 1. Sheet: đọc 5 dòng lịch đăng bài
+> 2. Prompt: soạn xong từ nội dung "Khuyến mãi tuần 3"
+> 3. Ảnh: đã tạo + gửi nhóm "Khách VIP"
+> 4. Sheet: cập nhật trạng thái "đã gửi"
 
-## Các chain phổ biến
+## Quy tắc gửi ảnh Zalo (hay quên)
 
-| Yêu cầu CEO | Bước 1 | Bước 2 | Bước 3 |
-|---|---|---|---|
-| "Đọc Sheet rồi đăng Facebook" | Google Sheets get | Image generate | Facebook post |
-| "Tạo ảnh gửi nhóm Zalo" | Brand assets list | Image generate-and-send-zalo | — |
-| "Đọc email rồi tóm tắt gửi Telegram" | Gmail read | — (tóm tắt) | — (reply trực tiếp) |
-| "Lấy dữ liệu Sheet gửi nhóm Zalo" | Google Sheets get | Zalo send | — |
+**CẢNH BÁO: Đây là lỗi phổ biến nhất trong workflow.**
+
+- Tạo ảnh xong PHẢI gửi tiếp nếu CEO yêu cầu. KHÔNG im ru.
+- Gửi ẢNH THẬT, không gửi đường dẫn file dưới dạng text.
+- Dùng `generate-and-send-zalo` (atomic, 1 call) HOẶC poll `image/status` → lấy `imagePath` → gọi `zalo/send-media`.
+- Đọc `skills/operations/image-generation.md` mục "Gửi ảnh vào nhóm Zalo SAU KHI tạo xong" cho chi tiết.
+
+## Ví dụ workflow 5+ bước
+
+CEO: "Đọc Sheet tồn kho, lọc mặt hàng sắp hết, tạo ảnh cảnh báo, gửi nhóm Kho, rồi ghi log vào Sheet báo cáo"
+
+→ 5 bước:
+1. `sheets/get` → đọc Sheet tồn kho
+2. Lọc items có qty < minQty → soạn nội dung cảnh báo
+3. `image/generate-and-send-zalo` → tạo ảnh cảnh báo + gửi nhóm Kho
+4. `sheets/append` → ghi log vào Sheet báo cáo (ngày, số items cảnh báo, đã gửi nhóm)
+5. Reply CEO: "Em đã gửi cảnh báo tồn kho (3 items sắp hết) vào nhóm Kho + ghi log Sheet."
 
 ## Cron workflow
 
-Khi CEO muốn chain chạy tự động theo lịch, tạo cron với prompt mô tả đầy đủ chain. Prompt cron nên bắt đầu bằng `[WORKFLOW]` để đánh dấu đây là multi-step.
+CEO muốn chain chạy tự động → tạo cron agent mode với prefix `[WORKFLOW]`:
+```
+web_fetch POST /api/cron/create body={"label":"Cảnh báo tồn kho sáng","cronExpr":"0 8 * * 1-5","groupId":"123","groupName":"Nhóm Kho","mode":"agent","prompt":"[WORKFLOW] Đọc Sheet tồn kho, lọc hàng sắp hết, tạo ảnh cảnh báo gửi nhóm Kho, ghi log Sheet báo cáo"}
+```
 
-Đọc `skills/operations/cron-management.md` cho cách tạo cron.
+**Gửi ảnh trong cron:** LUÔN dùng agent mode. KHÔNG dùng `content` với đường dẫn file.
 
-## Giới hạn
+## An toàn
 
-- Tối đa 5 bước/chain — quá phức tạp → khuyên CEO dùng tool chuyên dụng
-- Nếu bước nào cần tính toán phức tạp (lương, thuế, thống kê) → khuyên CEO dùng Google Sheets cho phần tính, bot chỉ đọc kết quả
 - KHÔNG chain từ Zalo customer — chỉ CEO Telegram/Dashboard
+- Bước nào cần confirm CEO (gửi email, đăng Facebook, xóa dữ liệu) → hỏi trước khi chạy
+- Bước đọc data (Sheet, email, memory) → chạy luôn không cần hỏi

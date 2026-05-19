@@ -3019,6 +3019,10 @@
     {
       "path": "electron/lib/google-routes.js",
       "bytes": 20652
+    },
+    {
+      "path": "electron/lib/migration.js",
+      "bytes": 20560
     }
   ]
 }

@@ -60,6 +60,22 @@ CEO nói "tạo ảnh", "làm ảnh", "thiết kế ảnh", "ảnh quảng cáo"
 
 Bước gọi generate là tool call bắt buộc trước khi reply text. Nếu chưa gọi generate thì không được nói đã bắt đầu tạo ảnh.
 
+## Gửi ảnh vào nhóm Zalo SAU KHI tạo xong
+
+Khi CEO yêu cầu "tạo ảnh rồi gửi vào nhóm X" — PHẢI gửi ảnh thật, KHÔNG chỉ tạo rồi im.
+
+**Cách 1 (atomic — khuyến nghị):** Dùng route tạo + gửi cùng lúc:
+```
+GET http://127.0.0.1:20200/api/image/generate-and-send-zalo?groupId=<id>&groupName=<tên>&prompt=<prompt>&size=1024x1024
+```
+Route này tạo ảnh rồi tự gửi vào nhóm Zalo khi xong. Đọc `skills/marketing/zalo-post-workflow.md` cho chi tiết.
+
+**Cách 2 (2 bước — khi ảnh đã tạo sẵn):**
+1. Poll `GET /api/image/status?jobId=<jobId>` cho đến khi `status: "done"` + có `imagePath`
+2. Gửi ảnh: `GET http://127.0.0.1:20200/api/zalo/send-media?groupId=<id>&mediaPath=<imagePath>&isGroup=true`
+
+**CẢNH BÁO:** KHÔNG BAO GIỜ gửi đường dẫn file (`brand-assets/generated/img_xxx.png`) dưới dạng TEXT. Khách sẽ nhận được chuỗi ký tự, không phải ảnh.
+
 ## Tài sản thương hiệu
 
 - CEO nói "dùng logo" / "dùng ảnh sản phẩm" / "dùng mascot" — gọi `GET /api/brand-assets/list` trước.
