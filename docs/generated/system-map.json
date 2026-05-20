@@ -2922,7 +2922,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 607335
+      "bytes": 607601
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -2934,7 +2934,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 124658
+      "bytes": 124721
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2946,7 +2946,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 79037
+      "bytes": 79334
     },
     {
       "path": "electron/lib/runtime-installer.js",
@@ -2970,7 +2970,7 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 45358
+      "bytes": 45855
     },
     {
       "path": "electron/lib/skill-manager.js",
@@ -3001,6 +3001,10 @@
       "bytes": 30860
     },
     {
+      "path": "electron/ui/brain.js",
+      "bytes": 28661
+    },
+    {
       "path": "electron/ui/splash.html",
       "bytes": 26978
     },
@@ -3011,10 +3015,6 @@
     {
       "path": "electron/lib/brain-graph.js",
       "bytes": 26223
-    },
-    {
-      "path": "electron/ui/brain.js",
-      "bytes": 24667
     },
     {
       "path": "electron/lib/google-routes.js",

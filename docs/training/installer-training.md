@@ -6,15 +6,15 @@
 
 ## 1. Chuẩn Bị Trước Khi Cài
 
-CEO cần chuẩn bị sẵn **5 thứ bắt buộc** trước khi bạn đến:
+CEO cần chuẩn bị sẵn **5 thứ bắt buộc** trước buổi remote:
 
 | # | Cần chuẩn bị | Chi tiết |
 |---|-------------|----------|
 | 1 | Tài khoản Telegram | Cài Telegram trên điện thoại hoặc máy tính |
-| 2 | Tài khoản Zalo | Đang đăng nhập Zalo trên cùng máy sẽ cài 9BizClaw |
+| 2 | Tài khoản Zalo | Đang đăng nhập Zalo **trên chính máy tính** sẽ cài 9BizClaw. Zalo trên điện thoại KHÔNG đủ — app cần kết nối Zalo desktop |
 | 3 | Tài khoản ChatGPT | Đăng ký tại chatgpt.com (miễn phí hoặc Plus đều được) |
-| 4 | Máy tính | Windows 10+ hoặc macOS 11+, tối thiểu 4GB RAM, 500MB trống |
-| 5 | License key | Dạng `CLAW-eyJlIjoiZW1haWxA...` — nhận từ 9Biz qua email |
+| 4 | Máy tính | Windows 10+ hoặc macOS 11+, tối thiểu 8GB RAM, CPU 4 nhân trở lên, 500MB trống |
+| 5 | License key | Dạng `CLAW-eyJlIjoiZW1haWxA...` — nhận file .txt từ 9Biz. Mở file, copy TOÀN BỘ key, paste vào app |
 
 **Không bắt buộc nhưng nên có sẵn:** Tên công ty, địa chỉ, số hotline, bảng giá sản phẩm (PDF/Word/Excel).
 
@@ -27,12 +27,9 @@ CEO cần chuẩn bị sẵn **5 thứ bắt buộc** trước khi bạn đến:
 - **Windows:** Mở file `.exe` > chờ cài (1-2 phút) > app tự mở.
 - **Mac:** Mở file `.dmg` > kéo icon vào Applications > mở app.
 
-### Lần đầu mở app — Tải runtime (~170MB)
+### Lần đầu mở app — Tải thêm dữ liệu
 
-Lần đầu mở app, màn hình splash hiện thanh tiến trình. App tải thêm:
-- Node.js (~20MB) + npm packages (~145MB) + gogcli (~5MB) = **~170MB**
-- Mất **2-10 phút** tuỳ tốc độ mạng
-- Cần internet ổn định. Sau lần đầu, app chỉ cần mạng để kết nối ChatGPT/Telegram/Zalo.
+Lần đầu mở, app cần tải thêm dữ liệu để chạy được. Mất **2-10 phút** tuỳ tốc độ mạng. Cần internet ổn định trong lúc tải. Sau lần đầu, app chỉ cần mạng để kết nối ChatGPT/Telegram/Zalo.
 
 **6 bước trên màn hình splash:**
 
@@ -66,14 +63,14 @@ Lần đầu mở app, màn hình splash hiện thanh tiến trình. App tải t
 
 - Format key: `CLAW-...` (chuỗi dài, bắt đầu bằng CLAW-)
 - **Khoá theo phần cứng máy** (hardware lock) — KHÔNG copy sang máy khác được
-- Copy TOÀN BỘ key từ email gốc — **KHÔNG gõ tay** (dễ sai ký tự)
-- Kiểm tra: không có dấu cách thừa ở đầu hoặc cuối (thử paste vào Notepad trước)
+- Mở file .txt nhận từ 9Biz, copy TOÀN BỘ key, paste vào app — **KHÔNG gõ tay** (dễ sai ký tự)
+- Kiểm tra: không có dấu cách thừa ở đầu hoặc cuối (paste vào Notepad trước để kiểm tra)
 
 ### Lỗi thường gặp
 
 | Thông báo | Cách xử lý |
 |-----------|-----------|
-| "Key không hợp lệ" | Copy lại toàn bộ từ email, không gõ tay, không có dấu cách thừa |
+| "Key không hợp lệ" | Mở lại file .txt, copy toàn bộ, không gõ tay, không có dấu cách thừa |
 | "Key đã hết hạn" | Liên hệ tech@modoro.com.vn để gia hạn |
 | "Bind tới máy khác" | Key đã dùng trên máy cũ — liên hệ support để reset |
 
@@ -116,7 +113,7 @@ Hiện tóm tắt: tên, AI kết nối, Telegram kết nối. Nhấn "Khởi đ
 
 ## 5. Xác Nhận Cài Đặt Thành Công
 
-Wizard "Hoàn tất" chỉ nghĩa là cấu hình đã lưu. **Proof thật sự là bot trả lời tin nhắn.**
+Wizard hiện "Hoàn tất" chỉ nghĩa là cấu hình đã lưu. **Cài thành công hay chưa, phải thử gửi tin cho bot — bot trả lời mới là xong.**
 
 ### Checklist xác nhận
 
@@ -161,7 +158,7 @@ Nếu phải dùng mạng công ty: nhờ IT mở `registry.npmjs.org`, `nodejs.
 ### Key không hợp lệ
 
 **Xử lý:**
-1. Key bắt đầu bằng `CLAW-` — copy TOÀN BỘ từ email
+1. Key bắt đầu bằng `CLAW-` — mở file .txt, copy TOÀN BỘ
 2. KHÔNG gõ tay
 3. Không có dấu cách thừa đầu/cuối
 4. Thử paste vào Notepad kiểm tra trước
@@ -170,7 +167,7 @@ Nếu phải dùng mạng công ty: nhờ IT mở `registry.npmjs.org`, `nodejs.
 
 ## 7. Bàn Giao Cho CEO
 
-Trước khi rời đi, đảm bảo **3 việc tối thiểu:**
+Trước khi kết thúc buổi remote, đảm bảo **3 việc tối thiểu:**
 
 | # | Việc | Cách xác nhận |
 |---|------|---------------|
@@ -179,9 +176,10 @@ Trước khi rời đi, đảm bảo **3 việc tối thiểu:**
 | 3 | Nhắc để máy mở | App phải mở để bot và cron hoạt động. Có thể thu nhỏ xuống system tray (khay hệ thống) |
 
 **Lưu ý thêm:**
-- Mac đóng nắp = sleep = cron miss. Nhắc CEO để nắp mở hoặc tắt sleep trong Energy Saver.
-- Dữ liệu 100% trên máy, KHÔNG lên cloud. Hướng dẫn CEO dùng "Xuất backup" trong Dashboard định kỳ.
-- Nếu CEO hỏi về bảng giá/tài liệu: hướng dẫn upload vào tab Tài liệu trong Dashboard (thư mục Sản phẩm, mức Công khai).
+- **Mac đóng nắp = sleep = bot và lịch tự động ngừng hoạt động.** Nhắc CEO: vào Energy Saver > tắt sleep, hoặc để nắp mở khi muốn bot chạy 24/7.
+- **CEO hỏi "dữ liệu có lên mạng không?"** → Trả lời: "100% trên máy anh/chị, không ai ngoài anh/chị truy cập được. Không lên cloud của 9Biz hay bất kỳ đâu."
+- Hướng dẫn CEO dùng "Xuất backup" trong Dashboard định kỳ (Dashboard > menu hỗ trợ góc dưới phải).
+- **CEO muốn bot biết giá sản phẩm:** Hướng dẫn upload file bảng giá (PDF/Word/Excel) vào **Dashboard > tab Tài liệu > thư mục Sản phẩm**. Bot sẽ tự đọc và trả lời khách Zalo dựa trên file này.
 
 ---
 

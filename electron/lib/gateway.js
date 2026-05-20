@@ -738,13 +738,22 @@ async function _startOpenClawImpl(opts = {}) {
     global._gatewayStartedAt = Date.now(); // fast watchdog skips first 360s
     auditLog('gateway_ready', { elapsedMs, probeAttempts });
 
-    // Gateway agent warmup REMOVED. Attempted 5+ times across multiple builds:
-    // - HTTP POST to gateway :18789 → 404 (no such endpoint)
-    // - CLI agent --json → exit=1 or hangs indefinitely
-    // - CLI agent --reply-channel → 110s, delivered confusing agent reply
-    // - CLI agent --json --channel --to → never completes, blocks notification
-    // The openclaw embedded runner cannot be pre-warmed from outside.
-    // First message will take ~30s (inherent openclaw overhead). Accept it.
+    // Session pre-warm: fire-and-forget a tiny prompt to force session creation
+    // + AGENTS.md bootstrap. Without this, CEO's first message takes 30-60s
+    // or gets dropped entirely if it's a long AUTO-MODE prompt.
+    setTimeout(async () => {
+      try {
+        const { chatId } = await getTelegramConfigWithRecovery();
+        if (!chatId) return;
+        const res = await spawnOpenClawSafe(
+          ['agent', '--message', 'ping', '--json', '--channel', 'telegram', '--to', String(chatId)],
+          { timeoutMs: 90000, allowCmdShellFallback: false }
+        );
+        console.log(`[boot] session pre-warm ${res.code === 0 ? 'OK' : 'failed (code=' + res.code + ')'}`);
+      } catch (e) {
+        console.warn('[boot] session pre-warm error (non-fatal):', e?.message);
+      }
+    }, 3000);
   } else {
     console.log(`[startOpenClaw] gateway WS still not responding after 240s (${probeAttempts} probes). Spawning background monitor.`);
     auditLog('gateway_slow_start', { probeAttempts });

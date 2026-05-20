@@ -4999,6 +4999,7 @@
 
     function switchPage(page) {
       if (currentPage === page) return;
+      if (currentPage === 'brain' && typeof onBrainTabDeactivate === 'function') onBrainTabDeactivate();
       currentPage = page;
       const rail = _findRailForPage(page);
       if (rail && rail !== currentRail) {
@@ -5060,6 +5061,7 @@
       }
       if (page === 'brain') {
         if (typeof loadBrainGraph === 'function') loadBrainGraph();
+        if (typeof onBrainTabActivate === 'function') onBrainTabActivate();
       }
       if (page === 'telegram') {
         loadInboundDebounce();
@@ -11270,6 +11272,8 @@
   </div>
 </div>
 
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/tween.umd.js"></script>
 <script src="brain.js"></script>
 </body>
 </html>

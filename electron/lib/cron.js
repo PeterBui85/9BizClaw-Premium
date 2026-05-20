@@ -442,10 +442,11 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
     await new Promise(r => setTimeout(r, 15000));
   }
 
-  // Wrap prompt for Zalo-targeted crons: instruct agent to output ONLY customer-facing content
-  let finalPrompt = prompt;
+  // Wrap ALL cron prompts with [AUTO-MODE] tag so AGENTS.md skips confirmation rules.
+  // Zalo-targeted crons get additional delivery instruction.
+  let finalPrompt = '[AUTO-MODE]\n' + prompt;
   if (zaloTarget && zaloTarget.id) {
-    finalPrompt = prompt + '\n\n[Kết quả của task này sẽ được gửi trực tiếp đến Zalo. CHỈ output nội dung cuối cùng dành cho người nhận. TUYỆT ĐỐI KHÔNG mô tả quy trình, bước làm, workflow, hay giải thích cách em xử lý. Nếu đã hoàn thành qua tool call và không cần gửi thêm gì, chỉ output: DONE]';
+    finalPrompt += '\n\n[Kết quả của task này sẽ được gửi trực tiếp đến Zalo. CHỈ output nội dung cuối cùng dành cho người nhận. TUYỆT ĐỐI KHÔNG mô tả quy trình, bước làm, workflow, hay giải thích cách em xử lý. Nếu đã hoàn thành qua tool call và không cần gửi thêm gì, chỉ output: DONE]';
   }
   const args = buildAgentArgs(finalPrompt, chatId, true);
   const promptHasNewline = prompt.includes('\n');
