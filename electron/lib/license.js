@@ -19,6 +19,24 @@ const PUBLIC_KEY = crypto.createPublicKey(PUBLIC_KEY_PEM);
 
 const SUPABASE_TIMEOUT_MS = 12000;
 
+const _workerHost = 'modoroclaw-license.huy-bt.workers.dev';
+
+function _workerNotify(urlPath, body) {
+  try {
+    const data = JSON.stringify(body);
+    const req = https.request({
+      hostname: _workerHost,
+      path: urlPath,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    });
+    req.on('error', () => {});
+    req.setTimeout(8000, () => { try { req.destroy(); } catch {} });
+    req.write(data);
+    req.end();
+  } catch {}
+}
+
 // ---- remote registry ----
 const _rHost = ['ndssbm','edzbjut','nfznale'].join('');
 const _rUrl = 'https://' + _rHost + '.supabase.co';
@@ -420,6 +438,8 @@ async function activateLicense(key) {
   const wrote = writeLicense(data);
   if (!wrote) return { success: false, error: 'write_failed' };
 
+  _workerNotify('/api/activate', { key, machineId, hostname: os.hostname() });
+
   return { success: true };
 }
 
@@ -451,6 +471,8 @@ async function revalidateLicense() {
       _registryCacheTime = now;
     }
   }
+
+  _workerNotify('/api/validate', { key: data.key, machineId });
 
   if (_registryCache) {
     if (_registryCache.revoked) {

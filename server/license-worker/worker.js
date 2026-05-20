@@ -3,6 +3,7 @@
 
 const VALID_DAYS = 90;
 const DEFAULT_MONTHS = 12;
+const KEY_FORMAT_RE = /^CLAW-[A-Za-z0-9_-]{20,}$/;
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -41,6 +42,10 @@ function base64urlEncode(buf) {
 function sha256hex(str) {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
     .then(buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join(''));
+}
+
+async function kvKeyFromLicenseKey(licenseKey) {
+  return 'key:' + (await sha256hex(licenseKey)).slice(0, 16);
 }
 
 async function importEd25519PrivateKey(b64) {
@@ -113,7 +118,8 @@ async function handleActivate(request, body, env) {
     return jsonResponse({ ok: false, error: 'invalid_key_format' }, 400);
   }
 
-  const raw = await env.LICENSE_KV.get(`key:${key}`, 'json');
+  const kvKey = await kvKeyFromLicenseKey(key);
+  const raw = await env.LICENSE_KV.get(kvKey, 'json');
   if (!raw) return jsonResponse({ ok: false, error: 'invalid_key' });
   if (raw.revokedAt) return jsonResponse({ ok: false, error: 'revoked' });
 
@@ -121,11 +127,10 @@ async function handleActivate(request, body, env) {
   const existing = machines.find((m) => m.machineId === machineId);
 
   if (existing) {
-    // Re-activation: update metadata, return ok
     existing.hostname = hostname || existing.hostname;
     existing.appVersion = appVersion || existing.appVersion;
     existing.lastSeen = new Date().toISOString();
-    await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(raw));
+    await env.LICENSE_KV.put(kvKey, JSON.stringify(raw));
     return jsonResponse({ ok: true, validUntil: validUntilFromNow() });
   }
 
@@ -142,15 +147,12 @@ async function handleActivate(request, body, env) {
     lastSeen: new Date().toISOString(),
   });
   raw.machines = machines;
-  await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(raw));
+  await env.LICENSE_KV.put(kvKey, JSON.stringify(raw));
 
-  // Race-condition mitigation: re-read and verify count
-  // KV has no atomic CAS — two concurrent activations can both pass the
-  // length check above. Re-read after write to detect and roll back.
-  const verify = await env.LICENSE_KV.get(`key:${key}`, 'json');
+  const verify = await env.LICENSE_KV.get(kvKey, 'json');
   if (verify && (verify.machines || []).length > maxMachines) {
     verify.machines = (verify.machines || []).filter(m => m.machineId !== machineId);
-    await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(verify));
+    await env.LICENSE_KV.put(kvKey, JSON.stringify(verify));
     return jsonResponse({ ok: false, error: 'max_machines', max: maxMachines }, 403);
   }
 
@@ -171,7 +173,8 @@ async function handleValidate(request, body, env) {
     return jsonResponse({ ok: false, error: 'invalid_key_format' }, 400);
   }
 
-  const raw = await env.LICENSE_KV.get(`key:${key}`, 'json');
+  const kvKey = await kvKeyFromLicenseKey(key);
+  const raw = await env.LICENSE_KV.get(kvKey, 'json');
   if (!raw) return jsonResponse({ ok: false, error: 'invalid_key' });
   if (raw.revokedAt) return jsonResponse({ ok: false, error: 'revoked' });
 
@@ -179,29 +182,32 @@ async function handleValidate(request, body, env) {
   const bound = machines.find((m) => m.machineId === machineId);
   if (!bound) return jsonResponse({ ok: false, error: 'machine_not_bound' });
 
-  // Update lastSeen
   bound.lastSeen = new Date().toISOString();
-  await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(raw));
+  await env.LICENSE_KV.put(kvKey, JSON.stringify(raw));
 
   return jsonResponse({ ok: true, validUntil: validUntilFromNow() });
 }
 
 async function handleAdminGenerate(body, env) {
+  if (!env.ED25519_PRIVATE_KEY_B64) {
+    return jsonResponse({ ok: false, error: 'signing_key_not_configured' }, 500);
+  }
   const count = Math.min(Math.max(parseInt(body.count, 10) || 1, 1), 100);
-  const maxMachines = Math.max(parseInt(body.maxMachines, 10) || 2, 1);
+  const maxMachines = Math.max(parseInt(body.maxMachines, 10) || 1, 1);
+  const months = Math.max(parseInt(body.months, 10) || DEFAULT_MONTHS, 1);
   const note = body.note || '';
 
   const keys = [];
   for (let i = 0; i < count; i++) {
-    const key = generateKey();
+    const { key, keyHash } = await generateEd25519Key(env, note || 'batch', months);
     const record = {
-      key,
+      key, keyHash,
       createdAt: new Date().toISOString(),
       maxMachines,
       machines: [],
       note,
     };
-    await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(record));
+    await env.LICENSE_KV.put(`key:${keyHash}`, JSON.stringify(record));
     keys.push(key);
   }
 
@@ -211,7 +217,7 @@ async function handleAdminGenerate(body, env) {
 async function handleAdminCreateClient(body, env) {
   const name = (body.name || '').trim();
   if (!name) return jsonResponse({ ok: false, error: 'missing_client_name' }, 400);
-  const keysPerClient = Math.min(Math.max(parseInt(body.keysPerClient, 10) || 3, 1), 10);
+  const keysPerClient = Math.min(Math.max(parseInt(body.keysPerClient, 10) || 1, 1), 10);
   const months = Math.max(parseInt(body.months, 10) || DEFAULT_MONTHS, 1);
   const note = body.note || '';
 
@@ -340,11 +346,12 @@ async function handleDeactivate(request, body, env) {
     return jsonResponse({ ok: false, error: 'invalid_key_format' }, 400);
   }
 
-  const data = await env.LICENSE_KV.get(`key:${key}`, 'json');
+  const kvKey = await kvKeyFromLicenseKey(key);
+  const data = await env.LICENSE_KV.get(kvKey, 'json');
   if (!data) return jsonResponse({ ok: false, error: 'key_not_found' }, 404);
 
   data.machines = (data.machines || []).filter(m => m.machineId !== machineId);
-  await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(data));
+  await env.LICENSE_KV.put(kvKey, JSON.stringify(data));
   return jsonResponse({ ok: true, remaining_machines: data.machines.length });
 }
 
@@ -352,11 +359,12 @@ async function handleAdminRevoke(body, env) {
   const { key } = body;
   if (!key) return jsonResponse({ ok: false, error: 'missing_key' }, 400);
 
-  const raw = await env.LICENSE_KV.get(`key:${key}`, 'json');
+  const kvKey = await kvKeyFromLicenseKey(key);
+  const raw = await env.LICENSE_KV.get(kvKey, 'json');
   if (!raw) return jsonResponse({ ok: false, error: 'invalid_key' });
 
   raw.revokedAt = new Date().toISOString();
-  await env.LICENSE_KV.put(`key:${key}`, JSON.stringify(raw));
+  await env.LICENSE_KV.put(kvKey, JSON.stringify(raw));
 
   return jsonResponse({ ok: true });
 }

@@ -85,6 +85,7 @@ screenshot-*.png
 *.png
 !electron/build/icon.png
 !electron/ui/tray-icon.png
+!electron/ui/9bizclaw-mascot.png
 *.xlsx
 *.dmp
 *.py

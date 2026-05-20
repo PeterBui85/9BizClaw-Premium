@@ -39,11 +39,14 @@ function getBundledVendorDir() {
   if (!app || !app.isPackaged) return null;
 
   try {
-    const userDataVendor = path.join(app.getPath('userData'), 'vendor');
+    const ud = app.getPath('userData');
+    const userDataVendor = path.join(ud, 'vendor');
     if (fs.existsSync(userDataVendor)) {
       const nm = path.join(userDataVendor, 'node_modules');
-      if (!fs.existsSync(nm)) {
-        console.warn('[preflight] getBundledVendorDir: vendor/ exists but node_modules missing');
+      const runtimeMarker = path.join(ud, 'runtime-version.txt');
+      if (!fs.existsSync(nm) || !fs.existsSync(runtimeMarker)) {
+        console.warn('[preflight] getBundledVendorDir: vendor/ exists but incomplete (stale v2.3.x?) — returning null to trigger runtime install');
+        return null;
       }
       return userDataVendor;
     }

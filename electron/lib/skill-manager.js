@@ -172,6 +172,7 @@ function readRegistry() {
   try {
     return _sanitizeRegistry(JSON.parse(fs.readFileSync(p, 'utf-8')));
   } catch (e) {
+    if (e.code === 'ENOENT') return { version: 1, skills: [] };
     const dir = path.dirname(p);
     if (fs.existsSync(dir)) {
       const tmps = fs.readdirSync(dir).filter(f => f.startsWith('_registry.json.tmp.'));

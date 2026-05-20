@@ -2970,11 +2970,11 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 45855
+      "bytes": 47222
     },
     {
       "path": "electron/lib/skill-manager.js",
-      "bytes": 44212
+      "bytes": 44276
     },
     {
       "path": "electron/lib/fb-schedule.js",
@@ -2990,7 +2990,7 @@
     },
     {
       "path": "electron/lib/boot.js",
-      "bytes": 36280
+      "bytes": 36471
     },
     {
       "path": "electron/lib/media-library.js",

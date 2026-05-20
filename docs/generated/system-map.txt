@@ -180,11 +180,11 @@ Large Source Files
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
 - electron/lib/workspace.js: 53962 bytes
 - electron/lib/config.js: 48942 bytes
-- electron/lib/vendor-patches.js: 45855 bytes
-- electron/lib/skill-manager.js: 44212 bytes
+- electron/lib/vendor-patches.js: 47222 bytes
+- electron/lib/skill-manager.js: 44276 bytes
 - electron/lib/fb-schedule.js: 43962 bytes
 - electron/lib/nine-router.js: 42730 bytes
 - electron/lib/zalo-plugin.js: 37523 bytes
-- electron/lib/boot.js: 36280 bytes
+- electron/lib/boot.js: 36471 bytes
 - electron/lib/media-library.js: 31008 bytes
 - electron/lib/google-api.js: 30860 bytes

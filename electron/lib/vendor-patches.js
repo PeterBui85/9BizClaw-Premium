@@ -234,6 +234,18 @@ function ensureWebFetchLocalhostFix(vendorDir, homeDir) {
         src = src.replace(HEADER_BLOCK, 'init: { headers: await maybeBuild9BizClawWebFetchHeaders(params) }');
         changed = true;
       }
+      // Part 3b: auto-convert localhost GET-with-params to POST-with-JSON-body.
+      // web_fetch is GET-only (no method/body in schema). Vietnamese text in URL
+      // query params gets mangled on Windows (codepage issue). POST with JSON body
+      // is always UTF-8 safe.
+      const POST_CONVERT_MARKER = '// 9BizClaw LOCALHOST AUTO-POST';
+      const POST_CONVERT_ANCHOR = 'init: { headers: await maybeBuild9BizClawWebFetchHeaders(params) }';
+      if (!src.includes(POST_CONVERT_MARKER) && src.includes(POST_CONVERT_ANCHOR)) {
+        const POST_CONVERT_CODE = `(() => { const _h = maybeBuild9BizClawWebFetchHeaders(params); const _lre = /^https?:\\/\\/(?:127\\.0\\.0\\.1|localhost):2020[0-3]\\//; if (_lre.test(String(params.url || ""))) { const _u = new URL(params.url); if (_u.search.length > 1) { const _b = {}; for (const [k,v] of _u.searchParams) _b[k] = v; _u.search = ""; params.url = _u.toString(); return _h.then(h => ({ headers: { ...h, "Content-Type": "application/json; charset=utf-8" }, method: "POST", body: JSON.stringify(_b) })); } return _h.then(h => ({ headers: h })); } return _h.then(h => ({ headers: h })); })() ${POST_CONVERT_MARKER}`;
+        src = src.replace(POST_CONVERT_ANCHOR, 'init: await ' + POST_CONVERT_CODE);
+        changed = true;
+        console.log('[web-fetch-token-fix] added localhost auto-POST conversion');
+      }
       const WEBFETCH_CACHE_BLOCK = 'const cacheKey = normalizeCacheKey(`fetch:${params.url}:${params.extractMode}:${params.maxChars}${allowRfc2544BenchmarkRange ? ":allow-rfc2544" : ""}`);\n\tconst cached = readCache(FETCH_CACHE, cacheKey);';
       if (!src.includes(CACHE_MARKER) && src.includes(WEBFETCH_CACHE_BLOCK)) {
         src = src.replace(WEBFETCH_CACHE_BLOCK, `${CACHE_MARKER}\n\tconst skip9BizClawLocalApiCache = /^https?:\\/\\/(?:127\\.0\\.0\\.1|localhost):2020[0-3](?:\\/|$)/.test(String(params.url || ""));\n\tconst cacheKey = normalizeCacheKey(\`fetch:\${params.url}:\${params.extractMode}:\${params.maxChars}\${allowRfc2544BenchmarkRange ? ":allow-rfc2544" : ""}\`);\n\tconst cached = skip9BizClawLocalApiCache ? null : readCache(FETCH_CACHE, cacheKey);`);

@@ -284,7 +284,7 @@ async function createClient() {
     const maxMachines = 1;
     const note = document.getElementById('gen-note').value.trim();
 
-    const data = await api('/api/admin/create-client', { name, keysPerClient: 3, maxMachines, note });
+    const data = await api('/api/admin/create-client', { name, keysPerClient: 1, maxMachines, note });
     const client = data.client;
 
     const out = document.getElementById('gen-output');
