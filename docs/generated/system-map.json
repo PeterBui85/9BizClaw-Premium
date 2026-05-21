@@ -2966,7 +2966,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 49042
+      "bytes": 48955
     },
     {
       "path": "electron/lib/vendor-patches.js",
