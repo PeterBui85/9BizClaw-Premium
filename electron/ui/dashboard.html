@@ -3512,9 +3512,27 @@
           <span class="page-icon" data-icon="cpu" data-icon-size="26"></span>
           <div><h2>9Router</h2><div class="page-sub">Quản lý AI provider, model, API key — Mật khẩu mặc định: <code style="background:var(--accent-soft, rgba(200,167,90,0.12));padding:1px 6px;border-radius:4px">123456</code></div></div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="btn btn-secondary btn-small" id="chatgpt-import-toggle-btn" onclick="toggleChatGPTImportPanel()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="download" data-icon-size="14"></span>Import ChatGPT</button>
             <button class="page-help-btn" title="Cấu hình AI provider (ChatGPT Plus, API key, model)">?</button>
             <button class="btn btn-secondary btn-small" onclick="reloadEmbed('9router')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Tải lại</button>
             <button class="btn btn-secondary btn-small" onclick="window.claw.openExternal('http://127.0.0.1:20128/')">Mở trong trình duyệt ↗</button>
+          </div>
+        </div>
+        <div id="chatgpt-import-panel" class="hide" style="padding:16px 20px;background:var(--surface-alt, var(--surface));border-bottom:1px solid var(--border)">
+          <div style="max-width:560px">
+            <h4 style="margin:0 0 10px;font-size:14px;font-weight:600;color:var(--text)">Import tài khoản ChatGPT</h4>
+            <ol style="margin:0 0 12px;padding-left:20px;font-size:13px;line-height:1.7;color:var(--text-secondary)">
+              <li>Mở <strong>chatgpt.com</strong> trên trình duyệt, đăng nhập bình thường</li>
+              <li>Vào <a href="#" onclick="event.preventDefault(); window.claw.openExternal('https://chatgpt.com/api/auth/session')" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer">chatgpt.com/api/auth/session</a></li>
+              <li>Bấm <strong>Ctrl+A</strong> rồi <strong>Ctrl+C</strong></li>
+              <li>Dán vào ô bên dưới</li>
+            </ol>
+            <textarea id="dash-session-json" rows="3" class="input" style="width:100%;font-family:monospace;font-size:12px;resize:vertical" placeholder="Dán nội dung JSON vào đây..."></textarea>
+            <div id="dash-session-status" style="margin-top:6px;font-size:12px;min-height:18px"></div>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+              <button id="dash-session-import-btn" class="btn btn-primary btn-small" disabled onclick="doDashSessionImport()">Import tài khoản</button>
+              <button class="btn btn-secondary btn-small" onclick="toggleChatGPTImportPanel()">Hủy</button>
+            </div>
           </div>
         </div>
         <div class="embed-wrap" id="embed-wrap-9router">
@@ -6368,6 +6386,71 @@
       }
       addActivity('Reload ' + name);
     }
+    // ── ChatGPT session import (dashboard) ──
+    function toggleChatGPTImportPanel() {
+      const panel = document.getElementById('chatgpt-import-panel');
+      panel.classList.toggle('hide');
+      if (!panel.classList.contains('hide')) {
+        document.getElementById('dash-session-json').value = '';
+        document.getElementById('dash-session-status').textContent = '';
+        document.getElementById('dash-session-import-btn').disabled = true;
+      }
+    }
+    (function() {
+      let _parsed = null;
+      document.addEventListener('DOMContentLoaded', () => {
+        const ta = document.getElementById('dash-session-json');
+        if (!ta) return;
+        const st = document.getElementById('dash-session-status');
+        const btn = document.getElementById('dash-session-import-btn');
+        ta.addEventListener('input', () => {
+          _parsed = null; btn.disabled = true; st.textContent = ''; st.style.color = '';
+          let raw = ta.value.replace(/^﻿/, '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F]/g, '').trim();
+          if (!raw) return;
+          const first = raw.indexOf('{'); const last = raw.lastIndexOf('}');
+          if (first >= 0 && last > first) raw = raw.substring(first, last + 1);
+          try {
+            const s = JSON.parse(raw);
+            if (!s.accessToken || typeof s.accessToken !== 'string' || s.accessToken.length < 50) {
+              st.style.color = 'var(--danger)'; st.textContent = 'Thiếu accessToken'; return;
+            }
+            let email = s.user?.email || '';
+            let plan = '';
+            try {
+              const parts = s.accessToken.split('.');
+              if (parts.length === 3) {
+                const p = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+                email = email || (p['https://api.openai.com/profile'] || {}).email || '';
+                plan = (p['https://api.openai.com/auth'] || {}).chatgpt_plan_type || '';
+              }
+            } catch {}
+            if (!email) { st.style.color = 'var(--danger)'; st.textContent = 'Không tìm thấy email'; return; }
+            _parsed = s; btn.disabled = false;
+            st.style.color = 'var(--success)'; st.textContent = email + (plan ? ' (' + plan + ')' : '');
+          } catch (err) { st.style.color = 'var(--danger)'; st.textContent = 'JSON không hợp lệ: ' + (err.message || '').substring(0, 80); console.error('[session-import] parse error:', err.message, 'raw len:', raw.length); }
+        });
+      });
+      window.doDashSessionImport = async function() {
+        if (!_parsed) return;
+        const btn = document.getElementById('dash-session-import-btn');
+        const st = document.getElementById('dash-session-status');
+        btn.disabled = true;
+        st.style.color = 'var(--text-tertiary)'; st.textContent = 'Đang import...';
+        try {
+          const res = await window.claw.importChatGPTSession(JSON.stringify(_parsed));
+          if (res.success) {
+            st.style.color = 'var(--success)'; st.textContent = 'Import thành công — ' + res.email + (res.planType && res.planType !== 'unknown' ? ' (' + res.planType + ')' : '');
+            setTimeout(() => { toggleChatGPTImportPanel(); reloadEmbed('9router'); }, 1500);
+          } else {
+            st.style.color = 'var(--danger)'; st.textContent = res.error || 'Import thất bại';
+            btn.disabled = false;
+          }
+        } catch (e) {
+          st.style.color = 'var(--danger)'; st.textContent = e.message || 'Lỗi import';
+          btn.disabled = false;
+        }
+      };
+    })();
     async function copyAndShowGatewayToken() {
       try {
         const token = await window.claw.getGatewayToken();

@@ -4650,7 +4650,9 @@ ipcMain.handle('import-workspace', async () => {
     const openRes = await dialog.showOpenDialog(win, {
       title: 'Chọn file export để khôi phục',
       properties: ['openFile'],
-      filters: [{ name: 'TAR archive', extensions: ['tar'] }],
+      filters: [
+        { name: '9BizClaw Backup', extensions: ['9bizclaw-backup', 'tar'] },
+      ],
     });
     if (openRes.canceled || !openRes.filePaths || openRes.filePaths.length === 0) {
       return { ok: false, canceled: true };
@@ -5545,6 +5547,102 @@ ipcMain.handle('download-and-install-update', async () => {
       return { ok: true, filePath: filePaths[0] };
     } catch (e) {
       return { ok: false, error: e?.message };
+    }
+  });
+
+  // ── ChatGPT session import (fallback when OAuth OTP fails) ──
+  ipcMain.handle('import-chatgpt-session', async (_event, { sessionJson }) => {
+    try {
+      let session;
+      try {
+        let raw = sessionJson.replace(/^﻿/, '').trim();
+        const fi = raw.indexOf('{'), li = raw.lastIndexOf('}');
+        if (fi >= 0 && li > fi) raw = raw.substring(fi, li + 1);
+        session = JSON.parse(raw);
+      } catch { return { success: false, error: 'JSON không hợp lệ — hãy copy toàn bộ nội dung từ chatgpt.com/api/auth/session' }; }
+
+      const accessToken = session.accessToken;
+      if (!accessToken || typeof accessToken !== 'string' || accessToken.length < 50) {
+        return { success: false, error: 'Thiếu accessToken — hãy copy toàn bộ nội dung trang, không chỉ một phần' };
+      }
+
+      let jwtPayload = {};
+      try {
+        const parts = accessToken.split('.');
+        if (parts.length === 3) jwtPayload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+      } catch { /* non-JWT token — proceed without metadata */ }
+
+      const authClaims = jwtPayload['https://api.openai.com/auth'] || {};
+      const profileClaims = jwtPayload['https://api.openai.com/profile'] || {};
+      const email = session.user?.email || profileClaims.email || '';
+      if (!email) return { success: false, error: 'Không tìm thấy email trong session — JSON có thể không đúng định dạng' };
+
+      const planType = authClaims.chatgpt_plan_type || 'unknown';
+      const expiresIn = (jwtPayload.exp && jwtPayload.iat) ? (jwtPayload.exp - jwtPayload.iat) : 864000;
+
+      const entry = {
+        id: require('crypto').randomUUID(),
+        provider: 'codex',
+        authType: 'oauth',
+        name: email,
+        priority: 1,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        email,
+        accessToken,
+        refreshToken: session.refreshToken || null,
+        expiresAt: session.expires || (jwtPayload.exp ? new Date(jwtPayload.exp * 1000).toISOString() : null),
+        idToken: null,
+        testStatus: 'active',
+        expiresIn,
+        providerSpecificData: {
+          chatgptAccountId: authClaims.chatgpt_account_id || null,
+          chatgptPlanType: planType,
+        },
+        lastUsedAt: null,
+        consecutiveUseCount: 0,
+        lastError: null,
+        errorCode: null,
+        lastErrorAt: null,
+        backoffLevel: 0,
+      };
+
+      const dbPath = path.join(appDataDir(), '9router', 'db.json');
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      let db = {};
+      if (fs.existsSync(dbPath)) {
+        try { db = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); } catch { db = {}; }
+      }
+      if (!Array.isArray(db.providerConnections)) db.providerConnections = [];
+      if (!Array.isArray(db.combos)) db.combos = [];
+      if (!Array.isArray(db.apiKeys)) db.apiKeys = [];
+      if (!db.settings) db.settings = {};
+      if (!Array.isArray(db.providerNodes)) db.providerNodes = [];
+      if (!db.proxyPools) db.proxyPools = [];
+      if (!db.modelAliases) db.modelAliases = {};
+      if (!db.mitmAlias) db.mitmAlias = {};
+      if (!db.pricing) db.pricing = {};
+
+      const existingIdx = db.providerConnections.findIndex(p => p.provider === 'codex' && p.email === email);
+      if (existingIdx >= 0) {
+        const existing = db.providerConnections[existingIdx];
+        entry.id = existing.id;
+        entry.createdAt = existing.createdAt;
+        entry.priority = existing.priority;
+        db.providerConnections[existingIdx] = entry;
+      } else {
+        const maxPriority = db.providerConnections.reduce((m, p) => Math.max(m, p.priority || 0), 0);
+        entry.priority = maxPriority + 1;
+        db.providerConnections.push(entry);
+      }
+
+      fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+
+      return { success: true, email, planType };
+    } catch (e) {
+      console.error('[import-chatgpt-session]', e);
+      return { success: false, error: 'Không ghi được cấu hình 9router: ' + (e?.message || String(e)) };
     }
   });
 

@@ -646,18 +646,14 @@ async function ensureDefaultConfig() {
     if (!config.channels.telegram) config.channels.telegram = {};
     {
       const tg = config.channels.telegram;
-      // DELETE legacy keys that cause "invalid config" rejection
-      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce']) {
+      // DELETE legacy/rejected keys that cause "invalid config" rejection.
+      // openclaw 2026.4.14 rejects `streaming` at channel level entirely
+      // (validator: "channels.telegram.streaming: must NOT have additional properties").
+      // Both scalar string AND nested object formats are rejected. Let openclaw
+      // use its built-in default. Prior versions of this code wrote `streaming: "progress"`
+      // which broke gateway startup.
+      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce', 'streaming']) {
         if (legacyKey in tg) { delete tg[legacyKey]; changed = true; }
-      }
-      // Streaming: openclaw 2026.4.14 accepts SCALAR string, NOT nested object.
-      // Valid: "off" | "partial" | "block" | "progress"
-      // "progress" shows draft status during tool execution, delivers final as normal msg.
-      // Prior code wrote nested { mode: 'progress', progress: { toolProgress: true } }
-      // which openclaw rejects: "must NOT have additional properties".
-      if (typeof tg.streaming !== 'string' || !['off', 'partial', 'block', 'progress'].includes(tg.streaming)) {
-        tg.streaming = 'progress';
-        changed = true;
       }
       // Group policy: "open" lets bot reply in ANY group it's added to (no
       // allowlist gate). Default openclaw is "allowlist" which blocks all groups
@@ -684,7 +680,7 @@ async function ensureDefaultConfig() {
         'commands', 'customCommands', 'configWrites', 'dmPolicy', 'botToken',
         'tokenFile', 'replyToMode', 'groups', 'allowFrom', 'defaultTo',
         'groupAllowFrom', 'groupPolicy', 'contextVisibility', 'historyLimit',
-        'dmHistoryLimit', 'dms', 'direct', 'textChunkLimit', 'streaming',
+        'dmHistoryLimit', 'dms', 'direct', 'textChunkLimit',
         'mediaMaxMb', 'timeoutSeconds', 'retry', 'network', 'webhookUrl',
         'webhookSecret', 'webhookPath', 'webhookHost', 'webhookPort',
         'webhookCertPath', 'accounts', 'defaultAccount',
@@ -793,12 +789,17 @@ async function ensureDefaultConfig() {
       config.tools.loopDetection.enabled = true;
       changed = true;
     }
-    // FETCH TIMEOUT: default 30s is too short for image generation.
-    // Server-side JOB_TIMEOUT_MS = 15min. Complex images (with brand assets,
-    // high quality) can take 2-5min. Set 600s (10min) to cover worst case.
-    if (!config.tools.fetch) config.tools.fetch = {};
-    if (!config.tools.fetch.timeoutSeconds || config.tools.fetch.timeoutSeconds < 600) {
-      config.tools.fetch.timeoutSeconds = 600;
+    // CLEANUP: openclaw 2026.4.x renamed tools.fetch → tools.web.fetch.
+    // Old key causes "Unrecognized key: fetch" → gateway crash.
+    if (config.tools.fetch) {
+      delete config.tools.fetch;
+      changed = true;
+    }
+    // FETCH TIMEOUT: default 30s is too short for image generation (2-5min).
+    if (!config.tools.web) config.tools.web = {};
+    if (!config.tools.web.fetch) config.tools.web.fetch = {};
+    if (!config.tools.web.fetch.timeoutSeconds || config.tools.web.fetch.timeoutSeconds < 600) {
+      config.tools.web.fetch.timeoutSeconds = 600;
       changed = true;
     }
     // CLEANUP: execSecurity is NOT valid under agents.defaults (it's a runtime

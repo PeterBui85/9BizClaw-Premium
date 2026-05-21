@@ -61,7 +61,7 @@ web_fetch url="http://127.0.0.1:20200/api/brand-assets/list" method=GET
 ```
 - **Có file**: dùng file phù hợp nhất. Ưu tiên file có tên CEO nhắc (VD: "mascot" → file chứa `mascot`).
 - **Không có file**: nói "Anh chưa upload tài sản thương hiệu nào. Vào Dashboard > Facebook > Tài sản thương hiệu để thêm."
-- **CEO gửi kèm ảnh reference**: dùng ảnh đó làm reference trong prompt, không cần gọi brand-assets/list.
+- **CEO gửi kèm ảnh reference**: PHẢI lưu ảnh trước qua `POST /api/brand-assets/save` body `{"name":"ceo-reference.png","base64":"<base64>"}`, rồi dùng `assets=ceo-reference.png` khi generate. Không cần gọi brand-assets/list. KHÔNG dùng ảnh cũ từ brand-assets khi CEO vừa gửi ảnh mới.
 
 ### Bước 1.2 — Kết nối Fanpage (lần đầu)
 

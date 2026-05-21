@@ -1307,6 +1307,30 @@
               </div>
             </div>
 
+            <!-- Fallback: paste ChatGPT session JSON when OAuth fails -->
+            <div style="padding-left:40px;margin-bottom:16px">
+              <a href="#" id="session-import-toggle" onclick="event.preventDefault(); document.getElementById('session-import-panel').classList.toggle('wz-hidden'); this.textContent = document.getElementById('session-import-panel').classList.contains('wz-hidden') ? 'Đăng nhập không được?' : 'Ẩn hướng dẫn import'" style="font-size:13px;color:var(--text-tertiary);text-decoration:underline;text-underline-offset:3px">Đăng nhập không được?</a>
+              <div id="session-import-panel" class="wz-hidden" style="margin-top:12px">
+                <div class="wz-instruction" style="margin-bottom:0">
+                  <div class="wz-instruction-head">
+                    <div class="wz-instruction-num" style="background:var(--warning);color:var(--bg)">!</div>
+                    <div class="wz-instruction-title">Import thủ công</div>
+                  </div>
+                  <div class="wz-instruction-body">
+                    <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.7;color:var(--text-secondary)">
+                      <li>Mở <strong>chatgpt.com</strong> trên trình duyệt, đăng nhập bình thường</li>
+                      <li>Vào địa chỉ <a href="#" onclick="event.preventDefault(); window.claw.openExternal('https://chatgpt.com/api/auth/session')" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer">chatgpt.com/api/auth/session</a></li>
+                      <li>Bấm <strong>Ctrl+A</strong> rồi <strong>Ctrl+C</strong> (copy toàn bộ)</li>
+                      <li>Quay lại đây, dán vào ô bên dưới</li>
+                    </ol>
+                    <textarea id="session-json-input" rows="4" class="wz-input" style="margin-top:12px;font-family:monospace;font-size:12px;resize:vertical" placeholder='Dán nội dung JSON vào đây...'></textarea>
+                    <div id="session-import-status" style="margin-top:8px;font-size:12px;min-height:18px"></div>
+                    <button id="session-import-btn" class="wz-btn wz-btn-primary" type="button" disabled style="margin-top:10px" onclick="doSessionImport()">Import tài khoản</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="wz-instruction">
               <div class="wz-instruction-head">
                 <div class="wz-instruction-num">2</div>
@@ -2043,6 +2067,87 @@
         btn.disabled = false; btn.classList.remove('loading');
       }
     }
+
+      // ── ChatGPT session import (fallback) ──
+      (function() {
+        const textarea = document.getElementById('session-json-input');
+        const status = document.getElementById('session-import-status');
+        const btn = document.getElementById('session-import-btn');
+        let _parsedSession = null;
+
+        textarea.addEventListener('input', function() {
+          _parsedSession = null;
+          btn.disabled = true;
+          status.textContent = '';
+          status.style.color = '';
+          let raw = textarea.value.replace(/^﻿/, '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F]/g, '').trim();
+          if (!raw) return;
+          const first = raw.indexOf('{');
+          const last = raw.lastIndexOf('}');
+          if (first >= 0 && last > first) raw = raw.substring(first, last + 1);
+          try {
+            const s = JSON.parse(raw);
+            if (!s.accessToken || typeof s.accessToken !== 'string' || s.accessToken.length < 50) {
+              status.style.color = 'var(--danger)';
+              status.textContent = 'Thiếu accessToken — hãy copy toàn bộ nội dung trang';
+              return;
+            }
+            let email = s.user?.email || '';
+            let plan = '';
+            try {
+              const parts = s.accessToken.split('.');
+              if (parts.length === 3) {
+                const p = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+                const auth = p['https://api.openai.com/auth'] || {};
+                const profile = p['https://api.openai.com/profile'] || {};
+                if (!email) email = profile.email || '';
+                plan = auth.chatgpt_plan_type || '';
+              }
+            } catch {}
+            if (!email) {
+              status.style.color = 'var(--danger)';
+              status.textContent = 'Không tìm thấy email trong session';
+              return;
+            }
+            _parsedSession = s;
+            btn.disabled = false;
+            status.style.color = 'var(--success)';
+            status.innerHTML = esc(email) + (plan ? ' (' + esc(plan) + ')' : '');
+          } catch (err) {
+            status.style.color = 'var(--danger)';
+            status.textContent = 'JSON không hợp lệ: ' + (err.message || '').substring(0, 80);
+            console.error('[session-import] parse error:', err.message, 'raw length:', raw.length, 'first 100:', raw.substring(0,100));
+          }
+        });
+
+        window.doSessionImport = async function() {
+          if (!_parsedSession) return;
+          btn.disabled = true;
+          btn.classList.add('loading');
+          try {
+            const res = await window.claw.importChatGPTSession(JSON.stringify(_parsedSession));
+            if (res.success) {
+              status.style.color = 'var(--success)';
+              status.innerHTML = '&#10003; Import thành công — ' + esc(res.email) + (res.planType && res.planType !== 'unknown' ? ' (' + esc(res.planType) + ')' : '');
+              document.getElementById('session-import-panel').classList.add('wz-hidden');
+              document.getElementById('session-import-toggle').textContent = 'Đăng nhập không được?';
+              const result = document.getElementById('router-auto-result');
+              result.classList.remove('wz-hidden');
+              result.className = 'wz-alert success';
+              result.innerHTML = '<span style="flex-shrink:0;margin-top:1px">' + icon('check',18) + '</span><div><strong>Import thành công.</strong> Nhấn "Kiểm tra kết nối" bên dưới để tiếp tục.</div>';
+            } else {
+              status.style.color = 'var(--danger)';
+              status.textContent = res.error || 'Import thất bại';
+              btn.disabled = false;
+            }
+          } catch (e) {
+            status.style.color = 'var(--danger)';
+            status.textContent = e.message || 'Lỗi import';
+            btn.disabled = false;
+          }
+          btn.classList.remove('loading');
+        };
+      })();
 
     // ===== Step 3: Sub-screen navigation + progressive disclosure =====
     let _currentTgScreen = '3-1';

@@ -26,7 +26,11 @@ CEO nói "tạo ảnh", "làm ảnh", "thiết kế ảnh", "ảnh quảng cáo"
    `web_fetch` url: `http://127.0.0.1:20200/api/brand-assets/list`
 2. Nếu `files` có file — DÙNG LUÔN làm assets. Ưu tiên file CEO nhắc (VD: "mascot" — file chứa `mascot`). Chỉ có 1 file — DÙNG LUÔN, KHÔNG hỏi.
 3. Nếu `files` rỗng — tạo ảnh không assets, KHÔNG nói "không truy cập được".
-4. Nếu tin nhắn hiện tại của CEO có ảnh đính kèm để làm reference thì ưu tiên ảnh đó.
+4. **Nếu tin nhắn hiện tại của CEO có ảnh đính kèm để làm reference:**
+   - PHẢI lưu ảnh đó trước khi tạo ảnh mới. Gọi: `web_fetch` url: `http://127.0.0.1:20200/api/brand-assets/save` method: POST body: `{"name":"ceo-reference.png","base64":"<base64 của ảnh>"}`.
+   - Nếu không lấy được base64 của ảnh (ảnh chỉ hiển thị trong context, không extract được): dùng `read_file` đọc ảnh nếu có đường dẫn, hoặc mô tả chi tiết ảnh trong prompt (fallback).
+   - Sau khi lưu xong, dùng `assets=ceo-reference.png` trong URL generate.
+   - **KHÔNG BAO GIỜ** gọi `brand-assets/list` rồi dùng file cũ khi CEO vừa gửi ảnh mới. Ảnh CEO gửi = ảnh ưu tiên số 1.
 5. **Chọn style ảnh -- SKILL-FIRST FLOW:**
    - CEO gọi tên skill cụ thể -> `GET /api/image/skills`, match keyword -> đọc style -> hỏi CHỈ template variables -> generate
    - CEO mô tả style rõ ràng -> dùng mô tả đó, KHÔNG hỏi 5 câu -> generate
@@ -66,13 +70,21 @@ Khi CEO yêu cầu "tạo ảnh rồi gửi vào nhóm X" — PHẢI gửi ảnh
 
 **Cách 1 (atomic — khuyến nghị):** Dùng route tạo + gửi cùng lúc:
 ```
-GET http://127.0.0.1:20200/api/image/generate-and-send-zalo?groupId=<id>&groupName=<tên>&prompt=<prompt>&size=1024x1024
+GET http://127.0.0.1:20200/api/image/generate-and-send-zalo
+  ?groupId=<id>&groupName=<tên>&caption=<URL-encoded caption>&size=1024x1024&assets=<files>&prompt=<prompt>
 ```
-Route này tạo ảnh rồi tự gửi vào nhóm Zalo khi xong. Đọc `skills/marketing/zalo-post-workflow.md` cho chi tiết.
+Route này tạo ảnh rồi tự gửi vào nhóm Zalo khi xong. `caption` = text đi kèm ảnh trong CÙNG 1 tin nhắn Zalo. KHÔNG gửi text riêng rồi ảnh riêng. Đọc `skills/marketing/zalo-post-workflow.md` cho chi tiết.
 
 **Cách 2 (2 bước — khi ảnh đã tạo sẵn):**
-1. Poll `GET /api/image/status?jobId=<jobId>` cho đến khi `status: "done"` + có `imagePath`
-2. Gửi ảnh: `GET http://127.0.0.1:20200/api/zalo/send-media?groupId=<id>&mediaPath=<imagePath>&isGroup=true`
+1. Poll `GET /api/image/status?jobId=<jobId>` cho đến khi `status: "done"` + có `mediaId`
+2. Gửi ảnh:
+   ```
+   GET http://127.0.0.1:20200/api/zalo/send-media
+     ?groupId=<id>&mediaId=<mediaId>&allowInternalGenerated=true&caption=<URL-encoded caption>
+   ```
+   - `mediaId` BẮT BUỘC (lấy từ `/api/image/status` response). KHÔNG dùng `mediaPath`/`imagePath` — API sẽ reject.
+   - `allowInternalGenerated=true` BẮT BUỘC cho ảnh AI-generated (visibility: internal).
+   - `caption` = text đi kèm ảnh trong cùng 1 tin nhắn Zalo.
 
 **CẢNH BÁO:** KHÔNG BAO GIỜ gửi đường dẫn file (`brand-assets/generated/img_xxx.png`) dưới dạng TEXT. Khách sẽ nhận được chuỗi ký tự, không phải ảnh.
 

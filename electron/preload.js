@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('claw', {
   // 9Router
   start9Router: () => ipcRenderer.invoke('start-9router'),
   setup9RouterAuto: (opts) => ipcRenderer.invoke('setup-9router-auto', opts),
+  importChatGPTSession: (sessionJson) => ipcRenderer.invoke('import-chatgpt-session', { sessionJson }),
 
   // Zalo
   setupZalo: () => ipcRenderer.invoke('setup-zalo'),

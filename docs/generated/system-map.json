@@ -2,8 +2,8 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 133,
-    "ipcHandlers": 184,
-    "preloadBridges": 176,
+    "ipcHandlers": 185,
+    "preloadBridges": 177,
     "dashboardPages": 16,
     "capabilityContracts": 5
   },
@@ -1640,6 +1640,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "import-chatgpt-session",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "import-workspace",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -2466,6 +2470,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "importChatGPTSession",
+      "channel": "import-chatgpt-session",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "importWorkspace",
       "channel": "import-workspace",
       "source": "electron/preload.js"
@@ -2922,11 +2931,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 607433
+      "bytes": 612953
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 252970
+      "bytes": 257182
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2938,7 +2947,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 117791
+      "bytes": 124246
     },
     {
       "path": "electron/lib/channels.js",
@@ -2966,7 +2975,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 49381
+      "bytes": 49892
     },
     {
       "path": "electron/lib/vendor-patches.js",
