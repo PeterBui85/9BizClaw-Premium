@@ -762,12 +762,15 @@ async function ensureDefaultConfig() {
     const REQUIRED_TOOLS = [
       'message', 'web_search', 'web_fetch', 'update_plan',
       'read_file', 'list_files', 'search_files', 'write_file', 'apply_patch',
-      'exec', 'memory', 'image_generate', 'pdf', 'tts',
+      'exec', 'memory', 'pdf',
       'sessions_spawn', 'sessions_yield', 'sessions_send', 'subagents',
-      'sessions_list', 'sessions_history', 'session_status',
-      'agents_list', 'cron', 'process', 'canvas',
+      'sessions_list', 'sessions_history', 'session_status', 'agents_list',
     ];
-    const BANNED_TOOLS = [];
+    // cron — BANNED: conflicts with our cron-api (port 20200) with auth + custom logic
+    // process — BANNED: spawns persistent background processes, hard to kill
+    // image_generate — BANNED: conflicts with our /api/image/generate pipeline (brand assets + preview)
+    // canvas, tts — not useful via Telegram
+    const BANNED_TOOLS = ['cron', 'process', 'image_generate', 'canvas', 'tts'];
     const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
     const merged = REQUIRED_TOOLS.filter(t => !BANNED_TOOLS.includes(t));
     if (JSON.stringify(existingAllow.slice().sort()) !== JSON.stringify(merged.slice().sort())) {
