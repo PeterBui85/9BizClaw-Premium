@@ -7376,8 +7376,6 @@
             enabledToUse = fresh.enabled;
           }
           const payload = { ...zaloMgrConfig, enabled: enabledToUse };
-          payload.groupPolicy = 'open';
-          payload.groupAllowFrom = ['*'];
           payload.userBlocklistTouched = zaloUserBlocklistTouched === true;
           payload.userAllowlistTouched = zaloUserAllowlistTouched === true;
           const r = await window.claw.saveZaloManagerConfig(payload);
@@ -7740,8 +7738,6 @@
         return;
       }
       zaloMgrConfig.enabled = document.getElementById('zalo-mgr-enabled').checked;
-      zaloMgrConfig.groupPolicy = 'open';
-      zaloMgrConfig.groupAllowFrom = ['*'];
       try {
         const payload = { ...zaloMgrConfig, userBlocklistTouched: zaloUserBlocklistTouched === true, userAllowlistTouched: zaloUserAllowlistTouched === true };
         const result = await window.claw.saveZaloManagerConfig(payload);
