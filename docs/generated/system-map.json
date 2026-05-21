@@ -2938,7 +2938,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 116314
+      "bytes": 117791
     },
     {
       "path": "electron/lib/channels.js",
@@ -2966,11 +2966,11 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 48942
+      "bytes": 49213
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 47222
+      "bytes": 47456
     },
     {
       "path": "electron/lib/skill-manager.js",
