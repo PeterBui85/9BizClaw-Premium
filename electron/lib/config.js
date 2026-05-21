@@ -650,14 +650,17 @@ async function ensureDefaultConfig() {
       for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce']) {
         if (legacyKey in tg) { delete tg[legacyKey]; changed = true; }
       }
-      // Migrate scalar `streaming: "off"` → nested object
+      // Streaming: "progress" mode sends draft status during tool execution,
+      // then delivers final answer as a normal message. Uses Telegram Bot API 9.5
+      // sendMessageDraft. Replaces the old "off" default which made the bot silent
+      // during processing.
       if (typeof tg.streaming === 'string' || tg.streaming === undefined) {
-        tg.streaming = { mode: 'off', block: { enabled: false } };
+        tg.streaming = { mode: 'progress', progress: { toolProgress: true } };
         changed = true;
       } else if (tg.streaming && typeof tg.streaming === 'object') {
-        if (tg.streaming.mode !== 'off') { tg.streaming.mode = 'off'; changed = true; }
-        if (!tg.streaming.block) tg.streaming.block = {};
-        if (tg.streaming.block.enabled !== false) { tg.streaming.block.enabled = false; changed = true; }
+        if (!tg.streaming.mode || tg.streaming.mode === 'off') { tg.streaming.mode = 'progress'; changed = true; }
+        if (!tg.streaming.progress) tg.streaming.progress = {};
+        if (tg.streaming.progress.toolProgress !== true) { tg.streaming.progress.toolProgress = true; changed = true; }
       }
       // Group policy: "open" lets bot reply in ANY group it's added to (no
       // allowlist gate). Default openclaw is "allowlist" which blocks all groups
