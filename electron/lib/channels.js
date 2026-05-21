@@ -911,8 +911,9 @@ async function sendZaloTo(target, text, opts = {}) {
     }
   }
 
+  let allow = { allowed: true };
   if (!ceoOverride) {
-    const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+    allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
     if (!allow.allowed) {
       const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
       console.warn(`[sendZaloTo] ${err} target=${targetId}`);
@@ -1157,8 +1158,9 @@ async function sendZaloMediaTo(target, filePath, opts = {}) {
     }
   }
 
+  let allow = { allowed: true };
   if (!ceoOverride) {
-    const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+    allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
     if (!allow.allowed) {
       const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
       console.warn(`[sendZaloMediaTo] ${err} target=${targetId}`);
