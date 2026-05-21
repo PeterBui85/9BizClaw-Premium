@@ -5608,49 +5608,42 @@ ipcMain.handle('download-and-install-update', async () => {
         backoffLevel: 0,
       };
 
-      const dbPath = path.join(appDataDir(), '9router', 'db.json');
-      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-      let db = {};
-      if (fs.existsSync(dbPath)) {
-        try { db = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); } catch { db = {}; }
-      }
-      if (!Array.isArray(db.providerConnections)) db.providerConnections = [];
-      if (!Array.isArray(db.combos)) db.combos = [];
-      if (!Array.isArray(db.apiKeys)) db.apiKeys = [];
-      if (!db.settings) db.settings = {};
-      if (!Array.isArray(db.providerNodes)) db.providerNodes = [];
-      if (!db.proxyPools) db.proxyPools = [];
-      if (!db.modelAliases) db.modelAliases = {};
-      if (!db.mitmAlias) db.mitmAlias = {};
-      if (!db.pricing) db.pricing = {};
+      // Strategy 1: POST full entry to 9router API (works on all platforms)
+      const apiRes = await nineRouterApi('POST', '/api/providers', entry, 10000);
+      if (apiRes.success) return { success: true, email, planType, method: 'api' };
 
-      const existingIdx = db.providerConnections.findIndex(p => p.provider === 'codex' && p.email === email);
-      if (existingIdx >= 0) {
-        const existing = db.providerConnections[existingIdx];
-        entry.id = existing.id;
-        entry.createdAt = existing.createdAt;
-        entry.priority = existing.priority;
-        db.providerConnections[existingIdx] = entry;
-      } else {
-        const maxPriority = db.providerConnections.reduce((m, p) => Math.max(m, p.priority || 0), 0);
-        entry.priority = maxPriority + 1;
-        db.providerConnections.push(entry);
-      }
+      // Strategy 2: POST minimal provider (some 9router versions only accept basic fields)
+      const apiRes2 = await nineRouterApi('POST', '/api/providers', { provider: 'codex', name: email, apiKey: accessToken }, 10000);
+      if (apiRes2.success) return { success: true, email, planType, method: 'api-minimal' };
 
+      // Strategy 3: Direct db.json write (works on Windows, may fail on Mac sandbox)
       try {
-        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
-      } catch (writeErr) {
-        console.warn('[import-chatgpt] db.json write failed, trying API fallback:', writeErr?.message);
-        try {
-          const res = await nineRouterApi('POST', '/api/providers', { provider: 'codex', name: email, apiKey: accessToken });
-          if (!res.success) throw new Error(res.error || 'API returned failure');
-          return { success: true, email, planType, method: 'api' };
-        } catch (apiErr) {
-          return { success: false, error: 'Không ghi được db.json (' + (writeErr?.code || writeErr?.message) + ') và API fallback cũng thất bại: ' + (apiErr?.message || String(apiErr)) };
+        const dbPath = path.join(appDataDir(), '9router', 'db.json');
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        let db = {};
+        if (fs.existsSync(dbPath)) {
+          try { db = JSON.parse(fs.readFileSync(dbPath, 'utf-8')); } catch { db = {}; }
         }
+        if (!Array.isArray(db.providerConnections)) db.providerConnections = [];
+        if (!Array.isArray(db.combos)) db.combos = [];
+        if (!Array.isArray(db.apiKeys)) db.apiKeys = [];
+        if (!db.settings) db.settings = {};
+        const existingIdx = db.providerConnections.findIndex(p => p.provider === 'codex' && p.email === email);
+        if (existingIdx >= 0) {
+          entry.id = db.providerConnections[existingIdx].id;
+          entry.createdAt = db.providerConnections[existingIdx].createdAt;
+          entry.priority = db.providerConnections[existingIdx].priority;
+          db.providerConnections[existingIdx] = entry;
+        } else {
+          entry.priority = db.providerConnections.reduce((m, p) => Math.max(m, p.priority || 0), 0) + 1;
+          db.providerConnections.push(entry);
+        }
+        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+        return { success: true, email, planType, method: 'file' };
+      } catch (writeErr) {
+        console.error('[import-chatgpt] all 3 strategies failed. API1:', apiRes.error, 'API2:', apiRes2.error, 'File:', writeErr?.message);
+        return { success: false, error: 'Import thất bại. Hãy mở 9Router (tab AI Models), dùng chức năng Import trong 9Router để thêm tài khoản thủ công.' };
       }
-
-      return { success: true, email, planType };
     } catch (e) {
       console.error('[import-chatgpt-session]', e);
       return { success: false, error: 'Không ghi được cấu hình 9router: ' + (e?.message || String(e)) };
