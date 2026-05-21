@@ -646,14 +646,16 @@ async function ensureDefaultConfig() {
     if (!config.channels.telegram) config.channels.telegram = {};
     {
       const tg = config.channels.telegram;
-      // DELETE legacy/rejected keys that cause "invalid config" rejection.
-      // openclaw 2026.4.14 rejects `streaming` at channel level entirely
-      // (validator: "channels.telegram.streaming: must NOT have additional properties").
-      // Both scalar string AND nested object formats are rejected. Let openclaw
-      // use its built-in default. Prior versions of this code wrote `streaming: "progress"`
-      // which broke gateway startup.
-      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce', 'streaming']) {
+      // DELETE legacy scalar keys that cause "invalid config" rejection.
+      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce']) {
         if (legacyKey in tg) { delete tg[legacyKey]; changed = true; }
+      }
+      // Fix streaming: scalar string "progress" → nested object { mode: "progress" }
+      // openclaw 2026.4.14 requires nested object format, rejects scalar strings.
+      if (typeof tg.streaming === 'string') { delete tg.streaming; changed = true; }
+      if (!tg.streaming || typeof tg.streaming !== 'object' || tg.streaming.mode !== 'progress') {
+        tg.streaming = { mode: 'progress' };
+        changed = true;
       }
       // Group policy: "open" lets bot reply in ANY group it's added to (no
       // allowlist gate). Default openclaw is "allowlist" which blocks all groups
@@ -684,7 +686,7 @@ async function ensureDefaultConfig() {
         'mediaMaxMb', 'timeoutSeconds', 'retry', 'network', 'webhookUrl',
         'webhookSecret', 'webhookPath', 'webhookHost', 'webhookPort',
         'webhookCertPath', 'accounts', 'defaultAccount',
-        'profile', 'sendTypingIndicators',
+        'profile', 'sendTypingIndicators', 'streaming',
       ]);
       if (_stripUnknownFields(tg, TELEGRAM_VALID_FIELDS, 'telegram')) changed = true;
     }
