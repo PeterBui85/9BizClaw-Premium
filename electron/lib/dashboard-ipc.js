@@ -5639,6 +5639,7 @@ ipcMain.handle('download-and-install-update', async () => {
           db.providerConnections.push(entry);
         }
         fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+        try { stop9Router(); await new Promise(r => setTimeout(r, 1200)); start9Router(); } catch {}
         return { success: true, email, planType, method: 'file' };
       } catch (writeErr) {
         console.error('[import-chatgpt] all 3 strategies failed. API1:', apiRes.error, 'API2:', apiRes2.error, 'File:', writeErr?.message);
