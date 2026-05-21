@@ -5637,7 +5637,18 @@ ipcMain.handle('download-and-install-update', async () => {
         db.providerConnections.push(entry);
       }
 
-      fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+      try {
+        fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
+      } catch (writeErr) {
+        console.warn('[import-chatgpt] db.json write failed, trying API fallback:', writeErr?.message);
+        try {
+          const res = await nineRouterApi('POST', '/api/providers', { provider: 'codex', name: email, apiKey: accessToken });
+          if (!res.success) throw new Error(res.error || 'API returned failure');
+          return { success: true, email, planType, method: 'api' };
+        } catch (apiErr) {
+          return { success: false, error: 'Không ghi được db.json (' + (writeErr?.code || writeErr?.message) + ') và API fallback cũng thất bại: ' + (apiErr?.message || String(apiErr)) };
+        }
+      }
 
       return { success: true, email, planType };
     } catch (e) {
