@@ -863,7 +863,7 @@ function isZaloListenerAlive() {
  * Applies output filter, pause check, blocklist, and multi-chunk splitting.
  * @param {string|{id:string, isGroup:boolean}} target - Zalo target ID or object
  * @param {string} text - Message text to send
- * @param {{ skipFilter?: boolean, skipPauseCheck?: boolean, skipListenerCheck?: boolean, profile?: string }} [opts]
+ * @param {{ skipFilter?: boolean, skipPauseCheck?: boolean, skipListenerCheck?: boolean, profile?: string, ceoOverride?: boolean }} [opts]
  * @returns {Promise<{ok:boolean, error?:string, mode?:string}>}
  */
 async function sendZaloTo(target, text, opts = {}) {
@@ -882,12 +882,12 @@ async function sendZaloTo(target, text, opts = {}) {
     return { ok: false, error: err };
   }
 
-  const { skipFilter = false, skipPauseCheck = false } = opts;
+  const { skipFilter = false, skipPauseCheck = false, ceoOverride = false } = opts;
   if (!isZaloChannelEnabled()) {
     console.log('[sendZaloTo] channel disabled in config — skipping');
     return { ok: false, error: 'channel_disabled' };
   }
-  if (!skipPauseCheck && isChannelPaused('zalo')) {
+  if (!ceoOverride && !skipPauseCheck && isChannelPaused('zalo')) {
     console.log('[sendZaloTo] channel paused — skipping');
     return { ok: false, error: 'channel_paused' };
   }
@@ -911,11 +911,13 @@ async function sendZaloTo(target, text, opts = {}) {
     }
   }
 
-  const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
-  if (!allow.allowed) {
-    const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
-    console.warn(`[sendZaloTo] ${err} target=${targetId}`);
-    return { ok: false, error: err };
+  if (!ceoOverride) {
+    const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+    if (!allow.allowed) {
+      const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
+      console.warn(`[sendZaloTo] ${err} target=${targetId}`);
+      return { ok: false, error: err };
+    }
   }
 
   const zcaBin = getCachedZcaBin();
@@ -1130,12 +1132,12 @@ async function sendZaloMediaTo(target, filePath, opts = {}) {
     return { ok: false, error: 'media_invalid: ' + e.message };
   }
 
-  const { skipFilter = false, skipPauseCheck = false } = opts;
+  const { skipFilter = false, skipPauseCheck = false, ceoOverride = false } = opts;
   if (!isZaloChannelEnabled()) {
     console.log('[sendZaloMediaTo] channel disabled in config — skipping');
     return { ok: false, error: 'channel_disabled' };
   }
-  if (!skipPauseCheck && isChannelPaused('zalo')) {
+  if (!ceoOverride && !skipPauseCheck && isChannelPaused('zalo')) {
     console.log('[sendZaloMediaTo] channel paused — skipping');
     return { ok: false, error: 'channel_paused' };
   }
@@ -1155,11 +1157,13 @@ async function sendZaloMediaTo(target, filePath, opts = {}) {
     }
   }
 
-  const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
-  if (!allow.allowed) {
-    const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
-    console.warn(`[sendZaloMediaTo] ${err} target=${targetId}`);
-    return { ok: false, error: err };
+  if (!ceoOverride) {
+    const allow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+    if (!allow.allowed) {
+      const err = 'blocked_by_policy: ' + (allow.reason || 'unknown');
+      console.warn(`[sendZaloMediaTo] ${err} target=${targetId}`);
+      return { ok: false, error: err };
+    }
   }
 
   const zcaBin = getCachedZcaBin();

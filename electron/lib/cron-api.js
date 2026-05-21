@@ -1577,7 +1577,7 @@ function startCronApi() {
         return jsonResp(res, 400, { error: 'unknown groupId: ' + tId + '. Check /api/cron/list for available groups.' });
       }
       try {
-        const result = await sendZaloTo({ id: String(tId), isGroup }, String(text), { skipFilter: false });
+        const result = await sendZaloTo({ id: String(tId), isGroup }, String(text), { skipFilter: false, ceoOverride: true });
         if (result && result.ok) {
           console.log(`[cron-api] /api/zalo/send OK → ${isGroup ? 'group' : 'user'} ${tId}`);
           return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup });
@@ -1638,7 +1638,7 @@ function startCronApi() {
       }
       absPath = asset.path;
       try {
-        const result = await sendZaloMediaTo({ id: String(tId), isGroup }, absPath, { caption: caption || asset?.title || '' });
+        const result = await sendZaloMediaTo({ id: String(tId), isGroup }, absPath, { caption: caption || asset?.title || '', ceoOverride: true });
         if (result.ok) {
           console.log(`[cron-api] /api/zalo/send-media OK → ${isGroup ? 'group' : 'user'} ${tId}`);
           return jsonResp(res, 200, { success: true, targetId: String(tId), isGroup, mediaId: asset?.id || null, mode: result.mode || null });
