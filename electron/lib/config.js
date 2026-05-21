@@ -759,8 +759,15 @@ async function ensureDefaultConfig() {
     //   Layer 2: Cron API Bearer token (only Telegram sessions get the header)
     //   Layer 3: Output filter (blocks sensitive data in replies)
     //   Layer 4: AGENTS.md rules (Zalo = CSKH only, no exec/file/cron)
-    const REQUIRED_TOOLS = ['message', 'web_search', 'web_fetch', 'update_plan', 'read_file', 'list_files', 'search_files', 'exec', 'write_file', 'apply_patch', 'memory'];
-    const BANNED_TOOLS = ['cron', 'process', 'read', 'write'];
+    const REQUIRED_TOOLS = [
+      'message', 'web_search', 'web_fetch', 'update_plan',
+      'read_file', 'list_files', 'search_files', 'write_file', 'apply_patch',
+      'exec', 'memory', 'image_generate', 'pdf', 'tts',
+      'sessions_spawn', 'sessions_yield', 'sessions_send', 'subagents',
+      'sessions_list', 'sessions_history', 'session_status',
+      'agents_list', 'cron', 'process', 'canvas',
+    ];
+    const BANNED_TOOLS = [];
     const existingAllow = Array.isArray(config.tools.allow) ? config.tools.allow : [];
     const merged = REQUIRED_TOOLS.filter(t => !BANNED_TOOLS.includes(t));
     if (JSON.stringify(existingAllow.slice().sort()) !== JSON.stringify(merged.slice().sort())) {
