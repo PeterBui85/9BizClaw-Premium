@@ -771,11 +771,16 @@
     .wz-form-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
     .wz-form-scroll::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
-    /* ===== Theme toggle (top-right corner of brand panel) ===== */
-    .wz-theme-toggle {
+    /* ===== Top-right controls (brand panel) ===== */
+    .wz-brand-topbar {
       position: absolute;
       top: 24px;
       right: 24px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .wz-theme-toggle, .wz-import-btn {
       width: 40px;
       height: 40px;
       border-radius: 12px;
@@ -787,25 +792,32 @@
       color: var(--text);
       cursor: pointer;
       transition: all 0.2s ease;
-      z-index: 10;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
       backdrop-filter: blur(12px);
     }
-    .wz-theme-toggle:hover {
+    .wz-theme-toggle:hover, .wz-import-btn:hover {
       transform: translateY(-1px);
       border-color: rgba(255, 255, 255, 0.24);
       box-shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
     }
-    html[data-theme="light"] .wz-theme-toggle {
+    html[data-theme="light"] .wz-theme-toggle, html[data-theme="light"] .wz-import-btn {
       background: rgba(255, 255, 255, 0.92);
       border-color: rgba(29, 29, 31, 0.12);
       color: #1D1D1F;
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
     }
-    html[data-theme="light"] .wz-theme-toggle:hover {
+    html[data-theme="light"] .wz-theme-toggle:hover, html[data-theme="light"] .wz-import-btn:hover {
       border-color: rgba(29, 29, 31, 0.18);
       box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
     }
+    .wz-import-btn.importing {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+    .wz-import-btn.importing svg {
+      animation: wz-spin 0.7s linear infinite;
+    }
+    @keyframes wz-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     #theme-icon,
     #theme-icon svg {
       width: 18px;
@@ -1200,9 +1212,14 @@
   <div class="wz-shell">
     <!-- ===== LEFT BRAND PANEL ===== -->
     <aside class="wz-brand">
-      <button class="wz-theme-toggle" id="theme-toggle" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">
-        <span data-icon="sun" id="theme-icon"></span>
-      </button>
+      <div class="wz-brand-topbar">
+        <button class="wz-import-btn" id="btn-import-backup" title="Khôi phục từ bản sao lưu" aria-label="Khôi phục từ bản sao lưu">
+          <span id="import-icon"></span>
+        </button>
+        <button class="wz-theme-toggle" id="theme-toggle" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện">
+          <span data-icon="sun" id="theme-icon"></span>
+        </button>
+      </div>
 
       <div class="wz-brand-mark">
         <img src="9bizclaw-mascot.png" alt="9BizClaw" class="wz-brand-logo-img" onerror="this.style.display='none'">
@@ -1774,6 +1791,7 @@
       'phone-call': '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
       building: '<rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/>',
       clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+      upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
     };
     function icon(name, size = 18) {
       const path = ICONS[name] || ICONS.zap;
@@ -2471,6 +2489,22 @@
 
       // Theme toggle
       document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+
+      // Import backup button
+      const importBtn = document.getElementById('btn-import-backup');
+      document.getElementById('import-icon').innerHTML = icon('upload', 18);
+      importBtn.addEventListener('click', async () => {
+        if (importBtn.classList.contains('importing')) return;
+        importBtn.classList.add('importing');
+        try {
+          const result = await window.claw.importWorkspace();
+          if (result && result.ok) {
+            setTimeout(() => window.claw.relaunch(), 800);
+            return;
+          }
+        } catch {}
+        importBtn.classList.remove('importing');
+      });
     });
   </script>
 </body>

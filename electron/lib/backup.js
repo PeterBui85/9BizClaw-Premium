@@ -349,13 +349,17 @@ function restoreBackup(backupPath, password, appVersion) {
     };
 
     // Copy files from each section to their target
+    const copyErrors = [];
     for (const [section, targetBase] of Object.entries(sectionTargets)) {
       const sectionDir = path.join(extractedDir, section);
       if (!fs.existsSync(sectionDir)) continue;
-      _copyDirRecursive(sectionDir, targetBase);
+      _copyDirRecursive(sectionDir, targetBase, copyErrors);
     }
 
-    return { ok: true, manifest };
+    if (copyErrors.length > 0) {
+      console.warn(`[backup] restore completed with ${copyErrors.length} file(s) skipped:`, copyErrors);
+    }
+    return { ok: true, manifest, skipped: copyErrors };
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
@@ -364,7 +368,7 @@ function restoreBackup(backupPath, password, appVersion) {
 // ---------------------------------------------------------------------------
 //  _copyDirRecursive — copy all files from src into dest, preserving structure
 // ---------------------------------------------------------------------------
-function _copyDirRecursive(src, dest) {
+function _copyDirRecursive(src, dest, errors) {
   let entries;
   try { entries = fs.readdirSync(src, { withFileTypes: true }); } catch { return; }
   for (const ent of entries) {
@@ -372,11 +376,17 @@ function _copyDirRecursive(src, dest) {
     const srcPath = path.join(src, ent.name);
     const destPath = path.join(dest, ent.name);
     if (ent.isDirectory()) {
-      fs.mkdirSync(destPath, { recursive: true });
-      _copyDirRecursive(srcPath, destPath);
+      try { fs.mkdirSync(destPath, { recursive: true }); } catch {}
+      _copyDirRecursive(srcPath, destPath, errors);
     } else if (ent.isFile()) {
-      fs.mkdirSync(path.dirname(destPath), { recursive: true });
-      fs.copyFileSync(srcPath, destPath);
+      try {
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.copyFileSync(srcPath, destPath);
+      } catch (e) {
+        const rel = ent.name;
+        console.warn(`[backup] copy failed: ${rel} — ${e.message}`);
+        if (errors) errors.push(rel);
+      }
     }
   }
 }

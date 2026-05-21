@@ -2,7 +2,7 @@
   "version": 1,
   "artifacts": {
     "windowsInstaller": {
-      "path": "dist/9BizClaw Setup 2.4.0.exe",
+      "path": "dist/9BizClaw Setup 2.4.5.exe",
       "baselineBytes": 570965364,
       "maxGrowthBytes": 35000000,
       "maxBytes": 625000000
