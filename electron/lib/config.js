@@ -783,6 +783,14 @@ async function ensureDefaultConfig() {
       config.tools.loopDetection.enabled = true;
       changed = true;
     }
+    // FETCH TIMEOUT: default 30s is too short for image generation (60-180s).
+    // Increase to 200s so web_fetch to /api/image/generate with waitMs=180000
+    // doesn't timeout before the image is ready.
+    if (!config.tools.fetch) config.tools.fetch = {};
+    if (!config.tools.fetch.timeoutSeconds || config.tools.fetch.timeoutSeconds < 200) {
+      config.tools.fetch.timeoutSeconds = 200;
+      changed = true;
+    }
     // CLEANUP: execSecurity is NOT valid under agents.defaults (it's a runtime
     // agent config key). A prior buggy version wrote it here → gateway rejects
     // entire config with "Unrecognized key: execSecurity" → bot never starts.
