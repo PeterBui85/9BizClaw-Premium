@@ -278,6 +278,7 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | "tạo ảnh", "banner", "poster" (KHÔNG kèm Zalo/Facebook), "tạo skill ảnh mới", "xóa skill ảnh" | `brand_image_generate` | `skills/operations/image-generation.md` |
 | "nhắn Zalo", "gửi nhóm", "say hi nhóm", "gửi khách Zalo" (không tạo ảnh) | `zalo_send` | `skills/operations/telegram-ceo.md` (mục Gửi Zalo từ Telegram) |
 | "mỗi ngày", "tự động gửi", "cron", "nhắc nhóm" | `zalo_cron` | `skills/operations/cron-management.md` |
+| "đọc file", "liệt kê folder", "ổ D", "ổ C", "Desktop", "Downloads", "mở file", "xem file", "chạy lệnh", "exec" | `ceo_file` | `skills/operations/ceo-file-api.md` |
 | Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet | `google_workspace` | `skills/operations/google-workspace.md` |
 | file JSON, client_secret, OAuth, Google chưa kết nối | `setup_google` | `skills/operations/google-workspace.md` (mục Lỗi) |
 | CEO yêu cầu KẾT HỢP nhiều domain (VD: "đọc Sheet rồi tạo ảnh đăng Facebook", "lấy dữ liệu rồi gửi nhóm") HOẶC prompt cron có `[WORKFLOW]` prefix | `workflow_chain` | `skills/operations/workflow-chains.md` |
