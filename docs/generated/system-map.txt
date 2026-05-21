@@ -179,7 +179,7 @@ Large Source Files
 - electron/lib/knowledge.js: 77511 bytes
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
 - electron/lib/workspace.js: 53962 bytes
-- electron/lib/config.js: 49213 bytes
+- electron/lib/config.js: 49042 bytes
 - electron/lib/vendor-patches.js: 47456 bytes
 - electron/lib/skill-manager.js: 44276 bytes
 - electron/lib/fb-schedule.js: 43962 bytes
