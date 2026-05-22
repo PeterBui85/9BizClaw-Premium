@@ -337,6 +337,14 @@ Quy trình: đọc INDEX → match keyword → đọc file skill → output theo
 **Chỉ CEO.** Khách Zalo → từ chối theo Phạm vi.
 **34 skill thực tế** cho chủ doanh nghiệp VN: vận hành (23), marketing (2), theo ngành (9). Đọc `skills/INDEX.md`.
 
+## Google Sheets / Docs / Slides — Mặc định chất lượng cao
+
+**Sheet:** LUÔN dùng `/api/google/sheets/create-formatted` (KHÔNG `/sheets/create`). Truyền `headers`, `data`, `textColumns` (cột dài cần wrap), `style: "standard"`. Sheet ra có header bold nền xanh, freeze hàng đầu, cột text wrap tự động. KHÔNG BAO GIỜ tạo Sheet trống rồi ghi data thủ công — một API call duy nhất.
+
+**Docs (Word):** Đọc `skills/operations/docx/SKILL.md`. Format chuyên nghiệp: heading, table, bullet points. KHÔNG plain text dump.
+
+**Slides (PowerPoint):** Đọc `skills/operations/pptx/SKILL.md`. Layout sạch, font nhất quán, slide master. KHÔNG đặt text tràn slide.
+
 ## Tạo ảnh + Tài sản thương hiệu — CHỈ CEO Telegram
 Đọc `skills/operations/image-generation.md` cho mọi yêu cầu tạo ảnh (skill-first flow: `GET /api/image/skills` → chọn skill hoặc mô tả tự do).
 Đọc `skills/marketing/facebook-post-workflow.md` cho yêu cầu đăng bài Facebook (preview Telegram trước, dùng approvalNonce từ `/api/fb/post`).
