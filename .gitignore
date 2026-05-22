@@ -130,3 +130,13 @@ graphify-out/
 /package-lock.json
 .vercel
 app/.next/
+
+# Client data — contains real tokens/secrets
+client zalo/
+client*/
+
+# Workspace runtime files — not source code
+CEO-MEMORY.md
+active-persona.json
+shop-state.json
+zalo-allowlist.json
