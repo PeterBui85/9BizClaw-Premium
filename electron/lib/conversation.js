@@ -161,6 +161,20 @@ function _extractConversationHistoryImpl({ sinceMs, maxMessages = 40, channels =
           const chanMatch = text.match(/Channel:\s*(.+?)[\r\n]/);
           if (chanMatch) { msgChannel = chanMatch[1].trim().toLowerCase().replace(/\s+/g, '-'); sessionChannel = msgChannel; }
         }
+        // Fallback: detect channel from sender ID format in metadata JSON blocks.
+        // Zalo IDs are 16-19 digits, Telegram IDs are 8-12 digits (per AGENTS.md).
+        if (!msgChannel) {
+          const idMatch = text.match(/"(?:sender_id|id)":\s*"(\d{8,20})"/);
+          if (idMatch) {
+            const digits = idMatch[1].length;
+            if (digits >= 16) { msgChannel = 'modoro-zalo'; sessionChannel = 'modoro-zalo'; }
+            else if (digits <= 12) { msgChannel = 'telegram'; sessionChannel = 'telegram'; }
+          }
+        }
+        if (!msgSender) {
+          const senderMatch = text.match(/"sender":\s*"([^"]+)"/);
+          if (senderMatch) { msgSender = senderMatch[1].trim(); sessionSender = msgSender; }
+        }
         text = text.replace(/Conversation info[^]*?```\s*\n/g, '');
         text = text.replace(/Sender[^]*?```\s*\n/g, '');
         text = text.replace(/\[Queued messages while agent was busy\]\s*\n*---\n*Queued #\d+\n*/g, '\n');

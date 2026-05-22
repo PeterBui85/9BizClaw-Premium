@@ -3174,6 +3174,19 @@ ipcMain.handle('delete-fb-schedule', async (_event, id) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+ipcMain.handle('toggle-fb-schedule', async (_event, { id, enabled }) => {
+  try {
+    const fbSched = require('./fb-schedule');
+    const schedules = fbSched.loadSchedules();
+    const target = schedules.find(s => s.id === id);
+    if (!target) return { success: false, error: 'not_found' };
+    target.enabled = !!enabled;
+    fbSched.saveSchedules(schedules);
+    auditLog('fb_schedule_toggled', { id, enabled: !!enabled });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 ipcMain.handle('get-fb-config', async () => {
   const cfg = readFbConfig();
   if (!cfg) return null;

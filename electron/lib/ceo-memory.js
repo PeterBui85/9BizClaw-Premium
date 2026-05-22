@@ -226,7 +226,7 @@ function _scheduleRegeneration() {
 function trimOldTaskEntries() {
   const db = getMemoryDb();
   if (!db) return;
-  const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
   try {
     db.prepare("DELETE FROM ceo_memories WHERE type = 'task' AND created_at < ?").run(cutoff);
   } catch (e) {
@@ -245,18 +245,35 @@ function regenerateCeoMemoryFile() {
   const now = Date.now();
   const allRows = db.prepare('SELECT id, type, content, relevance_score, updated_at FROM ceo_memories').all();
 
-  const sorted = allRows.map(r => {
+  const byType = { correction: [], rule: [], pattern: [], preference: [], fact: [], task: [] };
+  for (const r of allRows) {
     const daysSince = (now - new Date(r.updated_at).getTime()) / 86400000;
-    return { ...r, effective: Math.max(0, r.relevance_score - 0.02 * daysSince) };
-  }).sort((a, b) => b.effective - a.effective);
+    r.effective = Math.max(0, r.relevance_score - 0.02 * daysSince);
+    if (byType[r.type]) byType[r.type].push(r);
+  }
+  for (const arr of Object.values(byType)) {
+    arr.sort((a, b) => b.effective - a.effective);
+  }
 
+  const typePriority = ['correction', 'rule', 'pattern', 'preference', 'fact', 'task'];
+  const typeSoftCaps = { correction: 0.30, rule: 0.30, pattern: 0.20, preference: 0.10, fact: 1.0, task: 1.0 };
   const groups = {};
   let totalChars = 0;
-  for (const r of sorted) {
-    if (totalChars + r.content.length > HOT_TIER_MAX_CHARS) break;
-    if (!groups[r.type]) groups[r.type] = [];
-    groups[r.type].push(r.content);
-    totalChars += r.content.length + 3;
+
+  let surplus = 0;
+  for (const type of typePriority) {
+    const baseCap = HOT_TIER_MAX_CHARS * typeSoftCaps[type];
+    const effectiveCap = baseCap + surplus;
+    let typeChars = 0;
+    groups[type] = [];
+    for (const r of byType[type]) {
+      if (totalChars + r.content.length > HOT_TIER_MAX_CHARS) break;
+      if (typeChars + r.content.length > effectiveCap) break;
+      groups[type].push(r.content);
+      totalChars += r.content.length + 3;
+      typeChars += r.content.length + 3;
+    }
+    surplus += baseCap - typeChars;
   }
 
   const typeLabels = {
@@ -279,7 +296,7 @@ function regenerateCeoMemoryFile() {
     }
   }
 
-  if (Object.keys(groups).length === 0) {
+  if (totalChars === 0) {
     md += '_Chưa có gì. Bot sẽ tự học từ cuộc hội thoại với sếp._\n';
   }
 
@@ -298,7 +315,20 @@ function regenerateCeoMemoryFile() {
 
 const MEMORY_SECTION_START = '<!-- MEMORY-CONTEXT-START -->';
 const MEMORY_SECTION_END = '<!-- MEMORY-CONTEXT-END -->';
-const MEMORY_MAX_CHARS = 2000;
+const MEMORY_MIN_CHARS = 2000;
+const MEMORY_BUDGET_CAP = 10000;
+const TOTAL_CONTEXT_BUDGET = 35000;
+
+function getMemoryBudget(agentsPath) {
+  try {
+    const agentsContent = fs.readFileSync(agentsPath, 'utf-8');
+    const agentsChars = agentsContent.length;
+    const available = TOTAL_CONTEXT_BUDGET - agentsChars;
+    return Math.max(MEMORY_MIN_CHARS, Math.min(MEMORY_BUDGET_CAP, available));
+  } catch {
+    return MEMORY_MIN_CHARS;
+  }
+}
 
 function injectMemoryIntoAgentsMd() {
   try {
@@ -315,12 +345,13 @@ function injectMemoryIntoAgentsMd() {
     }
     if (!memContent || memContent.includes('Chưa có gì')) memContent = '';
 
-    if (memContent.length > MEMORY_MAX_CHARS) {
+    const memBudget = getMemoryBudget(agentsPath);
+    if (memContent.length > memBudget) {
       const lines = memContent.split('\n');
       let trimmed = '';
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const candidate = lines[i] + '\n' + trimmed;
-        if (candidate.length > MEMORY_MAX_CHARS) break;
+      for (let i = 0; i < lines.length; i++) {
+        const candidate = trimmed ? trimmed + '\n' + lines[i] : lines[i];
+        if (candidate.length > memBudget) break;
         trimmed = candidate;
       }
       memContent = trimmed.trim();
@@ -369,6 +400,7 @@ module.exports = {
   scheduleRegeneration: _scheduleRegeneration,
   cleanupCeoMemoryTimers,
   injectMemoryIntoAgentsMd,
+  getMemoryBudget,
   CURRENT_MODEL_VERSION,
   MAX_CONTENT_LENGTH,
   HOT_TIER_MAX_CHARS,

@@ -3506,6 +3506,27 @@
         </div>
       </div>
 
+      <!-- PAGE: ChatGPT Import -->
+      <div class="page" id="page-chatgpt-import">
+        <div class="page-header">
+          <span class="page-icon" data-icon="download" data-icon-size="26"></span>
+          <div><h2>Import tài khoản ChatGPT</h2><div class="page-sub">Dán session JSON từ chatgpt.com để kết nối tài khoản ChatGPT Plus/Pro với bot</div></div>
+        </div>
+        <div style="padding:24px 28px;max-width:600px">
+          <ol style="margin:0 0 16px;padding-left:20px;font-size:13px;line-height:1.8;color:var(--text-secondary)">
+            <li>Mở <strong>chatgpt.com</strong> trên trình duyệt, đăng nhập bình thường</li>
+            <li>Vào <a href="#" onclick="event.preventDefault(); window.claw.openExternal('https://chatgpt.com/api/auth/session')" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer">chatgpt.com/api/auth/session</a></li>
+            <li>Bấm <strong>Ctrl+A</strong> rồi <strong>Ctrl+C</strong></li>
+            <li>Dán vào ô bên dưới</li>
+          </ol>
+          <textarea id="chatgpt-tab-json" rows="4" class="input" style="width:100%;font-family:monospace;font-size:12px;resize:vertical" placeholder="Dán nội dung JSON vào đây..."></textarea>
+          <div id="chatgpt-tab-status" style="margin-top:8px;font-size:12px;min-height:18px"></div>
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+            <button id="chatgpt-tab-import-btn" class="btn btn-primary" disabled onclick="doChatGPTTabImport()">Import tài khoản</button>
+          </div>
+        </div>
+      </div>
+
       <!-- PAGE: 9Router (embedded web UI) -->
       <div class="page" id="page-9router">
         <div class="page-header">
@@ -4939,9 +4960,10 @@
         { page: 'schedules', icon: 'calendar', label: 'Lịch tự động' },
       ]},
       brain:    { pages: ['brain'], tabs: null },
-      config:   { pages: ['skills','persona-mix','9router','openclaw'], tabs: [
+      config:   { pages: ['skills','persona-mix','chatgpt-import','9router','openclaw'], tabs: [
         { page: 'skills', icon: 'zap', label: 'Skills' },
         { page: 'persona-mix', icon: 'sparkles', label: 'Tính cách' },
+        { page: 'chatgpt-import', icon: 'download', label: 'ChatGPT' },
         { page: '9router', icon: 'cpu', label: 'AI Models', action: 'openAiModelsBrowser' },
         { page: 'openclaw', icon: 'terminal', label: 'OpenClaw' },
       ]},
@@ -6451,6 +6473,66 @@
         }
       };
     })();
+    // ── ChatGPT session import (dedicated tab) ──
+    (function() {
+      let _parsed = null;
+      document.addEventListener('DOMContentLoaded', () => {
+        const ta = document.getElementById('chatgpt-tab-json');
+        if (!ta) return;
+        const st = document.getElementById('chatgpt-tab-status');
+        const btn = document.getElementById('chatgpt-tab-import-btn');
+        ta.addEventListener('input', () => {
+          _parsed = null; btn.disabled = true; st.textContent = ''; st.style.color = '';
+          let raw = ta.value.replace(/^﻿/, '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F]/g, '').trim();
+          if (!raw) return;
+          const first = raw.indexOf('{'); const last = raw.lastIndexOf('}');
+          if (first >= 0 && last > first) raw = raw.substring(first, last + 1);
+          try {
+            const s = JSON.parse(raw);
+            if (!s.accessToken || typeof s.accessToken !== 'string' || s.accessToken.length < 50) {
+              st.style.color = 'var(--danger)'; st.textContent = 'Thiếu accessToken'; return;
+            }
+            let email = s.user?.email || '';
+            let plan = '';
+            try {
+              const parts = s.accessToken.split('.');
+              if (parts.length === 3) {
+                const p = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+                email = email || (p['https://api.openai.com/profile'] || {}).email || '';
+                plan = (p['https://api.openai.com/auth'] || {}).chatgpt_plan_type || '';
+              }
+            } catch {}
+            if (!email) { st.style.color = 'var(--danger)'; st.textContent = 'Không tìm thấy email'; return; }
+            _parsed = s; btn.disabled = false;
+            st.style.color = 'var(--success)'; st.textContent = email + (plan ? ' (' + plan + ')' : '');
+          } catch (err) {
+            st.style.color = 'var(--danger)'; st.textContent = 'JSON không hợp lệ: ' + (err.message || '').substring(0, 80);
+          }
+        });
+      });
+      window.doChatGPTTabImport = async function() {
+        if (!_parsed) return;
+        const btn = document.getElementById('chatgpt-tab-import-btn');
+        const st = document.getElementById('chatgpt-tab-status');
+        btn.disabled = true;
+        st.style.color = 'var(--text-tertiary)'; st.textContent = 'Đang import...';
+        try {
+          const res = await window.claw.importChatGPTSession(JSON.stringify(_parsed));
+          if (res.success) {
+            st.style.color = 'var(--success)';
+            st.textContent = 'Import thành công — ' + res.email + (res.planType && res.planType !== 'unknown' ? ' (' + res.planType + ')' : '');
+            btn.textContent = 'Đã import';
+            try { reloadEmbed('9router'); } catch {}
+          } else {
+            st.style.color = 'var(--danger)'; st.textContent = res.error || 'Import thất bại';
+            btn.disabled = false;
+          }
+        } catch (e) {
+          st.style.color = 'var(--danger)'; st.textContent = e.message || 'Lỗi import';
+          btn.disabled = false;
+        }
+      };
+    })();
     async function copyAndShowGatewayToken() {
       try {
         const token = await window.claw.getGatewayToken();
@@ -7411,6 +7493,16 @@
           el.checked = _zaloEnabledSaved;
           return;
         }
+        // Auto-prompt: when enabling Zalo and 0 groups are active, offer to enable all
+        if (cur && zaloGroups.length > 0) {
+          const gs = zaloMgrConfig.groupSettings || {};
+          const activeCount = Object.values(gs).filter(g => g && g.mode && g.mode !== 'off').length;
+          if (activeCount === 0) {
+            if (confirm('Hiện chưa có nhóm nào được bật.\nBật bot cho tất cả ' + zaloGroups.length + ' nhóm (chế độ @mention)?')) {
+              setAllGroupsMode('mention');
+            }
+          }
+        }
         _zaloEnabledSaved = cur;
         saveZaloManager();
       }
@@ -7808,7 +7900,9 @@
       if (checked) {
         zaloMgrConfig.userAllowlist = zaloFriends.map(f => f.userId);
       } else {
-        zaloMgrConfig.userAllowlist = [];
+        // CANNOT use empty array — inbound.ts treats empty allowlist as "allow ALL" (backwards compat).
+        // Sentinel value makes array non-empty so filter enforces deny-all.
+        zaloMgrConfig.userAllowlist = ['__NONE__'];
       }
       updateBlockedCount();
       renderZaloFriends();
@@ -7929,7 +8023,7 @@
           const iconName = item.type === 'fixed' ? (SCHEDULE_ICON_MAP[item.id] || 'clock') : item.type === 'fb' ? 'brand-facebook' : 'bot';
           const toggleHtml = item.type === 'fixed'
             ? `<label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="toggleSchedule('${escJs(item.id)}',this.checked)"><span class="toggle-slider"></span></label>`
-            : item.type === 'fb' ? ''
+            : item.type === 'fb' ? `<label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="toggleFbSchedule('${escJs(item.id)}',this.checked)"><span class="toggle-slider"></span></label>`
             : `<label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="toggleCustomCron('${escJs(item.id)}',this.checked)"><span class="toggle-slider"></span></label>`;
           const detailType = item.type === 'fixed' ? 'fixed' : item.type === 'fb' ? 'fb' : 'custom';
           const row = document.createElement('div');
@@ -7985,6 +8079,17 @@
         renderSchedules();
         addActivity(`${enabled ? 'Bật' : 'Tắt'} ${c.label || 'Custom cron'}`);
       }
+    }
+    async function toggleFbSchedule(id, enabled) {
+      try {
+        const res = await window.claw.toggleFbSchedule(id, enabled);
+        if (res?.success) {
+          renderSchedules();
+          addActivity(`${enabled ? 'Bật' : 'Tắt'} lịch Facebook`);
+        } else {
+          showToast(res?.error || 'Không cập nhật được', 'error');
+        }
+      } catch (e) { showToast(e.message || 'Lỗi cập nhật', 'error'); }
     }
 
     // Init
@@ -9497,6 +9602,7 @@
         { id: 'page-zalo', label: 'Mở Zalo', keywords: 'zalo' },
         { id: 'page-knowledge', label: 'Mở Knowledge', keywords: 'knowledge tai lieu' },
         { id: 'page-schedules', label: 'Mở Lịch tự động', keywords: 'schedules lich tu dong cron' },
+        { id: 'page-chatgpt-import', label: 'Mở ChatGPT Import', keywords: 'chatgpt import session' },
         { id: 'page-9router', label: 'Mở AI Models', keywords: 'ai models 9router' },
         { id: 'page-openclaw', label: 'Mở OpenClaw', keywords: 'openclaw' },
         { id: 'action-help', label: 'Xem phím tắt (?)', keywords: 'help shortcut phim tat' }

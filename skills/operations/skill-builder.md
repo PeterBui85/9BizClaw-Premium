@@ -79,7 +79,7 @@ Format reply:
 ## Bước 3: Check conflict TRƯỚC khi tạo
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/check-conflict" method=POST body="{\"content\":\"<nội dung>\",\"appliesTo\":[],\"trigger\":\"<trigger>\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/user-skills/check-conflict" method=POST body="{\"content\":\"<nội dung>\",\"appliesTo\":[],\"trigger\":\"<trigger>\"}"
 ```
 
 Response có `conflicts: [{skillName, reasons}]`:
@@ -89,7 +89,7 @@ Response có `conflicts: [{skillName, reasons}]`:
 ## Bước 4: Tạo skill
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/create" method=POST body="{\"name\":\"<tên>\",\"type\":\"<rule|override|workflow|custom>\",\"appliesTo\":[],\"trigger\":\"<trigger>\",\"content\":\"<nội dung>\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/user-skills/create" method=POST body="{\"name\":\"<tên>\",\"type\":\"<rule|override|workflow|custom>\",\"appliesTo\":[],\"trigger\":\"<trigger>\",\"content\":\"<nội dung>\"}"
 ```
 
 Trong JSON body:
@@ -124,26 +124,26 @@ Trả về `{skills: [{id, name, type, appliesTo, trigger, summary, enabled, ...
 
 **Tắt/bật:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/toggle" method=POST body="{\"id\":\"<skill-id>\",\"enabled\":false}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/user-skills/toggle" method=POST body="{\"id\":\"<skill-id>\",\"enabled\":false}"
 ```
 
 **Sửa nội dung (giữ các field khác):**
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/update" method=POST body="{\"id\":\"<skill-id>\",\"content\":\"<nội dung mới>\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/user-skills/update" method=POST body="{\"id\":\"<skill-id>\",\"content\":\"<nội dung mới>\"}"
 ```
 
 Chỉ truyền field nào cần sửa. Field không truyền → giữ nguyên.
 
 **Xóa:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/delete" method=POST body="{\"id\":\"<skill-id>\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/user-skills/delete" method=POST body="{\"id\":\"<skill-id>\"}"
 ```
 
 Xóa là SOFT delete — file lưu vào `_trash/`, giữ 20 lần xóa gần nhất. CEO có thể khôi phục bằng:
 
 **Khôi phục skill đã xóa:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/restore" method=POST body="{\"id\":\"<skill-id>\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/user-skills/restore" method=POST body="{\"id\":\"<skill-id>\"}"
 ```
 
 CEO nói "khôi phục skill X" / "phục hồi skill X" / "lấy lại skill X" / "em xóa nhầm rồi, undo skill X" → gọi restore.

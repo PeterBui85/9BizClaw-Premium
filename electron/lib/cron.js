@@ -369,7 +369,7 @@ async function runCronAgentPrompt(prompt, opts = {}) {
   return run;
 }
 
-async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = CRON_AGENT_TIMEOUT_MS } = {}) {
+async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, timeoutMs = CRON_AGENT_TIMEOUT_MS } = {}) {
   const niceLabel = label || 'cron';
 
   // PAUSE CHECK 2026-05-15: if this cron targets Zalo and Zalo channel is
@@ -471,15 +471,18 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, timeoutMs = 
         zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
       }
       journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
-      try {
-        const { writeMemory } = require('./ceo-memory');
-        const replyPreview = (replyText || '').slice(0, 120).replace(/\n/g, ' ');
-        writeMemory({
-          type: 'task',
-          content: '[' + new Date().toLocaleDateString('vi-VN') + '] Cron "' + niceLabel + '": ' + (replyPreview || 'hoàn thành'),
-          source: 'auto',
-        }).catch(function(e) { console.warn('[cron-memory] write failed:', e?.message); });
-      } catch (e) { console.warn('[cron-memory] require failed:', e?.message); }
+      const isNotable = isOneTime || !replyText || replyText.length < 10;
+      if (isNotable) {
+        try {
+          const { writeMemory } = require('./ceo-memory');
+          const replyPreview = (replyText || '').slice(0, 120).replace(/\n/g, ' ');
+          writeMemory({
+            type: 'task',
+            content: '[' + new Date().toLocaleDateString('vi-VN') + '] Cron "' + niceLabel + '": ' + (replyPreview || 'hoàn thành'),
+            source: 'auto',
+          }).catch(function(e) { console.warn('[cron-memory] write failed:', e?.message); });
+        } catch (e) { console.warn('[cron-memory] require failed:', e?.message); }
+      }
       console.log(`[cron-agent] "${niceLabel}" delivered${zaloTarget ? ' (Telegram+zalo)' : ' (Telegram only)'} in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);
       return zaloOk;
     }
@@ -1019,7 +1022,7 @@ function scanZaloFollowUpCandidates(ws, { nowMs = Date.now(), max = 20 } = {}) {
   const H48_MS = 48 * 60 * 60 * 1000;
   const H30D_MS = 30 * H24_MS;
   const DATED_RE = /^##\s+(\d{4}-\d{2}-\d{2})\s*$/gm;
-  const PENDING_HINTS = /(chờ phản hồi|chờ trả lời|chưa chốt|cần follow-?up|sẽ liên hệ|hẹn mai|mai liên lạc|ngày mai sẽ|hứa.*(mua|đặt|ghé|qua))/i;
+  const PENDING_HINTS = /(chờ phản hồi|chờ trả lời|chưa chốt|cần follow-?up|sẽ liên hệ|hẹn mai|mai liên lạc|ngày mai sẽ|hứa.*(mua|đặt|ghé|qua)|suy nghĩ|chưa quyết|để xem|tính sau|xem lại|chưa trả lời|do dự|lưỡng lự|đang cân nhắc|chưa đồng ý|chưa ok|hỏi giá.*chưa mua|báo giá.*chưa)/i;
 
   const candidates = [];
   let files;
@@ -1060,7 +1063,7 @@ function scanZaloFollowUpCandidates(ws, { nowMs = Date.now(), max = 20 } = {}) {
       const lastMs = Date.parse(lastDate + 'T00:00:00Z');
       if (!Number.isFinite(lastMs)) continue;
       const staleMs = nowMs - lastMs;
-      if (staleMs < H48_MS) continue;
+      if (staleMs < H24_MS) continue;
 
       const sectionStart = content.lastIndexOf(`## ${lastDate}`);
       const sectionEnd = content.indexOf('\n## ', sectionStart + 3);
@@ -2124,9 +2127,9 @@ function _startCronJobsInner() {
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
             if (c.prompt && !c.prompt.startsWith('exec:')) {
-              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
+              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
             } else {
-              await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
+              await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
             }
             try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time' }); } catch {}
           } catch (e) {
@@ -2186,9 +2189,9 @@ function _startCronJobsInner() {
           console.log(`[cron] OneTime "${c.label || c.id}" firing at`, new Date().toISOString());
           try {
             if (c.prompt && !c.prompt.startsWith('exec:')) {
-              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
+              await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
             } else {
-              await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
+              await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
             }
             try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'one-time-healed' }); } catch {}
           } catch (e) {
@@ -2237,8 +2240,8 @@ function _startCronJobsInner() {
         try {
           console.log(`[cron] Custom "${c.label || c.id}" triggered at`, new Date().toISOString());
           const ok = (c.prompt && !c.prompt.startsWith('exec:'))
-            ? await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget })
-            : await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget });
+            ? await runCronViaSessionOrFallback(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt })
+            : await runCronAgentPrompt(c.prompt, { label: c.label || c.id, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
           console.log(`[cron] Custom ${c.id} agent run result:`, ok);
           try { auditLog('cron_fired', { id: c.id, label: c.label || c.id, kind: 'custom' }); } catch {}
         } catch (e) {
@@ -2449,8 +2452,8 @@ async function replayMissedCrons(sinceMs) {
       try { await sendCeoAlert(`[Cron resume] Lịch "${c.label}" đáng lẽ chạy lúc ${new Date(lastMatch).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} nhưng máy đang ngủ. Em sẽ chạy lại lúc lịch tiếp theo.`); } catch {}
     } else if (c.prompt) {
       try {
-        if (c.prompt.startsWith('exec:')) await runCronAgentPrompt(c.prompt, { label: c.label, zaloTarget: c.zaloTarget });
-        else await runCronViaSessionOrFallback(c.prompt, { label: c.label, zaloTarget: c.zaloTarget });
+        if (c.prompt.startsWith('exec:')) await runCronAgentPrompt(c.prompt, { label: c.label, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
+        else await runCronViaSessionOrFallback(c.prompt, { label: c.label, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
         replayed++;
       } catch (e) { console.warn(`[replayMissedCrons] ${c.id} failed:`, e?.message); }
     }

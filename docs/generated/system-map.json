@@ -2,9 +2,9 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 133,
-    "ipcHandlers": 185,
-    "preloadBridges": 177,
-    "dashboardPages": 16,
+    "ipcHandlers": 186,
+    "preloadBridges": 178,
+    "dashboardPages": 17,
     "capabilityContracts": 5
   },
   "apiRoutes": [
@@ -1908,6 +1908,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "toggle-fb-schedule",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "toggle-user-skill",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -2785,6 +2789,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "toggleFbSchedule",
+      "channel": "toggle-fb-schedule",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "toggleUserSkill",
       "channel": "toggle-user-skill",
       "source": "electron/preload.js"
@@ -2850,6 +2859,10 @@
     },
     {
       "id": "chat",
+      "source": "electron/ui/dashboard.html"
+    },
+    {
+      "id": "chatgpt-import",
       "source": "electron/ui/dashboard.html"
     },
     {
@@ -2931,11 +2944,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 612953
+      "bytes": 619341
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 258162
+      "bytes": 258687
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2943,7 +2956,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 124721
+      "bytes": 125240
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2951,7 +2964,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 93805
+      "bytes": 94189
     },
     {
       "path": "electron/lib/gateway.js",
@@ -3014,12 +3027,12 @@
       "bytes": 28661
     },
     {
-      "path": "electron/ui/splash.html",
-      "bytes": 26978
+      "path": "electron/lib/conversation.js",
+      "bytes": 27070
     },
     {
-      "path": "electron/lib/conversation.js",
-      "bytes": 26324
+      "path": "electron/ui/splash.html",
+      "bytes": 26978
     },
     {
       "path": "electron/lib/brain-graph.js",

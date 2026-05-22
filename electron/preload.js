@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('claw', {
   uploadChatFile: (filePath, fileName) => ipcRenderer.invoke('upload-chat-file', { filePath, fileName }),
   getFbSchedules: () => ipcRenderer.invoke('get-fb-schedules'),
   deleteFbSchedule: (id) => ipcRenderer.invoke('delete-fb-schedule', id),
+  toggleFbSchedule: (id, enabled) => ipcRenderer.invoke('toggle-fb-schedule', { id, enabled }),
   getBotStatus: () => ipcRenderer.invoke('get-bot-status'),
   toggleBot: () => ipcRenderer.invoke('toggle-bot'),
 
