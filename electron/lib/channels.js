@@ -437,7 +437,7 @@ const _outputFilterPatterns = [
   // authentication token is expired. Please try signing i (reset after 1m 24s)"
   { name: 'http-error-code', re: /\b[45]\d{2}\s*[\[({:]/  },
   { name: 'json-error-object', re: /[{[\s]*"error"\s*[:{]/i },
-  { name: 'api-model-name', re: /\b(?:codex|gpt-\d|gpt-[a-z]|claude-\d|anthropic|openai|deepseek|gemini-|llama-|mistral-|o[134]-)/i },
+  { name: 'api-model-name', re: /\b(?:gpt-\d|gpt-[a-z]|claude-\d|anthropic|deepseek|gemini-\d|llama-\d|mistral-\d|o[134]-(?:mini|preview))/i },
   { name: 'auth-token-error', re: /(?:authentication|auth)\s*(?:token|key|credential).*(?:expired|invalid|failed|missing)|token\s+(?:is\s+)?expired|unauthorized\b/i },
   { name: 'nodejs-error-type', re: /\b(?:TypeError|ReferenceError|SyntaxError|RangeError|URIError|EvalError)\s*:/  },
   { name: 'nodejs-stack-trace', re: /\bat\s+(?:Object\.|Module\.|Function\.|process\.|new\s|async\s|node:)/  },
