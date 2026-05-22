@@ -53,6 +53,9 @@ jobs:
           uname -a
           sw_vers || true
 
+      - name: Fix Python 3.12+ distutils (needed by node-gyp)
+        run: pip3 install setuptools
+
       - name: Install electron app deps
         working-directory: electron
         env:

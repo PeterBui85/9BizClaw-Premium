@@ -54,6 +54,9 @@ jobs:
           echo "arch=$(uname -m)"
           echo "TARGET_ARCH=${{ matrix.arch }}"
 
+      - name: Fix Python 3.12+ distutils (needed by node-gyp)
+        run: pip3 install setuptools
+
       - name: Install dependencies
         working-directory: electron
         env:
