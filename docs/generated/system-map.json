@@ -2951,7 +2951,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 93674
+      "bytes": 93796
     },
     {
       "path": "electron/lib/gateway.js",
