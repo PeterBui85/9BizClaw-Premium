@@ -976,18 +976,20 @@ async function sendZaloTo(target, text, opts = {}) {
 
   const sendOneChunk = (chunk) => new Promise((resolve) => {
     try {
-      const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
-      if (!liveAllow.allowed) {
-        const err = 'blocked_by_policy: ' + (liveAllow.reason || 'unknown');
-        console.log(`[sendZaloTo] ${err}`);
-        resolve({ ok: false, error: err });
-        return;
+      if (!ceoOverride) {
+        const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+        if (!liveAllow.allowed) {
+          const err = 'blocked_by_policy: ' + (liveAllow.reason || 'unknown');
+          console.log(`[sendZaloTo] ${err}`);
+          resolve({ ok: false, error: err });
+          return;
+        }
       }
       if (!isZaloChannelEnabled()) {
         resolve({ ok: false, error: 'channel_disabled' });
         return;
       }
-      if (isChannelPaused('zalo')) {
+      if (!ceoOverride && isChannelPaused('zalo')) {
         resolve({ ok: false, error: 'channel_paused' });
         return;
       }
@@ -1194,10 +1196,12 @@ async function sendZaloMediaTo(target, filePath, opts = {}) {
   function doSend() {
     return new Promise((resolve) => {
       try {
-        const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
-        if (!liveAllow.allowed) { resolve({ ok: false, error: 'blocked_by_policy: ' + (liveAllow.reason || 'unknown') }); return; }
+        if (!ceoOverride) {
+          const liveAllow = _isZaloTargetAllowedFn ? _isZaloTargetAllowedFn(targetId, { isGroup }) : { allowed: true };
+          if (!liveAllow.allowed) { resolve({ ok: false, error: 'blocked_by_policy: ' + (liveAllow.reason || 'unknown') }); return; }
+        }
         if (!isZaloChannelEnabled()) { resolve({ ok: false, error: 'channel_disabled' }); return; }
-        if (isChannelPaused('zalo')) { resolve({ ok: false, error: 'channel_paused' }); return; }
+        if (!ceoOverride && isChannelPaused('zalo')) { resolve({ ok: false, error: 'channel_paused' }); return; }
         const args = sendMode === 'image'
           ? [zcaBin, '--profile', zcaProfile, 'msg', 'image', targetId, media.path]
           : [zcaBin, '--profile', zcaProfile, 'msg', 'upload', media.path, targetId];

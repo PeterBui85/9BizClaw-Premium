@@ -77,7 +77,8 @@ Mỗi bước:
 
 - Tạo ảnh xong PHẢI gửi tiếp nếu CEO yêu cầu. KHÔNG im ru.
 - Gửi ẢNH THẬT, không gửi đường dẫn file dưới dạng text.
-- Dùng `generate-and-send-zalo` (atomic, 1 call) HOẶC poll `image/status` → lấy `imagePath` → gọi `zalo/send-media`.
+- Dùng `generate-and-send-zalo` (atomic, 1 call) HOẶC poll `image/status` → lấy `mediaId` → gọi `zalo/send-media?mediaId=<mediaId>&allowInternalGenerated=true&caption=<text>`.
+- KHÔNG dùng `imagePath` cho `send-media` — API chỉ nhận `mediaId`. `caption` = text đi kèm ảnh cùng 1 tin nhắn.
 - Đọc `skills/operations/image-generation.md` mục "Gửi ảnh vào nhóm Zalo SAU KHI tạo xong" cho chi tiết.
 
 ## Ví dụ workflow 5+ bước

@@ -224,7 +224,7 @@ Tóm tắt: gọi `GET /api/image/skills` → CEO chọn skill hoặc mô tả t
 
 **Nếu có `jobId` từ lần trước và ảnh đã xong:**
 - Dùng `jobId` cũ gọi `/api/image/status?jobId=<jobId>`
-- Nếu `status: "done"` + có `imagePath`: gọi `/api/zalo/send-media` trực tiếp (không tạo lại ảnh)
+- Nếu `status: "done"` + có `mediaId`: gọi `/api/zalo/send-media?mediaId=<mediaId>&allowInternalGenerated=true&caption=<text>` trực tiếp (không tạo lại ảnh)
 - Nếu `status: "failed"`: báo lỗi cho CEO, hỏi có muốn thử lại không
 
 **Sai phổ biến nhất cần tránh:**

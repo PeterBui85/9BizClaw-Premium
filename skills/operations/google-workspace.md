@@ -92,11 +92,11 @@ web_fetch url="http://127.0.0.1:20200/api/google/calendar/create?summary=Trainin
 
 ## Ví dụ mapping
 
-- "lịch tuần này" → GET /api/google/calendar/events?from=<today>&to=<+7d>
-- "đặt meeting 3pm thứ 5" → POST /api/google/calendar/create
-- "slot trống ngày mai" → POST /api/google/calendar/free-slots
-- "email mới" → GET /api/google/gmail/inbox
-- "gửi email cho X nội dung Y" → POST /api/google/gmail/send
+- "lịch tuần này" → /api/google/calendar/events?from=<today>&to=<+7d>
+- "đặt meeting 3pm thứ 5" → /api/google/calendar/create?summary=<>&start=<>&end=<>
+- "slot trống ngày mai" → /api/google/calendar/free-slots?date=<>
+- "email mới" → /api/google/gmail/inbox
+- "gửi email cho X nội dung Y" → /api/google/gmail/send?to=<>&subject=<>&body=<>
 - "tìm file báo cáo" → GET /api/google/drive/list?query=báo+cáo
 - "tóm tắt Google Doc" → GET /api/google/docs/read?docId=<id>&maxBytes=200000 rồi tóm tắt
 - "tạo Google Doc" → POST /api/google/docs/create rồi POST /api/google/docs/write nếu cần ghi nội dung
