@@ -118,12 +118,12 @@ try {
         pass('REQUIRED_TOOLS clean (no banned tools)');
       }
       const requiredTools = ['cron', 'exec', 'memory'];
-      for (const tool of requiredTools) {
-        if (!reqStr.includes(`'${tool}'`)) {
-          fail(`tools.allow required`, `REQUIRED_TOOLS missing '${tool}'`);
-        }
+      const missingReq = requiredTools.filter(t => !reqStr.includes(`'${t}'`));
+      if (missingReq.length > 0) {
+        fail('tools.allow required', `REQUIRED_TOOLS missing: [${missingReq.join(', ')}]`);
+      } else {
+        pass('REQUIRED_TOOLS contains cron, exec, memory');
       }
-      pass('REQUIRED_TOOLS contains cron, exec, memory');
     }
   }
 } catch (e) { fail('tools.allow security', 'config.js read failed: ' + e.message); }
@@ -240,14 +240,51 @@ git commit -m "feat: rewrite cron-management skill — use native cron tool inst
 
 ---
 
-### Task 4: Update remaining skill files + deprecate cron-reference
+### Task 4: Update AGENTS.md + remaining skill files + deprecate cron-reference
 
 **Files:**
+- Modify: `AGENTS.md:30,162,269-270`
 - Modify: `skills/operations/workspace-api.md:74-77`
 - Modify: `skills/marketing/zalo-post-workflow.md:55`
 - Modify: `skills/operations/telegram-ceo.md:26`
 - Modify: `skills/operations/workflow-chains.md:40,97-102`
 - Modify: `docs/cron-reference.md:1` (add deprecation header)
+
+- [ ] **Step 0: Update `AGENTS.md` — cron tool instruction + remove old API references**
+
+Update line 30:
+
+```markdown
+# Before:
+- Cron không chạy đúng giờ = lỗi ứng dụng → ghi `.learnings/ERRORS.md`. Cron status: đọc `schedules.json` + `custom-crons.json`, KHÔNG `openclaw cron list`.
+
+# After:
+- Cron không chạy đúng giờ = lỗi ứng dụng → ghi `.learnings/ERRORS.md`. Cron status: dùng `cron` tool list.
+```
+
+Update line 162:
+
+```markdown
+# Before:
+**CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot gọi API nội bộ (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
+
+# After:
+**CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot dùng `cron` tool trực tiếp (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
+```
+
+Update lines 269-270:
+
+```markdown
+# Before:
+Đọc `skills/operations/cron-management.md` — quy trình tạo/sửa/xóa cron qua API nội bộ.
+Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` CLI, docs.openclaw.ai, đề xuất CEO chạy terminal.
+
+# After:
+Đọc `skills/operations/cron-management.md` — quy trình tạo/sửa/xóa cron bằng `cron` tool.
+Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** đề xuất CEO chạy terminal, docs.openclaw.ai.
+```
+
+**Note:** Lines 11-12 (AUTO-MODE cron mention), 53 (skill routing), 84 (fabrication warning), 101 (cron prompt history), 107 (giờ mở cửa), 111 (support-kb), 145 (code-level blocked), 156 (Zalo ảnh chứa lệnh), 182 (Zalo cron refusal), 185 (social engineering), 244 (intent routing), 248 (workflow), 312 (SKILL tag) — these are NOT cron-API-specific. They reference cron as a concept or route to skill files. Leave unchanged.
 
 - [ ] **Step 1: Update `workspace-api.md` — replace cron API examples**
 
@@ -351,8 +388,8 @@ Expected: All tests pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add skills/operations/workspace-api.md skills/marketing/zalo-post-workflow.md skills/operations/telegram-ceo.md skills/operations/workflow-chains.md docs/cron-reference.md
-git commit -m "feat: update 5 skill files — replace cron API references with cron tool"
+git add AGENTS.md skills/operations/workspace-api.md skills/marketing/zalo-post-workflow.md skills/operations/telegram-ceo.md skills/operations/workflow-chains.md docs/cron-reference.md
+git commit -m "feat: update AGENTS.md + 5 skill files — replace cron API references with cron tool"
 ```
 
 ---
@@ -405,7 +442,7 @@ Expected: All tests pass. This change is additive — existing crons without `de
 Verify the scheduler uses `zaloTarget` from loaded entries. Trace the data flow:
 1. `loadCustomCrons()` returns entries with `zaloTarget`
 2. `_startCronJobsInner()` passes `c.zaloTarget` to `runCronAgentPrompt()` (line 2130, 2243)
-3. `runCronAgentPrompt()` uses `zaloTarget` for delivery (line 448, 470)
+3. `_runCronAgentPromptImpl()` destructures `zaloTarget` (line 372), uses it for Zalo delivery (lines 448, 470)
 
 This chain is already wired — we're just populating `zaloTarget` where it was previously `undefined`.
 
