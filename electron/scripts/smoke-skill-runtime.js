@@ -138,11 +138,12 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   if (/__usScopes/.test(src) && /operations\/zalo/.test(src)) ok('inbound.ts applies Zalo scope filter');
   else bad('inbound.ts applies Zalo scope filter', 'scope filter missing');
 
-  // v3: isTelegram = true — always inject auth for localhost API calls.
-  // Server-side handles channel blocking (cron-api.js, google-routes.js).
+  // v4: channel-scoped auth — only Telegram sessions get Bearer.
   const vp = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');
-  if (/isTelegram = true/.test(vp) && /Bearer/.test(vp)) ok('vendor-patches always injects Bearer for localhost (server-side channel gate)');
-  else bad('vendor-patches always injects Bearer for localhost (server-side channel gate)', 'isTelegram=true or Bearer missing in helper');
+  if (/agentChannel === .telegram./.test(vp) && /Bearer/.test(vp)) ok('vendor-patches injects Bearer for Telegram only (channel-scoped)');
+  else bad('vendor-patches injects Bearer for Telegram only (channel-scoped)', 'channel check or Bearer missing in helper');
+  if (/isTelegram\s*=\s*true/.test(vp)) bad('vendor-patches old isTelegram=true still present', 'security regression');
+  else ok('vendor-patches isTelegram=true absent (old pattern removed)');
 }
 
 console.log('');

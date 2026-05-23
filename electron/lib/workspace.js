@@ -707,6 +707,9 @@ function seedWorkspace() {
   for (const cat of knowCategories) {
     const filesDir = path.join(ws, 'knowledge', cat, 'files');
     try { fs.mkdirSync(filesDir, { recursive: true }); } catch {}
+    for (const sub of ['public', 'noi-bo', 'ceo-only']) {
+      try { fs.mkdirSync(path.join(filesDir, sub), { recursive: true }); } catch {}
+    }
     const indexFile = path.join(ws, 'knowledge', cat, 'index.md');
     if (!fs.existsSync(indexFile)) {
       try {

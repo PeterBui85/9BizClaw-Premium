@@ -169,7 +169,7 @@ const {
 const {
   KNOWLEDGE_CATEGORIES,
   getKnowledgeCategories,
-  ensureKnowledgeFolders, backfillKnowledgeFromDisk,
+  ensureKnowledgeFolders, migrateKnowledgeToSubfolders, startKnowledgeWatcher, stopKnowledgeWatcher, backfillKnowledgeFromDisk,
   rewriteKnowledgeIndex,
   startKnowledgeSearchServer, getKnowledgeHttpServer, cleanupKnowledgeServer,
   backfillKnowledgeEmbeddings, backfillDocumentChunks,
@@ -994,7 +994,10 @@ app.whenReady().then(async () => {
       }
     }
   } catch {}
-  backfillKnowledgeFromDisk().catch(e => console.error('[knowledge] backfill error:', e.message));
+  try { migrateKnowledgeToSubfolders(); } catch (e) { console.warn('[knowledge] migration error:', e.message); }
+  backfillKnowledgeFromDisk()
+    .catch(e => console.error('[knowledge] backfill error:', e.message))
+    .then(() => { try { startKnowledgeWatcher(); } catch (e) { console.warn('[knowledge] watcher start error:', e.message); } });
   // Brain tab: build knowledge graph 15s after boot (non-blocking), then every 30 min
   setTimeout(() => {
     try {
@@ -1076,6 +1079,7 @@ function _beforeQuitCleanup() {
   try { cleanupNudgeTimers(); } catch (e2) { console.warn('[before-quit] cleanupNudgeTimers:', e2?.message); }
   try { cleanupCeoMemoryTimers(); } catch (e2) { console.warn('[before-quit] cleanupCeoMemoryTimers:', e2?.message); }
   try { cleanupKnowledgeServer(); } catch (e2) { console.warn('[before-quit] cleanupKnowledgeServer:', e2?.message); }
+  try { stopKnowledgeWatcher(); } catch (e2) { console.warn('[before-quit] stopKnowledgeWatcher:', e2?.message); }
   try { require('./lib/knowledge').closeDocumentsDb(); } catch (e2) { console.warn('[before-quit] closeDocumentsDb:', e2?.message); }
 
   // (2) Stop all cron jobs + watchers + pollers

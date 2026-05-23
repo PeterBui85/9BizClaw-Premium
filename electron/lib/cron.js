@@ -34,6 +34,7 @@ const CRON_DEFAULT_BACKOFF_BASE_MS = 2000;
 
 let _agentFlagProfile = null;   // 'full' | 'medium' | 'minimal'
 let _agentCliHealthy = false;
+let _lastSelfTestStderr = '';
 let _agentCliVersionOk = false; // true only when --version call succeeds
 let _selfTestAlertSent = false;
 let _selfTestPromise = null;
@@ -78,6 +79,7 @@ async function selfTestOpenClawAgent() {
 
     const stdout = res.stdout || '';
     const stderr = res.stderr || '';
+    _lastSelfTestStderr = stderr;
 
     _agentFlagProfile = 'full';
 
@@ -222,10 +224,22 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
   }
 }
 
-/** Build openclaw agent CLI args. Defaults to 'full' profile if self-test hasn't run yet. */
+const CRON_PROMPT_MAX_BYTES = 24000;
+
+/** Build openclaw agent CLI args. Defaults to 'full' profile if self-test hasn't run yet.
+ *  Caps prompt at 24KB to stay within Windows CreateProcess 32KB argv limit. */
 function buildAgentArgs(prompt, chatId, useJson = false) {
   const idStr = String(chatId);
-  const base = ['agent', '--message', prompt];
+  let safePrompt = prompt;
+  const promptBytes = Buffer.byteLength(prompt, 'utf-8');
+  if (promptBytes > CRON_PROMPT_MAX_BYTES) {
+    console.warn(`[cron-agent] prompt ${(promptBytes / 1024).toFixed(1)}KB exceeds ${(CRON_PROMPT_MAX_BYTES / 1024).toFixed(0)}KB limit — truncating`);
+    const buf = Buffer.from(prompt, 'utf-8');
+    let end = CRON_PROMPT_MAX_BYTES;
+    while (end > 0 && (buf[end] & 0xC0) === 0x80) end--;
+    safePrompt = buf.subarray(0, end).toString('utf-8') + '\n\n[... nội dung bị cắt do giới hạn kỹ thuật. Tóm tắt từ dữ liệu có sẵn.]';
+  }
+  const base = ['agent', '--message', safePrompt];
   if (useJson) base.push('--json');
   const profile = _agentFlagProfile || 'full';
   if (profile === 'full') {
@@ -233,7 +247,6 @@ function buildAgentArgs(prompt, chatId, useJson = false) {
     if (!useJson) args.push('--reply-channel', 'telegram', '--reply-to', idStr);
     return args;
   }
-  // 'medium' and 'minimal' both require --channel when --to is set.
   return [...base, '--channel', 'telegram', '--to', idStr];
 }
 
@@ -260,6 +273,9 @@ function isFatalErr(stderr, exitCode) {
       || s.includes('eacces')
       || s.includes('not authorized')
       || s.includes('invalid token')
+      || s.includes('enametoolong')
+      || s.includes('e2big')
+      || s.includes('arg list too long')
       || (exitCode === 127);
 }
 
@@ -411,8 +427,11 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, t
   }
 
   try { healOpenClawConfigInline(); } catch (e) { console.error('[cron-agent] inline heal:', e?.message || e); }
-
   await selfTestOpenClawAgent();
+  if (!_agentCliHealthy && _lastSelfTestStderr && isConfigInvalidErr(_lastSelfTestStderr)) {
+    console.log('[cron-agent] self-test caught config error — healing dynamically');
+    healOpenClawConfigInline(_lastSelfTestStderr);
+  }
 
   if (!_agentFlagProfile) _agentFlagProfile = 'full';
 
@@ -465,10 +484,12 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, t
       const agentReply = parseAgentJsonOutput(res.stdout || '');
       const replyText = agentReply?.text?.trim();
       console.log(`[cron-agent] "${niceLabel}" done in ${durMs}ms, reply length=${replyText ? replyText.length : 0} chars`);
-      // Deliver to Zalo if this cron has a zaloTarget
+      // Deliver to target channel
       let zaloOk = true;
       if (zaloTarget && replyText) {
         zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
+      } else if (replyText && !zaloTarget) {
+        try { await sendTelegram(replyText); } catch (e) { console.warn(`[cron-agent] Telegram delivery failed:`, e?.message); }
       }
       journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
       const isNotable = isOneTime || !replyText || replyText.length < 10;
@@ -1255,10 +1276,93 @@ function buildMemoryCleanupPrompt() {
 }
 
 // ============================================================
+//   Multi-step AUTO-MODE splitter
+// ============================================================
+
+const MULTISTEP_MIN_STEPS = 3;
+
+function parseMultiStepPrompt(prompt) {
+  const lines = prompt.split('\n');
+  const steps = [];
+  let currentStep = null;
+  for (const line of lines) {
+    const m = line.match(/^(?:Bước\s+\d+\/\d+:\s*)?(\d+)\.\s+(.+)/);
+    if (m) {
+      if (currentStep) steps.push(currentStep);
+      currentStep = { stepNum: parseInt(m[1], 10), text: m[2].trim() };
+    } else if (currentStep && line.trim()) {
+      currentStep.text += ' ' + line.trim();
+    }
+  }
+  if (currentStep) steps.push(currentStep);
+  if (steps.length < MULTISTEP_MIN_STEPS) return null;
+  const firstIdx = prompt.indexOf(steps[0].text.slice(0, 20));
+  const preamble = firstIdx > 0 ? prompt.slice(0, prompt.lastIndexOf('\n', firstIdx)).trim() : '';
+  return { preamble, steps };
+}
+
+async function runMultiStepCronPrompt(prompt, opts = {}) {
+  const parsed = parseMultiStepPrompt(prompt);
+  if (!parsed) return _runCronAgentPromptImpl(prompt, opts);
+  const { preamble, steps } = parsed;
+  const total = steps.length;
+  const niceLabel = opts.label || 'cron';
+  console.log(`[cron-multistep] "${niceLabel}" detected ${total} steps — splitting`);
+  journalCronRun({ phase: 'multistep-start', label: niceLabel, totalSteps: total });
+
+  const completed = [];
+  const failed = [];
+
+  for (const step of steps) {
+    let stepPrompt = '';
+    if (preamble) stepPrompt += preamble + '\n\n';
+    if (completed.length > 0) {
+      stepPrompt += '--- DA XONG ---\n';
+      for (const c of completed) stepPrompt += `Buoc ${c.n}: ${c.s}\n`;
+      stepPrompt += '---\n\n';
+    }
+    stepPrompt += `BUOC HIEN TAI (${step.stepNum}/${total}): ${step.text}\nThuc hien DUNG 1 buoc nay. Reply ket qua ngan gon.`;
+
+    console.log(`[cron-multistep] step ${step.stepNum}/${total}: ${step.text.slice(0, 80)}`);
+    const t0 = Date.now();
+    try {
+      const ok = await runCronAgentPrompt(stepPrompt, {
+        ...opts,
+        label: `${niceLabel} [${step.stepNum}/${total}]`,
+      });
+      const dur = Date.now() - t0;
+      if (ok) {
+        completed.push({ n: step.stepNum, s: step.text.slice(0, 80) });
+        console.log(`[cron-multistep] step ${step.stepNum} OK (${dur}ms)`);
+      } else {
+        failed.push(step.stepNum);
+        console.warn(`[cron-multistep] step ${step.stepNum} FAILED (${dur}ms), skipping`);
+      }
+    } catch (e) {
+      failed.push(step.stepNum);
+      console.error(`[cron-multistep] step ${step.stepNum} error:`, e?.message);
+    }
+    journalCronRun({ phase: failed.includes(step.stepNum) ? 'multistep-step-fail' : 'multistep-step-ok', label: niceLabel, stepNum: step.stepNum, totalSteps: total });
+  }
+
+  console.log(`[cron-multistep] "${niceLabel}" done: ${completed.length}/${total} OK, ${failed.length} failed`);
+  journalCronRun({ phase: failed.length === 0 ? 'multistep-done' : 'multistep-partial', label: niceLabel, completed: completed.length, failed: failed.length, totalSteps: total });
+  if (failed.length > 0) {
+    try { await sendCeoAlert(`Cron "${niceLabel}" xong ${completed.length}/${total} buoc.\nLoi: buoc ${failed.join(', ')}`); } catch {}
+  }
+  return completed.length > 0;
+}
+
+// ============================================================
 //   runCronViaSessionOrFallback
 // ============================================================
 
 async function runCronViaSessionOrFallback(prompt, opts = {}) {
+  // Multi-step detection: split numbered-step prompts into sequential runs
+  const parsed = parseMultiStepPrompt(prompt);
+  if (parsed && parsed.steps.length >= MULTISTEP_MIN_STEPS) {
+    return runMultiStepCronPrompt(prompt, opts);
+  }
   // When cron targets a Zalo group, session-send cannot deliver there (it only
   // replies to the CEO's Telegram session). Always use runCronAgentPrompt which
   // handles Zalo delivery with the actual agent reply text.

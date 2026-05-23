@@ -68,3 +68,35 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 2. API: `/api/file/read` adds sensitive path blocklist + DB visibility check for knowledge files
 3. AGENTS.md v105: Updated Zalo rule — use `<kb-doc>` only, CẤM read_file for knowledge/memory/logs
 **Status:** Implemented, pending rebuild
+
+---
+
+## 2026-05-23 — Cron "Config invalid" channels.telegram additional properties
+
+**Reporter:** Customer (Tro Ly TC bot)
+**Symptom:** All cron jobs fail with "channels.telegram: invalid config: must NOT have additional properties". 3 retries exhausted.
+**Root cause:** `set-inbound-debounce` IPC wrote `channels.telegram.messages.inbound.debounceMs` — `messages` not in openclaw Telegram schema. Pre-spawn healer only runs static cleanup (no stderr), misses dynamic fields on first attempt.
+**Fix:** (1) Remove per-channel debounce writes, use global `config.messages.inbound.debounceMs` only. (2) Add `messages` to Telegram legacy key cleanup. (3) For v2.5.0: pre-spawn `--version` probe to catch config errors before first cron attempt.
+**Status:** Fix applied in v2.4.8, not yet shipped
+
+---
+
+## 2026-05-23 — Cron "spawn ENAMETOOLONG" on Windows
+
+**Reporter:** Customer (IT_Bot)
+**Symptom:** Cron weekly-report fails with exit code -1, "spawn ENAMETOOLONG". Retried 3 times, same error each time.
+**Root cause:** Weekly report prompt grows to 30-50KB+ (7 days summaries + history + memory). Passed via `--message` CLI arg → Windows CreateProcess 32KB limit exceeded. No pre-spawn size check, no file-based fallback.
+**Fix:** For v2.5.0: (1) Write prompt to temp file when >20KB, pass `--message-file` instead. (2) Add `ENAMETOOLONG` to `isFatalErr()` to avoid 3 wasteful retries. (3) Cap prompt template substitutions.
+**Status:** Fixed in v2.4.8
+
+---
+
+## 2026-05-23 — Cron evening report not delivered to CEO
+
+**Reporter:** Customer (BKE)
+**Symptom:** Evening 21:00 cron report fires successfully (agent runs, no errors) but CEO never receives the report on Telegram.
+**Root cause (2 failures):**
+1. Path 1 (`sessions.send`): `getCeoSessionKey()` constructs `agent:main:telegram:direct:<chatId>` but OpenClaw 2026.4.14 defaults `session.dmScope` to `"main"` → actual session key is `agent:main:main` → session not found → fail silently
+2. Path 2 (fallback `--json`): Agent output parsed correctly but only delivered to Zalo targets. Telegram-only crons had no delivery → report lost
+**Fix:** (1) `getCeoSessionKey()` reads `session.dmScope` from openclaw.json, returns correct key format. (2) Fallback path calls `sendTelegram(replyText)` when no zaloTarget.
+**Status:** Fixed in v2.4.8

@@ -107,6 +107,7 @@ const {
 const {
   getDocumentsDir, ensureDocumentsDir, getDocumentsDb, autoFixBetterSqlite3,
   KNOWLEDGE_CATEGORIES, DEFAULT_KNOWLEDGE_CATEGORIES, KNOWLEDGE_LABELS,
+  VISIBILITY_SUBFOLDERS, _watcherSkipPaths,
   getKnowledgeCategories, getKnowledgeDir,
   insertDocumentRow, ensureKnowledgeFolders, backfillKnowledgeFromDisk,
   resolveUniqueFilename, describeImageForKnowledge, summarizeKnowledgeContent,
@@ -2969,16 +2970,11 @@ ipcMain.handle('get-zalo-pause-status', async () => {
 ipcMain.handle('get-inbound-debounce', async () => {
   try {
     const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-    if (!fs.existsSync(cfgPath)) return { telegram: 3000, zalo: 3000 };
+    if (!fs.existsSync(cfgPath)) return { telegram: 0, zalo: 0 };
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    const tgMs = cfg?.channels?.telegram?.messages?.inbound?.debounceMs;
-    const zlMs = (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.messages?.inbound?.debounceMs;
-    const globalMs = cfg?.messages?.inbound?.debounceMs ?? 3000;
-    return {
-      telegram: typeof tgMs === 'number' ? tgMs : globalMs,
-      zalo: typeof zlMs === 'number' ? zlMs : globalMs,
-    };
-  } catch { return { telegram: 3000, zalo: 3000 }; }
+    const globalMs = cfg?.messages?.inbound?.debounceMs ?? 0;
+    return { telegram: globalMs, zalo: globalMs };
+  } catch { return { telegram: 0, zalo: 0 }; }
 });
 ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
   const booting = rejectIfBooting('set-inbound-debounce');
@@ -2991,18 +2987,16 @@ ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
       const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
       if (!fs.existsSync(cfgPath)) return { success: false, error: 'config not found' };
       const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-      if (!cfg.channels) cfg.channels = {};
-      const chanKey = channel === 'zalo' ? 'modoro-zalo' : 'telegram';
-      if (!cfg.channels[chanKey]) cfg.channels[chanKey] = {};
-      if (!cfg.channels[chanKey].messages) cfg.channels[chanKey].messages = {};
-      if (!cfg.channels[chanKey].messages.inbound) cfg.channels[chanKey].messages.inbound = {};
-      cfg.channels[chanKey].messages.inbound.debounceMs = clampedMs;
-      const otherKey = chanKey === 'telegram' ? 'modoro-zalo' : 'telegram';
-      const otherMs = cfg.channels?.[otherKey]?.messages?.inbound?.debounceMs;
+      // Write debounce at global level only — per-channel `channels.telegram.messages`
+      // is NOT in openclaw's Telegram schema and causes "must NOT have additional
+      // properties" rejection. openclaw reads `config.messages.inbound.debounceMs`.
       if (!cfg.messages) cfg.messages = {};
       if (!cfg.messages.inbound) cfg.messages.inbound = {};
-      cfg.messages.inbound.debounceMs = typeof otherMs === 'number'
-        ? Math.min(clampedMs, otherMs) : clampedMs;
+      cfg.messages.inbound.debounceMs = clampedMs;
+      // Clean up per-channel messages if written by prior versions
+      for (const ck of ['telegram', 'modoro-zalo']) {
+        if (cfg.channels?.[ck]?.messages) { delete cfg.channels[ck].messages; }
+      }
       writeOpenClawConfigIfChanged(cfgPath, cfg);
 
       try {
@@ -3279,11 +3273,15 @@ ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, ori
     if (stat.size > 100 * 1024 * 1024) return { success: false, error: 'File quá lớn (tối đa 100MB). Vui lòng tách PDF thành nhiều phần nhỏ hơn.' };
 
     ensureKnowledgeFolders();
-    const filesDir = path.join(getKnowledgeDir(category), 'files');
+    const baseFilesDir = path.join(getKnowledgeDir(category), 'files');
+    const subDir = VISIBILITY_SUBFOLDERS[visibility] || 'public';
+    const filesDir = path.join(baseFilesDir, subDir);
+    try { fs.mkdirSync(filesDir, { recursive: true }); } catch {}
     let safeName = (originalName || path.basename(filepath)).replace(/[\\/:*?"<>|]/g, '_');
     safeName = safeName.replace(/[\x00-\x1F\x7F]/g, '');
     const finalName = resolveUniqueFilename(filesDir, safeName);
     const dst = path.join(filesDir, finalName);
+    _watcherSkipPaths.add(dst);
     fs.copyFileSync(filepath, dst);
 
     const content = await extractTextFromFile(dst, finalName, { visibility, category });
@@ -3441,6 +3439,23 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
       return { success: false, error: 'DB error: ' + e.message };
     }
     if (!info || info.changes === 0) return { success: false, error: 'Document not found' };
+
+    // Move file to matching visibility subfolder
+    if (filepath && filename && category) {
+      try {
+        const targetSubDir = VISIBILITY_SUBFOLDERS[visibility] || 'public';
+        const targetDir = path.join(getKnowledgeDir(category), 'files', targetSubDir);
+        fs.mkdirSync(targetDir, { recursive: true });
+        const newPath = path.join(targetDir, filename);
+        if (fs.existsSync(filepath) && filepath !== newPath) {
+          _watcherSkipPaths.add(filepath);
+          _watcherSkipPaths.add(newPath);
+          fs.renameSync(filepath, newPath);
+          db.prepare('UPDATE documents SET filepath=? WHERE id=?').run(newPath, docId);
+        }
+      } catch (e) { console.warn('[set-knowledge-visibility] file move error:', e.message); }
+    }
+
     try { auditLog('visibility-change', { docId, visibility, ts: Date.now() }); } catch {}
     let indexWarning;
     if (category) {
@@ -3515,11 +3530,15 @@ ipcMain.handle('delete-knowledge-file', async (_event, { category, filename }) =
         console.warn('[knowledge] DB delete failed:', e.message);
       }
     }
-    const fp = path.join(getKnowledgeDir(category), 'files', filename);
+    const fp = storedFilepath || path.join(getKnowledgeDir(category), 'files', filename);
     try {
-      mediaLibrary.deleteKnowledgeMediaAssets({ docId, filename, filepath: storedFilepath || fp }, { keepPath: fp });
+      mediaLibrary.deleteKnowledgeMediaAssets({ docId, filename, filepath: fp }, { keepPath: fp });
     } catch (e) { console.warn('[knowledge] media cleanup failed:', e.message); }
+    if (fp) { _watcherSkipPaths.add(fp); }
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    // Fallback: check root level for legacy installs
+    const rootFp = path.join(getKnowledgeDir(category), 'files', filename);
+    if (rootFp !== fp && fs.existsSync(rootFp)) fs.unlinkSync(rootFp);
     rewriteKnowledgeIndex(category);
     purgeAgentSessions('knowledge-delete');
     return { success: true };
@@ -3630,6 +3649,17 @@ ipcMain.handle('set-rag-config', async (_event, cfg) => {
       updatedAt: new Date().toISOString(),
     });
     return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// Open knowledge folder in OS file manager
+ipcMain.handle('open-knowledge-folder', async (_event, { category }) => {
+  try {
+    const filesDir = path.join(getKnowledgeDir(category), 'files');
+    fs.mkdirSync(filesDir, { recursive: true });
+    const { shell } = require('electron');
+    const err = await shell.openPath(filesDir);
+    return { success: !err, error: err || undefined };
   } catch (e) { return { success: false, error: e.message }; }
 });
 

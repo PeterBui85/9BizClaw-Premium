@@ -115,6 +115,8 @@ contextBridge.exposeInMainWorld('claw', {
   createKnowledgeFolder: (name) => ipcRenderer.invoke('create-knowledge-folder', { name }),
   deleteKnowledgeFolder: (id) => ipcRenderer.invoke('delete-knowledge-folder', { id }),
   knowledgeSearch: (query, category, limit) => ipcRenderer.invoke('knowledge-search', { query, category, limit }),
+  openKnowledgeFolder: (category) => ipcRenderer.invoke('open-knowledge-folder', { category }),
+  onKnowledgeUpdated: (cb) => { ipcRenderer.removeAllListeners('knowledge-updated'); ipcRenderer.on('knowledge-updated', cb); },
   getRagConfig: () => ipcRenderer.invoke('get-rag-config'),
   setRagConfig: (cfg) => ipcRenderer.invoke('set-rag-config', cfg),
 

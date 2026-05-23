@@ -2,8 +2,8 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 133,
-    "ipcHandlers": 186,
-    "preloadBridges": 178,
+    "ipcHandlers": 187,
+    "preloadBridges": 179,
     "dashboardPages": 17,
     "capabilityContracts": 5
   },
@@ -1716,6 +1716,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "open-knowledge-folder",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "open-log-folder",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -2564,6 +2568,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "openKnowledgeFolder",
+      "channel": "open-knowledge-folder",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "openLogFolder",
       "channel": "open-log-folder",
       "source": "electron/preload.js"
@@ -2944,19 +2953,19 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 619962
+      "bytes": 621513
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 258716
+      "bytes": 259994
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 160774
+      "bytes": 160948
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 125240
+      "bytes": 129963
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2964,7 +2973,11 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 94189
+      "bytes": 94646
+    },
+    {
+      "path": "electron/lib/knowledge.js",
+      "bytes": 87803
     },
     {
       "path": "electron/lib/gateway.js",
@@ -2975,24 +2988,20 @@
       "bytes": 77834
     },
     {
-      "path": "electron/lib/knowledge.js",
-      "bytes": 77511
-    },
-    {
       "path": "electron/ui/preview-telegram-redesign.html",
       "bytes": 66621
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 53962
+      "bytes": 54110
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 49946
+      "bytes": 49958
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 47456
+      "bytes": 47388
     },
     {
       "path": "electron/lib/skill-manager.js",
