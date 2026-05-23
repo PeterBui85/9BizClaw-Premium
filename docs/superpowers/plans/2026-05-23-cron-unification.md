@@ -76,6 +76,48 @@ git commit -m "feat: unban cron tool — move from BANNED_TOOLS to REQUIRED_TOOL
 
 ---
 
+### Task 1.5: Harden COMMAND-BLOCK for implicit scheduling requests
+
+**Files:**
+- Modify: `electron/packages/modoro-zalo/src/inbound.ts` (TIER 1 HARD BLOCK section, after line 761)
+
+**Why:** With `cron` in tools.allow, a Zalo stranger saying "nhắc em lúc 9h sáng mai" bypasses all 76 existing hard patterns. The verb "nhắc" (remind) is not in the đặt/tạo/lập/hẹn list on line 758. AGENTS.md refusal is soft guidance — code-level block is the reliable defense.
+
+- [ ] **Step 1: Add 4 implicit scheduling patterns after line 761**
+
+In `electron/packages/modoro-zalo/src/inbound.ts`, find:
+```typescript
+      /(?:lên\s+lịch|len\s+lich)\s+(?:gửi|gui)/i,
+```
+
+Add immediately after (before the `web_fetch` line):
+
+```typescript
+      // v2.5.0: implicit scheduling — "nhắc em lúc 9h", "hẹn nhắn cho em"
+      /\b(?:nhắc|nhac|remind)\s+(?:em|anh|tôi|toi|mình|minh).*(?:lúc|luc|giờ|gio|hôm|hom|ngày|ngay|sáng|sang|trưa|trua|chiều|chieu|tối|toi|mỗi|moi)/i,
+      /\b(?:hẹn|hen)\s+(?:nhắn|nhan|gửi|gui|phát|phat)/i,
+      /\b(?:gửi|gui)\s+(?:tin|nhắn|nhan).*(?:mỗi\s+(?:ngày|ngay|giờ|gio)|lúc\s+\d)/i,
+      /\b(?:nhắc|nhac|hẹn|hen)\s+(?:giờ|gio|lịch|lich)/i,
+```
+
+- [ ] **Step 2: Verify patterns don't false-positive on legitimate CS**
+
+These patterns require BOTH a scheduling verb AND a time indicator. Common Zalo CS like "nhắc em về đơn hàng" (remind me about order) does NOT match because it lacks time indicators (lúc/giờ/sáng/mỗi).
+
+- [ ] **Step 3: Run smoke test**
+
+Run: `cd electron && npm run smoke`
+Expected: All tests pass. COMMAND-BLOCK patterns are in the fork source, not tested by smoke test directly.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add electron/packages/modoro-zalo/src/inbound.ts
+git commit -m "security: add COMMAND-BLOCK patterns for implicit scheduling requests (nhắc/hẹn+time)"
+```
+
+---
+
 ### Task 2: Update smoke test security assertion
 
 **Files:**
@@ -427,8 +469,15 @@ In `electron/lib/cron.js`, find the `openclawEntries.push({` block (line 1604-16
         });
 
 // After:
-        const isZalo = j.delivery?.channel === 'zalo';
-        const isGroup = isZalo && j.delivery?.isGroup !== false;
+        // Parse delivery channel + strip prefix from "to" field
+        // OpenClaw format: channel="zalouser"|"zalogroup"|"telegram", to="zalouser:<id>"
+        // MODOROClaw format: channel="zalo_user"|"zalo_group"|"telegram", to="<id>"
+        const ch = (j.delivery?.channel || '').toLowerCase();
+        const rawTo = j.delivery?.to || '';
+        const bareId = rawTo.includes(':') ? rawTo.split(':').slice(1).join(':') : rawTo;
+        const isZalo = ch.startsWith('zalo');
+        const isGroup = isZalo && (ch === 'zalogroup' || ch === 'zalo_group');
+        const tz = j.schedule?.tz || '';
         openclawEntries.push({
           id: 'oc_' + j.id,
           label: j.name || 'OpenClaw cron',
@@ -436,9 +485,10 @@ In `electron/lib/cron.js`, find the `openclawEntries.push({` block (line 1604-16
           prompt: j.payload?.text || j.payload?.message || '',
           enabled: j.enabled !== false,
           source: 'openclaw',
-          zaloTarget: isZalo ? { id: j.delivery.to, isGroup } : undefined,
-          groupId: isGroup ? j.delivery.to : undefined,
-          telegramTarget: j.delivery?.channel === 'telegram' ? j.delivery.to : undefined,
+          zaloTarget: isZalo && bareId ? { id: bareId, isGroup, label: j.name || bareId } : undefined,
+          groupId: isGroup && bareId ? bareId : undefined,
+          telegramTarget: ch === 'telegram' && bareId ? bareId : undefined,
+          tz: tz || undefined,
         });
 ```
 
@@ -450,11 +500,14 @@ Expected: All tests pass. This change is additive — existing crons without `de
 - [ ] **Step 3: Manual verification**
 
 Verify the scheduler uses `zaloTarget` from loaded entries. Trace the data flow:
-1. `loadCustomCrons()` returns entries with `zaloTarget`
+1. `loadCustomCrons()` returns entries with `zaloTarget` (new: `{ id: bareId, isGroup, label }`)
 2. `_startCronJobsInner()` passes `c.zaloTarget` to `runCronAgentPrompt()` (line 2130, 2243)
 3. `_runCronAgentPromptImpl()` destructures `zaloTarget` (line 372), uses it for Zalo delivery (lines 448, 470)
+4. `deliverCronResultToZalo()` (line 193) calls `sendZaloTo({ id: String(targetId), isGroup })` — expects bare ID, not prefixed
 
 This chain is already wired — we're just populating `zaloTarget` where it was previously `undefined`.
+
+**Critical check**: Verify `bareId` stripping works for the actual `to` format. Template shows `"zalouser:<ID>"` — after `split(':').slice(1).join(':')`, result is `<ID>` (bare). If OpenClaw uses bare IDs without prefix, the `includes(':')` check falls through to passthrough — safe either way.
 
 - [ ] **Step 4: Commit**
 
@@ -580,8 +633,13 @@ git commit -m "feat: add cron-migration skill — customer-triggered migration f
 
 These are NOT automated tasks. They must be done by a human before v2.5.0 ships:
 
-1. **Verify `cron` tool output format**: Run `openclaw agent --message "create a test cron that runs every hour"`, read `~/.openclaw/cron/jobs.json`, confirm field names match spec (payload.message vs payload.text, schedule.expr vs schedule.cron, delivery field existence).
+1. **Verify `cron` tool output format**: Run `openclaw agent --message "create a test cron that runs every hour"`, read `~/.openclaw/cron/jobs.json`, confirm:
+   - `delivery.channel` — is it `"zalouser"`, `"zalogroup"`, `"zalo"`, or something else?
+   - `delivery.to` — is it prefixed `"zalouser:<ID>"` or bare `"<ID>"`?
+   - `payload.message` vs `payload.text` — which field does the tool write?
+   - `schedule.tz` — does the tool set timezone? What default?
+   Task 5 parsing handles both prefixed and bare `to` formats, and both `zalouser`/`zalogroup` and `zalo_user`/`zalo_group` channel names. But verify against actual tool output.
 
-2. **Verify timezone behavior**: Create a cron via tool with and without explicit `tz` field. Confirm what timezone node-cron uses for the new entry.
+2. **Verify timezone behavior**: Create a cron via tool with and without explicit `tz` field. Confirm what timezone node-cron uses for the new entry. The `tz` field is now parsed and stored by Task 5, but the scheduler currently ignores it (assumes Asia/Ho_Chi_Minh). If OpenClaw defaults to UTC, a scheduler fix is needed.
 
 3. **Test migration on a staging customer**: Run the migration skill on a test workspace with 3-5 crons of mixed types (agent mode, fixed mode, broadcast, one-time). Verify all fire correctly. Test rollback.
