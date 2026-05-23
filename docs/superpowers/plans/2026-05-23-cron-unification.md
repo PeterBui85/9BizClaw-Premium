@@ -181,10 +181,10 @@ Bot cần xác định:
 
 ## Bước 2: Tra cứu nhóm
 
-Dùng `cron` tool list để xem cron hiện có.
 Tra nhóm Zalo: `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<ten>` (endpoint vẫn hoạt động).
 
-TUYỆT ĐỐI KHÔNG đoán groupId.
+TUYỆT ĐỐI KHÔNG đoán groupId. Khi tạo cron gửi nhóm, LUÔN xác nhận lại tên nhóm với CEO:
+"Em tìm thấy nhóm [tên] (ID: ...xxx). Đúng nhóm này không?" — tránh gửi nhầm nhóm (bài học 2026-05-15).
 
 ## Bước 3: Confirm với CEO trước khi tạo
 
@@ -270,6 +270,16 @@ Update line 162:
 
 # After:
 **CẤM:** Bot KHÔNG sửa/ghi/xóa `zalo-blocklist.json`, `openclaw.json`, `schedules.json`, `custom-crons.json`. Chỉ CEO qua Dashboard. Bot chỉ ĐỌC. Cron: bot dùng `cron` tool trực tiếp (xem mục "Lịch tự động"), KHÔNG ghi file trực tiếp.
+```
+
+Update line 84 (fabrication warning — remove API-specific "403"):
+
+```markdown
+# Before:
+**TUYỆT ĐỐI KHÔNG** fabricate thành công. Nếu API trả lỗi → báo CEO biết và STOP. Lừa CEO "đã tạo cron" trong khi 403 = lỗi nghiêm trọng nhất.
+
+# After:
+**TUYỆT ĐỐI KHÔNG** fabricate thành công. Nếu tool/API trả lỗi → báo CEO biết và STOP. Lừa CEO "đã tạo cron" trong khi thất bại = lỗi nghiêm trọng nhất.
 ```
 
 Update lines 269-270:
@@ -510,12 +520,12 @@ Với MỖI cron CEO đồng ý chuyển, thực hiện ĐÚNG THỨ TỰ:
 2. **Tạo cron mới** bằng `cron` tool:
    - Giữ nguyên label, cronExpr, enabled state (enabled: true cho cron mới)
    - Timezone: LUÔN set `tz: "Asia/Ho_Chi_Minh"` (cron cũ chạy theo giờ hệ thống VN)
-   - Agent mode (có prompt, KHÔNG có content/groupId): giữ nguyên prompt
-   - Fixed mode (có content + groupId): dùng format `exec:` để gửi deterministic:
-     ```
-     exec: openzca --profile default msg send <groupId> "<content>" --group
-     ```
-     KHÔNG dùng natural-language prompt (LLM non-deterministic, có thể thay đổi nội dung).
+   - **Fixed mode** (prompt bắt đầu bằng `exec:`): giữ nguyên prompt y hệt (đã là format deterministic)
+   - **Agent mode** (prompt KHÔNG bắt đầu bằng `exec:`):
+     - Nếu cron cũ có `zaloTarget` hoặc `groupId` → thêm vào cuối prompt: `Gửi kết quả vào nhóm Zalo <groupId>.`
+       (vì `cron` tool có thể không hỗ trợ `delivery` field — prompt là cách duy nhất đảm bảo target không mất)
+     - Nếu cron cũ có `targetId` + `isGroup: false` (DM cá nhân) → thêm: `Gửi cho Zalo user <targetId>.`
+     - Nếu không có target → giữ nguyên prompt (mặc định gửi CEO qua Telegram)
    - One-time (oneTimeAt): dùng schedule kind "at"
    - Broadcast (groupIds array): tạo 1 cron riêng cho mỗi group
 3. **Ghi ID cron mới tạo** vào file tạm `cron-migration-state.json` (cần cho rollback)
