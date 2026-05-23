@@ -162,6 +162,19 @@ Bot chains API calls via `web_fetch`. Available actions:
 7. Gửi Zalo text + ảnh (4 steps) — write + image + send-media + text
 8. Skill builder + cron (6 steps) — 2 skills + list + recurring cron + one-time cron + verify
 
+### Memory System Redesign (Urgent)
+- **Problem:** 10/10 memories are `task` type (cron logs). No rules, preferences, corrections, patterns. Bot "nhớ" nhưng nhớ toàn thứ vô ích.
+- **Root cause:** Cron auto-write floods memory with task entries. CEO chưa dạy rules. Bot không chủ động detect patterns.
+- **Fixes needed:**
+  1. Giảm cron task noise — chỉ ghi task memory cho NOTABLE outcomes, không phải mỗi lần fire
+  2. Tăng task retention 14 → 30 ngày (CEO hỏi "tuần trước làm gì" → có data)
+  3. AGENTS.md quá to (27K, budget 20K) → trim xuống 18K, dành space cho memory
+  4. Dynamic memory budget: `available = 35000 - agents_base_size`
+  5. Smart selection: corrections > rules > patterns > preferences > recent tasks
+  6. Bot chủ động detect patterns từ conversations (evening summary đã có logic nhưng cần tune)
+- **Architecture:** Audit full ở session 2026-05-22, kết quả trong subagent output
+- **Files:** `ceo-memory.js` (engine), `cron.js:475` (task write), `workspace.js:735` (injection), `conversation.js:291` (pattern detection)
+
 ### Parallel Execution (Future)
 - `sessions_spawn` + `subagents` in tools.allow but no AGENTS.md rules
 - Idea: bot detects independent steps → spawn parallel → combine results

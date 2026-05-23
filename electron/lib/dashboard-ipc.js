@@ -4752,6 +4752,7 @@ ipcMain.handle('open-external', async (_event, url) => {
       'https://developers.google.com',
       'https://support.google.com',
       'https://github.com',
+      'https://chatgpt.com',
       'https://drive.google.com',
       'https://docs.google.com',
       'https://mail.google.com',

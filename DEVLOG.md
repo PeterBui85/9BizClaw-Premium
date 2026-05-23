@@ -4,6 +4,49 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-05-22
+
+**v2.4.7 committed** (7707a263, EXE 142.9 MB)
+
+**Memory redesign**
+- Dynamic budget (2K-10K chars based on AGENTS.md size)
+- Type-priority with surplus flow (corrections/rules always outrank tasks)
+- Notable-only cron writes (90% memory noise reduction)
+- CEO observation protocol in ceo-memory-api.md (8 signal types, silent auto-learn)
+- Forward trimming fix, empty state fix, task retention 14→30 days
+
+**AGENTS.md trim (32K→28K) + v104**
+- Moved 5.5K Zalo content to zalo.md with pointers
+- Kept inline: escalation keywords, bot detection, firstGreeting
+
+**Skill creation fix**
+- Added `skill_builder` trigger to Capability Router
+- Removed explicit headers from 6 POST calls in skill-builder.md
+
+**ChatGPT Importer tab** — new Dashboard tab for session import
+
+**Zalo fixes (5)**
+- "Tắt tất cả" sentinel `['__NONE__']`
+- Group auto-prompt on enable (0 active groups)
+- /approve leak blocked (exec ban + Layer L output filter)
+- Channel detection via sender ID format (≥16 digits = Zalo)
+- Follow-up: 48h→24h, 9→22 PENDING_HINTS
+
+**FB cron toggle** — `toggle-fb-schedule` IPC handler
+
+**Product docs** — 9bizclaw-product-knowledge.md + sales-playbook.md rewrite
+
+**Customer reports** — docs/customer-reports.md tracking process established (6 entries)
+
+**Pending next build — file access control (3-layer defense-in-depth)**
+- Layer 1: `<file-access-policy>` injection in inbound.ts + tag neutralization
+- Layer 2: sensitive path blocklist + visibility check in /api/file/read
+- Layer 3: AGENTS.md v105 Zalo read_file ban
+- Critical scoping bug caught in code review, fixed before ship
+- Known limitation: native read_file tool has no code-level interception (LLM-persuasion only)
+
+---
+
 ## 2026-05-19
 
 **Zalo tab redesign**

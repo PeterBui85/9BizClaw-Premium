@@ -557,12 +557,12 @@ console.log('\n\x1b[1m=== SUITE 8: Fresh Install Defaults ===\x1b[0m\n');
 // T8.1: Source AGENTS.md version matches main.js constant
 (() => {
   const agentsMd = fs.readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
-  const mainJs = fs.readFileSync(path.join(REPO_ROOT, 'electron', 'main.js'), 'utf-8');
+  const workspaceJs = fs.readFileSync(path.join(REPO_ROOT, 'electron', 'lib', 'workspace.js'), 'utf-8');
   const mdVer = agentsMd.match(/modoroclaw-agents-version:\s*(\d+)/);
-  const jsVer = mainJs.match(/CURRENT_AGENTS_MD_VERSION\s*=\s*(\d+)/);
+  const jsVer = workspaceJs.match(/CURRENT_AGENTS_MD_VERSION\s*=\s*(\d+)/);
   if (!mdVer || !jsVer) return fail('T8.1 version match', 'cannot parse versions');
-  if (mdVer[1] === jsVer[1]) pass('T8.1 AGENTS.md v' + mdVer[1] + ' = main.js v' + jsVer[1]);
-  else fail('T8.1 version mismatch', 'AGENTS.md v' + mdVer[1] + ' vs main.js v' + jsVer[1]);
+  if (mdVer[1] === jsVer[1]) pass('T8.1 AGENTS.md v' + mdVer[1] + ' = workspace.js v' + jsVer[1]);
+  else fail('T8.1 version mismatch', 'AGENTS.md v' + mdVer[1] + ' vs workspace.js v' + jsVer[1]);
 })();
 
 // T8.2: ensureDefaultConfig sets modoro-zalo.enabled = false for fresh (undefined → false)

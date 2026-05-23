@@ -60,6 +60,9 @@
 ### "Sao phải trả thêm ChatGPT Plus?"
 → "Dạ ChatGPT Plus là 'não' của bot — 500k/tháng (~20 USD). Lợi ích: không tính phí token (dùng bao nhiêu cũng 500k), dữ liệu không đi qua server trung gian, và anh/chị kiểm soát hoàn toàn. Tổng chi phí năm đầu: 9BizClaw 6tr/năm + ChatGPT 500k/tháng (6tr/năm) = khoảng 12tr/năm, tức 1tr/tháng cho bot chạy 24/7."
 
+### "Khác gì Claude / ChatGPT?"
+→ "Dạ Claude hay ChatGPT là tool cho NHÂN VIÊN dùng — nhân viên mở app, hỏi, đọc trả lời, copy-paste gửi khách. Nhân viên vẫn phải ngồi đó. 9BizClaw khác: bot TỰ ĐỘNG trả lời khách trên Zalo 24/7, không cần ai ngồi đó cả. Khách nhắn 2h sáng → bot trả lời ngay. Bot nhớ từng khách, biết giá, biết bảo hành, follow-up tự động. Claude giúp nhân viên LÀM NHANH hơn — 9BizClaw LÀM THAY nhân viên. Nếu anh/chị có 5 nhân viên CSKH dùng Claude, vẫn phải trả lương 5 người. Với 9BizClaw, bot xử lý 80% tin nhắn — chỉ cần 1 người chốt đơn VIP."
+
 ### "Máy tắt thì bot chết à?"
 → "Dạ đúng ạ, bot chạy trên máy của anh/chị nên máy phải bật. Nhiều anh/chị để máy chạy qua đêm là được. Nếu cần 24/7 tuyệt đối, gói Signature có PC chuyên dụng chạy liên tục ạ."
 

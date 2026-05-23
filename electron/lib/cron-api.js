@@ -1677,6 +1677,51 @@ function startCronApi() {
       const filePath = String(params.path || '');
       if (!filePath) return jsonResp(res, 400, { error: 'path required (absolute path)' });
       const abs = path.resolve(filePath);
+      // Defense-in-depth: block sensitive paths even for CEO-auth'd requests.
+      // These files should NEVER be returned via API (tokens, keys, configs with secrets).
+      // Knowledge files are excluded — they have their own visibility check below.
+      const _fileReadBlocked = [
+        /cron-api-token/i, /\.pem$/i, /private[_-]?key\b/i, /\.env$/i,
+        /credentials\.json$/i, /license-private/i, /\.claw-license-gist/i,
+        /rag-secret\.txt$/i, /openclaw\.json$/i, /zalo-owner\.json$/i,
+        /\.machine-id$/i, /license\.json$/i,
+      ];
+      let _isKnowledgeFile = false;
+      try {
+        const _bWsDir = require('./workspace').getWorkspace();
+        const _bRelPath = path.relative(_bWsDir, abs).replace(/\\/g, '/');
+        _isKnowledgeFile = _bRelPath.startsWith('knowledge/') && _bRelPath.includes('/files/');
+      } catch {}
+      if (!_isKnowledgeFile && _fileReadBlocked.some(re => re.test(abs))) {
+        try { require('./workspace').auditLog('file_read_blocked', { path: abs }); } catch {}
+        return jsonResp(res, 403, { error: 'access denied — sensitive file' });
+      }
+      // Visibility enforcement: knowledge files check DB visibility tier.
+      // Non-telegram channels are blocked for non-public files. CEO Telegram
+      // passes through (full access). Defense-in-depth for the bot-mediated path.
+      try {
+        const wsDir = require('./workspace').getWorkspace();
+        const relPath = path.relative(wsDir, abs).replace(/\\/g, '/');
+        if (relPath.startsWith('knowledge/') && relPath.includes('/files/')) {
+          const knowledge = require('./knowledge');
+          const db = knowledge.getDocumentsDb();
+          if (db) {
+            const fname = path.basename(abs);
+            const catMatch = relPath.match(/^knowledge\/([^/]+)\//);
+            const cat = catMatch ? catMatch[1] : null;
+            const row = cat
+              ? db.prepare('SELECT visibility FROM documents WHERE filename = ? AND category = ? LIMIT 1').get(fname, cat)
+              : db.prepare('SELECT visibility FROM documents WHERE filename = ? LIMIT 1').get(fname);
+            if (row && row.visibility !== 'public') {
+              const chan = String(req.headers['x-9bizclaw-agent-channel'] || req.headers['x-source-channel'] || '').toLowerCase();
+              if (chan !== 'telegram') {
+                try { require('./workspace').auditLog('file_read_visibility_block', { path: abs, visibility: row.visibility, channel: chan }); } catch {}
+                return jsonResp(res, 403, { error: 'file visibility restricted — ' + row.visibility });
+              }
+            }
+          }
+        }
+      } catch (_visErr) { /* fail open — primary defense is Layer 1 */ }
       try {
         const stat = fs.statSync(abs);
         if (stat.size > 10 * 1024 * 1024) return jsonResp(res, 400, { error: 'file too large (max 10MB). Size: ' + Math.round(stat.size / 1024 / 1024) + 'MB' });

@@ -55,3 +55,16 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 **Root cause:** `extractConversationHistory()` in conversation.js can't identify which messages are Zalo vs Telegram. Session JSONL files have no `event.origin` field. Fallback parsing looks for `From:` / `Channel:` format but actual metadata is JSON blocks. All messages get `channel: 'unknown'` → when filtering for `channels: ['modoro-zalo']`, nothing matches → "no Zalo messages found".
 **Fix:** Added sender ID format detection in conversation.js: parse `"sender_id": "XXXX"` from metadata JSON blocks. Zalo IDs are 16-19 digits, Telegram IDs are 8-12 digits (per AGENTS.md). Also extracts sender name from `"sender": "..."` pattern. Channel detection now works without needing `event.origin`.
 **Status:** Fixed in v2.4.7, pending rebuild
+
+---
+
+## 2026-05-22 — Knowledge visibility bypass via read_file (SECURITY)
+
+**Reporter:** Internal security audit
+**Symptom:** Documents marked "Nội bộ" or "Chỉ mình tôi" in Knowledge tab are still accessible to Zalo customers if the bot is tricked into using `read_file` or `list_files` tools directly — bypassing the RAG search visibility filter.
+**Root cause:** The 3-tier visibility system (public/internal/private) only enforces at the RAG search API level (`searchKnowledge({ audience })`). The bot's native `read_file`/`list_files` tools read directly from disk, never touching the DB visibility column.
+**Fix (3-layer defense-in-depth):**
+1. Code: `<file-access-policy>` block injected into inbound.ts rawBody — instructs AI to not use read_file for sensitive paths when serving Zalo
+2. API: `/api/file/read` adds sensitive path blocklist + DB visibility check for knowledge files
+3. AGENTS.md v105: Updated Zalo rule — use `<kb-doc>` only, CẤM read_file for knowledge/memory/logs
+**Status:** Implemented, pending rebuild

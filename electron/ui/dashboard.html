@@ -520,9 +520,13 @@
     .zc-fading { opacity:0; transition:opacity 0.3s ease-out; }
     .zalo-list-fade-in { animation:zaloFadeIn 150ms ease-out; }
     @keyframes zaloFadeIn { from { opacity:0 } to { opacity:1 } }
-    .zalo-bulk-links { display:flex; gap:12px; margin-bottom:8px; flex-shrink:0; }
-    .zalo-bulk-link { font-size:11px; color:var(--text-muted); cursor:pointer; text-decoration:underline; background:none; border:none; padding:0; }
-    .zalo-bulk-link:hover { color:var(--text); }
+    .zalo-bulk-actions { display:flex; gap:8px; margin-bottom:8px; flex-shrink:0; }
+    .zalo-bulk-btn { font-size:12px; font-weight:500; font-family:inherit; cursor:pointer; border:1px solid var(--border); border-radius:6px; padding:5px 12px; background:var(--bg); color:var(--text); transition:all 0.15s; }
+    .zalo-bulk-btn:hover { border-color:var(--border-strong); background:var(--surface-hover, var(--bg)); }
+    .zalo-bulk-on { color:var(--accent); border-color:var(--accent); }
+    .zalo-bulk-on:hover { background:var(--accent); color:#fff; }
+    .zalo-bulk-off { color:var(--danger, #e53e3e); border-color:var(--danger, #e53e3e); }
+    .zalo-bulk-off:hover { background:var(--danger, #e53e3e); color:#fff; }
     .zalo-divider { display:flex; align-items:center; gap:8px; margin:8px 0 6px; }
     .zalo-divider-line { flex:1; height:1px; background:var(--border); }
     .zalo-divider-text { font-size:10px; color:var(--text-muted); font-weight:600; letter-spacing:0.3px; }
@@ -2933,9 +2937,9 @@
               <button class="zalo-seg" data-tab="internal" onclick="switchZaloTab('groups','internal')">Nội bộ<span class="seg-count" id="zalo-seg-groups-internal">0</span></button>
             </div>
             <input type="text" class="zalo-mgr-search" id="zalo-mgr-group-search" placeholder="Tìm nhóm..." oninput="renderZaloGroups()" style="flex-shrink:0">
-            <div id="zalo-groups-bulk-links" class="zalo-bulk-links"
-              <button class="zalo-bulk-link" onclick="setAllGroupsMode('mention')">Bật tất cả</button>
-              <button class="zalo-bulk-link" onclick="setAllGroupsMode('off')">Tắt tất cả</button>
+            <div id="zalo-groups-bulk-links" class="zalo-bulk-actions">
+              <button class="zalo-bulk-btn zalo-bulk-on" onclick="setAllGroupsMode('mention')">Bật tất cả</button>
+              <button class="zalo-bulk-btn zalo-bulk-off" onclick="setAllGroupsMode('off')">Tắt tất cả</button>
             </div>
             <div class="zalo-list-container">
               <div id="zalo-mgr-groups-list"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải...</div></div>
@@ -2952,9 +2956,9 @@
               <button class="zalo-seg" data-tab="internal" onclick="switchZaloTab('friends','internal')">Nội bộ<span class="seg-count" id="zalo-seg-friends-internal">0</span></button>
             </div>
             <input type="text" class="zalo-mgr-search" id="zalo-mgr-friend-search" placeholder="Tìm bạn bè..." oninput="clearTimeout(window._friendSearchTimer);window._friendSearchTimer=setTimeout(()=>renderZaloFriends(),150)" style="flex-shrink:0">
-            <div id="zalo-friends-bulk-links" class="zalo-bulk-links"
-              <button class="zalo-bulk-link" onclick="toggleAllFriends(true)">Bật tất cả</button>
-              <button class="zalo-bulk-link" onclick="toggleAllFriends(false)">Tắt tất cả</button>
+            <div id="zalo-friends-bulk-links" class="zalo-bulk-actions">
+              <button class="zalo-bulk-btn zalo-bulk-on" onclick="toggleAllFriends(true)">Bật tất cả</button>
+              <button class="zalo-bulk-btn zalo-bulk-off" onclick="toggleAllFriends(false)">Tắt tất cả</button>
             </div>
             <div class="zalo-list-container">
               <div id="zalo-mgr-friends-list"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải...</div></div>
@@ -5221,14 +5225,14 @@
       const body = document.createElement('div');
       body.className = 'chat-body';
 
-      // Markdown content
+      // Markdown content (always create element for streaming)
+      const content = document.createElement('div');
+      content.className = 'chat-content';
       if (text) {
-        const content = document.createElement('div');
-        content.className = 'chat-content';
         content.innerHTML = _renderMd(text);
         content.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
-        body.appendChild(content);
       }
+      body.appendChild(content);
 
       // Media images
       if (Array.isArray(mediaUrls) && mediaUrls.length) {
@@ -5460,8 +5464,9 @@
           const botMsg = renderChatBubble('assistant', '', Date.now(), result.mediaUrls, result.suggestions, result.actions);
           el.appendChild(botMsg);
           const contentEl = botMsg.querySelector('.chat-content');
-          if (contentEl && result.reply) {
-            await streamBotReply(result.reply, contentEl);
+          const replyText = result.reply || 'Trợ lý đã xử lý nhưng không có nội dung trả lời.';
+          if (contentEl) {
+            await streamBotReply(replyText, contentEl);
           }
         } else if (result.error === 'aborted') {
           // Stopped by user — already handled in stopChatGen()

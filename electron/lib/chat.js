@@ -144,8 +144,8 @@ function _parseAgentJsonOutput(stdout) {
       const mediaArr = Array.isArray(mediaUrls) ? mediaUrls : (mediaUrls ? [mediaUrls] : []);
       if (text || mediaArr.length > 0) return { text, mediaUrls: mediaArr };
     }
-    if (typeof parsed?.result?.text === 'string') return { text: parsed.result.text, mediaUrls: [] };
-    if (typeof parsed?.text === 'string') return { text: parsed.text, mediaUrls: [] };
+    if (typeof parsed?.result?.text === 'string' && parsed.result.text.trim()) return { text: parsed.result.text, mediaUrls: [] };
+    if (typeof parsed?.text === 'string' && parsed.text.trim()) return { text: parsed.text, mediaUrls: [] };
     return null;
   };
 
