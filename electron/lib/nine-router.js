@@ -176,14 +176,15 @@ function ensure9RouterApiKeySync() {
 // Create a "zalo" combo in 9Router's db.json if it doesn't exist yet.
 // The zalo combo uses cx/gpt-5.2 (lighter, faster model for customer service).
 // Idempotent: skips silently if a combo named "zalo" already exists.
-function ensure9RouterZaloCombo() {
-  try {
+// Async: retries once after 2s if db.json not yet created by 9Router.
+async function ensure9RouterZaloCombo() {
+  const _tryCreate = () => {
     const dbPath = get9RouterDbPath();
-    if (!fs.existsSync(dbPath)) return;
+    if (!fs.existsSync(dbPath)) return 'missing';
     const raw = fs.readFileSync(dbPath, 'utf-8');
     const db = JSON.parse(raw);
     if (!Array.isArray(db.combos)) db.combos = [];
-    if (db.combos.some(c => c && c.name === 'zalo')) return;
+    if (db.combos.some(c => c && c.name === 'zalo')) return 'exists';
     const now = new Date().toISOString();
     db.combos.push({
       id: crypto.randomUUID(),
@@ -194,6 +195,15 @@ function ensure9RouterZaloCombo() {
     });
     fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
     console.log('[9router] created zalo combo (gpt-5.2)');
+    return 'created';
+  };
+  try {
+    const r = _tryCreate();
+    if (r !== 'missing') return;
+    console.log('[9router] zalo combo: db.json not found, retrying in 2s...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const r2 = _tryCreate();
+    if (r2 === 'missing') console.warn('[9router] zalo combo: db.json still missing after retry — combo not created');
   } catch (e) { console.error('[9router] ensure zalo combo error:', e.message); }
 }
 
@@ -316,7 +326,6 @@ function start9Router() {
     // 2026-05-15: keep openclaw.json's `ninerouter.apiKey` in lock-step with
     // 9Router's accepted key so the agent never gets 401 from a stale key.
     ensure9RouterApiKeySync();
-    ensure9RouterZaloCombo();
     const rtkDbResult = tryWrite9RouterRtkDefaultToDb();
     if (rtkDbResult.changed || rtkDbResult.skipped === 'already-enabled') {
       writeRtkDefaultMarker({

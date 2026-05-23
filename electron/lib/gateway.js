@@ -19,7 +19,7 @@ const {
   broadcastChannelStatusOnce, sendCeoAlert, sendTelegram,
   findOpenzcaListenerPid, registerTelegramCommands, resetGatewayZaloDiag,
 } = require('./channels');
-const { start9Router, stop9Router, getRouterProcess, ensure9RouterApiKeySync } = require('./nine-router');
+const { start9Router, stop9Router, getRouterProcess, ensure9RouterApiKeySync, ensure9RouterZaloCombo } = require('./nine-router');
 const {
   cleanupOrphanZaloListener,
   seedAllGroupHistories,
@@ -469,6 +469,7 @@ async function _startOpenClawImpl(opts = {}) {
       nineRouterReady = true;
       console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${Math.round((Date.now() - t0) / 1000)}s), ${nineRouterModelCount} models`);
       try { ensure9RouterApiKeySync(); } catch (e) { console.warn('[boot] post-ready apiKeySync error:', e?.message); }
+      try { await ensure9RouterZaloCombo(); } catch (e) { console.warn('[boot] post-ready zaloCombo error:', e?.message); }
       break;
     } catch {}
   }

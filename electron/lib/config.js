@@ -818,14 +818,12 @@ async function ensureDefaultConfig() {
       delete config.agents.sessionPruning;
       changed = true;
     }
-    // Inbound message batching: wait 3s for rapid messages from same sender,
-    // then process all together as 1 turn. Prevents bot replying 3 times when
-    // customer sends "anh ơi" + "giá bao nhiêu" + "có ship không" in 3 seconds.
-    // OpenClaw default is 700ms. CEO experience is better at 3000ms.
+    // Inbound message batching: configurable via Dashboard dropdown (0-5000ms).
+    // Default 0 = reply immediately. Customer can raise if they prefer batching.
     if (!config.messages) config.messages = {};
     if (!config.messages.inbound) config.messages.inbound = {};
     if (config.messages.inbound.debounceMs === undefined) {
-      config.messages.inbound.debounceMs = 3000;
+      config.messages.inbound.debounceMs = 0;
       changed = true;
     }
     // Suppress compaction notices to customers. OpenClaw sends "🧹 Compacting context..."
