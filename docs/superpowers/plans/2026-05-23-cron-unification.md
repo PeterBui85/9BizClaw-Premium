@@ -81,9 +81,9 @@ git commit -m "feat: unban cron tool — move from BANNED_TOOLS to REQUIRED_TOOL
 **Files:**
 - Modify: `electron/packages/modoro-zalo/src/inbound.ts` (TIER 1 HARD BLOCK section, after line 761)
 
-**Why:** With `cron` in tools.allow, a Zalo stranger saying "nhắc em lúc 9h sáng mai" bypasses all 76 existing hard patterns. The verb "nhắc" (remind) is not in the đặt/tạo/lập/hẹn list on line 758. AGENTS.md refusal is soft guidance — code-level block is the reliable defense.
+**Why:** With `cron` in tools.allow, Zalo strangers can try implicit scheduling ("nhắc em lúc 9h"), tool references ("gọi tool cron"), time-first patterns ("mỗi sáng 8h gửi"), and reversed word order ("gửi tin tự động"). These bypass all 76 existing hard patterns. AGENTS.md refusal is soft guidance — code-level block is the reliable defense. Adversarial testing (81 scenarios) validated these 11 new patterns + 1 existing pattern fix.
 
-- [ ] **Step 1: Add 4 implicit scheduling patterns after line 761**
+- [ ] **Step 1: Add 11 new patterns after line 761**
 
 In `electron/packages/modoro-zalo/src/inbound.ts`, find:
 ```typescript
@@ -98,6 +98,24 @@ Add immediately after (before the `web_fetch` line):
       /\b(?:hẹn|hen)\s+(?:nhắn|nhan|gửi|gui|phát|phat)/i,
       /\b(?:gửi|gui)\s+(?:tin|nhắn|nhan).*(?:mỗi\s+(?:ngày|ngay|giờ|gio)|lúc\s+\d)/i,
       /\b(?:nhắc|nhac|hẹn|hen)\s+(?:giờ|gio|lịch|lich)/i,
+      // v2.5.0: tool name references — "tool cron", "cron tool"
+      /\b(?:tool|công cụ|cong cu)\s+cron\b/i,
+      /\bcron\s+tool\b/i,
+      // v2.5.0: time-first scheduling — "mỗi sáng 8h gửi", "hàng ngày lúc 9h nhắn", "cứ 30 phút gửi"
+      /(?:mỗi|moi)\s+(?:sáng|sang|trưa|trua|chiều|chieu|tối|toi|ngày|ngay|tuần|tuan)\s+(?:\d{1,2}[hg:]?\s*(?:giờ|gio|phút|phut|h)?\s*,?\s*)?(?:gửi|gui|nhắn|nhan|báo|bao|phát|phat)/i,
+      /(?:hàng|hang)\s+(?:ngày|ngay|tuần|tuan)\s+(?:lúc\s+)?(?:\d{1,2}[hg:]?\s*(?:giờ|gio|phút|phut|h)?\s*,?\s*)?(?:gửi|gui|nhắn|nhan|báo|bao)/i,
+      /(?:cứ|cu)\s+\d+\s+(?:phút|phut|giờ|gio|tiếng|tieng)\s+(?:gửi|gui|nhắn|nhan|báo|bao)/i,
+      // v2.5.0: reversed "tự động" — "gửi tin tự động" vs "tự động gửi"
+      /(?:gửi|gui|nhắn|nhan)\s+(?:tin\s+)?(?:tự\s+động|tu\s+dong)/i,
+```
+
+Also update existing pattern on line 753 to handle article "a":
+
+```typescript
+// Before:
+      /\b(create|add|delete|remove|stop|start|list|show)\s+cron\b/i,
+// After:
+      /\b(create|add|delete|remove|stop|start|list|show|call|use|run)\s+(?:a\s+)?cron\b/i,
 ```
 
 - [ ] **Step 2: Verify patterns don't false-positive on legitimate CS**
