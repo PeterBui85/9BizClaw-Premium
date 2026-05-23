@@ -67,11 +67,10 @@ const BANNED_TOOLS = ['process', 'image_generate', 'canvas', 'tts'];
 // cron — UNBANNED v2.5.0: COMMAND-BLOCK covers Zalo, agent uses native cron tool
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Stage only — do NOT commit yet (smoke test will break until Task 2 updates it)**
 
 ```bash
 git add electron/lib/config.js
-git commit -m "feat: unban cron tool — move from BANNED_TOOLS to REQUIRED_TOOLS"
 ```
 
 ---
@@ -154,36 +153,37 @@ Replace the entire TEST 19 block (lines 1661-1695) with:
 section('Security: tools.allow hardening');
 try {
   const cfgSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'config.js'), 'utf-8');
-  const bannedTools = ['process'];
-  for (const tool of bannedTools) {
-    if (!cfgSrc.includes(`'${tool}'`)) {
-      fail(`tools.allow security`, `config.js does not reference '${tool}' at all — it should be in BANNED_TOOLS`);
-    }
-  }
-  if (!/BANNED_TOOLS.*=.*\[/.test(cfgSrc)) {
+  const mustBeBanned = ['process'];
+  const bannedMatch = cfgSrc.match(/BANNED_TOOLS\s*=\s*\[([^\]]+)\]/);
+  if (!bannedMatch) {
     fail('tools.allow BANNED_TOOLS', 'config.js missing BANNED_TOOLS array');
   } else {
     pass('tools.allow BANNED_TOOLS array present');
+    const bannedStr = bannedMatch[1];
+    for (const tool of mustBeBanned) {
+      if (!bannedStr.includes(`'${tool}'`)) {
+        fail(`tools.allow security`, `'${tool}' not found in BANNED_TOOLS array`);
+      }
+    }
   }
-  if (!/REQUIRED_TOOLS.*=.*\[/.test(cfgSrc)) {
+  const reqMatch = cfgSrc.match(/REQUIRED_TOOLS\s*=\s*\[([^\]]+)\]/);
+  if (!reqMatch) {
     fail('tools.allow REQUIRED_TOOLS', 'config.js missing REQUIRED_TOOLS array');
   } else {
-    const reqMatch = cfgSrc.match(/REQUIRED_TOOLS\s*=\s*\[([^\]]+)\]/);
-    if (reqMatch) {
-      const reqStr = reqMatch[1];
-      const leaked = bannedTools.filter(t => reqStr.includes(`'${t}'`));
-      if (leaked.length > 0) {
-        fail('tools.allow contamination', `REQUIRED_TOOLS contains BANNED items: [${leaked.join(', ')}]`);
-      } else {
-        pass('REQUIRED_TOOLS clean (no banned tools)');
-      }
-      const requiredTools = ['cron', 'exec', 'memory'];
-      const missingReq = requiredTools.filter(t => !reqStr.includes(`'${t}'`));
-      if (missingReq.length > 0) {
-        fail('tools.allow required', `REQUIRED_TOOLS missing: [${missingReq.join(', ')}]`);
-      } else {
-        pass('REQUIRED_TOOLS contains cron, exec, memory');
-      }
+    pass('tools.allow REQUIRED_TOOLS array present');
+    const reqStr = reqMatch[1];
+    const leaked = mustBeBanned.filter(t => reqStr.includes(`'${t}'`));
+    if (leaked.length > 0) {
+      fail('tools.allow contamination', `REQUIRED_TOOLS contains BANNED items: [${leaked.join(', ')}]`);
+    } else {
+      pass('REQUIRED_TOOLS clean (no banned tools)');
+    }
+    const requiredTools = ['cron', 'exec', 'memory'];
+    const missingReq = requiredTools.filter(t => !reqStr.includes(`'${t}'`));
+    if (missingReq.length > 0) {
+      fail('tools.allow required', `REQUIRED_TOOLS missing: [${missingReq.join(', ')}]`);
+    } else {
+      pass('REQUIRED_TOOLS contains cron, exec, memory');
     }
   }
 } catch (e) { fail('tools.allow security', 'config.js read failed: ' + e.message); }
@@ -194,11 +194,11 @@ try {
 Run: `cd electron && npm run smoke`
 Expected: All tests pass including updated TEST 19.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit (includes Task 1 config.js change — must be atomic to avoid broken smoke test)**
 
 ```bash
-git add electron/scripts/smoke-test.js
-git commit -m "test: update smoke test — cron now in REQUIRED_TOOLS, process stays banned"
+git add electron/lib/config.js electron/scripts/smoke-test.js
+git commit -m "feat: unban cron tool + update smoke test — REQUIRED_TOOLS, COMMAND-BLOCK covers Zalo"
 ```
 
 ---
@@ -469,14 +469,14 @@ git commit -m "feat: update AGENTS.md + 5 skill files — replace cron API refer
 ### Task 5: Extend `loadCustomCrons()` to parse `delivery` field from jobs.json
 
 **Files:**
-- Modify: `electron/lib/cron.js:1604-1611`
+- Modify: `electron/lib/cron.js:1623-1630`
 
 - [ ] **Step 1: Add delivery field parsing**
 
-In `electron/lib/cron.js`, find the `openclawEntries.push({` block (line 1604-1611) and replace with:
+In `electron/lib/cron.js`, find the `openclawEntries.push({` block (line 1623-1630) and replace with:
 
 ```javascript
-// Before (line 1604-1611):
+// Before (line 1623-1630):
         openclawEntries.push({
           id: 'oc_' + j.id,
           label: j.name || 'OpenClaw cron',
@@ -519,7 +519,7 @@ Expected: All tests pass. This change is additive — existing crons without `de
 
 Verify the scheduler uses `zaloTarget` from loaded entries. Trace the data flow:
 1. `loadCustomCrons()` returns entries with `zaloTarget` (new: `{ id: bareId, isGroup, label }`)
-2. `_startCronJobsInner()` passes `c.zaloTarget` to `runCronAgentPrompt()` (line 2130, 2243)
+2. `_startCronJobsInner()` passes `c.zaloTarget` to `runCronAgentPrompt()` (lines 2149-2151, 2211-2213, 2262-2263)
 3. `_runCronAgentPromptImpl()` destructures `zaloTarget` (line 372), uses it for Zalo delivery (lines 448, 470)
 4. `deliverCronResultToZalo()` (line 193) calls `sendZaloTo({ id: String(targetId), isGroup })` — expects bare ID, not prefixed
 
@@ -591,8 +591,11 @@ Với MỖI cron CEO đồng ý chuyển, thực hiện ĐÚNG THỨ TỰ:
 2. **Tạo cron mới** bằng `cron` tool:
    - Giữ nguyên label, cronExpr, enabled state (enabled: true cho cron mới)
    - Timezone: LUÔN set `tz: "Asia/Ho_Chi_Minh"` (cron cũ chạy theo giờ hệ thống VN)
-   - **Fixed mode** (prompt bắt đầu bằng `exec:`): giữ nguyên prompt y hệt (đã là format deterministic)
-   - **Agent mode** (prompt KHÔNG bắt đầu bằng `exec:`):
+   - **Fixed mode** (phát hiện bằng: prompt bắt đầu bằng `exec:`, HOẶC có field `content` thay vì `prompt`):
+     - Nếu `exec:` prefix: giữ nguyên prompt y hệt
+     - Nếu `content` field + `groupId`: chuyển thành `exec: openzca --profile default msg send <groupId> "<content>" --group`
+     - Nếu `content` field + `targetId` (DM): chuyển thành `exec: openzca --profile default msg send <targetId> "<content>"`
+   - **Agent mode** (prompt KHÔNG bắt đầu bằng `exec:` VÀ không có `content` field):
      - Nếu cron cũ có `zaloTarget` hoặc `groupId` → thêm vào cuối prompt: `Gửi kết quả vào nhóm Zalo <groupId>.`
        (vì `cron` tool có thể không hỗ trợ `delivery` field — prompt là cách duy nhất đảm bảo target không mất)
      - Nếu cron cũ có `targetId` + `isGroup: false` (DM cá nhân) → thêm: `Gửi cho Zalo user <targetId>.`
