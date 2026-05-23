@@ -32,7 +32,7 @@ Since v2.4.7, COMMAND-BLOCK provides 76 hard + 18 soft regex patterns that rewri
 
 ---
 
-## Phase 1: Unban `cron` Tool (v2.4.8)
+## Phase 1: Unban `cron` Tool (v2.5.0)
 
 ### Changes
 
@@ -110,7 +110,7 @@ This is the PRIMARY instruction file (12 references to old API). Must be fully r
 
 **6. Mark `docs/cron-reference.md` as deprecated**
 
-Add deprecation header: "DEPRECATED v2.4.8 — dùng `cron` tool trực tiếp. File này giữ lại cho reference cũ."
+Add deprecation header: "DEPRECATED v2.5.0 — dùng `cron` tool trực tiếp. File này giữ lại cho reference cũ."
 Do NOT delete yet — existing agent context may still reference it during transition.
 
 **7. No runtime changes.** Cron API keeps running. custom-crons.json keeps working. schedules.json unchanged. All existing crons for 40 customers unaffected. Old API endpoints still function — they just won't be called by new instructions.
@@ -129,7 +129,7 @@ Only moving 1 string between two allowlists. `process` stays banned. Nothing rem
 
 ---
 
-## Phase 2: Migration Skill (v2.4.8 or v2.4.9)
+## Phase 2: Migration Skill (v2.5.0 or v2.4.9)
 
 ### Overview
 
@@ -287,7 +287,7 @@ Schedule types:
 
 ### Cron API Deprecation Path
 
-1. **v2.4.8**: Cron API keeps running. Migration skill shipped. New crons created via `cron` tool. `cron` tool added to REQUIRED_TOOLS.
+1. **v2.5.0**: Cron API keeps running. Migration skill shipped. New crons created via `cron` tool. `cron` tool added to REQUIRED_TOOLS.
 2. **v2.5.0** (after most customers migrated): Log warning when Cron API cron endpoints receive requests. Add deprecation notice to AGENTS.md.
 3. **v2.6.0** (separate design effort): Full port 20200 server refactor — migrate 75+ non-cron endpoints to IPC, THEN remove HTTP server. **This is OUT OF SCOPE for this spec.**
 
@@ -318,7 +318,7 @@ Schedule types:
 
 ## Phase 3: Built-in Cron Migration (Deferred)
 
-> **NOT in scope for v2.4.8 or v2.5.0.** Implement after Phase 2 is stable for 2-4 weeks.
+> **NOT in scope for v2.5.0 or v2.5.0.** Implement after Phase 2 is stable for 2-4 weeks.
 
 ### Concept
 
@@ -438,5 +438,5 @@ Same pattern as Phase 2: shipped skill `builtin-cron-migration`. CEO triggers wh
 **Full endpoint audit required before v2.6.0.** Run `grep -c 'router\.\(get\|post\|put\|delete\)' electron/lib/cron-api.js` to get exact count.
 
 **Resolution**: 
-- **v2.4.8–v2.5.0**: HTTP server keeps running. Only cron endpoints become dead code (agent uses `cron` tool directly). No endpoints removed.
+- **v2.5.0–v2.5.0**: HTTP server keeps running. Only cron endpoints become dead code (agent uses `cron` tool directly). No endpoints removed.
 - **v2.6.0**: Migrate non-cron endpoints to IPC or separate service. THEN delete cron-api.js. This is a separate design effort.
