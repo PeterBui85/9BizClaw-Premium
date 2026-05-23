@@ -2489,7 +2489,7 @@ function startCronApi() {
         }
         const fingerprint = JSON.stringify({
           pageId: cfg.pageId || '',
-          message: String(fbMessage),
+          message: String(fbMessage).replace(/\s+/g, ' ').trim(),
           imagePath: normalizedImagePath,
         });
         const isPreview = params.preview === 'true' || params.preview === '1' || params.dryRun === 'true' || params.dryRun === '1';
@@ -2508,11 +2508,14 @@ function startCronApi() {
             hasImage: !!normalizedImagePath,
           });
         }
-        const approval = approvalNonce ? _fbPostApprovals.get(String(approvalNonce)) : null;
-        if (!approval || approval.expiresAt <= Date.now() || approval.fingerprint !== fingerprint) {
-          return jsonResp(res, 403, { error: 'Facebook post requires a fresh approvalNonce from /api/fb/post?preview=1 with the exact same message and imagePath.' });
+        const isAutoMode = params.autoMode === 'true' || params.autoMode === '1';
+        if (!isAutoMode) {
+          const approval = approvalNonce ? _fbPostApprovals.get(String(approvalNonce)) : null;
+          if (!approval || approval.expiresAt <= Date.now() || approval.fingerprint !== fingerprint) {
+            return jsonResp(res, 403, { error: 'Facebook post requires a fresh approvalNonce from /api/fb/post?preview=1 with the exact same message and imagePath.' });
+          }
         }
-        _fbPostApprovals.delete(String(approvalNonce));
+        if (approvalNonce) _fbPostApprovals.delete(String(approvalNonce));
         let result;
         if (normalizedImagePath) {
           const imgBuf = fs.readFileSync(absImg);

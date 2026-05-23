@@ -270,7 +270,16 @@ async function getCeoSessionKey() {
   try {
     const { chatId } = await getTelegramConfigWithRecovery();
     if (!chatId) return null;
-    return `agent:main:telegram:direct:${chatId}`;
+    // openclaw 2026.4.14: session.dmScope defaults to "main" → all DMs share
+    // key "agent:main:main". Only per-channel-peer uses telegram:direct:<id>.
+    const ocPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+    let dmScope = 'main';
+    try {
+      const oc = JSON.parse(fs.readFileSync(ocPath, 'utf-8'));
+      dmScope = oc?.session?.dmScope || 'main';
+    } catch {}
+    if (dmScope === 'per-channel-peer') return `agent:main:telegram:direct:${chatId}`;
+    return 'agent:main:main';
   } catch { return null; }
 }
 

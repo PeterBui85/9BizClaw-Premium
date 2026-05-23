@@ -1076,7 +1076,7 @@ export async function sendMediaModoroZalo(
     };
 
     const receipts: ModoroZaloSendReceipt[] = [mediaReceipt];
-    const captionSentInline = mediaCommand === "video" && Boolean(text?.trim());
+    const captionSentInline = (mediaCommand === "video" || mediaCommand === "image") && Boolean(text?.trim());
     if (text?.trim() && !captionSentInline) {
       const captionReceipt = await sendTextModoroZalo({
         cfg: options.cfg,

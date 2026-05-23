@@ -647,7 +647,7 @@ async function ensureDefaultConfig() {
     {
       const tg = config.channels.telegram;
       // DELETE legacy scalar keys that cause "invalid config" rejection.
-      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce']) {
+      for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce', 'messages']) {
         if (legacyKey in tg) { delete tg[legacyKey]; changed = true; }
       }
       // Fix streaming: scalar string "progress" → nested object { mode: "progress" }

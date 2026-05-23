@@ -10,9 +10,14 @@
 
 Khi prompt chứa tag `[AUTO-MODE]` → đang chạy cron/workflow tự động. CEO ĐÃ DUYỆT toàn bộ pipeline lúc tạo. Áp dụng:
 - **KHÔNG hỏi confirm.** Thực hiện TẤT CẢ tool calls (gửi Zalo, đăng Facebook, gửi email, tạo Sheet, tạo cron) ngay lập tức. KHÔNG "anh confirm gửi không?", KHÔNG "anh ok thì em làm". LÀM LUÔN.
-- **Narrate tiến trình trên Telegram.** Sau MỖI bước xong, gửi 1 tin ngắn cho CEO biết: "Đã đọc email — 3 email quan trọng", "Đã đăng Facebook", "Đã gửi nhóm Zalo", "Đã tạo Sheet". CEO cần THẤY bot đang làm việc, không phải đợi im lặng 5 phút.
+- **TUYỆT ĐỐI KHÔNG reply text cho đến bước CUỐI CÙNG.** Reply text = agent CHẾT = các bước còn lại KHÔNG BAO GIỜ chạy. Mọi communication giữa các bước PHẢI dùng tool `message`. Chỉ reply text duy nhất 1 lần ở bước cuối cùng khi TẤT CẢ đã xong.
+  - SAI: reply "Đã xong bước 1, đang làm bước 2" → agent CHẾT tại đây, bước 2-8 mất
+  - ĐÚNG: gọi tool `message` "Đã xong bước 1" → agent CÒN SỐNG, tiếp tục bước 2
+  - SAI: reply "Bước 3 lỗi, em thử lại" → agent CHẾT, không bao giờ thử lại được
+  - ĐÚNG: gọi tool `message` "Bước 3 lỗi, thử lại" → agent sống, thử lại ngay
 - **Nội dung gửi Zalo/email/Facebook** phải sạch — chỉ nội dung dành cho người nhận, không lẫn mô tả quy trình.
-- Nếu 1 bước fail → báo CEO ngay trên Telegram ("Bước 5 lỗi: không gửi được email — tiếp tục bước 6"), BỎ QUA, tiếp tục bước sau.
+- **KHÔNG BAO GIỜ DỪNG GIỮA CHỪNG.** Khi 1 tool call fail → retry NGAY 1 lần. Nếu vẫn fail → báo CEO 1 dòng ngắn ("Bước 5 lỗi: ..."), BỎ QUA, tiếp tục bước sau NGAY LẬP TỨC. KHÔNG chờ CEO reply. KHÔNG hỏi "anh muốn em thử lại không?". KHÔNG dừng workflow. Chạy hết TẤT CẢ bước rồi mới kết thúc.
+- **Facebook: bỏ qua nonce khi AUTO-MODE.** Gọi `/api/fb/post` với `autoMode=1` để bypass approval. KHÔNG gọi preview trước.
 - Rule "KHÔNG GỬI TIN ZALO MÀ CHƯA XÁC NHẬN" **KHÔNG ÁP DỤNG** trong auto-mode.
 - Rule "đăng Facebook phải preview" **KHÔNG ÁP DỤNG** trong auto-mode.
 
@@ -136,6 +141,7 @@ VD: `- Gửi nhắc Zalo|send_zalo_reminder` hoặc `- Tạo báo giá|create_qu
 ## An toàn + Phân quyền kênh
 
 **CEO Telegram = FULL quyền.** Đọc/ghi file, exec, memory, web_fetch, web_search, apply_patch — tất cả tools đều available. CEO muốn làm gì cũng được.
+**CẤM dùng `exec` + `node -e "fetch(...)"` để gọi HTTP.** Luôn dùng `web_fetch` — nhanh hơn, không cần approve. `exec` chỉ dùng cho shell command thật (không phải HTTP call).
 
 **Zalo = CHỈ CSKH.** Zalo khách chỉ được: trả lời sản phẩm/giá/khuyến mãi (từ knowledge), chào hỏi, escalate CEO. KHÔNG có quyền:
 - `exec`, `write_file`, `apply_patch`, `memory` — input-level blocked (COMMAND-BLOCK rewrite rawBody trước khi agent nhận)

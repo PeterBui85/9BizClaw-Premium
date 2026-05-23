@@ -600,6 +600,15 @@ const KNOWLEDGE_LABELS = {
   'nhan-vien': 'Nhân viên',
 };
 
+const VISIBILITY_SUBFOLDERS = { public: 'public', internal: 'noi-bo', private: 'ceo-only' };
+const SUBFOLDER_TO_VISIBILITY = { 'public': 'public', 'noi-bo': 'internal', 'ceo-only': 'private' };
+
+function inferVisibilityFromPath(filePath) {
+  const norm = filePath.replace(/\\/g, '/');
+  const m = norm.match(/\/files\/(public|noi-bo|ceo-only)\//);
+  return m ? (SUBFOLDER_TO_VISIBILITY[m[1]] || 'public') : 'public';
+}
+
 function getKnowledgeCategories() {
   const ws = getWorkspace();
   const knowDir = path.join(ws, 'knowledge');
@@ -652,8 +661,11 @@ function insertDocumentRow(db, {
 function ensureKnowledgeFolders() {
   const ws = getWorkspace();
   for (const cat of getKnowledgeCategories()) {
-    const dir = path.join(ws, 'knowledge', cat, 'files');
-    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    const filesDir = path.join(ws, 'knowledge', cat, 'files');
+    try { fs.mkdirSync(filesDir, { recursive: true }); } catch {}
+    for (const sub of Object.values(VISIBILITY_SUBFOLDERS)) {
+      try { fs.mkdirSync(path.join(filesDir, sub), { recursive: true }); } catch {}
+    }
     const indexFile = path.join(ws, 'knowledge', cat, 'index.md');
     if (!fs.existsSync(indexFile)) {
       const label = KNOWLEDGE_LABELS[cat] || cat;
@@ -669,6 +681,196 @@ function ensureKnowledgeFolders() {
 }
 
 // ---------------------------------------------------------------------------
+//  migrateKnowledgeToSubfolders — one-time migration of root-level files
+// ---------------------------------------------------------------------------
+function migrateKnowledgeToSubfolders() {
+  const ws = getWorkspace();
+  const marker = path.join(ws, 'knowledge', '.migrated-to-subfolders');
+  if (fs.existsSync(marker)) return;
+  const db = getDocumentsDb();
+  let total = 0;
+  for (const cat of getKnowledgeCategories()) {
+    const filesDir = path.join(ws, 'knowledge', cat, 'files');
+    if (!fs.existsSync(filesDir)) continue;
+    for (const sub of Object.values(VISIBILITY_SUBFOLDERS)) {
+      try { fs.mkdirSync(path.join(filesDir, sub), { recursive: true }); } catch {}
+    }
+    let entries;
+    try { entries = fs.readdirSync(filesDir, { withFileTypes: true }).filter(e => e.isFile()); } catch { continue; }
+    for (const entry of entries) {
+      let vis = 'public';
+      if (db) {
+        try {
+          const row = db.prepare('SELECT visibility FROM documents WHERE filename=? AND category=?').get(entry.name, cat);
+          if (row?.visibility) vis = row.visibility;
+        } catch {}
+      }
+      const subDir = VISIBILITY_SUBFOLDERS[vis] || 'public';
+      const src = path.join(filesDir, entry.name);
+      const dst = path.join(filesDir, subDir, entry.name);
+      try {
+        fs.renameSync(src, dst);
+        if (db) {
+          try { db.prepare('UPDATE documents SET filepath=? WHERE filename=? AND category=?').run(dst, entry.name, cat); } catch {}
+        }
+        total++;
+      } catch (e) { console.warn('[knowledge] migration skip:', entry.name, e.message); }
+    }
+  }
+  try { fs.writeFileSync(marker, new Date().toISOString(), 'utf-8'); } catch {}
+  if (total > 0) {
+    console.log(`[knowledge] migrated ${total} files to subfolder structure`);
+    for (const cat of getKnowledgeCategories()) {
+      try { rewriteKnowledgeIndex(cat); } catch {}
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Knowledge file watcher — auto-index files dropped via Explorer/Finder
+// ---------------------------------------------------------------------------
+let _knowledgeWatcher = null;
+let _knowledgeWatchDebounce = null;
+let _knowledgePollInterval = null;
+let _isReindexing = false;
+const _watcherSkipPaths = new Set();
+const _WATCH_IGNORE = /(?:\.tmp$|^~\$|\.DS_Store$|Thumbs\.db$|^index\.md)/i;
+
+async function _processKnowledgeChange(filePath) {
+  if (_isReindexing) { console.log('[knowledge-watch] skip (reindexing):', path.basename(filePath)); return; }
+  if (_watcherSkipPaths.has(filePath)) { _watcherSkipPaths.delete(filePath); console.log('[knowledge-watch] skip (upload/move):', path.basename(filePath)); return; }
+  if (_WATCH_IGNORE.test(path.basename(filePath))) return;
+  const norm = filePath.replace(/\\/g, '/');
+  const m = norm.match(/knowledge\/([a-z0-9-]+)\/files\//);
+  if (!m) { console.log('[knowledge-watch] skip (no category match):', norm); return; }
+  const category = m[1];
+  const visibility = inferVisibilityFromPath(filePath);
+  const exists = fs.existsSync(filePath);
+  const db = getDocumentsDb();
+  const filename = path.basename(filePath);
+
+  if (!exists) {
+    // File deleted
+    if (db) {
+      try {
+        const row = db.prepare('SELECT id FROM documents WHERE filename=? AND category=?').get(filename, category);
+        if (row) {
+          try { db.prepare('DELETE FROM documents_chunks WHERE document_id=?').run(row.id); } catch {}
+          db.prepare('DELETE FROM documents WHERE id=?').run(row.id);
+        }
+      } catch (e) { console.error('[knowledge-watch] delete DB error:', e.message); }
+    }
+    _isReindexing = true;
+    try { rewriteKnowledgeIndex(category); } finally { _isReindexing = false; }
+    _broadcastKnowledgeUpdated();
+    return;
+  }
+
+  // New or changed file
+  let stat;
+  try { stat = fs.statSync(filePath); } catch { return; }
+  if (!stat.isFile()) return;
+  if (stat.size > 100 * 1024 * 1024) { console.warn('[knowledge-watch] skip >100MB:', filename); return; }
+
+  let content = '';
+  try { content = await extractTextFromFile(filePath, filename, { visibility, category }); } catch {}
+  if (content && /^\[(PDF|DOCX|Excel) extract failed:/.test(content)) {
+    console.warn('[knowledge-watch] extract failed:', filename, content);
+    return;
+  }
+  const wordCount = content ? content.split(/\s+/).length : 0;
+  const filetype = path.extname(filename).toLowerCase().replace('.', '');
+
+  if (db) {
+    try {
+      const existing = db.prepare('SELECT id FROM documents WHERE filename=? AND category=?').get(filename, category);
+      if (existing) {
+        db.prepare('UPDATE documents SET filepath=?, content=?, filetype=?, filesize=?, word_count=?, visibility=? WHERE id=?')
+          .run(filePath, content, filetype, stat.size, wordCount, visibility, existing.id);
+      } else {
+        db.prepare('INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?,?,?,?,?,?,?,?,?)')
+          .run(filename, filePath, content, filetype, stat.size, wordCount, category, null, visibility);
+        try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?,?)').run(filename, content); } catch {}
+      }
+      const doc = db.prepare('SELECT id FROM documents WHERE filename=? AND category=?').get(filename, category);
+      if (doc) {
+        try { indexDocumentChunks(db, doc.id, category, content); } catch {}
+      }
+    } catch (e) { console.error('[knowledge-watch] DB error:', filename, e.message); }
+  }
+
+  _isReindexing = true;
+  try { rewriteKnowledgeIndex(category); } finally { _isReindexing = false; }
+  _broadcastKnowledgeUpdated();
+  console.log(`[knowledge-watch] indexed: ${filename} (${category}/${visibility})`);
+}
+
+function _broadcastKnowledgeUpdated() {
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) { try { w.webContents.send('knowledge-updated'); } catch {} }
+    }
+  } catch {}
+}
+
+function startKnowledgeWatcher() {
+  const ws = getWorkspace();
+  const knowledgeDir = path.join(ws, 'knowledge');
+  if (!fs.existsSync(knowledgeDir)) { console.warn('[knowledge-watch] knowledge dir does not exist:', knowledgeDir); return; }
+
+  // fs.watch with debounce
+  const pendingPaths = new Set();
+  try {
+    _knowledgeWatcher = fs.watch(knowledgeDir, { recursive: true }, (eventType, filename) => {
+      if (!filename) return;
+      const fullPath = path.join(knowledgeDir, filename);
+      if (!filename.includes('files')) return;
+      console.log(`[knowledge-watch] event: ${eventType} ${filename}`);
+      pendingPaths.add(fullPath);
+      clearTimeout(_knowledgeWatchDebounce);
+      _knowledgeWatchDebounce = setTimeout(async () => {
+        const batch = [...pendingPaths];
+        pendingPaths.clear();
+        for (const p of batch) {
+          try { await _processKnowledgeChange(p); } catch (e) { console.error('[knowledge-watch] process error:', e.message); }
+        }
+      }, 2000);
+    });
+    console.log('[knowledge-watch] watching:', knowledgeDir);
+    _knowledgeWatcher.on('error', (err) => {
+      console.error('[knowledge-watch] watcher error:', err.message);
+      stopKnowledgeWatcher();
+      setTimeout(startKnowledgeWatcher, 5000);
+    });
+  } catch (e) { console.error('[knowledge-watch] failed to start fs.watch:', e.message); }
+
+  // Fallback polling every 60s
+  _knowledgePollInterval = setInterval(async () => {
+    if (_isReindexing) return;
+    const db = getDocumentsDb();
+    if (!db) return;
+    for (const cat of getKnowledgeCategories()) {
+      const diskFiles = listKnowledgeFilesFromDisk(cat);
+      let dbFiles;
+      try { dbFiles = db.prepare('SELECT filename FROM documents WHERE category=?').all(cat).map(r => r.filename); } catch { continue; }
+      const dbSet = new Set(dbFiles);
+      for (const df of diskFiles) {
+        if (!dbSet.has(df.filename)) {
+          try { await _processKnowledgeChange(df.filepath); } catch {}
+        }
+      }
+    }
+  }, 60000);
+}
+
+function stopKnowledgeWatcher() {
+  if (_knowledgeWatcher) { try { _knowledgeWatcher.close(); } catch {} _knowledgeWatcher = null; }
+  if (_knowledgePollInterval) { clearInterval(_knowledgePollInterval); _knowledgePollInterval = null; }
+  clearTimeout(_knowledgeWatchDebounce);
+}
+
+// ---------------------------------------------------------------------------
 //  backfillKnowledgeFromDisk
 // ---------------------------------------------------------------------------
 async function backfillKnowledgeFromDisk() {
@@ -680,32 +882,41 @@ async function backfillKnowledgeFromDisk() {
     try {
       for (const r of db.prepare('SELECT filename FROM documents WHERE category = ?').all(cat)) existing.add(r.filename);
     } catch {}
-    const filesDir = path.join(getKnowledgeDir(cat), 'files');
-    if (!fs.existsSync(filesDir)) continue;
-    for (const entry of fs.readdirSync(filesDir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      if (existing.has(entry.name)) continue;
-      const fp = path.join(filesDir, entry.name);
-      let stat;
-      try { stat = fs.statSync(fp); } catch { continue; }
-      const filetype = path.extname(entry.name).toLowerCase().replace('.', '');
-      let content = '';
-      try { content = await extractTextFromFile(fp, entry.name); } catch {}
-      const isImage = /\.(jpe?g|png|gif|webp|bmp)$/i.test(entry.name);
-      if (isImage && !content) {
-        console.log('[backfill] skipping image (vision not ready?):', entry.name);
-        continue;
-      }
-      const wordCount = content ? content.split(/\s+/).length : 0;
-      try {
-        const result = db.prepare(
-          'INSERT OR IGNORE INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null, 'public');
-        if (result.changes > 0) {
-          try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
-          inserted++;
+    const baseDir = path.join(getKnowledgeDir(cat), 'files');
+    if (!fs.existsSync(baseDir)) continue;
+    const dirsToScan = [
+      { dir: path.join(baseDir, 'public'), visibility: 'public' },
+      { dir: path.join(baseDir, 'noi-bo'), visibility: 'internal' },
+      { dir: path.join(baseDir, 'ceo-only'), visibility: 'private' },
+      { dir: baseDir, visibility: 'public' }, // legacy root
+    ];
+    for (const { dir, visibility } of dirsToScan) {
+      if (!fs.existsSync(dir)) continue;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isFile()) continue;
+        if (existing.has(entry.name)) continue;
+        const fp = path.join(dir, entry.name);
+        let stat;
+        try { stat = fs.statSync(fp); } catch { continue; }
+        const filetype = path.extname(entry.name).toLowerCase().replace('.', '');
+        let content = '';
+        try { content = await extractTextFromFile(fp, entry.name); } catch {}
+        const isImage = /\.(jpe?g|png|gif|webp|bmp)$/i.test(entry.name);
+        if (isImage && !content) {
+          console.log('[backfill] skipping image (vision not ready?):', entry.name);
+          continue;
         }
-      } catch (e) { console.error('[knowledge] backfill insert err:', entry.name, e.message); }
+        const wordCount = content ? content.split(/\s+/).length : 0;
+        try {
+          const result = db.prepare(
+            'INSERT OR IGNORE INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null, visibility);
+          if (result.changes > 0) {
+            try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
+            inserted++;
+          }
+        } catch (e) { console.error('[knowledge] backfill insert err:', entry.name, e.message); }
+      }
     }
   }
   if (inserted > 0) {
@@ -882,26 +1093,40 @@ function rewriteKnowledgeIndex(category) {
 // ---------------------------------------------------------------------------
 function listKnowledgeFilesFromDisk(category) {
   try {
-    const dir = path.join(getKnowledgeDir(category), 'files');
-    if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir, { withFileTypes: true })
-      .filter(e => e.isFile())
-      .map(e => {
+    const baseDir = path.join(getKnowledgeDir(category), 'files');
+    if (!fs.existsSync(baseDir)) return [];
+    const results = [];
+    const _addFromDir = (dir, visibility) => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!e.isFile()) continue;
         const fp = path.join(dir, e.name);
         let st = null;
         try { st = fs.statSync(fp); } catch {}
-        return {
+        results.push({
           filename: e.name,
+          filepath: fp,
           filetype: path.extname(e.name).toLowerCase().replace('.', ''),
           filesize: st ? st.size : 0,
           word_count: 0,
           summary: null,
-          visibility: 'public',
+          visibility,
           created_at: st ? new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 19) : '',
           _source: 'disk',
-        };
-      })
-      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        });
+      }
+    };
+    _addFromDir(path.join(baseDir, 'public'), 'public');
+    _addFromDir(path.join(baseDir, 'noi-bo'), 'internal');
+    _addFromDir(path.join(baseDir, 'ceo-only'), 'private');
+    _addFromDir(baseDir, 'public'); // legacy root-level files
+    // Deduplicate: if a file exists in both root and subfolder, prefer subfolder
+    const seen = new Set();
+    return results.filter(r => {
+      if (r.filepath === path.join(baseDir, r.filename) && seen.has(r.filename)) return false;
+      seen.add(r.filename);
+      return true;
+    }).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
   } catch (e) {
     console.error('[knowledge] disk list error:', e.message);
     return [];
@@ -1814,12 +2039,19 @@ module.exports = {
   KNOWLEDGE_CATEGORIES,
   DEFAULT_KNOWLEDGE_CATEGORIES,
   KNOWLEDGE_LABELS,
+  VISIBILITY_SUBFOLDERS,
+  SUBFOLDER_TO_VISIBILITY,
   getKnowledgeCategories,
   getKnowledgeDir,
+  inferVisibilityFromPath,
 
   // CRUD helpers
   insertDocumentRow,
   ensureKnowledgeFolders,
+  migrateKnowledgeToSubfolders,
+  startKnowledgeWatcher,
+  stopKnowledgeWatcher,
+  _watcherSkipPaths,
   backfillKnowledgeFromDisk,
   resolveUniqueFilename,
   describeImageForKnowledge,
