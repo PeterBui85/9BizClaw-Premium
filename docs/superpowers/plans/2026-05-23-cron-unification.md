@@ -94,7 +94,7 @@ Add immediately after (before the `web_fetch` line):
 
 ```typescript
       // v2.5.0: implicit scheduling — "nhắc em lúc 9h", "hẹn nhắn cho em"
-      /\b(?:nhắc|nhac|remind)\s+(?:em|anh|tôi|toi|mình|minh).*(?:lúc|luc|giờ|gio|hôm|hom|ngày|ngay|sáng|sang|trưa|trua|chiều|chieu|tối|toi|mỗi|moi)/i,
+      /\b(?:nhắc|nhac|remind)\s+(?:em|anh|tôi|toi|mình|minh|me).*(?:lúc|luc|giờ|gio|ngày|ngay|sáng|sang|trưa|trua|chiều|chieu|tối|toi|mỗi|moi)/i,
       /\b(?:hẹn|hen)\s+(?:nhắn|nhan|gửi|gui|phát|phat)/i,
       /\b(?:gửi|gui)\s+(?:tin|nhắn|nhan).*(?:mỗi\s+(?:ngày|ngay|giờ|gio)|lúc\s+\d)/i,
       /\b(?:nhắc|nhac|hẹn|hen)\s+(?:giờ|gio|lịch|lich)/i,
