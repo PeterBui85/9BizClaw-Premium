@@ -295,19 +295,19 @@ console.log('\n=== TEST 5: cron.js line verification ===\n');
 const cronSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'lib', 'cron.js'), 'utf-8');
 const cronLines = cronSrc.split('\n');
 
-// Check that line 1604 is where we think the push is
-const pushLine = cronLines[1603]; // 0-indexed
+// Check that line 1623 is where we think the push is
+const pushLine = cronLines[1622]; // 0-indexed
 if (pushLine && pushLine.includes('openclawEntries.push({')) {
-  ok(`Line 1604: openclawEntries.push (correct target)`);
+  ok(`Line 1623: openclawEntries.push (correct target)`);
 } else {
-  bad(`Line 1604: expected "openclawEntries.push", got "${(pushLine || '').trim().slice(0, 60)}"`);
+  bad(`Line 1623: expected "openclawEntries.push", got "${(pushLine || '').trim().slice(0, 60)}"`);
 }
 
-const endLine = cronLines[1610]; // line 1611 in 1-indexed
+const endLine = cronLines[1629]; // line 1630 in 1-indexed
 if (endLine && endLine.includes('});')) {
-  ok(`Line 1611: closing brace (correct range)`);
+  ok(`Line 1630: closing brace (correct range)`);
 } else {
-  bad(`Line 1611: expected "})", got "${(endLine || '').trim().slice(0, 60)}"`);
+  bad(`Line 1630: expected "})", got "${(endLine || '').trim().slice(0, 60)}"`);
 }
 
 // Check scheduler uses c.zaloTarget
