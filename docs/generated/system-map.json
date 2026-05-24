@@ -2965,7 +2965,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 129311
+      "bytes": 129541
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3049,7 +3049,7 @@
     },
     {
       "path": "electron/lib/google-routes.js",
-      "bytes": 20652
+      "bytes": 21317
     },
     {
       "path": "electron/lib/migration.js",
