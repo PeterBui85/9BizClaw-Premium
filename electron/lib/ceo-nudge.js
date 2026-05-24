@@ -11,20 +11,25 @@ let _watcherTimerId = null;
 let _watcherLeftover = '';
 
 const _CORRECTION_PATTERNS = [
+  // Corrections
   /kh[oô]ng ph[aả]i/i,
-  /khong phai/i,
   /sai r[oồ]i/i,
-  /sai roi/i,
   /nh[oớ] l[aà]/i,
-  /nho la/i,
-  /lu[oô]n lu[oô]n/i,
-  /luon luon/i,
-  /[đd][uừ]ng bao gi[oờ]/i,
-  /dung bao gio/i,
-  /t[uừ] gi[oờ]/i,
-  /tu gio/i,
   /ph[aả]i l[aà]/i,
-  /phai la/i,
+  /kh[oô]ng [đd][uú]ng/i,
+  /s[uử]a l[aạ]i/i,
+  // Rules
+  /t[uừ] gi[oờ]/i,
+  /lu[oô]n lu[oô]n/i,
+  /[đd][uừ]ng bao gi[oờ]/i,
+  /m[oỗ]i l[aầ]n/i,
+  /quy t[aắ]c/i,
+  // Preferences
+  /anh th[ií]ch/i,
+  /anh gh[eé]t/i,
+  /[đd][uừ]ng l[aà]m/i,
+  /kh[oô]ng c[aầ]n/i,
+  /anh mu[oố]n/i,
 ];
 
 function startCeoMessageWatcher() {
@@ -114,31 +119,19 @@ async function _runMemoryNudge(source) {
     return;
   }
 
-  // Task detection — write to memory if conversation involved completing something
-  const tLower = transcript.toLowerCase();
-  const taskHits = ['đã tạo', 'đã làm', 'đã gửi', 'đã xong', 'hoàn thành', 'đã lưu', 'đã upload', 'đã cập nhật', 'đã sửa', 'đã thêm'];
-  if (taskHits.some(p => tLower.includes(p))) {
-    try {
-      const { writeMemory } = require('./ceo-memory');
-      const botReply = (transcript.match(/(?:assistant|bot)[:\s]+([\s\S]{10,200}?)(?:\n(?:user|human|CEO)|$)/i) || [])[1] || '';
-      if (botReply) {
-        writeMemory({
-          type: 'task',
-          content: '[' + new Date().toLocaleDateString('vi-VN') + '] ' + botReply.slice(0, 150).replace(/\n/g, ' ').trim(),
-          source: 'auto',
-        }).catch(function(e) { console.warn('[nudge-memory] task write failed:', e?.message); });
-      }
-    } catch {}
-  }
+  const prompt = `Review the last conversation with CEO. Decide if anything is worth remembering long-term.
 
-  const prompt = `Review the last conversation with CEO. Decide if anything is worth remembering long-term:
-- A correction (CEO said "not like that, do it this way")
-- A new business rule or preference
-- A pattern across recent customers
-- A fact about the business
+ONLY save these types (in priority order):
+1. correction — CEO sửa lỗi bot ("sai rồi", "không phải", giá/tên/thông tin sai)
+2. rule — CEO dặn quy tắc ("từ giờ luôn...", "đừng bao giờ...", "nhớ là...")
+3. preference — CEO nói sở thích ("anh thích...", "anh ghét...", "đừng làm kiểu...")
+4. pattern — Phát hiện pattern khách hàng (nhiều khách hỏi cùng 1 thứ)
+5. fact — Sự kiện quan trọng về doanh nghiệp (giá mới, sản phẩm mới, nhân sự)
+
+DO NOT save: task completions, "đã gửi email", "đã tạo Sheet", cron results. Those are logs, not memory.
 
 Respond ONLY with JSON (no markdown, no explanation):
-{"memories":[{"action":"write","type":"rule","content":"..."},{"action":"delete","id":"mem_..."}]}
+{"memories":[{"action":"write","type":"correction","content":"Giá outlet là 2.5tr, không phải 3tr"}]}
 If nothing worth saving: {"memories":[]}
 
 Current CEO-MEMORY.md:
@@ -147,31 +140,20 @@ ${currentMem}
 Last conversation:
 ${transcript}`;
 
-  const { spawnOpenClawSafe } = require('./boot');
-  const result = await spawnOpenClawSafe(
-    ['agent', '--message', prompt, '--json'],
-    { timeoutMs: 120000 }
-  );
-
-  if (result.code !== 0) {
-    console.warn('[nudge] agent exited with code', result.code);
+  // Use 9Router directly (fast, cheap ~200 tokens) instead of spawning full agent (slow, expensive)
+  const { call9Router } = require('./nine-router');
+  const raw = await call9Router(prompt, { maxTokens: 500, temperature: 0.2, timeoutMs: 20000 });
+  if (!raw) {
+    console.warn('[nudge] 9Router returned null — skipping');
     return;
   }
 
   let memoriesArr;
   try {
-    const trimmed = (result.stdout || '').trim();
-    const parsed = JSON.parse(trimmed);
-    const payloadText = parsed?.result?.payloads?.[0]?.text
-      || parsed?.payloads?.[0]?.text
-      || parsed?.text
-      || trimmed;
-    const memJson = typeof payloadText === 'string'
-      ? JSON.parse(payloadText.match(/\{[\s\S]*"memories"[\s\S]*\}/)?.[0] || '{}')
-      : payloadText;
+    const memJson = JSON.parse(raw.match(/\{[\s\S]*"memories"[\s\S]*\}/)?.[0] || '{}');
     memoriesArr = memJson?.memories;
   } catch (e) {
-    console.warn('[nudge] JSON parse failed:', e?.message);
+    console.warn('[nudge] JSON parse failed:', e?.message, raw?.slice(0, 200));
     return;
   }
 
