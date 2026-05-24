@@ -1346,10 +1346,15 @@ async function runMultiStepCronPrompt(prompt, opts = {}) {
 // ============================================================
 
 async function runCronViaSessionOrFallback(prompt, opts = {}) {
-  // Multi-step detection: split numbered-step prompts into sequential runs
-  const parsed = parseMultiStepPrompt(prompt);
-  if (parsed && parsed.steps.length >= MULTISTEP_MIN_STEPS) {
-    return runMultiStepCronPrompt(prompt, opts);
+  // Multi-step detection: ONLY for [AUTO-MODE] prompts with numbered steps.
+  // Non-AUTO-MODE prompts (evening briefing, morning report) may contain
+  // numbered lists as formatting — splitting them destroys context.
+  const isAutoMode = /\[AUTO-MODE\]/i.test(prompt);
+  if (isAutoMode) {
+    const parsed = parseMultiStepPrompt(prompt);
+    if (parsed && parsed.steps.length >= MULTISTEP_MIN_STEPS) {
+      return runMultiStepCronPrompt(prompt, opts);
+    }
   }
   // When cron targets a Zalo group, session-send cannot deliver there (it only
   // replies to the CEO's Telegram session). Always use runCronAgentPrompt which
