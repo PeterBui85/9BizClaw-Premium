@@ -2965,7 +2965,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 129963
+      "bytes": 129311
     },
     {
       "path": "electron/ui/wizard.html",
@@ -2977,7 +2977,7 @@
     },
     {
       "path": "electron/lib/knowledge.js",
-      "bytes": 87803
+      "bytes": 90841
     },
     {
       "path": "electron/lib/gateway.js",

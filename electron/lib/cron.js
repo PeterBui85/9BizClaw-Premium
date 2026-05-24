@@ -492,18 +492,6 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, t
         try { await sendTelegram(replyText); } catch (e) { console.warn(`[cron-agent] Telegram delivery failed:`, e?.message); }
       }
       journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
-      const isNotable = isOneTime || !replyText || replyText.length < 10;
-      if (isNotable) {
-        try {
-          const { writeMemory } = require('./ceo-memory');
-          const replyPreview = (replyText || '').slice(0, 120).replace(/\n/g, ' ');
-          writeMemory({
-            type: 'task',
-            content: '[' + new Date().toLocaleDateString('vi-VN') + '] Cron "' + niceLabel + '": ' + (replyPreview || 'hoàn thành'),
-            source: 'auto',
-          }).catch(function(e) { console.warn('[cron-memory] write failed:', e?.message); });
-        } catch (e) { console.warn('[cron-memory] require failed:', e?.message); }
-      }
       console.log(`[cron-agent] "${niceLabel}" delivered${zaloTarget ? ' (Telegram+zalo)' : ' (Telegram only)'} in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);
       return zaloOk;
     }
