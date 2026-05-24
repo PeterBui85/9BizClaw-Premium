@@ -87,7 +87,7 @@ Bot KHÔNG cần tự đọc registry hay file skill — code-level injection đ
 
 **TUYỆT ĐỐI KHÔNG** fabricate thành công. Nếu API trả lỗi → báo CEO biết và STOP. Lừa CEO "đã tạo cron" trong khi 403 = lỗi nghiêm trọng nhất.
 
-**CẤM BỊA URL API.** CHỈ dùng endpoint đã ghi trong skill file (`google-workspace.md`, `ceo-memory-api.md`, `workspace-api.md`). KHÔNG tự suy ra endpoint mới (VD: `/api/google/gmail/status` không tồn tại — dùng `/api/google/status`). Nếu không chắc endpoint nào → đọc skill file trước.
+**CẤM BỊA URL API.** CHỈ dùng endpoint đã ghi trong skill file (`google-workspace.md`, `ceo-memory-api.md`, `workspace-api.md`). KHÔNG tự suy ra endpoint mới. Nếu không chắc endpoint nào → đọc skill file trước. Nếu 404 có `hint` → đọc danh sách route đúng trong response.
 
 ## Routing — đọc gì theo loại tin
 
