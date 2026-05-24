@@ -624,11 +624,11 @@
     .know-folder-delete:hover { color:var(--danger); background:rgba(239,68,68,0.1); }
     .know-folder.active .know-folder-delete { color:rgba(255,255,255,0.7); }
     .know-folder.active .know-folder-delete:hover { color:#fff; background:rgba(255,255,255,0.2); }
-    .know-folder-open { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:4px; flex-shrink:0; opacity:0; transition:opacity 0.15s; }
+    .know-folder-open { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:4px; flex-shrink:0; opacity:0; transition:opacity 0.15s, background 0.15s; }
     .know-folder:hover .know-folder-open { opacity:0.7; }
-    .know-folder:hover .know-folder-open:hover { opacity:1; }
-    .know-folder.active .know-folder-open { color:rgba(255,255,255,0.7); }
-    .know-folder.active .know-folder-open:hover { color:#fff; }
+    .know-folder:hover .know-folder-open:hover { opacity:1; background:rgba(0,0,0,0.08); }
+    .know-folder.active .know-folder-open { color:rgba(255,255,255,0.5); }
+    .know-folder.active .know-folder-open:hover { color:#fff; background:rgba(255,255,255,0.15); }
     .know-files-list { flex:1; overflow-y:auto; min-height:0; }
     .know-file { display:flex; gap:12px; padding:14px; border-bottom:1px solid var(--border); font-size:13px; }
     .know-file:last-child { border-bottom:none; }
