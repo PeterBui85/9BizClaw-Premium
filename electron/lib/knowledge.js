@@ -803,6 +803,22 @@ async function _processKnowledgeChange(filePath) {
   try { rewriteKnowledgeIndex(category); } finally { _isReindexing = false; }
   _broadcastKnowledgeUpdated();
   console.log(`[knowledge-watch] indexed: ${filename} (${category}/${visibility})`);
+
+  // Generate AI summary async (non-blocking — file already indexed above)
+  if (content && db) {
+    try {
+      const summary = await summarizeKnowledgeContent(content, filename);
+      if (summary) {
+        try {
+          db.prepare('UPDATE documents SET summary=? WHERE filename=? AND category=?').run(summary, filename, category);
+          _isReindexing = true;
+          try { rewriteKnowledgeIndex(category); } finally { _isReindexing = false; }
+          _broadcastKnowledgeUpdated();
+          console.log(`[knowledge-watch] summarized: ${filename}`);
+        } catch (e) { console.error('[knowledge-watch] summary DB update error:', e.message); }
+      }
+    } catch (e) { console.error('[knowledge-watch] summary error:', filename, e.message); }
+  }
 }
 
 function _broadcastKnowledgeUpdated() {
@@ -922,6 +938,30 @@ async function backfillKnowledgeFromDisk() {
   if (inserted > 0) {
     console.log('[knowledge] backfilled', inserted, 'file(s) from disk into DB');
     for (const cat of getKnowledgeCategories()) rewriteKnowledgeIndex(cat);
+    // Generate summaries for backfilled files async (non-blocking)
+    setTimeout(async () => {
+      try {
+        const unsummarized = db.prepare("SELECT id, filename, content, category FROM documents WHERE summary IS NULL AND content IS NOT NULL AND length(content) > 30").all();
+        for (const row of unsummarized) {
+          try {
+            const summary = await summarizeKnowledgeContent(row.content, row.filename);
+            if (summary) {
+              db.prepare('UPDATE documents SET summary=? WHERE id=?').run(summary, row.id);
+              console.log(`[knowledge-backfill] summarized: ${row.filename}`);
+            }
+          } catch (e) { console.warn('[knowledge-backfill] summary failed:', row.filename, e?.message); }
+        }
+        if (unsummarized.length > 0) {
+          for (const cat of getKnowledgeCategories()) rewriteKnowledgeIndex(cat);
+          try {
+            const { BrowserWindow } = require('electron');
+            for (const w of BrowserWindow.getAllWindows()) {
+              if (!w.isDestroyed()) { try { w.webContents.send('knowledge-updated'); } catch {} }
+            }
+          } catch {}
+        }
+      } catch (e) { console.error('[knowledge-backfill] summary pass error:', e.message); }
+    }, 5000);
   }
 }
 
@@ -1062,17 +1102,46 @@ function rewriteKnowledgeIndex(category) {
     if (nonPublicSet !== null && nonPublicSet.has(f.filename)) continue;
     rows.push({ filename: f.filename, summary: null, filesize: f.filesize, created_at: f.created_at });
   }
+  // Count non-public files (internal + ceo-only) for display
+  let nonPublicCount = 0;
+  if (db) {
+    try {
+      const npResult = db.prepare("SELECT COUNT(*) AS cnt FROM documents WHERE category = ? AND visibility != 'public'").get(category);
+      nonPublicCount = npResult?.cnt || 0;
+    } catch {}
+  }
+  if (nonPublicCount === 0) {
+    // Fallback: count from disk
+    const baseDir = path.join(ws, 'knowledge', category, 'files');
+    for (const sub of ['noi-bo', 'ceo-only']) {
+      const subPath = path.join(baseDir, sub);
+      try {
+        if (fs.existsSync(subPath)) {
+          for (const e of fs.readdirSync(subPath, { withFileTypes: true })) {
+            if (e.isFile() && !_WATCH_IGNORE.test(e.name)) nonPublicCount++;
+          }
+        }
+      } catch {}
+    }
+  }
+
   try {
     const lines = [];
     lines.push(`# Knowledge — ${KNOWLEDGE_LABELS[category] || category}\n`);
-    if (rows.length === 0) {
+    const totalCount = rows.length + nonPublicCount;
+    if (totalCount === 0) {
       lines.push('*Chưa có tài liệu nào. CEO upload file qua Dashboard → Knowledge.*\n');
     } else {
-      lines.push(`Tổng: ${rows.length} tài liệu. Bot dùng search vector khi khách hỏi (không nạp toàn bộ nội dung).\n`);
-      for (const r of rows) {
-        lines.push(`- **${r.filename}** (${((r.filesize || 0) / 1024).toFixed(1)} KB, uploaded ${r.created_at})`);
-        if (r.summary) lines.push(`  *${r.summary.slice(0, 200)}*`);
-        lines.push('');
+      if (rows.length > 0) {
+        lines.push(`Tổng: ${rows.length} tài liệu công khai. Bot dùng search vector khi khách hỏi (không nạp toàn bộ nội dung).\n`);
+        for (const r of rows) {
+          lines.push(`- **${r.filename}** (${((r.filesize || 0) / 1024).toFixed(1)} KB, uploaded ${r.created_at})`);
+          if (r.summary) lines.push(`  *${r.summary.slice(0, 200)}*`);
+          lines.push('');
+        }
+      }
+      if (nonPublicCount > 0) {
+        lines.push(`Còn ${nonPublicCount} tài liệu nội bộ/CEO-only (chỉ bot truy cập khi cần, không hiện chi tiết trong index).\n`);
       }
     }
     const tmpFile = indexFile + '.tmp';

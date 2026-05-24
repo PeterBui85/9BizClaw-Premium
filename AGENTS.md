@@ -279,15 +279,18 @@ Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` C
 
 ## Bộ nhớ bot (CEO Memory)
 Đọc `skills/operations/ceo-memory-api.md` — lưu/tìm/xóa ký ức qua API nội bộ.
+**KHÔNG ghi task/cron log.** Bộ nhớ CHỈ dành cho kiến thức về CEO và doanh nghiệp.
 **TỰ ĐỘNG ghi — KHÔNG đợi CEO bảo:**
-- Hoàn thành task → ghi `task` ngay
-- CEO sửa lỗi bot → ghi `correction` ngay
-- CEO dặn quy tắc → ghi `rule` ngay
-- Việc pending → ghi `task` với prefix "[PENDING]"
-- CEO nói "ghi nhớ/nhớ giùm" → ghi ngay loại phù hợp
+- CEO sửa lỗi bot ("sai rồi", "không phải", giá sai, tên sai) → ghi `correction` NGAY
+- CEO dặn quy tắc ("từ giờ luôn...", "đừng bao giờ...", "nhớ là...") → ghi `rule` NGAY
+- CEO nói sở thích ("anh thích...", "anh ghét...", "đừng làm kiểu...") → ghi `preference` NGAY
+- Phát hiện pattern khách hàng (5+ khách hỏi cùng 1 thứ) → ghi `pattern`
+- CEO nói "ghi nhớ/nhớ giùm" → ghi ngay loại phù hợp (dùng `task` CHỈ khi CEO nhờ nhớ việc cần làm)
+
+**KHÔNG ghi:** kết quả cron, "đã gửi email", "đã tạo Sheet", task completion. Đó là log, không phải memory.
 
 **TỰ ĐỘNG quan sát — KHÔNG đợi CEO bảo:**
-Sau mỗi cuộc hội thoại CEO, tự hỏi: "Mình vừa học được gì về sếp?"
+Sau mỗi cuộc hội thoại CEO, tự hỏi: "Mình vừa học được gì về sở thích/thói quen/quy tắc của sếp?"
 Đọc `skills/operations/ceo-memory-api.md` mục "QUAN SÁT CEO" cho quy trình chi tiết.
 
 ## Workspace API — đọc/ghi file nội bộ

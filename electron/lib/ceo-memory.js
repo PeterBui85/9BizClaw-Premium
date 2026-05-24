@@ -226,8 +226,12 @@ function _scheduleRegeneration() {
 function trimOldTaskEntries() {
   const db = getMemoryDb();
   if (!db) return;
-  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
   try {
+    // Purge ALL auto-generated task entries (cron logs are noise, not memory)
+    const result = db.prepare("DELETE FROM ceo_memories WHERE type = 'task' AND source = 'auto'").run();
+    if (result.changes > 0) console.log(`[ceo-memory] purged ${result.changes} auto-task entries`);
+    // Keep manually-created tasks but trim old ones (>14 days)
+    const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
     db.prepare("DELETE FROM ceo_memories WHERE type = 'task' AND created_at < ?").run(cutoff);
   } catch (e) {
     console.warn('[ceo-memory] trim old tasks error:', e?.message);
@@ -256,7 +260,7 @@ function regenerateCeoMemoryFile() {
   }
 
   const typePriority = ['correction', 'rule', 'pattern', 'preference', 'fact', 'task'];
-  const typeSoftCaps = { correction: 0.30, rule: 0.30, pattern: 0.20, preference: 0.10, fact: 1.0, task: 1.0 };
+  const typeSoftCaps = { correction: 0.30, rule: 0.25, pattern: 0.15, preference: 0.15, fact: 0.07, task: 0.08 };
   const groups = {};
   let totalChars = 0;
 

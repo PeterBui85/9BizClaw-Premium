@@ -2,6 +2,7 @@
 .env
 *.session
 scripts/test-telegram-session/
+cron-api-token.txt
 
 # Node + build outputs
 node_modules/
