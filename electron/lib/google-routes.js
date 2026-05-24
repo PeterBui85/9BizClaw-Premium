@@ -407,7 +407,10 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
       const r = await googleApi.runAppScript(params.scriptId, params.functionName, params.params, params.devMode);
       return jsonResp(res, 200, r);
     }
-    return jsonResp(res, 404, { error: 'unknown google route: ' + urlPath });
+    return jsonResp(res, 404, {
+      error: 'unknown google route: ' + urlPath,
+      hint: 'Valid routes: /status, /health, /gmail/inbox, /gmail/read, /gmail/send, /gmail/reply, /calendar/events, /calendar/create, /calendar/update, /calendar/delete, /calendar/free-busy, /calendar/free-slots, /drive/list, /drive/upload, /drive/download, /drive/share, /docs/list, /docs/info, /docs/read, /docs/create, /docs/write, /docs/insert, /docs/find-replace, /docs/export, /sheets/list, /sheets/metadata, /sheets/get, /sheets/update, /sheets/create, /sheets/create-formatted, /sheets/format, /sheets/freeze, /sheets/number-format, /contacts/list, /contacts/create, /tasks/lists, /tasks/list, /tasks/create, /tasks/complete, /apps-script/run',
+    });
   } catch (e) {
     return jsonResp(res, 500, { error: e.message });
   }

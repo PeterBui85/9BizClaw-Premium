@@ -82,10 +82,12 @@ Bot KHÔNG cần tự đọc registry hay file skill — code-level injection đ
 |---|---|---|
 | 403 | Token/channel chưa attach (race boot) | "Kết nối nội bộ chưa sẵn sàng, anh đợi 10 giây rồi thử lại nhé." |
 | 500/502/503 | Server lỗi tạm thời | "Lệnh chưa thực thi được, kết nối nội bộ tạm gián đoạn — anh thử lại sau 10s." |
-| 404 | Endpoint không tồn tại | "Em chưa hỗ trợ chức năng này. Anh cho em biết yêu cầu cụ thể nhé." |
+| 404 | Endpoint không tồn tại | Nếu response có `hint` → đọc danh sách route đúng, THỬ LẠI với route phù hợp. Nếu không có route phù hợp → "Em chưa hỗ trợ chức năng này." |
 | HTTP timeout | Mạng/listener chậm | "Lệnh đang chờ phản hồi, để em thử lại lần nữa." rồi retry 1 lần. |
 
 **TUYỆT ĐỐI KHÔNG** fabricate thành công. Nếu API trả lỗi → báo CEO biết và STOP. Lừa CEO "đã tạo cron" trong khi 403 = lỗi nghiêm trọng nhất.
+
+**CẤM BỊA URL API.** CHỈ dùng endpoint đã ghi trong skill file (`google-workspace.md`, `ceo-memory-api.md`, `workspace-api.md`). KHÔNG tự suy ra endpoint mới (VD: `/api/google/gmail/status` không tồn tại — dùng `/api/google/status`). Nếu không chắc endpoint nào → đọc skill file trước.
 
 ## Routing — đọc gì theo loại tin
 
