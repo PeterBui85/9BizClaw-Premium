@@ -1,7 +1,7 @@
 # WhatsApp + Lark Channel Integration — Design Spec
 
 **Date:** 2026-05-24
-**Status:** Approved
+**Status:** Draft (R2 — post architecture review)
 **Scope:** Dashboard UI for 2 new channels + shared inbound defense middleware + WhatsApp customer-grade security
 
 ---
@@ -15,173 +15,239 @@
 - CEO connects WhatsApp/Lark via Dashboard (QR scan, same as Zalo)
 - WhatsApp has same security as Zalo (command block, output filter, dedup, system msg filter, escalation)
 - Lark is internal-only (lighter security)
-- Shared defense middleware serves WhatsApp now, replaces Zalo patches later
-- No changes to existing Zalo inbound.ts patches (keep working as-is)
+- Shared defense middleware serves WhatsApp now, Zalo migrates later (v3.0)
+- Architecture scales to 10+ channels without copy-paste
 
 ## 3. Non-Goals
 
-- Migrate Zalo patches to shared middleware (future v3.0)
-- WhatsApp Business API (Cloud API) — Baileys Web only for now
-- Facebook Messenger channel
+- Migrate Zalo patches to shared middleware (v3.0)
+- WhatsApp Business API (Cloud API) — Baileys Web only
+- Facebook Messenger
 - Wizard changes
+- Cross-channel customer identity merge (v3.0)
+- Cron delivery to WhatsApp/Lark (v1 Telegram+Zalo only, documented as limitation)
+
+---
 
 ## 4. Architecture
 
+### 4.1 Dual-path (hooks primary, fork fallback)
+
 ```
-Inbound message (any channel)
+[Decision gate: spike result]
     |
-    v
-OpenClaw channel plugin (built-in routing)
-    |
-    v
-[Zalo path]                    [WhatsApp/Lark path]
-modoro-zalo fork               OpenClaw hooks system
-inbound.ts patches             ~/.openclaw/hooks/inbound-defense/
-(unchanged)                    handler calls lib/inbound-defense.js
-    |                              |
-    v                              v
-Agent processes                Agent processes
-    |                              |
-    v                              v
-send.ts patches                message_sending hook
-(unchanged)                    outputFilter() from lib/inbound-defense.js
-    |                              |
-    v                              v
-Reply sent                     Reply sent
+    ├─ Hooks work ──→ Path A: OpenClaw hooks
+    │                  ~/.openclaw/hooks/inbound-defense/
+    │                  handler.js calls lib/inbound-defense.js
+    │
+    └─ Hooks fail ──→ Path B: WhatsApp plugin fork
+                       electron/packages/modoro-whatsapp/
+                       inbound.ts patches (same as modoro-zalo)
 ```
 
-### 4.1 Shared Inbound Defense Module
+**Both paths use the same `lib/inbound-defense.js` module.** Path A calls it from a hook handler. Path B calls it from forked inbound.ts source. The defense logic is identical — only the integration point differs.
 
-**File:** `electron/lib/inbound-defense.js`
+**Zalo stays unchanged.** Existing inbound.ts patches remain. No refactoring.
 
-Exports channel-agnostic defense functions. Each returns `{ action: 'pass' | 'drop', reason? }`.
+### 4.2 Channel Registry (scale pattern)
+
+**File:** `electron/lib/channel-registry.js` — NEW
+
+Instead of 8 IPC handlers per channel × N channels, a single registry drives all channels:
 
 ```javascript
-module.exports = {
-  // Inbound filters (run before agent dispatch)
-  filterSystemMessage(channel, msg),    // drop group join/leave/rename
-  filterCommandInjection(channel, body), // rewrite admin commands
-  filterDuplicateSender(channel, senderId, body), // 3s dedup window
-  filterBotLoop(channel, body),         // 6-signal bot detection
-  checkAllowlist(channel, senderId),    // per-channel allowlist
-
-  // Outbound filters (run before send)
-  filterOutput(channel, text),          // block CoT, process acks, sensitive paths
-
-  // Lifecycle
-  clearDedup(),                         // prune dedup map (called on interval)
+const CHANNELS = {
+  telegram: {
+    id: 'telegram', label: 'Telegram', icon: 'brand-telegram',
+    probe: probeTelegramReady,
+    role: 'ceo',           // full access
+    hasAllowlist: false,
+    hasPause: true,
+  },
+  zalo: {
+    id: 'modoro-zalo', label: 'Zalo', icon: 'brand-zalo',
+    probe: probeZaloReady,
+    role: 'customer',       // restricted
+    hasAllowlist: true,
+    hasPause: true,
+  },
+  whatsapp: {
+    id: 'whatsapp', label: 'WhatsApp', icon: 'brand-whatsapp',
+    probe: probeWhatsAppReady,
+    pluginPkg: '@openclaw/whatsapp',  // auto-install on first connect
+    role: 'customer',
+    hasAllowlist: true,
+    hasPause: true,
+    loginChannel: 'whatsapp',
+  },
+  lark: {
+    id: 'feishu', label: 'Lark', icon: 'brand-lark',
+    probe: probeLarkReady,
+    role: 'internal',       // full access, no defense filters
+    hasAllowlist: false,
+    hasPause: true,
+    loginChannel: 'feishu',
+  },
 };
 ```
 
-**Channel-specific config:**
+**Generic IPC handlers** (registered once, not per channel):
 
-| Function | WhatsApp | Lark | Zalo (future) |
-|----------|----------|------|---------------|
-| systemMsgFilter | `messageStubType` enum (WhatsApp native) | Feishu event types | Vietnamese regex (existing) |
-| commandBlock | Same 8 admin patterns as Zalo | Disabled (internal) | Same (existing patches) |
-| senderDedup | 3s window, 500 entry cap | 3s window | Same (existing patch) |
-| botLoopDetect | 6 signals | Disabled (internal) | Same (existing AGENTS.md) |
-| allowlist | `whatsapp-allowlist.json` | None (open) | `zalo-allowlist.json` (existing) |
-| outputFilter | Full 71 patterns | Light (API keys only) | Full (existing send.ts) |
-
-### 4.2 OpenClaw Hook Integration
-
-**Directory:** `~/.openclaw/hooks/inbound-defense/`
-
-```
-hooks/inbound-defense/
-  HOOK.md          # frontmatter: events: [message:received, message_sending]
-  handler.js       # loads lib/inbound-defense.js, calls filters, returns drop/pass
+```javascript
+ipcMain.handle('channel:ready',   (e, { ch }) => CHANNELS[ch].probe());
+ipcMain.handle('channel:connect', (e, { ch }) => connectChannel(ch));
+ipcMain.handle('channel:disconnect', (e, { ch }) => disconnectChannel(ch));
+ipcMain.handle('channel:config:get', (e, { ch }) => getChannelConfig(ch));
+ipcMain.handle('channel:config:save', (e, { ch, config }) => saveChannelConfig(ch, config));
+ipcMain.handle('channel:pause',   (e, { ch, minutes }) => pauseChannel(ch, minutes));
+ipcMain.handle('channel:resume',  (e, { ch }) => resumeChannel(ch));
+ipcMain.handle('channel:pause-status', (e, { ch }) => getChannelPauseStatus(ch));
 ```
 
-**handler.js** reads channel from hook context, calls defense functions, returns `{ cancel: true }` on drop. Installed by `ensureDefaultConfig()` on boot — copied from `electron/hooks/inbound-defense/` template.
+**8 generic handlers** instead of 8 × N. Adding a new channel = add entry to `CHANNELS` object + probe function. Zero new IPC/preload work.
 
-### 4.3 WhatsApp System Message Detection
+**Preload:** 8 generic bridges:
+```javascript
+channelReady: (ch) => ipcRenderer.invoke('channel:ready', { ch }),
+channelConnect: (ch) => ipcRenderer.invoke('channel:connect', { ch }),
+// ...
+```
 
-WhatsApp exposes `messageStubType` (numeric enum) for system events. No regex needed.
+**Backward compat:** Existing Telegram/Zalo-specific IPC handlers stay (181 handlers). New generic handlers serve WhatsApp/Lark and future channels. Migrate Telegram/Zalo to generic pattern in v3.0.
 
-Key stub types to filter:
-- 1: CHANGE_EJECTED (removed from group)
+### 4.3 Shared Inbound Defense Module
+
+**File:** `electron/lib/inbound-defense.js`
+
+**Strategy pattern** — channel-specific logic in config objects, not branches:
+
+```javascript
+const CHANNEL_DEFENSE = {
+  whatsapp: {
+    systemMsgDetector: (msg) => msg.messageStubType != null,
+    systemMsgStubTypes: new Set([1, 27, 28, 32, 33, 34]),
+    commandPatterns: SHARED_COMMAND_PATTERNS,  // same 8 patterns as Zalo
+    dedupWindowMs: 3000,
+    dedupMaxEntries: 500,
+    botLoopEnabled: true,
+    outputFilterLevel: 'full',    // all 71 patterns
+    allowlistFile: 'whatsapp-allowlist.json',
+  },
+  feishu: {
+    systemMsgDetector: (msg) => msg.type === 'system',
+    commandPatterns: [],           // internal — no blocking
+    dedupWindowMs: 3000,
+    dedupMaxEntries: 200,
+    botLoopEnabled: false,
+    outputFilterLevel: 'light',   // API keys only
+    allowlistFile: null,
+  },
+  // Future: discord, line, etc. — just add config object
+};
+
+module.exports = {
+  runInboundDefense(channel, msg),     // orchestrator — runs all filters in order
+  runOutboundDefense(channel, text),   // output filter
+  registerChannelDefense(channelId, config),  // for plugins to register at runtime
+  clearDedup(),
+};
+```
+
+`runInboundDefense` returns `{ action: 'pass' | 'drop' | 'rewrite', reason?, body? }`. Orchestrator runs filters in fixed order: systemMsg → allowlist → dedup → commandBlock → botLoop. First `drop` wins.
+
+No god module — each channel is a config object, shared logic is the pipeline.
+
+### 4.4 WhatsApp System Message Detection
+
+WhatsApp `messageStubType` enum (from Baileys):
+- 1: CHANGE_EJECTED
 - 27: GROUP_PARTICIPANT_ADD
 - 28: GROUP_PARTICIPANT_REMOVE
-- 32: GROUP_CHANGE_SUBJECT (rename)
+- 32: GROUP_CHANGE_SUBJECT
 - 33: GROUP_CHANGE_ICON
 - 34: GROUP_CHANGE_DESCRIPTION
 
-### 4.4 Outbound Rate Limiting (WhatsApp only)
+Simple Set lookup — no regex, no i18n.
 
-Install `baileys-antiban` as dependency. Wire via `wrapSocket()` in the WhatsApp plugin startup. Config:
+### 4.5 Outbound Rate Limiting (WhatsApp only)
 
+Vendor `baileys-antiban` into `electron/vendor/baileys-antiban/` (committed, pinned commit hash). Do NOT use npm install — supply chain risk too high in this space.
+
+Features used: `wrapSocket()` for Gaussian jitter, warm-up ramp, health monitoring.
+
+Config in openclaw.json `channels.whatsapp.rateLimiting`:
 ```json
-"channels.whatsapp.rateLimiting": {
-  "enabled": true,
-  "warmupDays": 7,
-  "maxPerHour": 80,
-  "typingDelayMs": [800, 2500]
-}
+{ "enabled": true, "warmupDays": 7, "maxPerHour": 80, "typingDelayMs": [800, 2500] }
 ```
 
-Not in shared middleware — specific to Baileys socket layer.
+### 4.6 Customer Memory
 
-### 4.5 Customer Memory
+| Channel | Memory dir | Trim cap | Phone normalization |
+|---------|-----------|----------|-------------------|
+| WhatsApp users | `memory/whatsapp-users/<e164>.md` | 50KB | Always E.164: strip leading 0, ensure +country code |
+| WhatsApp groups | `memory/whatsapp-groups/<groupId>.md` | 50KB | N/A |
+| Lark | None | N/A | N/A (internal) |
 
-| Channel | Memory dir | Trim cap |
-|---------|-----------|----------|
-| WhatsApp | `memory/whatsapp-users/<phone>.md` | 50KB (same as Zalo) |
-| WhatsApp groups | `memory/whatsapp-groups/<groupId>.md` | 50KB |
-| Lark | None (internal, no per-user tracking) | N/A |
+**Rename functions for channel-agnostic use:**
+- `appendPerCustomerSummaries()` → `appendCustomerSummary(channel, senderId, data)` (wrapper, calls existing Zalo path for backward compat)
+- `trimZaloMemoryFile()` → `trimCustomerMemoryFile(filePath, maxBytes)` (already channel-agnostic internally)
 
-Memory write/trim uses existing `appendPerCustomerSummaries()` + `trimZaloMemoryFile()` pattern, parameterized by channel.
+**Known limitation (v1):** Same customer on WhatsApp + Zalo = 2 separate memory files. Cross-channel identity merge is v3.0 scope (phone number matching + CEO tagging).
+
+### 4.7 Cron Delivery
+
+**v1: WhatsApp/Lark cron delivery NOT supported.** Crons deliver to Telegram (CEO) and Zalo (groups/users) only. `deliverCronResultToZalo()` and `sendTelegram()` stay unchanged.
+
+**v2 (future):** Add `deliverCronResultToChannel(channel, replyText, target, label)` abstraction that routes to the correct send function. Requires `whatsappTarget` field in custom-crons.json schema.
+
+### 4.8 CEO Notification Channel Attribution
+
+`sendCeoAlert()` messages to Telegram must include channel source:
+
+```
+[WhatsApp] Khách "Chị Lan" (+84901234567) hỏi giá sản phẩm
+[Lark] Nguyễn Văn A hỏi về quy trình
+```
+
+Escalation scanner output includes `[channel]` prefix. CEO knows which app to reply on.
+
+---
 
 ## 5. Dashboard UI
 
 ### 5.1 Channel Pages
 
-Two new pages in Kênh tab sidebar, cloned from Telegram pattern:
+Two new pages in Kênh tab. Dashboard renders from `CHANNELS` registry — not hardcoded HTML per channel.
 
 **page-whatsapp:**
-- Header: icon, title "WhatsApp", status pill (green/red/grey)
-- Connection card: "Kết nối" button → spawns `openclaw channels login --channel whatsapp` → QR modal → scan → restart gateway
-- Auto-install: first click runs `openclaw plugins install @openclaw/whatsapp` if not present
-- Config card: dmPolicy dropdown (open/allowlist/pairing), pause/resume button
-- Friends/contacts list (future — not v1)
+- Header: icon, "WhatsApp", status pill
+- Connection card: "Kết nối" → auto-install plugin if missing → QR modal → scan → gateway restart
+- Config: dmPolicy dropdown, pause/resume
+- Security badge: "Kênh khách hàng — bảo mật cấp cao"
 
 **page-lark:**
-- Header: icon, title "Lark", status pill
-- Connection card: "Kết nối" → `openclaw channels login --channel feishu` → QR modal
-- Config card: pause/resume only (no allowlist — internal)
-- Simpler than WhatsApp (no security controls needed)
+- Header: icon, "Lark", status pill
+- Connection card: "Kết nối" → QR modal → scan → gateway restart
+- Config: pause/resume only
+- Badge: "Kênh nội bộ"
 
 ### 5.2 Status Probes
 
-**`probeWhatsAppReady()`** — spawn `openclaw channels status --channel whatsapp --probe --json`, parse `ready` field. Fallback: check `~/.openclaw/oauth/whatsapp/default/creds.json` exists.
+**Primary probe (cheap, every tick):** Check config `channels.<id>.enabled` + session file exists.
 
-**`probeLarkReady()`** — spawn `openclaw channels status --channel feishu --probe --json`. Fallback: check feishu config in openclaw.json `channels.feishu.enabled === true`.
+**Deep probe (every 5th tick, ~4 min):** Spawn `openclaw channels status --channel <name> --probe --json` if CLI supports it. If not → primary probe only.
 
-Both registered in `startChannelStatusBroadcast()` for live status dots.
+Probes registered dynamically from `CHANNELS` registry in `startChannelStatusBroadcast()`. No hardcoded channel list.
 
-### 5.3 IPC Handlers (per channel)
+### 5.3 IPC + Preload
 
-| IPC | WhatsApp | Lark |
-|-----|----------|------|
-| `check-{ch}-ready` | probe | probe |
-| `connect-{ch}` | login + QR flow | login + QR flow |
-| `disconnect-{ch}` | remove session | remove session |
-| `get-{ch}-config` | read openclaw.json | read openclaw.json |
-| `save-{ch}-config` | write dmPolicy etc | write enabled |
-| `pause-{ch}` | file-based | file-based |
-| `resume-{ch}` | file-based | file-based |
-| `get-{ch}-pause-status` | read file | read file |
+8 generic handlers + 8 generic bridges (see Section 4.2). Zero per-channel code. Adding channel 5, 6, 7... = config object only.
 
-Total: 8 IPC handlers per channel = 16 new handlers.
-
-### 5.4 Preload Bridges
-
-8 bridges per channel = 16 new bridges. Naming: `checkWhatsAppReady()`, `connectWhatsApp()`, etc.
+---
 
 ## 6. Config Changes
 
-### ensureDefaultConfig() additions
+### ensureDefaultConfig()
 
 ```javascript
 // WhatsApp — only if plugin installed
@@ -193,7 +259,7 @@ if (pluginInstalled('@openclaw/whatsapp')) {
   if (!wa.allowFrom) { wa.allowFrom = []; changed = true; }
 }
 
-// Feishu/Lark — built-in, always available
+// Feishu/Lark — built-in
 if (!config.channels.feishu) config.channels.feishu = {};
 const feishu = config.channels.feishu;
 if (feishu.enabled === undefined) { feishu.enabled = false; changed = true; }
@@ -201,72 +267,96 @@ if (feishu.enabled === undefined) { feishu.enabled = false; changed = true; }
 
 ### AGENTS.md additions
 
-Add WhatsApp to security routing table:
+Add to "An toàn + Phân quyền kênh" section:
+
 ```
-**WhatsApp = CSKH** (same as Zalo). Command-block, output filter, allowlist. Memory per customer.
-**Lark = Nội bộ.** Full quyền như CEO Telegram.
+**WhatsApp = CSKH** (cùng quyền Zalo). Command-block, output filter, allowlist, memory per customer.
+KHÔNG exec, write_file, cron. Input-level blocked (COMMAND-BLOCK). Escalate CEO qua Telegram.
+Bot reply kèm [WhatsApp] prefix khi escalate để CEO biết kênh nào.
+
+**Lark = Nội bộ.** Full quyền như CEO Telegram. Không command-block, không output filter.
 ```
+
+Measured impact: +180 chars to AGENTS.md (current 26K → 26.2K). Acceptable.
+
+---
 
 ## 7. Dependencies
 
-| Package | Purpose | Size | License |
-|---------|---------|------|---------|
-| `@openclaw/whatsapp` | WhatsApp Baileys plugin | 85KB | Apache 2.0 |
-| `baileys-antiban` | Outbound rate limiting | ~15KB | MIT |
-| Feishu | Built-in openclaw | 0 (included) | N/A |
+| Package | Purpose | Size | Source | License |
+|---------|---------|------|--------|---------|
+| `@openclaw/whatsapp` | WhatsApp Baileys plugin | 85KB | npm (auto-install) | Apache 2.0 |
+| `baileys-antiban` | Outbound rate limiting | ~15KB | **Vendored** (pinned commit) | MIT |
+| Feishu | Built-in openclaw | 0 | Included | N/A |
 
-WhatsApp plugin installed on first connect via `openclaw plugins install`. Not bundled in EXE.
+`baileys-antiban` is vendored at `electron/vendor/baileys-antiban/` with pinned commit hash. Not installed via npm. Source audited for credential exfiltration.
+
+---
 
 ## 8. File Changes Summary
 
 | File | Changes |
 |------|---------|
-| `electron/lib/inbound-defense.js` | NEW — shared defense middleware |
-| `electron/hooks/inbound-defense/HOOK.md` | NEW — openclaw hook definition |
-| `electron/hooks/inbound-defense/handler.js` | NEW — hook handler |
-| `electron/lib/channels.js` | Add `probeWhatsAppReady()`, `probeLarkReady()`, register in broadcast |
+| `electron/lib/channel-registry.js` | NEW — channel config registry + generic IPC handlers |
+| `electron/lib/inbound-defense.js` | NEW — shared defense middleware (strategy pattern) |
+| `electron/hooks/inbound-defense/` | NEW — openclaw hook (or fork, based on spike) |
+| `electron/vendor/baileys-antiban/` | NEW — vendored rate limiter |
+| `electron/lib/channels.js` | Add `probeWhatsAppReady()`, `probeLarkReady()`, dynamic broadcast |
 | `electron/lib/config.js` | Add WhatsApp + Feishu to `ensureDefaultConfig()` |
-| `electron/lib/dashboard-ipc.js` | Add 16 IPC handlers |
-| `electron/preload.js` | Add 16 bridges |
-| `electron/ui/dashboard.html` | Add 2 page divs, 2 RAIL_GROUPS entries, QR modal, JS handlers |
-| `AGENTS.md` | Add WhatsApp/Lark channel security rules |
+| `electron/lib/dashboard-ipc.js` | Register generic channel IPC handlers from registry |
+| `electron/preload.js` | Add 8 generic channel bridges |
+| `electron/ui/dashboard.html` | Add 2 page divs, dynamic rendering from registry |
 | `electron/lib/workspace.js` | Seed `memory/whatsapp-users/`, `memory/whatsapp-groups/` |
+| `electron/lib/conversation.js` | Rename Zalo-specific memory functions to channel-agnostic |
+| `AGENTS.md` | Add WhatsApp/Lark channel security rules |
+
+---
 
 ## 9. Testing
 
-- Smoke: module load, IPC parity check (existing), hook file exists
-- Manual: connect WhatsApp via QR → send message → bot replies → verify defense filters
-- Manual: connect Lark via QR → send message → bot replies (no command block)
-- Security: WhatsApp customer sends "tạo cron" → command blocked
-- Security: WhatsApp bot reply contains file path → output filter blocks
+- Smoke: module load, IPC parity, hook/fork file exists, channel registry valid
+- Smoke: inbound-defense.js unit tests (systemMsg, commandBlock, dedup, botLoop per channel config)
+- Manual: connect WhatsApp QR → send msg → bot replies → defense filters active
+- Manual: connect Lark QR → send msg → bot replies (no command block)
+- Security: WhatsApp customer "tạo cron" → command blocked, response sanitized
+- Security: bot reply with file path → output filter blocks
+- Security: WhatsApp escalation → CEO gets `[WhatsApp]` prefix on Telegram
+- Scale: 4 channel probes run in <2s total (primary probe, not CLI spawn)
+
+---
 
 ## 10. Risks
 
 | Risk | Mitigation |
 |------|-----------|
-| WhatsApp ban from aggressive sending | `baileys-antiban` rate limiter + warm-up ramp. Pin exact version, verify source, vendor the ~15KB package. npm audit in CI. |
-| OpenClaw hook system undocumented | **Primary: spike test first.** Run `openclaw hooks list` + create test hook before committing. If hooks don't work → fallback to WhatsApp plugin fork (same pattern as modoro-zalo). |
-| QR flow doesn't work in Electron modal | Fallback: show instructions to run CLI in terminal |
-| Feishu requires enterprise admin approval | Document in setup guide — CEO needs Feishu admin access |
-| Probe CLI may not exist | `openclaw channels status --probe` may not be in 2026.4.14. Primary probe: check config `channels.whatsapp.enabled` + session file existence + gateway WS connection status. |
-| Phone number normalization | WhatsApp uses E.164 (`+84xxx`). Memory filenames must normalize to E.164 to prevent duplicates (`+84` vs `84` vs `0`). |
-| Disconnect cleanup | WhatsApp: delete `creds.json` + call Baileys logout + disable config. Lark: revoke token + disable config. Gateway queued replies for disconnected channel → drop with warning log. |
+| WhatsApp ban | `baileys-antiban` vendored, warm-up ramp, Gaussian jitter |
+| OpenClaw hooks don't work | **Spike first.** Fallback: WhatsApp plugin fork (modoro-whatsapp) |
+| QR flow in Electron | Fallback: CLI instructions in terminal |
+| Feishu admin approval | Setup guide documents requirement |
+| Phone normalization | E.164 mandatory, strip leading 0, validate format |
+| `baileys-antiban` supply chain | Vendored + audited, not npm installed |
+| Meta blocks Baileys | Contingency: WhatsApp Cloud API migration (official, paid) |
 
-### 10.1 Implementation Prerequisites
+### 10.1 Prerequisites (must complete before implementation)
 
-Before starting implementation:
-1. **Spike: OpenClaw hooks** — create a test hook at `~/.openclaw/hooks/test/`, verify `message:received` fires. If not → switch to fork approach.
-2. **Spike: WhatsApp QR** — run `openclaw channels login --channel whatsapp` manually, verify QR output format (text/image/URL) for Electron rendering.
-3. **Vendor audit: baileys-antiban** — verify source repo, pin exact commit hash, check for credential exfiltration patterns.
+1. **Spike: OpenClaw hooks** — create test hook, verify `message:received` fires. Decision: hooks (Path A) or fork (Path B).
+2. **Spike: WhatsApp QR** — run `openclaw channels login --channel whatsapp`, capture QR format.
+3. **Spike: Feishu QR** — run `openclaw channels login --channel feishu`, verify flow.
+4. **Audit: baileys-antiban** — read source, pin commit, check for exfil patterns, vendor into repo.
 
-### 10.2 Channel Status Broadcast Integration
+### 10.2 Known Limitations (v1)
 
-`startChannelStatusBroadcast()` in channels.js currently hardcodes `['telegram', 'zalo']`. Adding WhatsApp + Lark requires:
-- Add to `Promise.all` probe array
-- Add grace-period tracking maps per channel
-- Extend IPC payload shape: `{ telegram, zalo, whatsapp, lark }`
-- Dashboard `onChannelStatus` handler must render new dots
+- Cron delivery: Telegram + Zalo only. WhatsApp/Lark crons not supported.
+- Cross-channel identity: same customer on WhatsApp + Zalo = 2 separate memory files.
+- WhatsApp contacts list: not in v1 Dashboard (future).
+- Zalo migration to shared middleware: v3.0.
 
-### 10.3 Zalo Migration Note
+### 10.3 Scale Projection
 
-The shared middleware's `{ action, reason }` return shape differs from Zalo's early-return patches in inbound.ts. Migrating Zalo to the shared module is non-trivial (requires rewriting patch injection, not wrapping). This is explicitly a v3.0 effort.
+| Channels | IPC handlers | Probe time | Defense configs |
+|----------|-------------|------------|----------------|
+| 4 (current + WA + Lark) | 8 generic + 181 legacy | <2s | 2 objects |
+| 7 (+Discord, Line, Signal) | 8 generic + 181 legacy | <3s | 5 objects |
+| 10 | 8 generic + 181 legacy | <4s | 8 objects |
+
+Architecture holds at 10+ channels. Zero new IPC per channel. Defense = config object per channel.
