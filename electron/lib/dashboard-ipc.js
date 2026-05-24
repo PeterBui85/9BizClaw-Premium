@@ -2992,35 +2992,27 @@ ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
       // properties" rejection. openclaw reads `config.messages.inbound.debounceMs`.
       if (!cfg.messages) cfg.messages = {};
       if (!cfg.messages.inbound) cfg.messages.inbound = {};
+      const prev = cfg.messages.inbound.debounceMs;
       cfg.messages.inbound.debounceMs = clampedMs;
-      // Clean up per-channel messages if written by prior versions
-      for (const ck of ['telegram', 'modoro-zalo']) {
-        if (cfg.channels?.[ck]?.messages) { delete cfg.channels[ck].messages; }
-      }
+      // Do NOT clean up channels.telegram.messages here — deleting it
+      // changes the channels.telegram subtree, which triggers a Telegram
+      // channel hot restart via gateway config reloader. That tears down
+      // the Telegram bot handler mid-operation → messages lost → "hư".
+      // Legacy cleanup is handled by ensureDefaultConfig at boot (config.js line 650).
       writeOpenClawConfigIfChanged(cfgPath, cfg);
 
-      try {
-        const cliJs = (typeof findOpenClawCliJs === 'function') ? findOpenClawCliJs() : null;
-        const nodeBin = (typeof findNodeBin === 'function') ? findNodeBin() : null;
-        if (cliJs && nodeBin) {
-          const probe = require('child_process').spawnSync(nodeBin, [cliJs, '--help'], {
-            timeout: 4000, encoding: 'utf-8', shell: false
-          });
-          const stderr = String(probe.stderr || '') + String(probe.stdout || '');
-          if (probe.status !== 0 && /Config invalid|Unrecognized key/i.test(stderr)) {
-            try { healOpenClawConfigInline(stderr); } catch {}
-            const cfg2 = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-            if (cfg2?.channels?.[chanKey]?.messages?.inbound) {
-              delete cfg2.channels[chanKey].messages.inbound.debounceMs;
-              if (!cfg2.messages) cfg2.messages = {};
-              if (!cfg2.messages.inbound) cfg2.messages.inbound = {};
-              cfg2.messages.inbound.debounceMs = clampedMs;
-              writeOpenClawConfigIfChanged(cfgPath, cfg2);
-            }
-            return { success: true, ms: clampedMs, scope: 'global-fallback' };
-          }
-        }
-      } catch { /* non-fatal probe failure */ }
+      // Gateway captures debounceMs in a closure at startup — config reload
+      // plan for "messages" prefix is kind:"none" (no hot reload). Must
+      // restart gateway for the new value to take effect.
+      if (prev !== clampedMs) {
+        setTimeout(async () => {
+          try {
+            console.log('[debounce] restarting gateway to apply new debounceMs:', clampedMs);
+            await stopOpenClaw();
+            await startOpenClaw({ silent: true });
+          } catch (e) { console.error('[debounce] gateway restart failed:', e?.message); }
+        }, 1500);
+      }
 
       return { success: true, ms: clampedMs };
     });
