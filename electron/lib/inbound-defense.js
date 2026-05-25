@@ -76,8 +76,13 @@ function runInboundDefense(channelId, msg) {
       const alPath = path.join(ws, config.allowlistFile);
       if (fs.existsSync(alPath)) {
         const list = JSON.parse(fs.readFileSync(alPath, 'utf-8'));
-        if (Array.isArray(list) && list.length > 0 && !list.includes('*') && !list.includes(senderId)) {
-          return { action: 'drop', reason: 'not-in-allowlist' };
+        if (Array.isArray(list) && !list.includes('*')) {
+          if (list.length === 0 || list.includes('__NONE__')) {
+            return { action: 'drop', reason: 'allowlist-empty' };
+          }
+          if (!list.includes(senderId)) {
+            return { action: 'drop', reason: 'not-in-allowlist' };
+          }
         }
       }
     } catch {}

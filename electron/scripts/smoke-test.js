@@ -2605,9 +2605,9 @@ section('WhatsApp + Lark channel integration');
   try {
     const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
     const requiredHandlers = [
-      'channel-connect', 'channel-disconnect',
-      'channel-pause-status', 'channel-pause', 'channel-resume',
-      'check-channel-ready', 'get-channel-config', 'save-channel-config',
+      'channel:connect', 'channel:disconnect',
+      'channel:pause-status', 'channel:pause', 'channel:resume',
+      'channel:ready', 'channel:config:get', 'channel:config:save',
     ];
     const missingHandlers = requiredHandlers.filter(h => !ipcSrc.includes(`'${h}'`));
     if (missingHandlers.length > 0) {
@@ -2623,7 +2623,7 @@ section('WhatsApp + Lark channel integration');
     const requiredBridges = [
       'channelConnect', 'channelDisconnect',
       'channelPauseStatus', 'channelPause', 'channelResume',
-      'checkChannelReady', 'getChannelConfig', 'saveChannelConfig',
+      'channelReady', 'channelConfigGet', 'channelConfigSave',
     ];
     const missingBridges = requiredBridges.filter(b => !preloadSrc.includes(b));
     if (missingBridges.length > 0) {

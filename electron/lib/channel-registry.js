@@ -45,7 +45,7 @@ const CHANNELS = {
 
 function getChannel(key) { return CHANNELS[key] || null; }
 function listChannels() { return Object.values(CHANNELS); }
-function listNewChannels() { return Object.entries(CHANNELS).filter(([k]) => k === 'whatsapp' || k === 'lark'); }
+function listNewChannels() { return Object.entries(CHANNELS).filter(([k]) => k === 'whatsapp' || k === 'lark').map(([, v]) => v); }
 function getChannelByOpenClawId(ocId) { return Object.values(CHANNELS).find(c => c.id === ocId) || null; }
 
 module.exports = { CHANNELS, getChannel, listChannels, listNewChannels, getChannelByOpenClawId };
