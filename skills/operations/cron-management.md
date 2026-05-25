@@ -80,7 +80,19 @@ web_fetch http://127.0.0.1:20200/api/cron/create?label=Ảnh+sáng+nhóm&cronExp
 ```
 Bot sẽ tự: tạo ảnh → gửi ảnh thật (qua openzca msg image) → không bao giờ gửi đường dẫn file.
 
-**CẢNH BÁO: KHÔNG BAO GIỜ tạo cron text (`content`) chứa đường dẫn ảnh** như `brand-assets/generated/img_xxx.png`. Kết quả: gửi TEXT đường dẫn cho khách, không phải ảnh. Muốn gửi ảnh → agent mode + prompt mô tả ảnh.
+**GỬI ẢNH CÓ SẴN theo lịch (CEO gửi ảnh + yêu cầu gửi lại mỗi ngày):**
+Khi CEO gửi ảnh trên Telegram và yêu cầu tạo cron gửi ảnh đó:
+1. Lưu ảnh vào media library: `web_fetch http://127.0.0.1:20200/api/media/upload?filePath=<đường dẫn ảnh CEO gửi>&visibility=public&type=brand`
+   Response trả `mediaId` (VD: `"mediaId":"img_abc123"`)
+2. Tạo cron agent mode với prompt tham chiếu mediaId:
+```
+web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo+lịch+đào+tạo&cronExpr=0+8+*+*+1-4&groupId=123456&groupName=Tên+nhóm&mode=agent&prompt=[WORKFLOW]+Gửi+ảnh+mediaId+img_abc123+kèm+caption+"Nội+dung+kèm"+vào+nhóm+Tên+nhóm.+Dùng+web_fetch+/api/zalo/send-media?mediaId=img_abc123%26groupId=123456%26caption=Nội+dung
+```
+3. Khi cron fire → agent gọi `/api/zalo/send-media?mediaId=img_abc123&groupId=123456&caption=...` → ảnh thật được gửi.
+
+**Lưu ý:** Ảnh CEO gửi qua Telegram nằm trong thư mục media của gateway session. Dùng `read_file` hoặc `list_files` tìm ảnh gần nhất trong session, rồi `web_fetch /api/media/upload` để lưu vĩnh viễn.
+
+**CẢNH BÁO: KHÔNG BAO GIỜ tạo cron text (`content`) chứa đường dẫn ảnh** như `brand-assets/generated/img_xxx.png`. Kết quả: gửi TEXT đường dẫn cho khách, không phải ảnh. Muốn gửi ảnh → agent mode + prompt mô tả ảnh hoặc tham chiếu mediaId.
 
 ## Bước 5: Xác nhận cron đã tạo (BẮT BUỘC)
 
