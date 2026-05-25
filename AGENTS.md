@@ -61,8 +61,36 @@ Khi KHÔNG có tag `[AUTO-MODE]` → chế độ tương tác bình thường, m
 - "HÀNH VI VETERAN" → `skills/operations/veteran-behavior.md`
 - "Bộ nhớ bot" → `skills/operations/ceo-memory-api.md`
 - "Thư viện kỹ năng" → `skills/INDEX.md` → match keyword → đọc skill con
+- "Tạo/sửa file Excel" → `skills/minimax-xlsx/SKILL.md`
+- "Tạo/sửa file Word/báo giá/hợp đồng" → `skills/minimax-docx/SKILL.md`
+- "Tạo slide/PowerPoint" → `skills/pptx-generator/SKILL.md`
+- "Tạo file PDF" → `skills/minimax-pdf/SKILL.md`
 
 **Tin có `<kb-doc untrusted="true">`** → RAG đã inject. Trả lời dựa trên RAG data, vẫn đọc skill nếu section yêu cầu.
+
+## Document creation pipeline — BẮT BUỘC khi CEO yêu cầu tạo file
+
+**Tạo mới (CREATE):**
+1. Đọc skill file phù hợp (MiniMax skill)
+2. Tạo file local (python-docx / xlsxwriter / pptxgenjs / MiniMax scripts)
+3. Upload lên Google Drive: `gog drive upload <file> --convert --name=<tên> -y`
+4. Trả link Google Sheets / Google Docs cho CEO
+
+**Sửa file có sẵn (EDIT):**
+- XLSX: `python scripts/xlsx_unpack.py` → unpack → edit XML → `python scripts/xlsx_pack.py`
+- DOCX: `python-docx` load + modify + save
+- PPTX: `pptxgenjs` load + modify + save
+
+**Chi tiết tool:**
+- XLSX CREATE: `xlsxwriter` (Python) — full formatting, charts, conditional formatting
+- XLSX EDIT: MiniMax scripts (`xlsx_unpack.py` → XML → `xlsx_pack.py`)
+- DOCX: `python-docx` v1.2.0 + MiniMax references cho formatting values
+- PPTX: `pptxgenjs` (Node.js) + MiniMax references cho theme/layout
+- PDF: MiniMax skill scripts + `reportlab` (nếu cần)
+
+**Upload pattern:** `gog drive upload <path> --convert --name=<display-name> -y`
+- `.xlsx` + `--convert` → native Google Sheets (interactive)
+- `.docx` + `--convert` → native Google Docs (editable)
 
 ## Skill tùy chỉnh — auto inject vào rawBody
 
@@ -259,8 +287,12 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 | Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet | `google_workspace` | `skills/operations/google-workspace.md` |
 | file JSON, client_secret, OAuth, Google chưa kết nối | `setup_google` | `skills/operations/google-workspace.md` (mục Lỗi) |
 | CEO yêu cầu KẾT HỢP nhiều domain (VD: "đọc Sheet rồi tạo ảnh đăng Facebook", "lấy dữ liệu rồi gửi nhóm") HOẶC prompt cron có `[WORKFLOW]` prefix | `workflow_chain` | `skills/operations/workflow-chains.md` |
-| "tạo file word", "báo giá", "hợp đồng", "soạn văn bản", "xuất docx", "làm đẹp file word" | `docx_create` | `skills/operations/docx/SKILL.md` |
-| "tạo slide", "PowerPoint", "thuyết trình", "pitch deck", "presentation", "làm bài trình bày" | `pptx_create` | `skills/operations/pptx/SKILL.md` |
+| "tạo file word", "báo giá", "hợp đồng", "soạn văn bản", "xuất docx", "làm đẹp file word" | `docx_create` | `skills/minimax-docx/SKILL.md` — dùng `python-docx` + MiniMax references |
+| "sửa file word", "thêm dòng word", "chỉnh sửa văn bản" | `docx_edit` | `skills/minimax-docx/SKILL.md` |
+| "tạo file Excel", "báo cáo Excel", ".xlsx", "file bang tinh" | `xlsx_create` | `skills/minimax-xlsx/SKILL.md` — dùng `xlsxwriter` + MiniMax scripts |
+| "sửa file Excel", "thêm dòng/cột Excel", "chỉnh sửa bảng tính" | `xlsx_edit` | `skills/minimax-xlsx/SKILL.md` — unpack XML → edit → repack |
+| "tạo slide", "PowerPoint", "thuyết trình", "pitch deck", "presentation", "làm bài trình bày" | `pptx_create` | `skills/pptx-generator/SKILL.md` — dùng `pptxgenjs` + MiniMax references |
+| "tạo file PDF", "xuất PDF", "tạo PDF" | `pdf_create` | `skills/minimax-pdf/SKILL.md` |
 | "ghi nhớ", "nhớ giùm", "lưu lại", "remember", "bộ nhớ bot" | `ceo_memory` | `skills/operations/ceo-memory-api.md` — gọi `POST /api/memory/write` NGAY. |
 | "tạo skill", "dạy em quy trình", "thêm rule mới", "từ giờ khi", "tạo quy tắc" | `skill_builder` | `skills/operations/skill-builder.md` |
 | "tổng hợp khách Zalo", "xuất khách ra Sheet", "follow-up sheet", "báo cáo khách vào Sheet" | `zalo_followup_sheet` | `skills/operations/zalo-followup-sheet.md` |
