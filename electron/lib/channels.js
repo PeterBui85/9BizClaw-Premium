@@ -1825,6 +1825,10 @@ async function broadcastChannelStatusOnce() {
     if (tgFresh || zlFresh) {
       console.log(`[channel-status] skip probe (marker fresh) telegram=${!!tgFresh} zalo=${!!zlFresh}`);
     }
+    let whatsappStatus = { ready: false, reason: 'not-configured' };
+    let larkStatus = { ready: false, reason: 'not-configured' };
+    try { whatsappStatus = await probeChannelReady('whatsapp'); } catch {}
+    try { larkStatus = await probeChannelReady('lark'); } catch {}
     // Grace period: if a channel was previously ready and just failed, keep
     // reporting ready until _CHANNEL_FAIL_GRACE consecutive failures. Prevents
     // the dot from flashing red on brief network blips (a few seconds).
@@ -1847,6 +1851,8 @@ async function broadcastChannelStatusOnce() {
     ctx.mainWindow.webContents.send('channel-status', {
       telegram: { ...smoothed.telegram, paused: isChannelPaused('telegram') },
       zalo: { ...smoothed.zalo, paused: isChannelPaused('zalo') },
+      whatsapp: whatsappStatus,
+      lark: larkStatus,
       checkedAt: new Date().toISOString(),
     });
 
@@ -2025,6 +2031,116 @@ function cleanupChannelTimers() {
   }
 }
 
+// --- Generic channel probes (WhatsApp, Lark, future) ---
+
+async function probeChannelReady(channelKey) {
+  const { getChannel } = require('./channel-registry');
+  const def = getChannel(channelKey);
+  if (!def) return { ready: false, error: 'unknown channel' };
+
+  const pause = getChannelPauseStatus(channelKey);
+  if (pause?.paused) return { ready: false, paused: true, reason: 'paused', resumeAt: pause.resumeAt };
+
+  try {
+    const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return { ready: false, error: 'config not found' };
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const chCfg = cfg.channels?.[def.id];
+    if (!chCfg?.enabled) return { ready: false, reason: 'disabled' };
+  } catch { return { ready: false, error: 'config read failed' }; }
+
+  try {
+    const { findNodeBin, findOpenClawCliJs } = require('./boot');
+    const nodeBin = findNodeBin();
+    const cliJs = findOpenClawCliJs();
+    if (nodeBin && cliJs) {
+      const { spawnSync } = require('child_process');
+      const r = spawnSync(nodeBin, [cliJs, 'channels', 'status', '--channel', def.loginChannel || def.id, '--probe', '--json'], {
+        timeout: 8000, encoding: 'utf-8', shell: false,
+      });
+      if (r.status === 0 && r.stdout) {
+        try {
+          const status = JSON.parse(r.stdout);
+          const acct = status?.channelAccounts?.[def.id]?.[0] || status?.channels?.[def.id];
+          if (acct) return { ready: acct.ready !== false, ...acct };
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return { ready: true, reason: 'config-enabled' };
+}
+
+async function connectNewChannel(channelKey) {
+  const { getChannel } = require('./channel-registry');
+  const def = getChannel(channelKey);
+  if (!def || !def.loginChannel) return { success: false, error: 'no login for this channel' };
+
+  if (def.pluginPkg) {
+    try {
+      const { findNodeBin, findOpenClawCliJs } = require('./boot');
+      const nodeBin = findNodeBin();
+      const cliJs = findOpenClawCliJs();
+      if (nodeBin && cliJs) {
+        console.log(`[channel] installing plugin ${def.pluginPkg}...`);
+        const { spawnSync } = require('child_process');
+        const r = spawnSync(nodeBin, [cliJs, 'plugins', 'install', def.pluginPkg], {
+          timeout: 60000, encoding: 'utf-8', shell: false,
+        });
+        if (r.status !== 0) console.warn(`[channel] plugin install warning:`, (r.stderr || '').slice(0, 200));
+      }
+    } catch (e) { console.warn(`[channel] plugin install error:`, e?.message); }
+  }
+
+  try {
+    const { findNodeBin, findOpenClawCliJs } = require('./boot');
+    const nodeBin = findNodeBin();
+    const cliJs = findOpenClawCliJs();
+    if (!nodeBin || !cliJs) return { success: false, error: 'openclaw CLI not found' };
+
+    const { spawn } = require('child_process');
+    return new Promise((resolve) => {
+      let stdout = '';
+      let stderr = '';
+      const proc = spawn(nodeBin, [cliJs, 'channels', 'login', '--channel', def.loginChannel], {
+        timeout: 120000, shell: false,
+      });
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, output: stdout.slice(0, 2000) });
+        } else {
+          resolve({ success: false, error: (stderr || stdout).slice(0, 500), code });
+        }
+      });
+      proc.on('error', (e) => resolve({ success: false, error: e?.message }));
+    });
+  } catch (e) { return { success: false, error: e?.message }; }
+}
+
+async function disconnectChannel(channelKey) {
+  const { getChannel } = require('./channel-registry');
+  const def = getChannel(channelKey);
+  if (!def) return { success: false, error: 'unknown channel' };
+
+  try {
+    const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (cfg.channels?.[def.id]) {
+      cfg.channels[def.id].enabled = false;
+      const { writeOpenClawConfigIfChanged } = require('./config');
+      writeOpenClawConfigIfChanged(cfgPath, cfg);
+    }
+    try {
+      const { stopOpenClaw, startOpenClaw } = require('./gateway');
+      await stopOpenClaw();
+      await startOpenClaw({ silent: true });
+    } catch {}
+    return { success: true };
+  } catch (e) { return { success: false, error: e?.message }; }
+}
+
 module.exports = {
   // Config
   getStickyChatIdPath, persistStickyChatId, loadStickyChatId,
@@ -2041,6 +2157,7 @@ module.exports = {
   isZaloListenerAlive, getReadyGateState,
   finalizeTelegramReadyProbe, finalizeZaloReadyProbe,
   probeTelegramReady, findOpenzcaListenerPid, probeZaloReady, resetGatewayZaloDiag,
+  probeChannelReady, connectNewChannel, disconnectChannel,
   // Broadcast
   broadcastChannelStatusOnce, startChannelStatusBroadcast,
   // Telegram commands
