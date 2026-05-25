@@ -557,12 +557,32 @@ function trimZaloMemoryFile(filePath, maxBytes) {
   }
 }
 
+function trimCustomerMemoryFile(filePath, maxBytes = 50 * 1024) {
+  return trimZaloMemoryFile(filePath, maxBytes);
+}
+
+async function appendCustomerSummary(channel, senderId, data) {
+  const dirMap = { zalo: 'zalo-users', whatsapp: 'whatsapp-users' };
+  const dir = dirMap[channel] || channel + '-users';
+  const ws = getWorkspace();
+  if (!ws) return;
+  const memDir = path.join(ws, 'memory', dir);
+  try { fs.mkdirSync(memDir, { recursive: true }); } catch {}
+  const filePath = path.join(memDir, senderId + '.md');
+  try {
+    fs.appendFileSync(filePath, '\n' + data + '\n', 'utf-8');
+    trimCustomerMemoryFile(filePath);
+  } catch (e) { console.error('[memory] append error:', e?.message); }
+}
+
 module.exports = {
   extractConversationHistoryRaw,
   extractConversationHistory,
   writeDailyMemoryJournal,
   appendPerCustomerSummaries,
   trimZaloMemoryFile,
+  trimCustomerMemoryFile,
+  appendCustomerSummary,
   withMemoryFileLock: _withMemoryFileLock,
   setMemoryWriteNotifyCeo,
 };
