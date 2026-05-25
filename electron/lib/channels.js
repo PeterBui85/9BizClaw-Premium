@@ -49,7 +49,9 @@ function clearCachedZcaBin() { _cachedZcaBin = null; } // called on stopZalo / a
  * @param {string} text - Alert message text
  * @returns {Promise<boolean>} True if delivered via Telegram
  */
-async function sendCeoAlert(text) {
+async function sendCeoAlert(text, { channel } = {}) {
+  const prefix = channel ? `[${channel}] ` : '';
+  text = prefix + text;
   const opts = { skipFilter: true, skipPauseCheck: true };
   let delivered = false;
   try {

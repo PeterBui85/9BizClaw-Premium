@@ -58,7 +58,7 @@ async function processEscalationQueue() {
         parts.push(`\n${vnTime} · ID: ${entry.to}`);
         const alertMsg = parts.join('');
 
-        const alertOk = await sendCeoAlert(alertMsg);
+        const alertOk = await sendCeoAlert(alertMsg, { channel: entry.channel || 'Zalo' });
         if (alertOk) {
           try { auditLog('escalation_forwarded', { to: entry.to, trigger: entry.trigger }); } catch {}
           console.log('[escalation] Forwarded to CEO:', entry.trigger, 'for', customerName);
