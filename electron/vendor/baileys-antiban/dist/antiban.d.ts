@@ -1,0 +1,171 @@
+/**
+ * AntiBan — Main orchestrator combining rate limiting, warm-up, and health monitoring
+ *
+ * Usage:
+ *   import { AntiBan } from 'baileys-antiban';
+ *   const antiban = new AntiBan();
+ *
+ *   // Before sending a message:
+ *   const result = await antiban.beforeSend(recipient, content);
+ *   if (result.allowed) {
+ *     await new Promise(r => setTimeout(r, result.delayMs));
+ *     await sock.sendMessage(recipient, { text: content });
+ *     antiban.afterSend(recipient, content);
+ *   }
+ */
+import { type RateLimiterConfig, type RateLimiterStats } from './rateLimiter.js';
+import { type WarmUpConfig, type WarmUpState, type WarmUpStatus } from './warmup.js';
+import { type HealthMonitorConfig, type HealthStatus } from './health.js';
+import { TimelockGuard, type TimelockGuardConfig } from './timelockGuard.js';
+import { ReplyRatioGuard, type ReplyRatioConfig, type ReplyRatioStats } from './replyRatio.js';
+import { ContactGraphWarmer, type ContactGraphConfig, type ContactGraphStats } from './contactGraph.js';
+import { PresenceChoreographer, type PresenceChoreographerConfig, type PresenceChoreographerStats } from './presenceChoreographer.js';
+import { RetryReasonTracker, type RetryTrackerConfig, type RetryStats } from './retryTracker.js';
+import { PostReconnectThrottle, type ReconnectThrottleConfig, type ReconnectThrottleStats } from './reconnectThrottle.js';
+import { LidResolver, type LidResolverConfig, type LidResolverStats } from './lidResolver.js';
+import { JidCanonicalizer, type JidCanonicalizerConfig, type JidCanonicalizerStats } from './jidCanonicalizer.js';
+import { SessionHealthMonitor, type SessionHealthStats } from './sessionStability.js';
+import { type AntiBanInput, type ResolvedConfig } from './presets.js';
+export interface AntiBanConfigLegacy {
+    rateLimiter?: Partial<RateLimiterConfig>;
+    warmUp?: Partial<WarmUpConfig>;
+    health?: Partial<HealthMonitorConfig>;
+    timelock?: Partial<TimelockGuardConfig>;
+    replyRatio?: Partial<ReplyRatioConfig>;
+    contactGraph?: Partial<ContactGraphConfig>;
+    presence?: Partial<PresenceChoreographerConfig>;
+    retryTracker?: Partial<RetryTrackerConfig>;
+    reconnectThrottle?: Partial<ReconnectThrottleConfig>;
+    lidResolver?: LidResolverConfig;
+    jidCanonicalizer?: JidCanonicalizerConfig;
+    sessionStability?: {
+        enabled: boolean;
+        canonicalJidNormalization?: boolean;
+        healthMonitoring?: boolean;
+        badMacThreshold?: number;
+        badMacWindowMs?: number;
+    };
+    logging?: boolean;
+}
+export type AntiBanConfig = AntiBanInput | AntiBanConfigLegacy;
+export interface SendDecision {
+    allowed: boolean;
+    delayMs: number;
+    reason?: string;
+    health: HealthStatus;
+    warmUpDay?: number;
+}
+export interface AntiBanStats {
+    messagesAllowed: number;
+    messagesBlocked: number;
+    totalDelayMs: number;
+    health: HealthStatus;
+    warmUp: WarmUpStatus;
+    rateLimiter: RateLimiterStats;
+    replyRatio?: ReplyRatioStats;
+    contactGraph?: ContactGraphStats;
+    presence?: PresenceChoreographerStats;
+    retryTracker?: RetryStats | null;
+    reconnectThrottle?: ReconnectThrottleStats | null;
+    lidResolver?: LidResolverStats | null;
+    jidCanonicalizer?: JidCanonicalizerStats | null;
+    sessionStability?: SessionHealthStats | null;
+}
+export declare class AntiBan {
+    private rateLimiter;
+    private warmUp;
+    private health;
+    private timelockGuard;
+    private replyRatioGuard;
+    private contactGraphWarmer;
+    private presenceChoreographer;
+    private retryTrackerModule;
+    private reconnectThrottleModule;
+    private lidResolverModule;
+    private jidCanonicalizerModule;
+    private sessionStabilityMonitor;
+    private stateManager;
+    private resolvedConfig;
+    private logging;
+    private stats;
+    constructor(input?: AntiBanInput | AntiBanConfigLegacy, warmUpStateArg?: WarmUpState);
+    /**
+     * Check if a message can be sent and get required delay.
+     * Call this BEFORE every sendMessage().
+     */
+    beforeSend(recipient: string, content: string): Promise<SendDecision>;
+    /**
+     * Record a successfully sent message.
+     * Call this AFTER every successful sendMessage().
+     */
+    afterSend(recipient: string, content: string): void;
+    /**
+     * Record a failed message send
+     */
+    afterSendFailed(error?: string): void;
+    /**
+     * Record a disconnection (call from connection.update handler)
+     */
+    onDisconnect(reason: string | number): void;
+    /**
+     * Record a successful reconnection
+     */
+    onReconnect(): void;
+    /**
+     * Handle incoming message — record in reply ratio + contact graph.
+     * Returns suggested reply if reply ratio suggests auto-reply.
+     */
+    onIncomingMessage(jid: string, msgText?: string): {
+        shouldReply: boolean;
+        suggestedText?: string;
+    };
+    /**
+     * Get the resolved configuration
+     */
+    getConfig(): ResolvedConfig;
+    /**
+     * Get comprehensive stats
+     */
+    getStats(): AntiBanStats;
+    /** Get the timelock guard for direct access */
+    get timelock(): TimelockGuard;
+    /** Get the reply ratio guard for direct access */
+    get replyRatio(): ReplyRatioGuard;
+    /** Get the contact graph warmer for direct access */
+    get contactGraph(): ContactGraphWarmer;
+    /** Get the presence choreographer for direct access */
+    get presence(): PresenceChoreographer;
+    /** Get the retry tracker for direct access */
+    get retryTracker(): RetryReasonTracker;
+    /** Get the reconnect throttle for direct access */
+    get reconnectThrottle(): PostReconnectThrottle;
+    /** Get the LID resolver for direct access */
+    get lidResolver(): LidResolver | null;
+    /** Get the JID canonicalizer for direct access */
+    get jidCanonicalizer(): JidCanonicalizer | null;
+    /** Get the session stability monitor for direct access */
+    get sessionStability(): SessionHealthMonitor | null;
+    /**
+     * Export warm-up state for persistence between restarts
+     */
+    exportWarmUpState(): WarmUpState;
+    /**
+     * Force pause all sending
+     */
+    pause(): void;
+    /**
+     * Resume sending
+     */
+    resume(): void;
+    /**
+     * Reset everything (use after a ban period)
+     */
+    reset(): void;
+    private persistStateDebounced;
+    private persistStateImmediate;
+    /**
+     * Clean up all timers and resources.
+     * Call this when disposing of the AntiBan instance or when the socket closes.
+     */
+    destroy(): void;
+}

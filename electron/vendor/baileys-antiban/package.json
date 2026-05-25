@@ -1,0 +1,104 @@
+{
+  "name": "baileys-antiban",
+  "version": "3.9.0",
+  "description": "Anti-ban middleware for Baileys WhatsApp bots. Rate limiting, warmup, health monitor, LID resolver, disconnect classifier. Free Whapi.Cloud alternative.",
+  "main": "dist/cjs/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "scripts": {
+    "build": "tsc && tsc -p tsconfig.cjs.json && node scripts/add-cjs-package.cjs",
+    "test": "npx tsx tests/manual-test.ts",
+    "test:check": "tsc --noEmit && npm test",
+    "prepublishOnly": "npm run build"
+  },
+  "bin": {
+    "baileys-antiban": "dist/cli.js"
+  },
+  "keywords": [
+    "baileys",
+    "baileyrs",
+    "whatsapp",
+    "anti-ban",
+    "rate-limit",
+    "middleware",
+    "whatsapp-bot",
+    "bot-protection",
+    "whatsapp-api",
+    "nodejs",
+    "transport-agnostic",
+    "whapi-alternative",
+    "whatsapp-ban",
+    "baileys-middleware",
+    "warmup",
+    "session-health",
+    "lid-resolver",
+    "disconnect-classifier",
+    "gaussian-jitter",
+    "whatsapp-automation",
+    "typescript",
+    "self-hosted",
+    "free",
+    "open-source"
+  ],
+  "author": "Kobus Wentzel <kobie@pop.co.za>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kobie3717/baileys-antiban.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kobie3717/baileys-antiban/issues"
+  },
+  "homepage": "https://github.com/kobie3717/baileys-antiban#readme",
+  "peerDependencies": {
+    "@oxidezap/baileyrs": ">=0.0.8",
+    "baileys": ">=6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "baileys": {
+      "optional": true
+    },
+    "@oxidezap/baileyrs": {
+      "optional": true
+    },
+    "socks-proxy-agent": {
+      "optional": true
+    },
+    "http-proxy-agent": {
+      "optional": true
+    },
+    "https-proxy-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@whiskeysockets/baileys": "7.0.0-rc12",
+    "baileys": "github:WhiskeySockets/Baileys#dfad98f815feb771cc561f32707a00c6e085b1f1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "http-proxy-agent": "^9.0.0",
+    "https-proxy-agent": "^9.0.0",
+    "socks-proxy-agent": "^10.0.0"
+  }
+}
