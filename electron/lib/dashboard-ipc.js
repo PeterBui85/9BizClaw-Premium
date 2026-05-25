@@ -5736,7 +5736,12 @@ ipcMain.handle('download-and-install-update', async () => {
         const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
         if (!cfg.channels) cfg.channels = {};
         if (!cfg.channels[def.id]) cfg.channels[def.id] = {};
-        Object.assign(cfg.channels[def.id], config);
+        const ALLOWED_FIELDS = ['enabled', 'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom'];
+        for (const key of Object.keys(config)) {
+          if (ALLOWED_FIELDS.includes(key)) {
+            cfg.channels[def.id][key] = config[key];
+          }
+        }
         writeOpenClawConfigIfChanged(cfgPath, cfg);
         return { success: true };
       });

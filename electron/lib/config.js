@@ -703,9 +703,10 @@ async function ensureDefaultConfig() {
       }
     } catch {}
 
-    // Feishu/Lark — built-in, always available
-    if (!config.channels.feishu) { config.channels.feishu = {}; changed = true; }
-    {
+    // Feishu/Lark — only heal if openclaw already knows about it (config exists or plugin present)
+    const feishuPluginDir = path.join(ctx.HOME, '.openclaw', 'extensions', 'feishu');
+    if (config.channels?.feishu || fs.existsSync(feishuPluginDir)) {
+      if (!config.channels.feishu) { config.channels.feishu = {}; changed = true; }
       const feishu = config.channels.feishu;
       if (feishu.enabled === undefined) { feishu.enabled = false; changed = true; }
     }

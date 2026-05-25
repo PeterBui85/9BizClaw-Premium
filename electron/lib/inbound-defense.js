@@ -57,7 +57,7 @@ function _isBotLikeMessage(body) {
   const lower = body.toLowerCase().trim();
   if (BOT_PREFIXES.some(p => lower.startsWith(p))) return true;
   if (BOT_TEMPLATE_RE.test(body)) return true;
-  if (!/[tôi|tao|mình|em|anh|chị]/i.test(body) && body.length > 100) return true;
+  if (!/(?:tôi|tao|mình|em|anh|chị)/i.test(body) && body.length > 100) return true;
   return false;
 }
 
