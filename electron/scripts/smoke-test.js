@@ -2395,7 +2395,7 @@ section('WhatsApp + Lark channel integration');
       pass('channel-registry CHANNELS has 4 entries');
     }
     // 3: each channel has required fields
-    const requiredFields = ['id', 'label', 'icon', 'role', 'hasPause'];
+    const requiredFields = ['key', 'id', 'label', 'icon', 'role', 'hasPause'];
     if (channels) {
       let allFieldsOk = true;
       for (const [id, ch] of Object.entries(channels)) {
@@ -2416,11 +2416,11 @@ section('WhatsApp + Lark channel integration');
       if (ne === null || ne === undefined) pass("getChannel('nonexistent') returns null");
       else fail("getChannel('nonexistent')", `expected null, got ${JSON.stringify(ne)}`);
     }
-    // 6: getChannelByOpenClawId('feishu') returns lark
+    // 6: getChannelByOpenClawId('feishu') returns lark (key='lark', id='feishu')
     if (typeof registry.getChannelByOpenClawId === 'function') {
       const lark = registry.getChannelByOpenClawId('feishu');
-      if (lark && lark.id === 'lark') pass("getChannelByOpenClawId('feishu') returns lark");
-      else fail("getChannelByOpenClawId('feishu')", `expected lark, got ${lark ? lark.id : 'null'}`);
+      if (lark && lark.key === 'lark' && lark.id === 'feishu') pass("getChannelByOpenClawId('feishu') returns lark (key='lark', id='feishu')");
+      else fail("getChannelByOpenClawId('feishu')", `expected key='lark' id='feishu', got key=${lark ? lark.key : 'null'} id=${lark ? lark.id : 'null'}`);
     } else { fail("getChannelByOpenClawId", 'function not exported'); }
     // 7: getChannelByOpenClawId('garbage') returns null/undefined
     if (typeof registry.getChannelByOpenClawId === 'function') {
@@ -2428,12 +2428,12 @@ section('WhatsApp + Lark channel integration');
       if (g === null || g === undefined) pass("getChannelByOpenClawId('garbage') returns null");
       else fail("getChannelByOpenClawId('garbage')", `expected null, got ${JSON.stringify(g)}`);
     }
-    // 8: listNewChannels returns exactly whatsapp + lark
+    // 8: listNewChannels returns exactly whatsapp + lark (by key)
     if (typeof registry.listNewChannels === 'function') {
       const nc = registry.listNewChannels();
-      const ids = nc.map(c => c.id).sort();
-      if (ids.length === 2 && ids[0] === 'lark' && ids[1] === 'whatsapp') pass('listNewChannels returns [lark, whatsapp]');
-      else fail('listNewChannels', `expected [lark, whatsapp], got [${ids.join(', ')}]`);
+      const keys = nc.map(c => c.key).sort();
+      if (keys.length === 2 && keys[0] === 'lark' && keys[1] === 'whatsapp') pass('listNewChannels returns [lark, whatsapp] (by key)');
+      else fail('listNewChannels', `expected keys [lark, whatsapp], got [${keys.join(', ')}]`);
     } else { fail('listNewChannels', 'function not exported'); }
     // 9: WhatsApp role=customer, Lark role=internal
     if (channels) {

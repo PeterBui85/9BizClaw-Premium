@@ -1,7 +1,13 @@
 'use strict';
 
+// Each channel entry has two identity fields:
+//   key   — the lookup key used by 9BizClaw internally (matches the CHANNELS object key)
+//   id    — the openclaw plugin name used in openclaw.json channels.* config
+// These differ for channels where the plugin name doesn't match our display name
+// (e.g. key='lark' but id='feishu' because the openclaw plugin is named 'feishu').
 const CHANNELS = {
   telegram: {
+    key: 'telegram',
     id: 'telegram',
     label: 'Telegram',
     icon: 'brand-telegram',
@@ -12,6 +18,7 @@ const CHANNELS = {
     pluginPkg: null,
   },
   zalo: {
+    key: 'zalo',
     id: 'modoro-zalo',
     label: 'Zalo',
     icon: 'brand-zalo',
@@ -22,6 +29,7 @@ const CHANNELS = {
     pluginPkg: null,
   },
   whatsapp: {
+    key: 'whatsapp',
     id: 'whatsapp',
     label: 'WhatsApp',
     icon: 'brand-whatsapp',
@@ -32,6 +40,7 @@ const CHANNELS = {
     pluginPkg: '@openclaw/whatsapp',
   },
   lark: {
+    key: 'lark',
     id: 'feishu',
     label: 'Lark',
     icon: 'brand-lark',

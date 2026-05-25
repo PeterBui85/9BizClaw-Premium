@@ -948,6 +948,11 @@ async function ensureDefaultConfig() {
         }
         console.log('[config] installed inbound-defense hook');
       }
+      // Write lib path so the hook can find inbound-defense.js in packaged app
+      if (fs.existsSync(hookDir)) {
+        const libPathFile = path.join(hookDir, '.lib-path');
+        fs.writeFileSync(libPathFile, path.join(__dirname), 'utf-8');
+      }
     } catch (e) { console.warn('[config] hook install error:', e?.message); }
 
     // Create required dirs

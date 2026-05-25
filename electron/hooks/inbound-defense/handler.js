@@ -4,7 +4,13 @@ const path = require('path');
 module.exports = async function handler(event, context) {
   let defense;
   try {
-    const libPath = process.env.MODORO_LIB_PATH || path.join(__dirname, '..', '..', 'lib');
+    let libPath;
+    try {
+      const libPathFile = path.join(__dirname, '.lib-path');
+      libPath = require('fs').readFileSync(libPathFile, 'utf-8').trim();
+    } catch {
+      libPath = process.env.MODORO_LIB_PATH || path.join(__dirname, '..', '..', 'lib');
+    }
     defense = require(path.join(libPath, 'inbound-defense'));
   } catch {
     return;
