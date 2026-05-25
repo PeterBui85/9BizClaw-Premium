@@ -301,4 +301,14 @@ contextBridge.exposeInMainWorld('claw', {
   restoreBackupPreview: (filePath, password) => ipcRenderer.invoke('restore-backup-preview', { filePath, password }),
   restoreBackupApply: (filePath, password) => ipcRenderer.invoke('restore-backup-apply', { filePath, password }),
   openBackupFileDialog: () => ipcRenderer.invoke('open-backup-file-dialog'),
+
+  // Generic channel API (WhatsApp, Lark, future)
+  channelReady: (ch) => ipcRenderer.invoke('channel:ready', { ch }),
+  channelConnect: (ch) => ipcRenderer.invoke('channel:connect', { ch }),
+  channelDisconnect: (ch) => ipcRenderer.invoke('channel:disconnect', { ch }),
+  channelConfigGet: (ch) => ipcRenderer.invoke('channel:config:get', { ch }),
+  channelConfigSave: (ch, config) => ipcRenderer.invoke('channel:config:save', { ch, config }),
+  channelPause: (ch, minutes) => ipcRenderer.invoke('channel:pause', { ch, minutes }),
+  channelResume: (ch) => ipcRenderer.invoke('channel:resume', { ch }),
+  channelPauseStatus: (ch) => ipcRenderer.invoke('channel:pause-status', { ch }),
 });

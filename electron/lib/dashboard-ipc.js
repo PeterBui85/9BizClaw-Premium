@@ -5687,6 +5687,85 @@ ipcMain.handle('download-and-install-update', async () => {
     }
   });
 
+  // --- Generic channel IPC (WhatsApp, Lark, future channels) ---
+  const { getChannel } = require('./channel-registry');
+
+  ipcMain.handle('channel:ready', async (_e, { ch }) => {
+    const def = getChannel(ch);
+    if (!def) return { ready: false, error: 'unknown channel' };
+    try {
+      const { probeChannelReady } = require('./channels');
+      return await probeChannelReady(ch);
+    } catch (e) { return { ready: false, error: e?.message }; }
+  });
+
+  ipcMain.handle('channel:connect', async (_e, { ch }) => {
+    const def = getChannel(ch);
+    if (!def || !def.loginChannel) return { success: false, error: 'channel does not support login' };
+    try {
+      const { connectNewChannel } = require('./channels');
+      return await connectNewChannel(ch);
+    } catch (e) { return { success: false, error: e?.message }; }
+  });
+
+  ipcMain.handle('channel:disconnect', async (_e, { ch }) => {
+    const def = getChannel(ch);
+    if (!def) return { success: false, error: 'unknown channel' };
+    try {
+      const { disconnectChannel } = require('./channels');
+      return await disconnectChannel(ch);
+    } catch (e) { return { success: false, error: e?.message }; }
+  });
+
+  ipcMain.handle('channel:config:get', async (_e, { ch }) => {
+    try {
+      const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+      if (!fs.existsSync(cfgPath)) return {};
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      const def = getChannel(ch);
+      return def ? (cfg.channels?.[def.id] || {}) : {};
+    } catch { return {}; }
+  });
+
+  ipcMain.handle('channel:config:save', async (_e, { ch, config }) => {
+    const def = getChannel(ch);
+    if (!def) return { success: false, error: 'unknown channel' };
+    try {
+      return await withOpenClawConfigLock(async () => {
+        const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
+        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+        if (!cfg.channels) cfg.channels = {};
+        if (!cfg.channels[def.id]) cfg.channels[def.id] = {};
+        Object.assign(cfg.channels[def.id], config);
+        writeOpenClawConfigIfChanged(cfgPath, cfg);
+        return { success: true };
+      });
+    } catch (e) { return { success: false, error: e?.message }; }
+  });
+
+  ipcMain.handle('channel:pause', async (_e, { ch, minutes }) => {
+    try {
+      const { pauseChannel } = require('./channels');
+      pauseChannel(ch, minutes || 30);
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message }; }
+  });
+
+  ipcMain.handle('channel:resume', async (_e, { ch }) => {
+    try {
+      const { resumeChannel } = require('./channels');
+      resumeChannel(ch);
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message }; }
+  });
+
+  ipcMain.handle('channel:pause-status', async (_e, { ch }) => {
+    try {
+      const { getChannelPauseStatus } = require('./channels');
+      return getChannelPauseStatus(ch);
+    } catch { return { paused: false }; }
+  });
+
 } // end registerAllIpcHandlers
 
 module.exports = { registerAllIpcHandlers };
