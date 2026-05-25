@@ -2374,6 +2374,427 @@ try {
 }
 
 // =========================================================================
+// TEST: WhatsApp + Lark channel integration (56 assertions)
+// =========================================================================
+section('WhatsApp + Lark channel integration');
+
+// --- Channel Registry (1-10) ---
+{
+  let registry;
+  try { registry = require('../lib/channel-registry'); } catch (e) {
+    fail('channel-registry load', `require('./lib/channel-registry') failed: ${e.message}`);
+  }
+  if (registry) {
+    // 1: loads OK
+    pass('channel-registry loads OK');
+    // 2: CHANNELS has exactly 4 entries
+    const channels = registry.CHANNELS;
+    if (!channels || Object.keys(channels).length !== 4) {
+      fail('channel-registry CHANNELS count', `expected 4 entries, got ${channels ? Object.keys(channels).length : 'undefined'}`);
+    } else {
+      pass('channel-registry CHANNELS has 4 entries');
+    }
+    // 3: each channel has required fields
+    const requiredFields = ['id', 'label', 'icon', 'role', 'hasPause'];
+    if (channels) {
+      let allFieldsOk = true;
+      for (const [id, ch] of Object.entries(channels)) {
+        const missing = requiredFields.filter(f => ch[f] === undefined);
+        if (missing.length) { fail(`channel ${id} fields`, `missing: [${missing.join(', ')}]`); allFieldsOk = false; }
+      }
+      if (allFieldsOk) pass('all channels have required fields (id, label, icon, role, hasPause)');
+    }
+    // 4: getChannel('whatsapp') returns correct id
+    if (typeof registry.getChannel === 'function') {
+      const wa = registry.getChannel('whatsapp');
+      if (wa && wa.id === 'whatsapp') pass("getChannel('whatsapp') returns id='whatsapp'");
+      else fail("getChannel('whatsapp')", `expected id='whatsapp', got ${wa ? wa.id : 'null'}`);
+    } else { fail("getChannel", 'function not exported'); }
+    // 5: getChannel('nonexistent') returns null
+    if (typeof registry.getChannel === 'function') {
+      const ne = registry.getChannel('nonexistent');
+      if (ne === null || ne === undefined) pass("getChannel('nonexistent') returns null");
+      else fail("getChannel('nonexistent')", `expected null, got ${JSON.stringify(ne)}`);
+    }
+    // 6: getChannelByOpenClawId('feishu') returns lark
+    if (typeof registry.getChannelByOpenClawId === 'function') {
+      const lark = registry.getChannelByOpenClawId('feishu');
+      if (lark && lark.id === 'lark') pass("getChannelByOpenClawId('feishu') returns lark");
+      else fail("getChannelByOpenClawId('feishu')", `expected lark, got ${lark ? lark.id : 'null'}`);
+    } else { fail("getChannelByOpenClawId", 'function not exported'); }
+    // 7: getChannelByOpenClawId('garbage') returns null/undefined
+    if (typeof registry.getChannelByOpenClawId === 'function') {
+      const g = registry.getChannelByOpenClawId('garbage');
+      if (g === null || g === undefined) pass("getChannelByOpenClawId('garbage') returns null");
+      else fail("getChannelByOpenClawId('garbage')", `expected null, got ${JSON.stringify(g)}`);
+    }
+    // 8: listNewChannels returns exactly whatsapp + lark
+    if (typeof registry.listNewChannels === 'function') {
+      const nc = registry.listNewChannels();
+      const ids = nc.map(c => c.id).sort();
+      if (ids.length === 2 && ids[0] === 'lark' && ids[1] === 'whatsapp') pass('listNewChannels returns [lark, whatsapp]');
+      else fail('listNewChannels', `expected [lark, whatsapp], got [${ids.join(', ')}]`);
+    } else { fail('listNewChannels', 'function not exported'); }
+    // 9: WhatsApp role=customer, Lark role=internal
+    if (channels) {
+      const waRole = channels.whatsapp?.role;
+      const larkRole = channels.lark?.role;
+      if (waRole === 'customer' && larkRole === 'internal') pass("WhatsApp role='customer', Lark role='internal'");
+      else fail('channel roles', `WhatsApp=${waRole}, Lark=${larkRole}`);
+    }
+    // 10: WhatsApp pluginPkg, Lark pluginPkg
+    if (channels) {
+      const waPkg = channels.whatsapp?.pluginPkg;
+      const larkPkg = channels.lark?.pluginPkg;
+      if (waPkg === '@openclaw/whatsapp' && (larkPkg === null || larkPkg === undefined)) pass("WhatsApp pluginPkg='@openclaw/whatsapp', Lark pluginPkg=null");
+      else fail('channel pluginPkg', `WhatsApp=${waPkg}, Lark=${larkPkg}`);
+    }
+  }
+}
+
+// --- Inbound Defense (11-30) ---
+{
+  let defense;
+  try { defense = require('../lib/inbound-defense'); } catch (e) {
+    fail('inbound-defense load', `require('./lib/inbound-defense') failed: ${e.message}`);
+  }
+  if (defense) {
+    pass('inbound-defense loads OK');
+    const rid = defense.runInboundDefense;
+    const rod = defense.runOutboundDefense;
+    if (typeof rid !== 'function') { fail('runInboundDefense', 'not exported'); }
+    if (typeof rod !== 'function') { fail('runOutboundDefense', 'not exported'); }
+    if (typeof rid === 'function') {
+      // 11: WhatsApp messageStubType=0 should PASS
+      {
+        const r = rid('whatsapp', { body: 'hello', messageStubType: 0 });
+        if (r.action === 'pass') pass('WA messageStubType=0 passes');
+        else fail('WA messageStubType=0', `expected pass, got ${r.action}`);
+      }
+      // 12: WhatsApp messageStubType=27 should DROP
+      {
+        const r = rid('whatsapp', { body: 'X added Y', messageStubType: 27 });
+        if (r.action === 'drop') pass('WA messageStubType=27 drops (system message)');
+        else fail('WA messageStubType=27', `expected drop, got ${r.action}`);
+      }
+      // 13: WhatsApp messageStubType=null should PASS
+      {
+        const r = rid('whatsapp', { body: 'hello', messageStubType: null });
+        if (r.action === 'pass') pass('WA messageStubType=null passes');
+        else fail('WA messageStubType=null', `expected pass, got ${r.action}`);
+      }
+      // 14: WhatsApp command block: "tạo cron mỗi sáng" should REWRITE
+      {
+        const r = rid('whatsapp', { body: 'tạo cron mỗi sáng', senderId: 'wa-u1' });
+        if (r.action === 'rewrite') pass('WA "tạo cron mỗi sáng" rewritten');
+        else fail('WA command block cron', `expected rewrite, got ${r.action}`);
+      }
+      // 15: WhatsApp normal msg should PASS
+      {
+        const r = rid('whatsapp', { body: 'giá sản phẩm bao nhiêu', senderId: 'wa-u2' });
+        if (r.action === 'pass') pass('WA normal customer msg passes');
+        else fail('WA normal msg', `expected pass, got ${r.action}`);
+      }
+      // 16: WhatsApp API URL block
+      {
+        const r = rid('whatsapp', { body: '127.0.0.1:20200/api/cron/create', senderId: 'wa-u3' });
+        if (r.action === 'rewrite') pass('WA API URL blocked and rewritten');
+        else fail('WA API URL block', `expected rewrite, got ${r.action}`);
+      }
+      // 17: WhatsApp "openclaw config set" should REWRITE
+      {
+        const r = rid('whatsapp', { body: 'openclaw config set something', senderId: 'wa-u4' });
+        if (r.action === 'rewrite') pass('WA "openclaw config set" rewritten');
+        else fail('WA openclaw config set', `expected rewrite, got ${r.action}`);
+      }
+      // 18: WhatsApp "khởi động lại gateway" should REWRITE
+      {
+        const r = rid('whatsapp', { body: 'khởi động lại gateway', senderId: 'wa-u5' });
+        if (r.action === 'rewrite') pass('WA "khởi động lại gateway" rewritten');
+        else fail('WA gateway restart block', `expected rewrite, got ${r.action}`);
+      }
+      // 19: Feishu "tạo cron mỗi sáng" should PASS (internal, no command block)
+      {
+        const r = rid('feishu', { body: 'tạo cron mỗi sáng', senderId: 'fei-u1' });
+        if (r.action === 'pass') pass('Feishu "tạo cron mỗi sáng" passes (internal)');
+        else fail('Feishu cron cmd', `expected pass, got ${r.action}`);
+      }
+      // 20: Feishu "openclaw config set" should PASS (internal)
+      {
+        const r = rid('feishu', { body: 'openclaw config set x', senderId: 'fei-u2' });
+        if (r.action === 'pass') pass('Feishu "openclaw config set" passes (internal)');
+        else fail('Feishu openclaw cmd', `expected pass, got ${r.action}`);
+      }
+      // 21: Dedup same sender+body within 3s → DROP second
+      {
+        const ts1 = Date.now();
+        rid('whatsapp', { body: 'dedup test', senderId: 'wa-dedup1', timestamp: ts1 });
+        const r2 = rid('whatsapp', { body: 'dedup test', senderId: 'wa-dedup1', timestamp: ts1 + 500 });
+        if (r2.action === 'drop') pass('dedup same sender+body within 3s drops second');
+        else fail('dedup same sender+body', `expected drop, got ${r2.action}`);
+      }
+      // 22: Dedup different sender same body → both PASS
+      {
+        const ts2 = Date.now() + 10000;
+        const r1 = rid('whatsapp', { body: 'dedup body', senderId: 'wa-dedup-a', timestamp: ts2 });
+        const r2 = rid('whatsapp', { body: 'dedup body', senderId: 'wa-dedup-b', timestamp: ts2 + 100 });
+        if (r1.action === 'pass' && r2.action === 'pass') pass('dedup different sender same body both pass');
+        else fail('dedup diff sender', `r1=${r1.action}, r2=${r2.action}`);
+      }
+      // 23: Dedup same sender different body → both PASS
+      {
+        const ts3 = Date.now() + 20000;
+        const r1 = rid('whatsapp', { body: 'msg A', senderId: 'wa-dedup-c', timestamp: ts3 });
+        const r2 = rid('whatsapp', { body: 'msg B', senderId: 'wa-dedup-c', timestamp: ts3 + 100 });
+        if (r1.action === 'pass' && r2.action === 'pass') pass('dedup same sender different body both pass');
+        else fail('dedup same sender diff body', `r1=${r1.action}, r2=${r2.action}`);
+      }
+      // 24: clearDedup resets state
+      if (typeof defense.clearDedup === 'function') {
+        defense.clearDedup();
+        pass('clearDedup() resets state');
+      } else {
+        fail('clearDedup', 'function not exported');
+      }
+      // 25: Bot-loop: body starting with "[bot]" should DROP on WhatsApp
+      {
+        if (typeof defense.clearDedup === 'function') defense.clearDedup();
+        const r = rid('whatsapp', { body: '[bot] auto-reply', senderId: 'wa-bot1' });
+        if (r.action === 'drop') pass('WA "[bot]" prefix dropped (bot-loop breaker)');
+        else fail('WA bot-loop', `expected drop, got ${r.action}`);
+      }
+      // 26: Bot-loop: body starting with "[bot]" should PASS on Feishu (botLoopEnabled=false)
+      {
+        if (typeof defense.clearDedup === 'function') defense.clearDedup();
+        const r = rid('feishu', { body: '[bot] auto-reply', senderId: 'fei-bot1' });
+        if (r.action === 'pass') pass('Feishu "[bot]" prefix passes (botLoopEnabled=false)');
+        else fail('Feishu bot-loop', `expected pass, got ${r.action}`);
+      }
+    }
+    // 27: Outbound defense: WhatsApp full filter delegates to filterSensitiveOutput
+    if (typeof rod === 'function') {
+      const r = rod('whatsapp', '/home/user/.ssh/id_rsa');
+      if (r.blocked) pass('WA outbound filters file paths');
+      else fail('WA outbound defense', 'expected file path to be blocked');
+    }
+    // 28: Outbound defense: Feishu light filter catches API keys
+    if (typeof rod === 'function') {
+      const r = rod('feishu', 'sk-proj-abc123def456ghi789');
+      if (r.blocked) pass('Feishu outbound filters API keys');
+      else fail('Feishu outbound API key filter', 'expected API key to be blocked');
+    }
+    // 29: Outbound defense: Feishu light filter does NOT catch Vietnamese CoT
+    if (typeof rod === 'function') {
+      const r = rod('feishu', 'The user wants me to process this request carefully');
+      if (!r.blocked) pass('Feishu outbound does NOT catch English CoT (light filter)');
+      else fail('Feishu outbound CoT false positive', 'light filter should not catch CoT');
+    }
+    // 30: Unknown channel: runInboundDefense('discord', msg) returns pass
+    if (typeof rid === 'function') {
+      if (typeof defense.clearDedup === 'function') defense.clearDedup();
+      const r = rid('discord', { body: 'test', senderId: 'disc1' });
+      if (r.action === 'pass') pass("unknown channel 'discord' returns pass");
+      else fail("unknown channel defense", `expected pass, got ${r.action}`);
+    }
+  }
+}
+
+// --- Generic IPC Registration (31-32) ---
+{
+  // 31: Check that dashboard-ipc.js has channel: IPC handlers
+  try {
+    const ipcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
+    const requiredHandlers = [
+      'channel-connect', 'channel-disconnect',
+      'channel-pause-status', 'channel-pause', 'channel-resume',
+      'check-channel-ready', 'get-channel-config', 'save-channel-config',
+    ];
+    const missingHandlers = requiredHandlers.filter(h => !ipcSrc.includes(`'${h}'`));
+    if (missingHandlers.length > 0) {
+      fail('generic channel IPC handlers', `dashboard-ipc.js missing handlers: [${missingHandlers.join(', ')}]`);
+    } else {
+      pass(`generic channel IPC handlers: all ${requiredHandlers.length} present`);
+    }
+  } catch (e) { fail('generic channel IPC handlers', 'dashboard-ipc.js read failed: ' + e.message); }
+
+  // 32: Check preload.js has generic channel bridges
+  try {
+    const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+    const requiredBridges = [
+      'channelConnect', 'channelDisconnect',
+      'channelPauseStatus', 'channelPause', 'channelResume',
+      'checkChannelReady', 'getChannelConfig', 'saveChannelConfig',
+    ];
+    const missingBridges = requiredBridges.filter(b => !preloadSrc.includes(b));
+    if (missingBridges.length > 0) {
+      fail('generic channel preload bridges', `preload.js missing bridges: [${missingBridges.join(', ')}]`);
+    } else {
+      pass(`generic channel preload bridges: all ${requiredBridges.length} present`);
+    }
+  } catch (e) { fail('generic channel preload bridges', 'preload.js read failed: ' + e.message); }
+}
+
+// --- Dashboard HTML (33-42) ---
+{
+  try {
+    const dashHtml = fs.readFileSync(path.join(__dirname, '..', 'ui', 'dashboard.html'), 'utf-8');
+    // 33: page-whatsapp div exists
+    if (dashHtml.includes('id="page-whatsapp"')) pass('page-whatsapp div exists');
+    else fail('page-whatsapp', 'div id="page-whatsapp" not found in dashboard.html');
+    // 34: page-lark div exists
+    if (dashHtml.includes('id="page-lark"')) pass('page-lark div exists');
+    else fail('page-lark', 'div id="page-lark" not found in dashboard.html');
+    // 35: ready-pill-whatsapp exists
+    if (dashHtml.includes('id="ready-pill-whatsapp"')) pass('ready-pill-whatsapp exists');
+    else fail('ready-pill-whatsapp', 'not found in dashboard.html');
+    // 36: ready-pill-lark exists
+    if (dashHtml.includes('id="ready-pill-lark"')) pass('ready-pill-lark exists');
+    else fail('ready-pill-lark', 'not found in dashboard.html');
+    // 37: RAIL_GROUPS includes whatsapp + lark
+    const railIdx = dashHtml.indexOf('RAIL_GROUPS');
+    if (railIdx > -1) {
+      const railSection = dashHtml.slice(railIdx, railIdx + 500);
+      const hasWa = railSection.includes("'whatsapp'");
+      const hasLark = railSection.includes("'lark'");
+      if (hasWa && hasLark) pass("RAIL_GROUPS channels includes 'whatsapp' and 'lark'");
+      else fail('RAIL_GROUPS', `whatsapp=${hasWa}, lark=${hasLark}`);
+    } else { fail('RAIL_GROUPS', 'RAIL_GROUPS not found in dashboard.html'); }
+    // 38: WhatsApp page Vietnamese text
+    const waPageIdx = dashHtml.indexOf('id="page-whatsapp"');
+    if (waPageIdx > -1) {
+      const waSection = dashHtml.slice(waPageIdx, waPageIdx + 500);
+      if (/Kênh khách hàng/.test(waSection)) pass('WhatsApp page has proper Vietnamese "Kênh khách hàng"');
+      else fail('WhatsApp Vietnamese', 'missing "Kênh khách hàng" near page-whatsapp');
+    }
+    // 39: Lark page Vietnamese text
+    const larkPageIdx = dashHtml.indexOf('id="page-lark"');
+    if (larkPageIdx > -1) {
+      const larkSection = dashHtml.slice(larkPageIdx, larkPageIdx + 500);
+      if (/Kênh nội bộ/.test(larkSection)) pass('Lark page has proper Vietnamese "Kênh nội bộ"');
+      else fail('Lark Vietnamese', 'missing "Kênh nội bộ" near page-lark');
+    }
+    // 40: No emoji in WhatsApp/Lark page sections
+    {
+      const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/gu;
+      let clean = true;
+      for (const [pageId, label] of [['page-whatsapp', 'WhatsApp'], ['page-lark', 'Lark']]) {
+        const idx = dashHtml.indexOf(`id="${pageId}"`);
+        if (idx > -1) {
+          const sec = dashHtml.slice(idx, idx + 2000);
+          const em = sec.match(emojiRegex);
+          if (em) { fail(`${label} no-emoji`, `${label} page section contains emoji: [${[...new Set(em)].join(' ')}]`); clean = false; }
+        }
+      }
+      if (clean) pass('WhatsApp + Lark page sections clean (no emoji)');
+    }
+    // 41: connectChannel function defined
+    if (dashHtml.includes('function connectChannel(')) pass('connectChannel function defined in dashboard');
+    else fail('connectChannel', 'function not found in dashboard.html');
+    // 42: toggleChannelPause function defined
+    if (dashHtml.includes('function toggleChannelPause(')) pass('toggleChannelPause function defined in dashboard');
+    else fail('toggleChannelPause', 'function not found in dashboard.html');
+  } catch (e) { fail('dashboard HTML WhatsApp/Lark', 'dashboard.html read failed: ' + e.message); }
+}
+
+// --- Hook Files (43-47) ---
+{
+  const hookDir = path.join(__dirname, '..', 'hooks', 'inbound-defense');
+  // 43: HOOK.md exists
+  const hookMdPath = path.join(hookDir, 'HOOK.md');
+  if (fs.existsSync(hookMdPath)) {
+    pass('inbound-defense HOOK.md exists');
+    const hookMd = fs.readFileSync(hookMdPath, 'utf-8');
+    // 44: HOOK.md contains 'message:received'
+    if (hookMd.includes('message:received')) pass("HOOK.md contains 'message:received' event");
+    else fail('HOOK.md message:received', "missing 'message:received' in HOOK.md");
+    // 45: HOOK.md contains 'message_sending'
+    if (hookMd.includes('message_sending')) pass("HOOK.md contains 'message_sending' event");
+    else fail('HOOK.md message_sending', "missing 'message_sending' in HOOK.md");
+  } else {
+    fail('inbound-defense HOOK.md', `not found at ${hookMdPath}`);
+  }
+  // 46: handler.js exists
+  const handlerPath = path.join(hookDir, 'handler.js');
+  if (fs.existsSync(handlerPath)) {
+    pass('inbound-defense handler.js exists');
+    // 47: handler.js exports a function
+    try {
+      const handlerModule = require(handlerPath);
+      if (typeof handlerModule === 'function') pass('handler.js exports a function');
+      else fail('handler.js export', `expected function, got ${typeof handlerModule}`);
+    } catch (e) { fail('handler.js require', `failed to require: ${e.message}`); }
+  } else {
+    fail('inbound-defense handler.js', `not found at ${handlerPath}`);
+  }
+}
+
+// --- Config healing (48-49) ---
+{
+  try {
+    const cfgSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'config.js'), 'utf-8');
+    // 48: config.js contains channels.whatsapp healing
+    if (cfgSrc.includes('channels.whatsapp') || cfgSrc.includes("config.channels.whatsapp")) pass('config.js contains channels.whatsapp healing');
+    else fail('config.js whatsapp healing', 'no reference to channels.whatsapp in config.js');
+    // 49: config.js contains channels.feishu healing
+    if (cfgSrc.includes('channels.feishu') || cfgSrc.includes("config.channels.feishu")) pass('config.js contains channels.feishu healing');
+    else fail('config.js feishu healing', 'no reference to channels.feishu in config.js');
+  } catch (e) { fail('config healing', 'config.js read failed: ' + e.message); }
+}
+
+// --- Workspace seeding (50-51) ---
+{
+  try {
+    const wsSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'workspace.js'), 'utf-8');
+    // 50: seedWorkspace creates memory/whatsapp-users/
+    if (wsSrc.includes('whatsapp-users')) pass('workspace.js seeds memory/whatsapp-users/');
+    else fail('workspace whatsapp-users', 'seedWorkspace does not create memory/whatsapp-users/');
+    // 51: seedWorkspace creates memory/whatsapp-groups/
+    if (wsSrc.includes('whatsapp-groups')) pass('workspace.js seeds memory/whatsapp-groups/');
+    else fail('workspace whatsapp-groups', 'seedWorkspace does not create memory/whatsapp-groups/');
+  } catch (e) { fail('workspace seeding', 'workspace.js read failed: ' + e.message); }
+}
+
+// --- CEO Alert Attribution (52) ---
+{
+  try {
+    const chSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'channels.js'), 'utf-8');
+    // 52: sendCeoAlert accepts { channel } option
+    if (/function sendCeoAlert\s*\([^)]*\{\s*channel\s*\}/.test(chSrc)) pass('sendCeoAlert accepts { channel } option');
+    else fail('sendCeoAlert channel param', 'sendCeoAlert does not destructure { channel } from options');
+  } catch (e) { fail('sendCeoAlert', 'channels.js read failed: ' + e.message); }
+}
+
+// --- Memory Functions (53-54) ---
+{
+  try {
+    const conv = require('../lib/conversation');
+    // 53: exports trimCustomerMemoryFile
+    if (typeof conv.trimCustomerMemoryFile === 'function') pass('conversation.js exports trimCustomerMemoryFile');
+    else fail('trimCustomerMemoryFile', 'not exported from conversation.js');
+    // 54: exports appendCustomerSummary
+    if (typeof conv.appendCustomerSummary === 'function') pass('conversation.js exports appendCustomerSummary');
+    else fail('appendCustomerSummary', 'not exported from conversation.js');
+  } catch (e) { fail('conversation.js', 'failed to load: ' + e.message); }
+}
+
+// --- Vendored Package (55-56) ---
+{
+  const baileysPkgPath = path.join(__dirname, '..', 'vendor', 'baileys-antiban', 'package.json');
+  // 55: baileys-antiban package.json exists
+  if (fs.existsSync(baileysPkgPath)) {
+    pass('baileys-antiban package.json exists');
+    try {
+      const baileysPkg = JSON.parse(fs.readFileSync(baileysPkgPath, 'utf-8'));
+      // 56: version is 3.9.0
+      if (baileysPkg.version === '3.9.0') pass('baileys-antiban version is 3.9.0');
+      else fail('baileys-antiban version', `expected 3.9.0, got ${baileysPkg.version}`);
+    } catch (e) { fail('baileys-antiban package.json', 'parse failed: ' + e.message); }
+  } else {
+    fail('baileys-antiban package.json', `not found at ${baileysPkgPath}`);
+  }
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
