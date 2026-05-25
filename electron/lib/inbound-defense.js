@@ -119,6 +119,7 @@ function runOutboundDefense(channelId, text) {
   if (config.outputFilterLevel === 'light') {
     const lightPatterns = [
       /(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi,
+      /\bsk-(?:proj|live|test)-[A-Za-z0-9]{20,}/gi,
       /[A-Za-z]:\\(?:Users|AppData|\.openclaw|electron)\\\S+/gi,
       /\/(?:home|Users|\.openclaw|var\/log)\S+/gi,
     ];

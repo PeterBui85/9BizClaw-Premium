@@ -2573,13 +2573,13 @@ section('WhatsApp + Lark channel integration');
     }
     // 27: Outbound defense: WhatsApp full filter delegates to filterSensitiveOutput
     if (typeof rod === 'function') {
-      const r = rod('whatsapp', '/home/user/.ssh/id_rsa');
-      if (r.blocked) pass('WA outbound filters file paths');
-      else fail('WA outbound defense', 'expected file path to be blocked');
+      const r = rod('whatsapp', 'C:\\Users\\admin\\.openclaw\\openclaw.json');
+      if (r.blocked) pass('WA outbound filters sensitive paths');
+      else fail('WA outbound defense', 'expected config path to be blocked');
     }
     // 28: Outbound defense: Feishu light filter catches API keys
     if (typeof rod === 'function') {
-      const r = rod('feishu', 'sk-proj-abc123def456ghi789');
+      const r = rod('feishu', 'token: sk-proj-abc123def456ghi789jklmnopqrst');
       if (r.blocked) pass('Feishu outbound filters API keys');
       else fail('Feishu outbound API key filter', 'expected API key to be blocked');
     }

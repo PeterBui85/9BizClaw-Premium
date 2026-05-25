@@ -2,8 +2,8 @@
 
 Counts
 - apiRoutes: 133
-- ipcHandlers: 187
-- preloadBridges: 120
+- ipcHandlers: 195
+- preloadBridges: 187
 - dashboardPages: 19
 - capabilityContracts: 5
 
@@ -171,18 +171,18 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 633116 bytes
-- electron/lib/dashboard-ipc.js: 241717 bytes
+- electron/ui/dashboard.html: 633080 bytes
+- electron/lib/dashboard-ipc.js: 262830 bytes
 - electron/lib/cron-api.js: 160948 bytes
 - electron/lib/cron.js: 129541 bytes
 - electron/ui/wizard.html: 124246 bytes
-- electron/lib/channels.js: 94737 bytes
+- electron/lib/channels.js: 98758 bytes
 - electron/lib/knowledge.js: 90926 bytes
 - electron/lib/gateway.js: 79334 bytes
 - electron/lib/runtime-installer.js: 77834 bytes
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
 - electron/lib/workspace.js: 54484 bytes
-- electron/lib/config.js: 51568 bytes
+- electron/lib/config.js: 52641 bytes
 - electron/lib/vendor-patches.js: 47388 bytes
 - electron/lib/skill-manager.js: 44276 bytes
 - electron/lib/fb-schedule.js: 43962 bytes

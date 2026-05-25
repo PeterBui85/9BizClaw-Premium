@@ -2,8 +2,8 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 133,
-    "ipcHandlers": 187,
-    "preloadBridges": 120,
+    "ipcHandlers": 195,
+    "preloadBridges": 187,
     "dashboardPages": 19,
     "capabilityContracts": 5
   },
@@ -1220,6 +1220,38 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "channel:config:get",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:config:save",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:connect",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:disconnect",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:pause",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:pause-status",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:ready",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "channel:resume",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "check-all-channels",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1958,6 +1990,11 @@
   ],
   "preloadBridges": [
     {
+      "name": "activateLicense",
+      "channel": "activate-license",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "addCron",
       "channel": "add-cron",
       "source": "electron/preload.js"
@@ -1965,6 +2002,46 @@
     {
       "name": "appendZaloUserNote",
       "channel": "append-zalo-user-note",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelConfigGet",
+      "channel": "channel:config:get",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelConfigSave",
+      "channel": "channel:config:save",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelConnect",
+      "channel": "channel:connect",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelDisconnect",
+      "channel": "channel:disconnect",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelPause",
+      "channel": "channel:pause",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelPauseStatus",
+      "channel": "channel:pause-status",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelReady",
+      "channel": "channel:ready",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "channelResume",
+      "channel": "channel:resume",
       "source": "electron/preload.js"
     },
     {
@@ -2003,6 +2080,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "clearChatHistory",
+      "channel": "clear-chat-history",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "createAppointment",
       "channel": "create-appointment",
       "source": "electron/preload.js"
@@ -2023,6 +2105,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "deactivateLicense",
+      "channel": "deactivate-license",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "deleteAppointment",
       "channel": "delete-appointment",
       "source": "electron/preload.js"
@@ -2040,6 +2127,11 @@
     {
       "name": "deleteDocument",
       "channel": "delete-document",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "deleteFbSchedule",
+      "channel": "delete-fb-schedule",
       "source": "electron/preload.js"
     },
     {
@@ -2113,6 +2205,16 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "getBrainGraph",
+      "channel": "get-brain-graph",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getBrainNodeDetail",
+      "channel": "get-brain-node-detail",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "getCeoMemories",
       "channel": "get-ceo-memories",
       "source": "electron/preload.js"
@@ -2120,6 +2222,11 @@
     {
       "name": "getCeoMemoryCount",
       "channel": "get-ceo-memory-count",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getChatHistory",
+      "channel": "get-chat-history",
       "source": "electron/preload.js"
     },
     {
@@ -2138,6 +2245,21 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "getFbConfig",
+      "channel": "get-fb-config",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getFbRecentPosts",
+      "channel": "get-fb-recent-posts",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getFbSchedules",
+      "channel": "get-fb-schedules",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "getGatewayToken",
       "channel": "get-gateway-token",
       "source": "electron/preload.js"
@@ -2150,6 +2272,11 @@
     {
       "name": "getKnowledgeCounts",
       "channel": "get-knowledge-counts",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getLicenseStatus",
+      "channel": "get-license-status",
       "source": "electron/preload.js"
     },
     {
@@ -2223,6 +2350,206 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "googleAppScriptRun",
+      "channel": "google-appscript-run",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleAuthStatus",
+      "channel": "google-auth-status",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleCalendarCreate",
+      "channel": "google-calendar-create",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleCalendarDelete",
+      "channel": "google-calendar-delete",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleCalendarEvents",
+      "channel": "google-calendar-events",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleCalendarFreebusy",
+      "channel": "google-calendar-freebusy",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleCalendarFreeSlots",
+      "channel": "google-calendar-free-slots",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleCalendarUpdate",
+      "channel": "google-calendar-update",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleConnect",
+      "channel": "google-connect",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleContactsCreate",
+      "channel": "google-contacts-create",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleContactsList",
+      "channel": "google-contacts-list",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDisconnect",
+      "channel": "google-disconnect",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsCreate",
+      "channel": "google-docs-create",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsExport",
+      "channel": "google-docs-export",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsFindReplace",
+      "channel": "google-docs-find-replace",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsInfo",
+      "channel": "google-docs-info",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsInsert",
+      "channel": "google-docs-insert",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsList",
+      "channel": "google-docs-list",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsRead",
+      "channel": "google-docs-read",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDocsWrite",
+      "channel": "google-docs-write",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDriveDownload",
+      "channel": "google-drive-download",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDriveList",
+      "channel": "google-drive-list",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDriveShare",
+      "channel": "google-drive-share",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleDriveUpload",
+      "channel": "google-drive-upload",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleGetAuthUrl",
+      "channel": "google-get-auth-url",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleGmailInbox",
+      "channel": "google-gmail-inbox",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleGmailRead",
+      "channel": "google-gmail-read",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleGmailReply",
+      "channel": "google-gmail-reply",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleGmailSend",
+      "channel": "google-gmail-send",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleHealth",
+      "channel": "google-health",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleSheetsAppend",
+      "channel": "google-sheets-append",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleSheetsGet",
+      "channel": "google-sheets-get",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleSheetsList",
+      "channel": "google-sheets-list",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleSheetsMetadata",
+      "channel": "google-sheets-metadata",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleSheetsUpdate",
+      "channel": "google-sheets-update",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleTaskLists",
+      "channel": "google-tasks-lists",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleTasksComplete",
+      "channel": "google-tasks-complete",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleTasksCreate",
+      "channel": "google-tasks-create",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleTasksList",
+      "channel": "google-tasks-list",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "googleUploadCredentials",
+      "channel": "google-upload-credentials",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "importChatGPTSession",
       "channel": "import-chatgpt-session",
       "source": "electron/preload.js"
@@ -2293,6 +2620,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "logChatFeedback",
+      "channel": "log-chat-feedback",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "markGuideComplete",
       "channel": "mark-guide-complete",
       "source": "electron/preload.js"
@@ -2345,6 +2677,11 @@
     {
       "name": "readZaloUserMemory",
       "channel": "read-zalo-user-memory",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "rebuildBrainGraph",
+      "channel": "rebuild-brain-graph",
       "source": "electron/preload.js"
     },
     {
@@ -2403,6 +2740,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "saveFbConfig",
+      "channel": "save-fb-config",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "savePersonalization",
       "channel": "save-personalization",
       "source": "electron/preload.js"
@@ -2453,6 +2795,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "sendChatMessage",
+      "channel": "send-chat-message",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "setAppPrefs",
       "channel": "set-app-prefs",
       "source": "electron/preload.js"
@@ -2498,6 +2845,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "stopChatGeneration",
+      "channel": "stop-chat-generation",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "telegramSelfTest",
       "channel": "telegram-self-test",
       "source": "electron/preload.js"
@@ -2515,6 +2867,11 @@
     {
       "name": "toggleBot",
       "channel": "toggle-bot",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "toggleFbSchedule",
+      "channel": "toggle-fb-schedule",
       "source": "electron/preload.js"
     },
     {
@@ -2538,6 +2895,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "uploadChatFile",
+      "channel": "upload-chat-file",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "uploadKnowledgeFile",
       "channel": "upload-knowledge-file",
       "source": "electron/preload.js"
@@ -2545,6 +2907,11 @@
     {
       "name": "uploadMediaAsset",
       "channel": "upload-media-asset",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "verifyFbToken",
+      "channel": "verify-fb-token",
       "source": "electron/preload.js"
     },
     {
@@ -2666,11 +3033,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 633116
+      "bytes": 633080
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 241717
+      "bytes": 262830
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2686,7 +3053,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 94737
+      "bytes": 98758
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -2710,7 +3077,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 51568
+      "bytes": 52641
     },
     {
       "path": "electron/lib/vendor-patches.js",
