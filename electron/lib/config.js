@@ -690,6 +690,25 @@ async function ensureDefaultConfig() {
       ]);
       if (_stripUnknownFields(tg, TELEGRAM_VALID_FIELDS, 'telegram')) changed = true;
     }
+    // WhatsApp — only heal if plugin is installed
+    try {
+      const waPluginDir = path.join(ctx.HOME, '.openclaw', 'extensions', 'whatsapp');
+      const waPluginAlt = path.join(ctx.HOME, '.openclaw', 'extensions', '@openclaw', 'whatsapp');
+      if (fs.existsSync(waPluginDir) || fs.existsSync(waPluginAlt)) {
+        if (!config.channels.whatsapp) { config.channels.whatsapp = {}; changed = true; }
+        const wa = config.channels.whatsapp;
+        if (wa.enabled === undefined) { wa.enabled = false; changed = true; }
+        if (!wa.dmPolicy) { wa.dmPolicy = 'pairing'; changed = true; }
+        if (!wa.allowFrom) { wa.allowFrom = []; changed = true; }
+      }
+    } catch {}
+
+    // Feishu/Lark — built-in, always available
+    if (!config.channels.feishu) { config.channels.feishu = {}; changed = true; }
+    {
+      const feishu = config.channels.feishu;
+      if (feishu.enabled === undefined) { feishu.enabled = false; changed = true; }
+    }
     // Global default: openclaw 2026.4.x removed `agents.defaults.blockStreaming`
     // (boolean) and replaced it with `agents.defaults.blockStreamingDefault`
     // ("on"|"off"). The new default is already "off" — no value to write — but we
@@ -916,6 +935,19 @@ async function ensureDefaultConfig() {
         fs.writeFileSync(_zaloBackupPath, JSON.stringify(snapshot, null, 2), 'utf-8');
       }
     } catch (e) { console.warn('[config] zalo sticky save failed:', e?.message); }
+
+    // Install inbound-defense hook if not present
+    try {
+      const hookDir = path.join(ctx.HOME, '.openclaw', 'hooks', 'inbound-defense');
+      const hookSrc = path.join(__dirname, '..', 'hooks', 'inbound-defense');
+      if (!fs.existsSync(path.join(hookDir, 'HOOK.md')) && fs.existsSync(hookSrc)) {
+        fs.mkdirSync(hookDir, { recursive: true });
+        for (const f of fs.readdirSync(hookSrc)) {
+          fs.copyFileSync(path.join(hookSrc, f), path.join(hookDir, f));
+        }
+        console.log('[config] installed inbound-defense hook');
+      }
+    } catch (e) { console.warn('[config] hook install error:', e?.message); }
 
     // Create required dirs
     fs.mkdirSync(path.join(ctx.HOME, '.openclaw', 'agents', 'main', 'sessions'), { recursive: true });
