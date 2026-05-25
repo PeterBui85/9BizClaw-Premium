@@ -2953,11 +2953,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 621595
+      "bytes": 626528
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 259579
+      "bytes": 259611
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -2993,11 +2993,11 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 54110
+      "bytes": 54484
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 49958
+      "bytes": 51568
     },
     {
       "path": "electron/lib/vendor-patches.js",
