@@ -2047,28 +2047,8 @@ async function probeChannelReady(channelKey) {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
     const chCfg = cfg.channels?.[def.id];
     if (!chCfg?.enabled) return { ready: false, reason: 'disabled' };
+    return { ready: true, reason: 'config-enabled' };
   } catch { return { ready: false, error: 'config read failed' }; }
-
-  try {
-    const { findNodeBin, findOpenClawCliJs } = require('./boot');
-    const nodeBin = findNodeBin();
-    const cliJs = findOpenClawCliJs();
-    if (nodeBin && cliJs) {
-      const { spawnSync } = require('child_process');
-      const r = spawnSync(nodeBin, [cliJs, 'channels', 'status', '--channel', def.loginChannel || def.id, '--probe', '--json'], {
-        timeout: 8000, encoding: 'utf-8', shell: false,
-      });
-      if (r.status === 0 && r.stdout) {
-        try {
-          const status = JSON.parse(r.stdout);
-          const acct = status?.channelAccounts?.[def.id]?.[0] || status?.channels?.[def.id];
-          if (acct) return { ready: acct.ready !== false, ...acct };
-        } catch {}
-      }
-    }
-  } catch {}
-
-  return { ready: true, reason: 'config-enabled' };
 }
 
 async function connectNewChannel(channelKey) {
@@ -2132,11 +2112,7 @@ async function disconnectChannel(channelKey) {
       const { writeOpenClawConfigIfChanged } = require('./config');
       writeOpenClawConfigIfChanged(cfgPath, cfg);
     }
-    try {
-      const { stopOpenClaw, startOpenClaw } = require('./gateway');
-      await stopOpenClaw();
-      await startOpenClaw({ silent: true });
-    } catch {}
+    console.log(`[channel] ${channelKey} disabled — gateway will pick up config change on next reload`);
     return { success: true };
   } catch (e) { return { success: false, error: e?.message }; }
 }
