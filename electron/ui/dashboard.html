@@ -88,6 +88,19 @@
     /* Main content */
     .main-content { flex:1; padding:20px 24px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; position:relative; }
 
+    /* === Premium lock overlay (Free edition) === */
+    .premium-lock-overlay { position:absolute; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); background:rgba(0,0,0,0.25); }
+    .premium-lock-card { text-align:center; padding:40px 48px; background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,0.2); max-width:380px; }
+    .premium-lock-icon { font-size:36px; margin-bottom:16px; opacity:0.7; }
+    .premium-lock-title { font-size:18px; font-weight:700; color:var(--text); margin-bottom:8px; }
+    .premium-lock-desc { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
+    .premium-lock-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 28px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s; text-decoration:none; }
+    .premium-lock-btn:hover { opacity:0.85; }
+    .premium-lock-hotline { margin-top:12px; font-size:12px; color:var(--text-muted); }
+    .premium-lock-hotline a { color:var(--text-secondary); text-decoration:none; font-weight:600; }
+    .page.premium-locked { position:relative; }
+    .page.premium-locked > :not(.premium-lock-overlay) { filter:blur(6px); pointer-events:none; user-select:none; }
+
 
     /* Activity panel */
     .activity-panel { width:300px; background:var(--bg); border-left:1px solid var(--border); display:none; flex-direction:column; flex-shrink:0; }
@@ -2972,6 +2985,59 @@
         </div>
       </div>
 
+      <!-- PAGE: WhatsApp -->
+      <div class="page" id="page-whatsapp">
+        <div class="page-header">
+          <span class="page-icon" data-icon="brand-whatsapp" data-icon-size="26"></span>
+          <div>
+            <h2>WhatsApp</h2>
+            <div class="page-sub">Kênh khách hàng quốc tế</div>
+            <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-whatsapp" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-whatsapp-text">Đang kiểm tra kết nối...</span></span></div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="btn btn-secondary btn-small" onclick="connectChannel('whatsapp')" style="display:inline-flex;align-items:center;gap:6px">Kết nối</button>
+            <button class="btn btn-secondary btn-small" id="wa-pause-btn" onclick="toggleChannelPause('whatsapp')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="wa-pause-label">Tạm dừng</span></button>
+          </div>
+        </div>
+        <div class="card" style="margin:20px">
+          <div class="card-title">Trạng thái</div>
+          <div id="wa-status-info" class="text-muted" style="padding:12px">Chưa kết nối. Nhấn "Kết nối" để quét mã QR.</div>
+        </div>
+        <div class="card" style="margin:20px">
+          <div class="card-title">Bảo mật</div>
+          <div style="padding:12px;font-size:13px;color:var(--text-muted)">
+            Kênh khách hàng. Command-block, output filter, dedup, bot-loop detection đều bật.
+            Cùng cấp bảo mật với Zalo.
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: Lark -->
+      <div class="page" id="page-lark">
+        <div class="page-header">
+          <span class="page-icon" data-icon="message-circle" data-icon-size="26"></span>
+          <div>
+            <h2>Lark</h2>
+            <div class="page-sub">Kênh nội bộ</div>
+            <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-lark" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-lark-text">Đang kiểm tra kết nối...</span></span></div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
+            <button class="btn btn-secondary btn-small" onclick="connectChannel('lark')" style="display:inline-flex;align-items:center;gap:6px">Kết nối</button>
+            <button class="btn btn-secondary btn-small" id="lark-pause-btn" onclick="toggleChannelPause('lark')" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="lark-pause-label">Tạm dừng</span></button>
+          </div>
+        </div>
+        <div class="card" style="margin:20px">
+          <div class="card-title">Trạng thái</div>
+          <div id="lark-status-info" class="text-muted" style="padding:12px">Chưa kết nối. Nhấn "Kết nối" để cấu hình Lark Bot.</div>
+        </div>
+        <div class="card" style="margin:20px">
+          <div class="card-title">Quyền truy cập</div>
+          <div style="padding:12px;font-size:13px;color:var(--text-muted)">
+            Kênh nội bộ. Full quyền như CEO Telegram. Không command-block, không output filter.
+          </div>
+        </div>
+      </div>
+
       <!-- PAGE: Knowledge -->
       <div class="page" id="page-knowledge">
         <div class="page-header">
@@ -3149,7 +3215,16 @@
       </div>
 
       <!-- PAGE: Brain (Knowledge Graph) -->
-      <div class="page" id="page-brain">
+      <div class="page premium-locked" id="page-brain">
+        <div class="premium-lock-overlay">
+          <div class="premium-lock-card">
+            <div class="premium-lock-icon">&#128274;</div>
+            <div class="premium-lock-title">Brain AI</div>
+            <div class="premium-lock-desc">Đồ thị tri thức — phân tích và kết nối dữ liệu doanh nghiệp thông minh. Tính năng này dành cho phiên bản Premium.</div>
+            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
+            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
+          </div>
+        </div>
         <style>
           #page-brain { display:none; flex-direction:column; height:calc(100vh - 32px); overflow:hidden; }
           #page-brain.page.active { display:flex; }
@@ -3468,7 +3543,16 @@
       </div>
 
       <!-- PAGE: Chat (ChatGPT-class) -->
-      <div class="page" id="page-chat">
+      <div class="page premium-locked" id="page-chat">
+        <div class="premium-lock-overlay">
+          <div class="premium-lock-card">
+            <div class="premium-lock-icon">&#128274;</div>
+            <div class="premium-lock-title">Chat AI</div>
+            <div class="premium-lock-desc">Chat trực tiếp với trợ lý AI trong app. Tính năng này dành cho phiên bản Premium.</div>
+            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
+            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
+          </div>
+        </div>
         <div class="chat-container">
           <div class="chat-top-bar">
             <div class="chat-top-left">
@@ -3621,7 +3705,16 @@
         </div>
       </div>
 
-      <div class="page" id="page-facebook">
+      <div class="page premium-locked" id="page-facebook">
+        <div class="premium-lock-overlay">
+          <div class="premium-lock-card">
+            <div class="premium-lock-icon">&#128274;</div>
+            <div class="premium-lock-title">Facebook</div>
+            <div class="premium-lock-desc">Tự động đăng bài lên Fanpage và quản lý nội dung Facebook. Tính năng này dành cho phiên bản Premium.</div>
+            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
+            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
+          </div>
+        </div>
         <div class="page-header">
           <span class="page-icon" data-icon="brand-facebook" data-icon-size="26"></span>
           <div><h2>Facebook</h2><div class="page-sub">Đăng bài lên Fanpage + quản lý tài sản thương hiệu</div></div>
@@ -3725,7 +3818,16 @@
       </div>
 
       <!-- PAGE: Google Workspace -->
-      <div class="page" id="page-google">
+      <div class="page premium-locked" id="page-google">
+        <div class="premium-lock-overlay">
+          <div class="premium-lock-card">
+            <div class="premium-lock-icon">&#128274;</div>
+            <div class="premium-lock-title">Google Workspace</div>
+            <div class="premium-lock-desc">Kết nối Calendar, Gmail, Drive, Docs — quản lý công việc và tài liệu từ một nơi. Tính năng này dành cho phiên bản Premium.</div>
+            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
+            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
+          </div>
+        </div>
         <div class="page-header">
           <span class="page-icon" data-icon="brand-google" data-icon-size="26"></span>
           <div><h2>Google Workspace</h2><div class="page-sub">Calendar, Gmail, Drive, Docs, Contacts, Tasks</div></div>
@@ -4959,9 +5061,11 @@
     const RAIL_GROUPS = {
       overview: { pages: ['overview'], tabs: null },
       chat:     { pages: ['chat'], tabs: null },
-      channels: { pages: ['telegram','zalo','facebook','google'], tabs: [
+      channels: { pages: ['telegram','zalo','whatsapp','lark','facebook','google'], tabs: [
         { page: 'telegram', icon: 'brand-telegram', label: 'Telegram', statusId: 'ready-dot-telegram' },
         { page: 'zalo', icon: 'brand-zalo', label: 'Zalo', statusId: 'ready-dot-zalo' },
+        { page: 'whatsapp', icon: 'brand-whatsapp', label: 'WhatsApp', statusId: 'ready-dot-whatsapp' },
+        { page: 'lark', icon: 'message-circle', label: 'Lark', statusId: 'ready-dot-lark' },
         { page: 'facebook', icon: 'brand-facebook', label: 'Facebook' },
         { page: 'google', icon: 'brand-google', label: 'Google' },
       ]},
@@ -4987,7 +5091,7 @@
       return null;
     }
 
-    let _lastChannelStatus = { telegram: null, zalo: null, checkedAt: null };
+    let _lastChannelStatus = { telegram: null, zalo: null, whatsapp: null, lark: null, checkedAt: null };
 
     function _renderSubTabs(railId) {
       const tabBar = document.getElementById('content-tabs');
@@ -5010,6 +5114,8 @@
       if (_lastChannelStatus && railId === 'channels') {
         applyChannelStatus('telegram', _lastChannelStatus.telegram, _lastChannelStatus.checkedAt);
         applyChannelStatus('zalo', _lastChannelStatus.zalo, _lastChannelStatus.checkedAt);
+        applyChannelStatus('whatsapp', _lastChannelStatus.whatsapp, _lastChannelStatus.checkedAt);
+        applyChannelStatus('lark', _lastChannelStatus.lark, _lastChannelStatus.checkedAt);
       }
     }
 
@@ -8228,6 +8334,32 @@
       _lastChannelStatus = payload;
       applyChannelStatus('telegram', payload.telegram, payload.checkedAt);
       applyChannelStatus('zalo', payload.zalo, payload.checkedAt);
+      if (payload.whatsapp) {
+        applyChannelStatus('whatsapp', payload.whatsapp, payload.checkedAt);
+        var waPill = document.getElementById('ready-pill-whatsapp');
+        var waText = document.getElementById('ready-pill-whatsapp-text');
+        if (waPill && waText) {
+          waPill.dataset.state = payload.whatsapp.ready ? 'ready' : (payload.whatsapp.paused ? 'paused' : 'error');
+          waText.textContent = payload.whatsapp.ready ? 'Sẵn sàng' : (payload.whatsapp.paused ? 'Tạm dừng' : (payload.whatsapp.reason || 'Chưa kết nối'));
+        }
+        var waInfo = document.getElementById('wa-status-info');
+        if (waInfo) waInfo.textContent = payload.whatsapp.ready ? 'Đã kết nối và sẵn sàng nhận tin.' : (payload.whatsapp.reason || 'Chưa kết nối.');
+        var waLabel = document.getElementById('wa-pause-label');
+        if (waLabel) waLabel.textContent = payload.whatsapp.paused ? 'Tiếp tục' : 'Tạm dừng';
+      }
+      if (payload.lark) {
+        applyChannelStatus('lark', payload.lark, payload.checkedAt);
+        var larkPill = document.getElementById('ready-pill-lark');
+        var larkText = document.getElementById('ready-pill-lark-text');
+        if (larkPill && larkText) {
+          larkPill.dataset.state = payload.lark.ready ? 'ready' : (payload.lark.paused ? 'paused' : 'error');
+          larkText.textContent = payload.lark.ready ? 'Sẵn sàng' : (payload.lark.paused ? 'Tạm dừng' : (payload.lark.reason || 'Chưa kết nối'));
+        }
+        var larkInfo = document.getElementById('lark-status-info');
+        if (larkInfo) larkInfo.textContent = payload.lark.ready ? 'Đã kết nối và sẵn sàng nhận tin.' : (payload.lark.reason || 'Chưa kết nối.');
+        var larkLabel = document.getElementById('lark-pause-label');
+        if (larkLabel) larkLabel.textContent = payload.lark.paused ? 'Tiếp tục' : 'Tạm dừng';
+      }
       _updateRailBadge();
     }
     if (window.claw.onChannelStatus) window.claw.onChannelStatus(handleChannelStatus);
@@ -8469,6 +8601,39 @@
     // Refresh pause state on load + every 30s
     refreshPauseUI();
     let _pauseUiTimer = setInterval(refreshPauseUI, 30000);
+
+    // --- Generic channel connect/pause (WhatsApp, Lark) ---
+    async function connectChannel(ch) {
+      showToast('Đang kết nối ' + ch + '...', 'info', 10000);
+      try {
+        const r = await window.claw.channelConnect(ch);
+        if (r && r.success) {
+          showToast('Kết nối thành công. Đang khởi động lại...', 'success');
+        } else {
+          showToast('Lỗi: ' + (r && r.error ? r.error : 'Không kết nối được'), 'error', 8000);
+        }
+      } catch (e) {
+        showToast('Lỗi: ' + (e.message || 'Không kết nối được'), 'error', 8000);
+      }
+    }
+    async function toggleChannelPause(ch) {
+      try {
+        const status = await window.claw.channelPauseStatus(ch);
+        if (status && status.paused) {
+          await window.claw.channelResume(ch);
+          showToast(ch + ' đã tiếp tục', 'success');
+          const label = document.getElementById(ch === 'whatsapp' ? 'wa-pause-label' : 'lark-pause-label');
+          if (label) label.textContent = 'Tạm dừng';
+        } else {
+          await window.claw.channelPause(ch, 30);
+          showToast(ch + ' tạm dừng 30 phút', 'info');
+          const label = document.getElementById(ch === 'whatsapp' ? 'wa-pause-label' : 'lark-pause-label');
+          if (label) label.textContent = 'Tiếp tục';
+        }
+      } catch (e) {
+        showToast('Lỗi: ' + (e.message || 'Không thể thay đổi trạng thái'), 'error', 8000);
+      }
+    }
 
     // --- Deferred dashboard data loading ---
     let _dashboardStarted = false;
