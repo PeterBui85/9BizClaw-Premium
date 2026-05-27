@@ -43,12 +43,12 @@ metadata:
 
 **Nhập nguyên liệu:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"NL-THEP-D10\",\"name\":\"Thép phi 10\",\"qty\":500,\"type\":\"in\",\"note\":\"NCC Hòa Phát, lô 2026-05\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"NL-THEP-D10\",\"name\":\"Thép phi 10\",\"qty\":500,\"type\":\"in\",\"note\":\"NCC Hòa Phát, lô 2026-05\"}"
 ```
 
 **Ghi đơn sản xuất:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty Đại Phát\",\"items\":[{\"name\":\"Khung sắt loại A\",\"qty\":200,\"price\":150000}],\"note\":\"Giao trước 30/05\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty Đại Phát\",\"items\":[{\"name\":\"Khung sắt loại A\",\"qty\":200,\"price\":150000}],\"note\":\"Giao trước 30/05\"}"
 ```
 
 **Kiểm tra nguyên liệu dưới mức tối thiểu:**

@@ -47,6 +47,8 @@ const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), '
 removeIfExists(path.join(DIST, `9BizClaw Setup ${pkgVersion}.exe`));
 removeIfExists(path.join(DIST, 'win-unpacked'));
 
+run(npmCmd, ['run', 'prebuild:models']);
+run(npmCmd, ['run', 'prebuild:vendor']);
 run(npmCmd, ['run', 'prebuild:modoro-zalo']);
 run(npmCmd, ['run', 'smoke']);
 run(process.execPath, ['scripts/obfuscate.js']);

@@ -7,7 +7,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 2. Bot đọc INDEX → match keyword → đọc skill file tương ứng
 3. Bot follow quy trình trong skill → output chất lượng cao
 
-## Vận hành bot (27 skills) -- `skills/operations/`
+## Vận hành bot (28 skills) -- `skills/operations/`
 
 | Skill | File | Khi nào dùng |
 |---|---|---|
@@ -23,6 +23,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Bộ nhớ CEO | `ceo-memory-api.md` | Lưu/tìm/xóa ký ức qua API |
 | Tạo ảnh + Brand assets | `image-generation.md` | Tạo ảnh AI, brand assets, skill ảnh mẫu |
 | Google Workspace | `google-workspace.md` | Gmail/Calendar/Drive/Docs/Sheets (OAuth) + composite endpoints |
+| Facebook Insights | `facebook-insights.md` | Đọc chỉ số Fanpage bằng quyền `read_insights` |
 | Chuỗi workflow | `workflow-chains.md` | Kết hợp nhiều API thành chuỗi tự động |
 | Tạo skill mới | `skill-builder.md` | CEO tạo/sửa/xóa skill tùy chỉnh qua chat |
 | Sinh script tự động | `script-generator/SKILL.md` | Tạo Python/Node script cho task lặp lại (Node.js fallback cho Mac) |
@@ -34,9 +35,10 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Checklist vận hành | `checklist-van-hanh.md` | Mở/đóng cửa, giao ca, kiểm kho -- theo ngành |
 | Tuyển dụng nhanh | `tuyen-dung-nhanh.md` | JD + bài đăng FB group + câu hỏi phỏng vấn |
 | Báo cáo ngày | `bao-cao-ngay.md` | Tóm tắt ngày/tuần: 1 API call composite |
-| Xử lý Excel | `excel.md` | Đọc, tóm tắt, sửa, tạo file .xlsx trên máy CEO |
-| Tạo file Word/DOCX | `docx/SKILL.md` | Tạo báo giá, hợp đồng, báo cáo, đề xuất dạng Word |
-| Tạo PowerPoint/PPTX | `pptx/SKILL.md` | Tạo slide thuyết trình, pitch deck, báo cáo PowerPoint |
+| Xử lý Excel | `../anthropic-xlsx/SKILL.md` | Đọc, tóm tắt, sửa, tạo file .xlsx trên máy CEO |
+| Tạo file Word/DOCX | `../anthropic-docx/SKILL.md` | Tạo báo giá, hợp đồng, báo cáo, đề xuất dạng Word |
+| Tạo PowerPoint/PPTX | `../anthropic-pptx/SKILL.md` | Tạo slide thuyết trình, pitch deck, báo cáo PowerPoint |
+| Tạo PDF | `../anthropic-pdf/SKILL.md` | Tạo PDF báo cáo, hợp đồng, proposal có layout đẹp |
 | Tổng hợp khách Zalo ra Sheet | `zalo-followup-sheet.md` | 1 API call xuất khách Zalo vào CRM Sheet |
 
 ## Marketing (2 skills) — `skills/marketing/`
@@ -55,7 +57,7 @@ Bot TỰ ĐỘNG đọc INDEX này và chọn skill phù hợp MỖI KHI CEO yê
 | Nghỉ phép / Chấm công | `/api/leave/*` | "xin nghỉ", "nghỉ phép", "chấm công" |
 | Báo cáo tổng hợp | `/api/report/daily` | "báo cáo ngày", "hôm nay thế nào" |
 | Xuất CRM Sheet | `/api/zalo-crm/export` | "tổng hợp khách Zalo", "xuất Sheet" |
-| Tạo Sheet có format | `/api/google/sheets/create-formatted` | "tạo Sheet theo dõi", "tạo bảng" |
+| Tạo Sheet có format | local `.xlsx` → `gog drive upload --convert` | "tạo Sheet theo dõi", "tạo bảng" |
 
 ## Theo ngành (9 skills) -- `skills/`
 
@@ -81,6 +83,6 @@ CEO tạo skill riêng qua Telegram ("tạo skill mới"). Đọc `skill-builder
 
 ---
 
-**Tổng: 38 skill cơ bản + 6 API composite + mẫu ảnh + skill tùy chỉnh CEO tạo** cho chủ doanh nghiệp Việt Nam.
+**Tổng: 39 skill cơ bản + 6 API composite + mẫu ảnh + skill tùy chỉnh CEO tạo** cho chủ doanh nghiệp Việt Nam.
 API composite (đơn hàng, tồn kho, nghỉ phép, báo cáo, CRM export, Sheet format) tích hợp sẵn trong workspace-api.md -- không cần skill riêng, bot gọi trực tiếp.
 Skill cũ (advisory, board, SOC2, Twitter, marketing SaaS) đã chuyển vào `skills/_archived/` -- vẫn truy cập được nếu cần.

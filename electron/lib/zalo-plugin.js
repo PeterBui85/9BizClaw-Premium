@@ -1,13 +1,17 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const ctx = require('./context');
 const { getWorkspace, auditLog } = require('./workspace');
 const { getBundledVendorDir, findNodeBin } = require('./boot');
 const { withOpenClawConfigLock, writeOpenClawConfigIfChanged } = require('./config');
 const { call9Router } = require('./nine-router');
-const { getZaloGroupsDir } = require('./zalo-memory');
+const { getZaloUsersDir, getZaloGroupsDir } = require('./zalo-memory');
+const {
+  syncActiveZaloAccountSettings,
+  recordGroupOwnerSelfIds,
+} = require('./zalo-account-settings');
 
 // ============================================
 //  PRIVATE STATE
@@ -23,6 +27,61 @@ const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.4';
 // ============================================
 function isZaloReady() { return _zaloReady; }
 function getZaloPluginVersion() { return MODORO_ZALO_FORK_VERSION; }
+
+function resolveCurrentZaloSelfInfo(profile = 'default') {
+  try {
+    const cliJs = findOpenzcaCliJs();
+    const nodeBin = findNodeBin();
+    if (!cliJs || !nodeBin) return null;
+    try {
+      const raw = execFileSync(nodeBin, [cliJs, '--profile', profile, 'me', 'info', '--json'], {
+        encoding: 'utf-8',
+        timeout: 10000,
+        windowsHide: true,
+      }).trim();
+      const info = JSON.parse(raw);
+      const selfId = String(info?.userId || info?.uid || info?.id || '').trim();
+      if (selfId) {
+        return {
+          selfId,
+          displayName: String(info?.displayName || info?.zaloName || info?.name || '').trim(),
+          profile,
+        };
+      }
+    } catch {}
+    const idOut = execFileSync(nodeBin, [cliJs, '--profile', profile, 'me', 'id'], {
+      encoding: 'utf-8',
+      timeout: 10000,
+      windowsHide: true,
+    }).trim();
+    const selfId = idOut.split(/\s+/g)[0]?.trim();
+    return selfId ? { selfId, displayName: '', profile } : null;
+  } catch (e) {
+    console.warn('[zalo-account] self id resolve skipped:', e?.message || e);
+    return null;
+  }
+}
+
+function sanitizeZaloGroupIdForFile(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.length > 128) return '';
+  const safe = raw.replace(/[^0-9A-Za-z_-]/g, '');
+  return safe === raw ? safe : '';
+}
+
+function resolveZaloGroupMemoryPath(groupsDir, groupId) {
+  const safeGroupId = sanitizeZaloGroupIdForFile(groupId);
+  if (!groupsDir || !safeGroupId) return null;
+  return path.join(groupsDir, `${safeGroupId}.md`);
+}
+
+function resolveCurrentZaloOwnerSelfId(options = {}) {
+  const explicit = String(options?.ownerSelfId || '').trim();
+  if (explicit && explicit === explicit.replace(/[^0-9A-Za-z_-]/g, '')) return explicit;
+  const selfInfo = resolveCurrentZaloSelfInfo('default');
+  const selfId = String(selfInfo?.selfId || '').trim();
+  return selfId && selfId === selfId.replace(/[^0-9A-Za-z_-]/g, '') ? selfId : '';
+}
 
 // ============================================
 //  cleanupOrphanZaloListener
@@ -41,10 +100,14 @@ function cleanupOrphanZaloListener() {
         // 1. Get-CimInstance  — Win8+/PS3.0+ (fast, modern)
         // 2. Get-WmiObject    — Win7/PS2.0 fallback
         // 3. wmic             — ancient Windows, last resort
-        const psCmd1 = `powershell -NoProfile -Command "try { (Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId) -join ',' } catch { try { (Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId) -join ',' } catch { (wmic process where \"name='node.exe' and commandline like '%openzca%listen%'\" get ProcessId 2>nul) } }"`;
+        const psCmd1 = `try { (Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId) -join ',' } catch { try { (Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId) -join ',' } catch { (wmic process where "name='node.exe' and commandline like '%openzca%listen%'" get ProcessId 2>$null) } }`;
         let out;
         try {
-          out = execSync(psCmd1, { encoding: 'utf-8', timeout: 8000 }).trim();
+          out = execFileSync(
+            'powershell.exe',
+            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd1],
+            { encoding: 'utf-8', timeout: 8000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
+          ).trim();
         } catch (e) {
           console.warn('[zalo-cleanup] All PS/WMI probes failed:', e.message);
           out = '';
@@ -171,8 +234,8 @@ function seedZaloCustomersFromCache() {
     }
     const workspace = getWorkspace();
     if (!workspace) return;
-    const usersDir = path.join(workspace, 'memory', 'zalo-users');
-    const groupsDir = path.join(workspace, 'memory', 'zalo-groups');
+    const usersDir = getZaloUsersDir() || path.join(workspace, 'memory', 'zalo-users');
+    const groupsDir = getZaloGroupsDir() || path.join(workspace, 'memory', 'zalo-groups');
     try { fs.mkdirSync(usersDir, { recursive: true }); } catch {}
     try { fs.mkdirSync(groupsDir, { recursive: true }); } catch {}
 
@@ -229,18 +292,22 @@ ${statusText ? `**Trạng thái Zalo:** ${statusText}\n\n` : ''}---
       try {
         const raw = JSON.parse(fs.readFileSync(groupsPath, 'utf-8'));
         const groups = Array.isArray(raw) ? raw : (Array.isArray(raw?.groups) ? raw.groups : []);
+        const ownerSelfIdForGroups = resolveCurrentZaloOwnerSelfId();
         for (const g of groups) {
-          const groupId = g.groupId || g.id;
+          const groupId = sanitizeZaloGroupIdForFile(g.groupId || g.id);
           if (!groupId) continue;
-          allGroupIds.push(String(groupId));
-          const profilePath = path.join(groupsDir, `${groupId}.md`);
+          allGroupIds.push(groupId);
+          const profilePath = resolveZaloGroupMemoryPath(groupsDir, groupId);
+          if (!profilePath) continue;
           if (fs.existsSync(profilePath)) { skipped++; continue; }
           const name = String(g.name || g.groupName || 'Nhóm Zalo').trim();
           const memberCount = Array.isArray(g.memVerList) ? g.memVerList.length
             : Array.isArray(g.members) ? g.members.length
             : (g.totalMember || 0);
+          const ownerSelfId = ownerSelfIdForGroups;
+          const ownerLine = ownerSelfId ? `ownerSelfIds: ${JSON.stringify([ownerSelfId])}\n` : '';
           const content = `---
-name: ${name}
+${ownerLine}name: ${name}
 lastActivity: ${new Date().toISOString()}
 memberCount: ${memberCount}
 ---
@@ -277,10 +344,29 @@ memberCount: ${memberCount}
       console.log('[seedZaloCustomers] cache is empty, nothing to seed');
     }
 
-    // === Default-deny: all friends OFF, all groups OFF ===
-    // Fresh install OR account switch → block everyone. CEO explicitly
-    // enables individual friends/groups from Dashboard.
-    try {
+    const selfInfo = resolveCurrentZaloSelfInfo('default');
+    if (selfInfo?.selfId) {
+      try {
+        const snapshot = syncActiveZaloAccountSettings({
+          workspace,
+          selfId: selfInfo.selfId,
+          displayName: selfInfo.displayName,
+          profile: selfInfo.profile || 'default',
+          friendIds: allFriendIds,
+          groupIds: allGroupIds,
+        });
+        recordGroupOwnerSelfIds({ workspace, groupsDir, selfId: selfInfo.selfId, groupIds: allGroupIds });
+        console.log(`[zalo-account] active=${selfInfo.selfId} restored settings (${snapshot?.userAllowlist?.length || 0} user allow entries, ${allGroupIds.length} groups seen)`);
+        try { auditLog('zalo_account_settings_synced', { selfId: selfInfo.selfId, friends: allFriendIds.length, groups: allGroupIds.length }); } catch {}
+      } catch (e) {
+        console.warn('[zalo-account] sync error:', e?.message || e);
+      }
+    }
+
+    // === Legacy fallback default-deny ===
+    // Only runs when openzca cannot reveal selfId. Normal account switches are
+    // handled by zalo-account-settings snapshots above.
+    if (!selfInfo?.selfId) try {
       const seedFlagPath = path.join(workspace, 'zalo-initial-blocklist-seeded.json');
       const cacheHasContent = allFriendIds.length > 0 || allGroupIds.length > 0;
       // Fingerprint = sorted first 10 friend IDs joined. Different account = different friends.
@@ -369,7 +455,16 @@ function findOpenzcaCliJs() {
     const bundled = getBundledVendorDir && getBundledVendorDir();
     if (bundled) candidates.push(path.join(bundled, 'node_modules', 'openzca', 'dist', 'cli.js'));
   } catch {}
+  candidates.push(
+    path.join(ctx.userDataDir || '', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js'),
+    path.join(ctx.resourceDir || '', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js'),
+    path.join(ctx.resourceDir || '', 'electron', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js'),
+    path.join(__dirname, '..', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js'),
+  );
   if (process.platform === 'win32') {
+    if (process.env.APPDATA) {
+      candidates.push(path.join(process.env.APPDATA, '9BizClaw', 'vendor', 'node_modules', 'openzca', 'dist', 'cli.js'));
+    }
     candidates.push(
       path.join(ctx.HOME, 'AppData', 'Roaming', 'npm', 'node_modules', 'openzca', 'dist', 'cli.js'),
       path.join(ctx.HOME, 'AppData', 'Local', 'npm', 'node_modules', 'openzca', 'dist', 'cli.js'),
@@ -404,13 +499,44 @@ function findOpenzcaCliJs() {
 // Seed a single group's history summary. Returns { ok, reason }.
 //   - ok=true  → file updated (or already seeded / skipped for valid reason)
 //   - ok=false → transient failure; leave "(chưa có)" so next boot retries
-async function seedGroupHistorySummary(groupId, threadName) {
-  const placeholder = '(chưa có)';
+async function seedGroupHistorySummary(groupId, threadName, options = {}) {
+  const force = options?.force === true;
   try {
     const dir = getZaloGroupsDir && getZaloGroupsDir();
     if (!dir) return { ok: false, reason: 'no-groups-dir' };
-    const filePath = path.join(dir, `${groupId}.md`);
-    if (!fs.existsSync(filePath)) return { ok: true, reason: 'no-metadata-file' };
+    const safeGroupId = sanitizeZaloGroupIdForFile(groupId);
+    if (!safeGroupId) return { ok: false, reason: 'invalid-groupId' };
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    const filePath = resolveZaloGroupMemoryPath(dir, safeGroupId);
+    if (!filePath) return { ok: false, reason: 'invalid-groupId' };
+    if (!fs.existsSync(filePath)) {
+      const safeName = String(threadName || safeGroupId || 'Nhóm Zalo').replace(/[\r\n]+/g, ' ').trim().slice(0, 120) || 'Nhóm Zalo';
+      const ownerSelfId = resolveCurrentZaloOwnerSelfId(options);
+      const ownerLine = ownerSelfId ? `ownerSelfIds: ${JSON.stringify([ownerSelfId])}\n` : '';
+      const content = `---
+${ownerLine}name: ${safeName}
+lastActivity: ${new Date().toISOString()}
+memberCount: 0
+---
+# Nhóm ${safeGroupId}
+
+**Tên nhóm:** ${safeName}
+
+## Chủ đề thường thảo luận
+(chưa có)
+
+## Thành viên key
+(chưa có)
+
+## Quyết định/thông báo gần đây
+(chưa có)
+
+---
+*Nhóm được tạo hồ sơ từ Dashboard lúc ${new Date().toISOString().slice(0, 19)}.*
+`;
+      try { fs.writeFileSync(filePath, content, 'utf-8'); }
+      catch (e) { return { ok: false, reason: 'metadata-create-failed: ' + e.message }; }
+    }
     let content;
     try { content = fs.readFileSync(filePath, 'utf-8'); }
     catch { return { ok: false, reason: 'read-failed' }; }
@@ -418,7 +544,7 @@ async function seedGroupHistorySummary(groupId, threadName) {
     const hasTopicsPlaceholder   = /##\s+Chủ đề thường thảo luận\s*\n\(chưa có\)/.test(content);
     const hasMembersPlaceholder  = /##\s+Thành viên key\s*\n\(chưa có\)/.test(content);
     const hasDecisionPlaceholder = /##\s+Quyết định\/thông báo gần đây\s*\n\(chưa có\)/.test(content);
-    if (!hasTopicsPlaceholder && !hasMembersPlaceholder && !hasDecisionPlaceholder) {
+    if (!force && !hasTopicsPlaceholder && !hasMembersPlaceholder && !hasDecisionPlaceholder) {
       return { ok: true, reason: 'already-seeded' };
     }
     const cliJs = findOpenzcaCliJs();
@@ -428,7 +554,7 @@ async function seedGroupHistorySummary(groupId, threadName) {
     // Fetch last 30 messages from Zalo's live history for this group.
     const stdout = await new Promise((resolve) => {
       let out = '', err = '', settled = false;
-      const child = spawn(nodeBin, [cliJs, '--profile', 'default', 'msg', 'recent', groupId, '-g', '-n', '30', '--source', 'live', '-j'], {
+      const child = spawn(nodeBin, [cliJs, '--profile', 'default', 'msg', 'recent', safeGroupId, '-g', '-n', '30', '--source', 'live', '-j'], {
         shell: false,
         windowsHide: true,
       });
@@ -494,17 +620,23 @@ async function seedGroupHistorySummary(groupId, threadName) {
     if (!parts.topics && !parts.members && !parts.decisions) {
       return { ok: false, reason: 'llm-unparseable' };
     }
-    // Rewrite the MD file — replace each "(chưa có)" placeholder only if we got
-    // content for that section. Preserve file structure otherwise.
+    // Rewrite the MD file. Boot seeding only fills placeholders; manual
+    // refresh can force-replace already seeded sections.
+    const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const replaceSection = (input, heading, body) => {
+      const re = new RegExp(`(##\\s+${escapeRegExp(heading)}\\s*\\n)([\\s\\S]*?)(?=\\n##\\s+|\\n---|$)`);
+      if (!re.test(input)) return input;
+      return input.replace(re, `$1${body}\n`);
+    };
     let updated = content;
-    if (parts.topics && hasTopicsPlaceholder) {
-      updated = updated.replace(/(##\s+Chủ đề thường thảo luận\s*\n)\(chưa có\)/, `$1${parts.topics}`);
+    if (parts.topics && (hasTopicsPlaceholder || force)) {
+      updated = replaceSection(updated, 'Chủ đề thường thảo luận', parts.topics);
     }
-    if (parts.members && hasMembersPlaceholder) {
-      updated = updated.replace(/(##\s+Thành viên key\s*\n)\(chưa có\)/, `$1${parts.members}`);
+    if (parts.members && (hasMembersPlaceholder || force)) {
+      updated = replaceSection(updated, 'Thành viên key', parts.members);
     }
-    if (parts.decisions && hasDecisionPlaceholder) {
-      updated = updated.replace(/(##\s+Quyết định\/thông báo gần đây\s*\n)\(chưa có\)/, `$1${parts.decisions}`);
+    if (parts.decisions && (hasDecisionPlaceholder || force)) {
+      updated = replaceSection(updated, 'Quyết định/thông báo gần đây', parts.decisions);
     }
     // Update front-matter lastActivity
     updated = updated.replace(/^(lastActivity:\s*)[^\n]*$/m, `$1${new Date().toISOString()}`);
@@ -522,8 +654,8 @@ async function seedGroupHistorySummary(groupId, threadName) {
       try { fs.unlinkSync(tmpPath); } catch {}
       return { ok: false, reason: 'write-failed: ' + e.message };
     }
-    console.log(`[group-history-seed] summarized ${msgs.length} messages for group ${groupId}`);
-    try { auditLog('group_history_seeded', { groupId, msgCount: msgs.length, sections: Object.keys(parts) }); } catch {}
+    console.log(`[group-history-seed] summarized ${msgs.length} messages for group ${safeGroupId}`);
+    try { auditLog('group_history_seeded', { groupId: safeGroupId, msgCount: msgs.length, sections: Object.keys(parts) }); } catch {}
     return { ok: true, reason: 'seeded', msgCount: msgs.length };
   } catch (e) {
     return { ok: false, reason: 'exception: ' + (e && e.message ? e.message : String(e)) };

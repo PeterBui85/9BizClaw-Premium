@@ -27,6 +27,8 @@ mustInclude('knowledge upload queue state', 'let knowledgeUploadQueue = []');
 mustInclude('knowledge upload queue renderer', 'function renderKnowledgeUploadQueue()');
 mustInclude('knowledge busy dropzone', 'function setKnowledgeUploadBusy(isBusy)');
 mustInclude('knowledge visibility modal', 'function showKnowledgeVisibilityDialog(docId, currentVisibility)');
+mustInclude('knowledge enabled toggle handler', 'function toggleKnowledgeEnabled(docId, input)');
+mustInclude('knowledge enabled bridge call', 'window.claw.setKnowledgeEnabled(docId, next)');
 mustInclude('media status helper', 'function getMediaStatusMeta(status)');
 mustInclude('media action loading', 'async function withMediaButtonLoading(button, task)');
 mustInclude('google list state helper', 'function renderGoogleListState(el, state)');

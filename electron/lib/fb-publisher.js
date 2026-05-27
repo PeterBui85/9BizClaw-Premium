@@ -1,4 +1,4 @@
-// Facebook Graph API — page posting (publish-only)
+// Facebook Graph API - page posting and insights
 
 const https = require('https');
 const crypto = require('crypto');
@@ -12,12 +12,18 @@ const RESPONSE_TIMEOUT_MS = 30000;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const MIN_POST_INTERVAL_MS = 10 * 60 * 1000;
 const JITTER_MAX_MS = 2 * 60 * 1000;
+const DEFAULT_INSIGHTS_DAYS = 7;
+const INSIGHTS_METRICS = [
+  'page_media_view',
+  'page_post_engagements',
+  'page_follows',
+];
+const SNAPSHOT_METRICS = new Set(['page_follows']);
 const TIMESTAMP_FILE = path.join(process.platform === 'win32'
   ? path.join(process.env.APPDATA || os.homedir(), '9bizclaw')
   : path.join(os.homedir(), '.9bizclaw'), 'fb-last-post.json');
 let _lastPostAt = _loadLastPostAt();
-// Sequential queue: each post chains onto the previous via `.then()` so
-// concurrent callers execute one at a time. Prevents Facebook rate-limit 429.
+
 let _postQueue = Promise.resolve();
 const POST_QUEUE_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -51,13 +57,14 @@ async function graphRequest(method, endpoint, token, body) {
     return await _graphRequestOnce(method, endpoint, token, body);
   } catch (e) {
     if (e._httpStatus && e._httpStatus >= 500 && e._httpStatus < 600) {
-      console.warn('[fb-publisher] Graph API 5xx — retrying in 3s:', e.message);
+      console.warn('[fb-publisher] Graph API 5xx - retrying in 3s:', e.message);
       await new Promise(r => setTimeout(r, 3000));
       return await _graphRequestOnce(method, endpoint, token, body);
     }
     throw e;
   }
 }
+
 function _graphRequestOnce(method, endpoint, token, body) {
   return new Promise((resolve, reject) => {
     const url = `/${API_VERSION}${endpoint}`;
@@ -130,8 +137,8 @@ function graphMultipartPhoto(pageId, token, message, imageBuffer, imagePath) {
         'Authorization': `Bearer ${token}`,
         'User-Agent': USER_AGENT,
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': payload.length
-      }
+        'Content-Length': payload.length,
+      },
     }, res => {
       let d = '';
       const bodyTimer = setTimeout(() => { req.destroy(); reject(new Error('response body timeout')); }, RESPONSE_TIMEOUT_MS);
@@ -171,6 +178,130 @@ function hasPageCreateContentTask(tasks) {
   return tasks.includes('CREATE_CONTENT') || tasks.includes('PROFILE_PLUS_CREATE_CONTENT');
 }
 
+function normalizePermissionName(permission) {
+  if (!permission) return null;
+  if (typeof permission === 'string') return permission;
+  if (typeof permission !== 'object') return null;
+  if (permission.status && permission.status !== 'granted') return null;
+  return permission.permission || permission.name || null;
+}
+
+function hasNamedPermission(permissions, name) {
+  if (!Array.isArray(permissions)) return false;
+  return permissions.some(p => normalizePermissionName(p) === name);
+}
+
+function hasPageInsightsPermission(permissions) {
+  return hasNamedPermission(permissions, 'read_insights') ||
+    hasNamedPermission(permissions, 'pages_read_engagement');
+}
+
+function clampInt(value, fallback, min, max) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function unixSeconds(date) {
+  return Math.floor(date.getTime() / 1000);
+}
+
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function metricValueToNumber(value) {
+  if (typeof value === 'number') return value;
+  if (value && typeof value === 'object') {
+    return Object.values(value).reduce((sum, child) => {
+      return typeof child === 'number' ? sum + child : sum;
+    }, 0);
+  }
+  return 0;
+}
+
+function summarizeMetric(metricName, values, currentStartMs) {
+  const daily = [];
+  const previousDaily = [];
+  for (const row of Array.isArray(values) ? values : []) {
+    const n = metricValueToNumber(row && row.value);
+    const endMs = Date.parse(row && row.end_time);
+    if (Number.isFinite(endMs) && endMs > currentStartMs) daily.push(n);
+    else previousDaily.push(n);
+  }
+  if (SNAPSHOT_METRICS.has(metricName)) {
+    const latestCurrent = daily.length ? daily[daily.length - 1] : 0;
+    const latestPrevious = previousDaily.length ? previousDaily[previousDaily.length - 1] : 0;
+    return { current: latestCurrent, previous: latestPrevious, daily };
+  }
+  return {
+    current: daily.reduce((sum, n) => sum + n, 0),
+    previous: previousDaily.reduce((sum, n) => sum + n, 0),
+    daily,
+  };
+}
+
+function normalizeInsights(data, currentStartMs) {
+  const out = {};
+  for (const item of (data && data.data) || []) {
+    if (!item || !item.name) continue;
+    out[item.name] = summarizeMetric(item.name, item.values, currentStartMs);
+  }
+  return out;
+}
+
+async function fetchInsightMetric(pageId, token, metric, previousStart, until, currentStart) {
+  const endpoint = `/${pageId}/insights?metric=${encodeURIComponent(metric)}` +
+    `&period=day&since=${unixSeconds(previousStart)}&until=${unixSeconds(until)}`;
+  const insights = await graphRequest('GET', endpoint, token);
+  return normalizeInsights(insights, currentStart.getTime());
+}
+
+function addCompatibilityMetricAliases(metrics) {
+  const out = { ...metrics };
+  if (metrics.page_media_view) {
+    out.page_views_total = metrics.page_media_view;
+  }
+  if (metrics.page_follows) {
+    out.page_followers = metrics.page_follows;
+  }
+  return out;
+}
+
+function normalizePost(post) {
+  if (!post || typeof post !== 'object') return null;
+  return {
+    id: post.id,
+    message: post.message || '',
+    created_time: post.created_time || null,
+    full_picture: post.full_picture || null,
+    likes: post.likes?.summary?.total_count || 0,
+    comments: post.comments?.summary?.total_count || 0,
+    shares: post.shares?.count || 0,
+    url: post.permalink_url || formatPostUrl(post.id),
+  };
+}
+
+async function getPagePermissions(pageId, token) {
+  try {
+    const data = await graphRequest('GET', `/${pageId}/permissions`, token);
+    return data.data || [];
+  } catch (e) {
+    if (e._isTokenExpired) throw e;
+    return [];
+  }
+}
+
+async function getPageInfo(pageId, token, fallbackName) {
+  try {
+    const data = await graphRequest('GET', `/${pageId}?fields=id,name`, token);
+    return { pageId: data.id || pageId, pageName: data.name || fallbackName || null };
+  } catch (e) {
+    if (e._isTokenExpired) throw e;
+    return { pageId, pageName: fallbackName || null };
+  }
+}
+
 async function verifyToken(token) {
   if (!token || !String(token).trim()) {
     return { valid: false, error: 'Token Facebook trống.' };
@@ -200,10 +331,6 @@ async function verifyToken(token) {
 }
 
 async function enforcePostInterval() {
-  // Re-read from disk before comparing so a sibling Electron instance (dev
-  // setup or a second window) that posted recently is observed. Without this,
-  // `_lastPostAt` would be the module-load snapshot — second instance starts
-  // with 0, posts immediately, defeats the anti-shadow-ban rate limiter.
   const onDisk = _loadLastPostAt();
   if (onDisk > _lastPostAt) _lastPostAt = onDisk;
   const elapsed = Date.now() - _lastPostAt;
@@ -242,9 +369,94 @@ function postPhoto(pageId, token, message, imageBuffer, imagePath) {
 }
 
 async function getRecentPosts(pageId, token, limit = 5) {
+  const safeLimit = clampInt(limit, 5, 1, 25);
+  const fields = [
+    'id',
+    'message',
+    'created_time',
+    'full_picture',
+    'permalink_url',
+    'likes.summary(true)',
+    'comments.summary(true)',
+    'shares',
+  ].join(',');
   const data = await graphRequest('GET',
-    `/${pageId}/feed?fields=message,created_time,full_picture&limit=${limit}`, token);
+    `/${pageId}/feed?fields=${encodeURIComponent(fields)}&limit=${safeLimit}`, token);
   return data.data || [];
 }
 
-module.exports = { verifyToken, postText, postPhoto, getRecentPosts, _test: { hasPageCreateContentTask } };
+async function getInsights(pageId, token, opts = {}) {
+  if (!pageId) return { valid: false, tokenValid: false, error: 'pageId required' };
+  if (!token || !String(token).trim()) {
+    return { valid: false, tokenValid: false, error: 'Facebook token missing' };
+  }
+
+  const days = clampInt(opts.days, DEFAULT_INSIGHTS_DAYS, 1, 90);
+  const recentLimit = clampInt(opts.limit, 5, 1, 10);
+  const until = opts.until instanceof Date ? opts.until : new Date();
+  const currentStart = new Date(until.getTime() - days * 24 * 60 * 60 * 1000);
+  const previousStart = new Date(currentStart.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const pageInfo = await getPageInfo(pageId, token, opts.pageName);
+  const permissions = await getPagePermissions(pageId, token);
+  const permissionSummary = {
+    read_insights: hasNamedPermission(permissions, 'read_insights'),
+    pages_read_engagement: hasNamedPermission(permissions, 'pages_read_engagement'),
+  };
+
+  let metrics = {};
+  let insightsError = null;
+  const metricErrors = {};
+  for (const metric of INSIGHTS_METRICS) {
+    try {
+      Object.assign(metrics, await fetchInsightMetric(pageId, token, metric, previousStart, until, currentStart));
+    } catch (e) {
+      if (e._isTokenExpired) throw e;
+      metricErrors[metric] = e.message || 'Facebook insights unavailable';
+    }
+  }
+  metrics = addCompatibilityMetricAliases(metrics);
+  if (Object.keys(metricErrors).length === INSIGHTS_METRICS.length) {
+    insightsError = Object.values(metricErrors)[0] || 'Facebook insights unavailable';
+  }
+
+  let recentPosts = [];
+  try {
+    recentPosts = (await getRecentPosts(pageId, token, recentLimit)).map(normalizePost).filter(Boolean);
+  } catch (e) {
+    if (e._isTokenExpired) throw e;
+  }
+
+  const metricValues = Object.values(metrics);
+  const hasMetricRows = metricValues.some(metric => metric && metric.daily && metric.daily.length > 0);
+  const hasMetricData = metricValues.some(metric => {
+    return metric && (metric.current !== 0 || metric.previous !== 0 || (metric.daily && metric.daily.length > 0));
+  });
+
+  return {
+    valid: true,
+    tokenValid: true,
+    tokenName: pageInfo.pageName,
+    pageName: pageInfo.pageName,
+    pageId: pageInfo.pageId,
+    since: isoDate(currentStart),
+    until: isoDate(until),
+    days,
+    hasInsights: hasMetricData,
+    hasInsightsPermission: hasPageInsightsPermission(permissions) || hasMetricRows,
+    permissions: permissionSummary,
+    metrics,
+    metricErrors,
+    recentPosts,
+    insightsError,
+  };
+}
+
+module.exports = {
+  verifyToken,
+  postText,
+  postPhoto,
+  getRecentPosts,
+  getInsights,
+  _test: { hasPageCreateContentTask, hasPageInsightsPermission, insightsMetrics: INSIGHTS_METRICS },
+};

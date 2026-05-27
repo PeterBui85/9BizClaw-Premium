@@ -1,5 +1,7 @@
 'use strict';
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const googleApi = require('./google-api');
 
 function isHomedirPathSafe(p) {
@@ -76,6 +78,128 @@ function normalizeSheetValues(params) {
   return { ok: true, values: raw };
 }
 
+function stripBom(text) {
+  return String(text || '').replace(/^\uFEFF/, '');
+}
+
+function isLocalPayloadFileSafe(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const absolute = path.resolve(filePath);
+  if (isHomedirPathSafe(absolute)) return true;
+  try {
+    const resolved = fs.realpathSync(absolute);
+    const tmp = fs.realpathSync(os.tmpdir());
+    const relative = path.relative(tmp, resolved);
+    return !relative || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  } catch {
+    return false;
+  }
+}
+
+function readJsonPayloadFile(filePath, label) {
+  if (!isLocalPayloadFileSafe(filePath)) {
+    return { ok: false, error: `${label} blocked by path validation` };
+  }
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > 2 * 1024 * 1024) {
+      return { ok: false, error: `${label} is too large (max 2MB)` };
+    }
+    return { ok: true, value: JSON.parse(stripBom(fs.readFileSync(filePath, 'utf8')).trim()) };
+  } catch (e) {
+    return { ok: false, error: `${label} must be a readable JSON file: ${e.message}` };
+  }
+}
+
+function parseJsonArrayParam(name, raw, options = {}) {
+  if (raw === undefined || raw === null || raw === '') {
+    if (options.required) return { ok: false, error: `${name} required` };
+    return { ok: true, value: undefined };
+  }
+  if (Array.isArray(raw)) return { ok: true, value: raw };
+  if (typeof raw !== 'string') return { ok: false, error: `${name} must be a JSON array` };
+  const trimmed = stripBom(raw).trim();
+  if (!trimmed) {
+    if (options.required) return { ok: false, error: `${name} required` };
+    return { ok: true, value: undefined };
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) return { ok: false, error: `${name} must be a JSON array` };
+    return { ok: true, value: parsed };
+  } catch (e) {
+    return { ok: false, error: `${name} must be valid JSON: ${e.message}` };
+  }
+}
+
+function normalizeTextColumnRef(value) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return { ok: true, value: numberToColumn(value + 1) };
+  }
+  const text = String(value || '').trim();
+  if (!text) return { ok: true, value: null };
+  if (/^\d+$/.test(text)) return { ok: true, value: numberToColumn(Number(text) + 1) };
+  if (/^[A-Za-z]+$/.test(text)) return { ok: true, value: text.toUpperCase() };
+  return { ok: false, error: `invalid text column ${JSON.stringify(value)}` };
+}
+
+function normalizeCreateFormattedPayload(params = {}) {
+  let merged = { ...params };
+  const payloadFile = params.payloadFile || params.payloadPath;
+  if (payloadFile) {
+    const file = readJsonPayloadFile(payloadFile, 'payloadFile');
+    if (!file.ok) return file;
+    if (!file.value || typeof file.value !== 'object' || Array.isArray(file.value)) {
+      return { ok: false, error: 'payloadFile must contain a JSON object' };
+    }
+    merged = { ...file.value, ...params };
+  }
+
+  const dataFile = merged.dataFile || merged.dataPath;
+  if (dataFile) {
+    const file = readJsonPayloadFile(dataFile, 'dataFile');
+    if (!file.ok) return file;
+    merged.data = file.value;
+  }
+
+  const title = String(merged.title || '').trim();
+  if (!title) return { ok: false, error: 'title required' };
+
+  const headersResult = parseJsonArrayParam('headers', merged.headers, { required: true });
+  if (!headersResult.ok) return headersResult;
+  if (!headersResult.value.length || headersResult.value.some(cell => Array.isArray(cell))) {
+    return { ok: false, error: 'headers must be a non-empty JSON array of cells' };
+  }
+  const headers = headersResult.value.map(cell => cell === null || cell === undefined ? '' : String(cell));
+
+  const dataResult = parseJsonArrayParam('data', merged.data === undefined ? [] : merged.data);
+  if (!dataResult.ok) return dataResult;
+  const data = dataResult.value || [];
+  if (!Array.isArray(data) || data.some(row => !Array.isArray(row))) {
+    return { ok: false, error: 'data must be a JSON 2D array' };
+  }
+
+  const textColumnsResult = parseJsonArrayParam('textColumns', merged.textColumns === undefined ? [] : merged.textColumns);
+  if (!textColumnsResult.ok) return textColumnsResult;
+  const textColumns = [];
+  for (const col of textColumnsResult.value || []) {
+    const normalized = normalizeTextColumnRef(col);
+    if (!normalized.ok) return normalized;
+    if (normalized.value) textColumns.push(normalized.value);
+  }
+
+  const style = merged.style === 'minimal' ? 'minimal' : (merged.style === 'report' ? 'report' : 'standard');
+  return {
+    ok: true,
+    title,
+    headers,
+    data,
+    style,
+    textColumns,
+    parent: merged.parent,
+  };
+}
+
 function fitSheetRangeToValues(range, values) {
   if (!Array.isArray(values) || !values.length) return range;
   const rowCount = values.length;
@@ -98,7 +222,8 @@ module.exports = handleGoogleRoute;
 module.exports.isHomedirPathSafe = isHomedirPathSafe;
 module.exports.normalizeSheetValues = normalizeSheetValues;
 module.exports.fitSheetRangeToValues = fitSheetRangeToValues;
-module.exports._test = { normalizeSheetValues, fitSheetRangeToValues };
+module.exports.normalizeCreateFormattedPayload = normalizeCreateFormattedPayload;
+module.exports._test = { normalizeSheetValues, fitSheetRangeToValues, normalizeCreateFormattedPayload };
 
 async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
   try {
@@ -167,6 +292,15 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
     if (urlPath === '/gmail/read') {
       if (!params.id) return jsonResp(res, 400, { error: 'id required' });
       const r = await googleApi.readEmail(params.id);
+      return jsonResp(res, 200, r);
+    }
+    if (urlPath === '/gmail/attachment') {
+      if (!params.id || !params.attachmentId) return jsonResp(res, 400, { error: 'id and attachmentId required' });
+      const r = await googleApi.downloadGmailAttachment(params.id, params.attachmentId, {
+        name: params.name || params.filename,
+        mimeType: params.mimeType || params.contentType,
+        scan: params.scan === '1' || params.scan === 'true',
+      });
       return jsonResp(res, 200, r);
     }
     if (urlPath === '/gmail/send') {
@@ -351,8 +485,9 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
     }
     if (urlPath === '/sheets/create-formatted') {
       if (blockZaloMutation('Google Sheets create-formatted')) return;
-      const { title, headers, data, style, textColumns, parent } = params;
-      if (!title || !headers) return jsonResp(res, 400, { error: 'title and headers required' });
+      const normalizedPayload = normalizeCreateFormattedPayload(params);
+      if (!normalizedPayload.ok) return jsonResp(res, 400, { error: normalizedPayload.error });
+      const { title, headers, data, style, textColumns, parent } = normalizedPayload;
 
       try {
         // Step 1: Create sheet
@@ -368,12 +503,12 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
 
         // Step 3: Write data
         const allRows = [headers, ...(data || [])];
-        const lastCol = String.fromCharCode(64 + headers.length);
+        const lastCol = numberToColumn(headers.length);
         const range = 'Sheet1!A1:' + lastCol + allRows.length;
         await googleApi.updateSheet(sid, range, allRows);
 
         // Step 4: Apply style
-        const s = style || 'crm';
+        const s = style === 'standard' ? 'crm' : style;
         if (s === 'crm' || s === 'report') {
           // Freeze header
           await googleApi.freezeSheet(sid, 1);
@@ -409,7 +544,7 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
     }
     return jsonResp(res, 404, {
       error: 'unknown google route: ' + urlPath,
-      hint: 'Valid routes: /status, /health, /gmail/inbox, /gmail/read, /gmail/send, /gmail/reply, /calendar/events, /calendar/create, /calendar/update, /calendar/delete, /calendar/free-busy, /calendar/free-slots, /drive/list, /drive/upload, /drive/download, /drive/share, /docs/list, /docs/info, /docs/read, /docs/create, /docs/write, /docs/insert, /docs/find-replace, /docs/export, /sheets/list, /sheets/metadata, /sheets/get, /sheets/update, /sheets/create, /sheets/create-formatted, /sheets/format, /sheets/freeze, /sheets/number-format, /contacts/list, /contacts/create, /tasks/lists, /tasks/list, /tasks/create, /tasks/complete, /apps-script/run',
+      hint: 'Valid routes: /status, /health, /gmail/inbox, /gmail/read, /gmail/attachment, /gmail/send, /gmail/reply, /calendar/events, /calendar/create, /calendar/update, /calendar/delete, /calendar/free-busy, /calendar/free-slots, /drive/list, /drive/upload, /drive/download, /drive/share, /docs/list, /docs/info, /docs/read, /docs/create, /docs/write, /docs/insert, /docs/find-replace, /docs/export, /sheets/list, /sheets/metadata, /sheets/get, /sheets/update, /sheets/create, /sheets/create-formatted, /sheets/format, /sheets/freeze, /sheets/number-format, /contacts/list, /contacts/create, /tasks/lists, /tasks/list, /tasks/create, /tasks/complete, /apps-script/run',
     });
   } catch (e) {
     return jsonResp(res, 500, { error: e.message });

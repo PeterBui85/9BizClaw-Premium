@@ -1,90 +1,135 @@
 ---
 name: ceo-memory-api
-description: Bot memory API — lưu/tìm/xóa ký ức qua Cron API port 20200
+description: Bot memory API - lưu, tìm, duyệt và lấy context ký ức qua Cron API port 20200
 metadata:
-  version: 1.0.0
+  version: 2.0.0
 ---
 
 # Bộ nhớ bot (CEO Memory)
 
-Bot có thể lưu và truy xuất ký ức qua Cron API. Xác thực: phiên Telegram CEO tự gắn header nội bộ — KHÔNG đọc `cron-api-token.txt`, KHÔNG tự thêm `token=<token>`.
+Bot có thể lưu và truy xuất ký ức qua Cron API. Xác thực: phiên Telegram CEO tự gắn header nội bộ. Không đọc `cron-api-token.txt`, không tự thêm `token=<token>`.
 
-## Khi nào dùng — TỰ ĐỘNG, không đợi CEO bảo
+## Nguồn runtime chính
 
-Bot gọi `/api/memory/write` NGAY TRONG CÙNG TURN khi:
-- **Hoàn thành task:** báo giá, tạo file, gửi nhóm, trả lời khách → `type: "task"`, content: `[ngày] mô tả ngắn`
-- **CEO sửa lỗi:** "không phải vậy", "sai rồi" → `type: "correction"`
-- **CEO dặn quy tắc:** "từ giờ...", "luôn...", "đừng..." → `type: "rule"`
-- **Việc pending:** "mai gửi lại", "chờ khách confirm" → `type: "task"`, content: `[PENDING] mô tả`
-- **CEO yêu cầu nhớ:** "ghi nhớ", "nhớ giùm" → type phù hợp
-- **Phát hiện pattern khách:** nhiều khách hỏi cùng câu → `type: "pattern"`
+Trước khi làm task có khả năng cần ký ức, gọi context builder:
 
-KHÔNG IM LẶNG khi vừa làm xong việc. CEO có thể đi ngay sau khi nhắn — bot phải ghi trước khi session hết.
+`POST http://127.0.0.1:20200/api/memory/context`
+
+Body ví dụ:
+```json
+{
+  "query": "tạo Google Sheet mới",
+  "channel": "telegram",
+  "taskType": "google_workspace",
+  "intent": "create_sheet",
+  "limit": 8
+}
+```
+
+Kết quả trả về gồm:
+- `memories`: ký ức phù hợp đã lọc theo kênh
+- `procedures`: quy trình vận hành cần ưu tiên
+- `entities`: đối tượng liên quan nếu có
+- `safetyWarnings`: cảnh báo phân quyền/kênh
+- `evidenceIds`: ID bằng chứng để CEO xem trong Dashboard
+
+Khi đang ở Zalo/WhatsApp khách hàng, context builder tự loại ký ức `ceo`, `internal`, `workflow`. Không cố lấy vòng qua bằng `/api/memory/search`.
+
+## Khi nào ghi ký ức
+
+Gọi `/api/memory/write` trong cùng turn khi CEO dạy điều bền vững:
+- CEO sửa lỗi bot: `type: "correction"`
+- CEO dặn quy tắc tương lai: `type: "rule"`
+- CEO nói sở thích hoặc phong cách làm việc: `type: "preference"`
+- CEO dạy quy trình lặp lại: `type: "procedure"`
+- CEO dạy sự thật ổn định về doanh nghiệp: `type: "fact"`
+- Phát hiện pattern khách hàng lặp lại: `type: "pattern"`
+
+Không ghi task completion, cron result, “đã gửi email”, “đã tạo Sheet”, “đã đăng bài”. Đó là log, không phải memory.
 
 ## Lưu ký ức
 
 `POST http://127.0.0.1:20200/api/memory/write`
-Body: `{"type":"rule","content":"Khách hỏi bảo hành → 12 tháng"}`
-Type: `rule` | `pattern` | `preference` | `fact` | `correction`
 
-## Tìm ký ức
+Body tối thiểu:
+```json
+{
+  "type": "procedure",
+  "scope": "ceo",
+  "content": "Khi tạo Google Sheet mới, tạo file .xlsx local rồi upload/convert bằng gog drive upload --convert."
+}
+```
 
-`POST http://127.0.0.1:20200/api/memory/search`
-Body: `{"query":"bảo hành","limit":5}`
+Type hợp lệ: `rule`, `pattern`, `preference`, `fact`, `correction`, `procedure`, `entity_note`, `task_state`.
 
-## Xóa ký ức
+Scope hợp lệ:
+- `ceo`: chỉ CEO Telegram/app chat
+- `internal`: nội bộ
+- `workflow`: quy trình vận hành nội bộ
+- `customer`: chỉ kênh khách hàng
+- `public`: có thể dùng mọi kênh
 
-`POST http://127.0.0.1:20200/api/memory/delete`
-Body: `{"id":"mem_..."}`
+Nếu nội dung chứa token, mật khẩu, số điện thoại, email hoặc dữ liệu nhạy cảm, hệ thống tự để `pending_review`. Ký ức pending không vào context cho đến khi CEO duyệt trong Dashboard.
 
-## Lưu ý
+## Tìm và quản trị
 
-- Ghi memory TRONG CÙNG TURN reply — không đợi turn sau, không đợi idle
-- Content ngắn gọn, tiếng Việt có dấu, dưới 200 ký tự
-- Hệ thống nudge vẫn chạy backup (5 phút idle) — nhưng bot nên ghi trước, nudge chỉ bổ sung
-- CEO nói "ghi nhớ/nhớ giùm" → xác nhận: "Em đã ghi nhớ." Quan sát tự động (xem dưới) → THAO TÁC IM, KHÔNG nhắc CEO.
+Tìm thô:
+```json
+POST /api/memory/search
+{"query":"bảo hành","channel":"telegram","limit":5}
+```
 
-## QUAN SÁT CEO — Tự động học từ hội thoại
+Tắt/bật:
+```json
+POST /api/memory/status
+{"id":"mem_...","status":"disabled"}
+```
 
-**LUẬT: Mỗi khi CEO dạy bot điều gì — dù nói thẳng hay gián tiếp — GHI NGAY trong cùng turn. KHÔNG đợi CEO bảo "ghi nhớ". Việc dạy LÀ trigger.**
+Trạng thái hợp lệ: `active`, `pending_review`, `disabled`, `superseded`, `deleted`.
 
-### Tín hiệu cần quan sát
+Đánh dấu đã bị thay thế:
+```json
+POST /api/memory/supersede
+{"id":"mem_old","supersededById":"mem_new"}
+```
 
-| Tín hiệu | Loại memory | Ví dụ |
-|---|---|---|
-| CEO duyệt/từ chối đề xuất | `preference` | "CEO thích báo cáo dạng bullet ngắn, không thích paragraph dài" |
-| CEO sửa gián tiếp (diễn đạt lại, làm khác) | `correction` | "Khi gửi báo giá, CEO muốn kèm deadline chuyển khoản, không chỉ giá" |
-| CEO tiết lộ ưu tiên kinh doanh | `fact` | "CEO đang tập trung mở rộng kênh Zalo tháng 5/2026" |
-| CEO nhắc khách hàng với cảm xúc/khẩn cấp | `fact` | "Khách Minh Tú là VIP — CEO luôn hỏi thăm trước" |
-| CEO lặp lại hướng dẫn nhiều lần | `rule` | "CEO luôn muốn confirm trước khi gửi nhóm >50 người" |
-| Nhịp làm việc CEO | `preference` | "CEO thường nhắn lệnh buổi sáng 7-8h, review kết quả 17-18h" |
-| Phong cách giao tiếp CEO thích | `preference` | "CEO muốn report ngắn 3-5 dòng, không narrative" |
-| CEO dạy kiến thức doanh nghiệp | `fact` | "Bảo hành chính hãng 12 tháng, mở rộng thêm 6 tháng cho VIP" |
+Xóa hẳn:
+```json
+POST /api/memory/delete
+{"id":"mem_..."}
+```
 
-### Ví dụ "CEO dạy" — GHI NGAY
+## Quy tắc chất lượng
 
-- "Đừng gửi nhóm sau 9h tối" → `rule` NGAY
-- "Bảo hành 12 tháng, VIP thêm 6 tháng" → `fact` NGAY
-- CEO diễn đạt lại report ngắn hơn → `preference` NGAY (CEO muốn report ngắn hơn)
-- "Khách Minh Tú là đối tác chiến lược" → `fact` NGAY
-- CEO từ chối style reply → `correction` NGAY
+- Ghi insight, không ghi log.
+- Viết tiếng Việt có dấu, ngắn gọn, dưới 500 ký tự.
+- Trước khi ghi, gọi `/api/memory/context` hoặc `/api/memory/search` để tránh trùng.
+- Ghi thầm khi tự quan sát. Chỉ xác nhận khi CEO nói rõ “ghi nhớ/nhớ giùm”.
+- Nếu CEO dạy quy trình Google Sheet mới, ghi `procedure`, không ghi `rule`.
+- Nếu ký ức mới thay ký ức cũ, dùng `supersedesId` khi write hoặc gọi `/api/memory/supersede`.
 
-### Khi nào KHÔNG ghi
+## Ví dụ quan trọng
 
-- "ok", "được", "gửi đi" — đây là LỆNH, không phải tín hiệu học
-- "Gửi nhóm ABC cái này" — task một lần, không phải pattern
-- Thông tin đã có trong memory (search trước khi ghi)
+CEO nói: “Từ giờ tạo Google Sheet mới thì làm local .xlsx rồi upload/convert, đừng dùng API create.”
 
-### Quy tắc chất lượng
+Ghi:
+```json
+{
+  "type": "procedure",
+  "scope": "workflow",
+  "entityType": "workflow",
+  "entityId": "google-sheet-create",
+  "content": "Khi tạo Google Sheet mới, tạo file .xlsx local rồi upload/convert bằng gog drive upload --convert; chỉ dùng Sheets API để sửa Sheet đã có."
+}
+```
 
-- Memory phải là **insight**, không phải log: "CEO thích format ngắn" ✓ — "CEO nhắn lúc 8h" ✗
-- Tiếng Việt có dấu đầy đủ, dưới 200 ký tự
-- **Search memory TRƯỚC khi ghi** — nếu đã có entry tương tự, KHÔNG tạo mới
-- Ghi THAO TÁC IM — KHÔNG BAO GIỜ nói "em vừa ghi nhớ rằng anh thích..."
-- Ghi trong CÙNG TURN — không đợi turn sau
+CEO nói: “Đừng bao giờ báo cáo dài, anh chỉ cần 3-5 dòng.”
 
-### Phân loại type
-
-- Hành động được (ảnh hưởng hành vi tương lai) → `rule` hoặc `preference`
-- Bối cảnh hiểu biết → `fact`
-- CEO sửa lỗi bot → `correction`
+Ghi:
+```json
+{
+  "type": "preference",
+  "scope": "ceo",
+  "content": "CEO thích báo cáo ngắn 3-5 dòng, rõ ý, không lan man."
+}
+```

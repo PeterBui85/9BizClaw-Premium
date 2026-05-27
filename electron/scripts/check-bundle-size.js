@@ -31,6 +31,25 @@ function bytesFor(relPath) {
   return total;
 }
 
+function newestWindowsInstallerPath() {
+  const distDir = absFromWorkspace('dist');
+  if (!fs.existsSync(distDir)) return null;
+  const files = fs.readdirSync(distDir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && /^9BizClaw Setup .*\.exe$/i.test(entry.name))
+    .map(entry => {
+      const abs = path.join(distDir, entry.name);
+      return { abs, mtimeMs: fs.statSync(abs).mtimeMs };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  if (!files[0]) return null;
+  return path.relative(WORKSPACE_ROOT, files[0].abs).replace(/\\/g, '/');
+}
+
+function resolveArtifactPath(name, cfg) {
+  if (name === 'windowsInstaller') return newestWindowsInstallerPath() || cfg.path;
+  return cfg.path;
+}
+
 function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
@@ -53,7 +72,8 @@ function tarContainsEntries(tarRelPath, entries) {
 }
 
 for (const [name, cfg] of Object.entries(budget.artifacts || {})) {
-  const bytes = bytesFor(cfg.path);
+  const artifactPath = resolveArtifactPath(name, cfg);
+  const bytes = bytesFor(artifactPath);
   if (bytes === null) {
     if (name === 'embeddingModel' && tarContainsEntries('electron/vendor-bundle.tar', [
       'vendor/models/Xenova/multilingual-e5-small/onnx/model_quantized.onnx',
@@ -63,14 +83,14 @@ for (const [name, cfg] of Object.entries(budget.artifacts || {})) {
       warnings.push(`${name} missing at ${cfg.path}, verified inside electron/vendor-bundle.tar`);
       continue;
     }
-    const msg = `${name} missing at ${cfg.path}`;
+    const msg = `${name} missing at ${artifactPath}`;
     if (strict) failures.push(msg);
     else warnings.push(msg);
     continue;
   }
   const growth = bytes - cfg.baselineBytes;
   const maxByGrowth = cfg.baselineBytes + cfg.maxGrowthBytes;
-  rows.push({ name, path: cfg.path, bytes, growth, maxBytes: cfg.maxBytes, maxByGrowth });
+  rows.push({ name, path: artifactPath, bytes, growth, maxBytes: cfg.maxBytes, maxByGrowth });
   if (bytes > cfg.maxBytes) failures.push(`${name} ${formatBytes(bytes)} exceeds max ${formatBytes(cfg.maxBytes)}`);
   if (bytes > maxByGrowth) failures.push(`${name} grew ${formatBytes(growth)} beyond allowed ${formatBytes(cfg.maxGrowthBytes)}`);
 }

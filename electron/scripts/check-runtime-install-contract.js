@@ -44,7 +44,7 @@ try {
   pinnedVersions = JSON.parse(fs.readFileSync(versionsJsonPath, 'utf8'));
 } catch (e) {
   fail('versions.json readable', e.message);
-  pinnedVersions = { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12' };
+  pinnedVersions = { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.63' };
 }
 
 const nodeBin = runtime.getRuntimeNodeBinPath();
@@ -99,6 +99,8 @@ requireContains('runtime installer handles corporate proxy npm errors', runtimeS
 
 requireContains('runtime installer exposes npm binary resolver', runtimeSrc, 'function getRuntimeNpmCommand');
 requireContains('npm install prefixes vendor root', runtimeSrc, 'getRuntimeNodeDir()');
+requireContains('runtime installer re-checks state after npm install can prune copied plugins', runtimeSrc, 'const postPackageStatus = await checkInstallation();');
+requireContains('runtime installer bases modoro-zalo copy on post-install state', runtimeSrc, 'postPackageStatus.needsModoroZaloInstall');
 if (/execFilePromise\(\s*nodeBin\s*,\s*\[\s*['"]npm['"]/.test(runtimeSrc)) {
   fail('npm install does not execute `node npm`', 'found execFilePromise(nodeBin, ["npm", ...])');
 } else {

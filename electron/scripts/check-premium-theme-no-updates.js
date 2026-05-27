@@ -14,6 +14,9 @@ const sources = [dashboard, main, gateway, vendorPatches, packageJson];
 
 const failures = [];
 const mustInclude = [
+  ['membership build flag', '"membership": true'],
+  ['fresh install license gate', "ctx.mainWindow.loadFile(path.join(__dirname, 'ui', 'license.html'))"],
+  ['license status check', 'license.checkLicenseStatus()'],
   ['theme boot helper', 'applySavedThemeBeforePaint'],
   ['executive neutral theme name', 'Executive Neutral premium theme'],
   ['executive neutral dark selector', ':root[data-theme="dark"]'],
@@ -40,6 +43,10 @@ const mustInclude = [
 ];
 
 const mustNotInclude = [
+  ['free edition lock CSS', 'premium-lock-overlay'],
+  ['free edition locked page class', 'premium-locked'],
+  ['free edition upgrade button', 'premium-lock-btn'],
+  ['free edition upgrade CTA', 'Liên hệ nâng cấp'],
   ['fixed premium boot theme', "document.documentElement.setAttribute('data-theme', 'premium')"],
   ['fixed premium storage write', "localStorage.setItem('theme', 'premium')"],
   ['black gold theme name', 'Black Gold Executive premium theme'],

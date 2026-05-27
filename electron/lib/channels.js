@@ -1378,6 +1378,14 @@ function _isPidAliveQuick(pid) {
   } catch { return false; }
 }
 
+function _execPowerShell(script, timeout = 5000) {
+  return require('child_process').execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+    { encoding: 'utf-8', timeout, windowsHide: true, stdio: 'pipe' },
+  );
+}
+
 function findOpenzcaListenerPid() {
   if (_cachedListenerPid && (Date.now() - _cachedListenerPidAt) < _LISTENER_PID_CACHE_MS) {
     if (_isPidAliveQuick(_cachedListenerPid)) return _cachedListenerPid;
@@ -1392,9 +1400,8 @@ function findOpenzcaListenerPid() {
     if (process.platform === 'win32') {
       let wmicOut = null;
       try {
-        wmicOut = require('child_process').execSync(
-          `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId"`,
-          { encoding: 'utf-8', timeout: 5000 }
+        wmicOut = _execPowerShell(
+          "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId"
         );
       } catch { wmicOut = null; }
 
@@ -1408,9 +1415,8 @@ function findOpenzcaListenerPid() {
       }
 
       try {
-        const psOut = require('child_process').execSync(
-          `powershell -NoProfile -Command "Get-WmiObject Win32_Process -Filter \\"name='node.exe'\\" | Where-Object { $_.CommandLine -like '*openzca*listen*' } | Select-Object -ExpandProperty ProcessId"`,
-          { encoding: 'utf-8', timeout: 5000, windowsHide: true }
+        const psOut = _execPowerShell(
+          'Get-WmiObject Win32_Process -Filter "name=\'node.exe\'" | Where-Object { $_.CommandLine -like \'*openzca*listen*\' } | Select-Object -ExpandProperty ProcessId'
         );
         for (const line of psOut.trim().split('\n')) {
           const pid = parseInt(line.trim(), 10);
@@ -1681,9 +1687,8 @@ async function probeZaloReady() {
       let aliveAndOpenzca = false;
       if (process.platform === 'win32') {
         try {
-          const out = require('child_process').execSync(
-            `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${ownerPid}').CommandLine"`,
-            { encoding: 'utf-8', timeout: 5000 }
+          const out = _execPowerShell(
+            `(Get-CimInstance Win32_Process -Filter 'ProcessId=${ownerPid}').CommandLine`
           );
           aliveAndOpenzca = /openzca/i.test(out) && /listen/i.test(out);
         } catch {}

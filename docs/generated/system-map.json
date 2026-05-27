@@ -1,15 +1,33 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 133,
-    "ipcHandlers": 195,
-    "preloadBridges": 187,
+    "apiRoutes": 143,
+    "ipcHandlers": 207,
+    "preloadBridges": 200,
     "dashboardPages": 19,
     "capabilityContracts": 5
   },
   "apiRoutes": [
     {
+      "path": "/api/attachments/analyze",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/auth/token",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/brand-assets/import",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -118,6 +136,15 @@
     },
     {
       "path": "/api/exec",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/fb/insights",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -558,6 +585,15 @@
       ]
     },
     {
+      "path": "/api/google/gmail/attachment",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
       "path": "/api/google/gmail/inbox",
       "sources": [
         "electron/lib/google-routes.js"
@@ -918,6 +954,15 @@
       ]
     },
     {
+      "path": "/api/memory/context",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/memory/count",
       "sources": [
         "electron/lib/cron-api.js"
@@ -936,6 +981,15 @@
       ]
     },
     {
+      "path": "/api/memory/events",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/memory/list",
       "sources": [
         "electron/lib/cron-api.js"
@@ -945,7 +999,34 @@
       ]
     },
     {
+      "path": "/api/memory/prioritize",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/memory/search",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/memory/status",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/memory/supersede",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -1179,6 +1260,15 @@
       ]
     },
     {
+      "path": "/api/zalo/groups",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/zalo/ready",
       "sources": [
         "electron/lib/cron-api.js"
@@ -1217,6 +1307,10 @@
     },
     {
       "channel": "append-zalo-user-note",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "apply-zalo-menu-import",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1368,6 +1462,14 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "download-zalo-menu-template",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "dry-run-zalo-menu-command",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "export-workspace",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1405,6 +1507,10 @@
     },
     {
       "channel": "get-ceo-memory-count",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-ceo-memory-events",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1501,6 +1607,10 @@
     },
     {
       "channel": "get-zalo-manager-config",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "get-zalo-menu-catalog",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -1776,6 +1886,18 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "pick-zalo-menu-import",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "preview-zalo-menu-import",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "prioritize-ceo-memory",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "queue-follow-up",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1864,6 +1986,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "save-zalo-menu-catalog",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "save-zalo-mode",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1900,6 +2026,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "set-knowledge-enabled",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "set-knowledge-visibility",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1928,6 +2058,10 @@
       "source": "electron/lib/chat.js"
     },
     {
+      "channel": "supersede-ceo-memory",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "telegram-self-test",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1953,6 +2087,10 @@
     },
     {
       "channel": "update-appointment",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "update-ceo-memory-status",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -2002,6 +2140,11 @@
     {
       "name": "appendZaloUserNote",
       "channel": "append-zalo-user-note",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "applyZaloMenuImport",
+      "channel": "apply-zalo-menu-import",
       "source": "electron/preload.js"
     },
     {
@@ -2175,6 +2318,16 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "downloadZaloMenuTemplate",
+      "channel": "download-zalo-menu-template",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "dryRunZaloMenuCommand",
+      "channel": "dry-run-zalo-menu-command",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "exportWorkspace",
       "channel": "export-workspace",
       "source": "electron/preload.js"
@@ -2222,6 +2375,11 @@
     {
       "name": "getCeoMemoryCount",
       "channel": "get-ceo-memory-count",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getCeoMemoryEvents",
+      "channel": "get-ceo-memory-events",
       "source": "electron/preload.js"
     },
     {
@@ -2337,6 +2495,11 @@
     {
       "name": "getZaloManagerConfig",
       "channel": "get-zalo-manager-config",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getZaloMenuCatalog",
+      "channel": "get-zalo-menu-catalog",
       "source": "electron/preload.js"
     },
     {
@@ -2675,6 +2838,21 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "pickZaloMenuImport",
+      "channel": "pick-zalo-menu-import",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "previewZaloMenuImport",
+      "channel": "preview-zalo-menu-import",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "prioritizeCeoMemory",
+      "channel": "prioritize-ceo-memory",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "readZaloUserMemory",
       "channel": "read-zalo-user-memory",
       "source": "electron/preload.js"
@@ -2780,6 +2958,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "saveZaloMenuCatalog",
+      "channel": "save-zalo-menu-catalog",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "saveZaloMode",
       "channel": "save-zalo-mode",
       "source": "electron/preload.js"
@@ -2792,6 +2975,11 @@
     {
       "name": "searchDocuments",
       "channel": "search-documents",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "seedGroupHistoryNow",
+      "channel": "seed-group-history-now",
       "source": "electron/preload.js"
     },
     {
@@ -2812,6 +3000,11 @@
     {
       "name": "setInboundDebounce",
       "channel": "set-inbound-debounce",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "setKnowledgeEnabled",
+      "channel": "set-knowledge-enabled",
       "source": "electron/preload.js"
     },
     {
@@ -2850,6 +3043,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "supersedeCeoMemory",
+      "channel": "supersede-ceo-memory",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "telegramSelfTest",
       "channel": "telegram-self-test",
       "source": "electron/preload.js"
@@ -2882,6 +3080,11 @@
     {
       "name": "updateAppointment",
       "channel": "update-appointment",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "updateCeoMemoryStatus",
+      "channel": "update-ceo-memory-status",
       "source": "electron/preload.js"
     },
     {
@@ -3033,19 +3236,19 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 633080
+      "bytes": 662950
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 262830
+      "bytes": 270606
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 160948
+      "bytes": 174827
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 129541
+      "bytes": 131274
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3053,63 +3256,67 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 98758
+      "bytes": 98709
     },
     {
       "path": "electron/lib/knowledge.js",
-      "bytes": 90926
-    },
-    {
-      "path": "electron/lib/gateway.js",
-      "bytes": 79334
+      "bytes": 95762
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 77834
+      "bytes": 81059
+    },
+    {
+      "path": "electron/lib/gateway.js",
+      "bytes": 80331
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
       "bytes": 66621
     },
     {
-      "path": "electron/lib/workspace.js",
-      "bytes": 54484
+      "path": "electron/lib/config.js",
+      "bytes": 56667
     },
     {
-      "path": "electron/lib/config.js",
-      "bytes": 52641
+      "path": "electron/lib/workspace.js",
+      "bytes": 54513
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 47388
+      "bytes": 49200
+    },
+    {
+      "path": "electron/lib/nine-router.js",
+      "bytes": 46152
     },
     {
       "path": "electron/lib/skill-manager.js",
-      "bytes": 44276
+      "bytes": 45069
     },
     {
       "path": "electron/lib/fb-schedule.js",
       "bytes": 43962
     },
     {
-      "path": "electron/lib/nine-router.js",
-      "bytes": 42730
+      "path": "electron/lib/zalo-plugin.js",
+      "bytes": 43036
     },
     {
-      "path": "electron/lib/zalo-plugin.js",
-      "bytes": 37523
+      "path": "electron/lib/google-api.js",
+      "bytes": 39642
     },
     {
       "path": "electron/lib/boot.js",
-      "bytes": 36471
+      "bytes": 37246
+    },
+    {
+      "path": "electron/lib/ceo-memory.js",
+      "bytes": 35404
     },
     {
       "path": "electron/lib/media-library.js",
       "bytes": 31008
-    },
-    {
-      "path": "electron/lib/google-api.js",
-      "bytes": 30860
     },
     {
       "path": "electron/ui/brain.js",
@@ -3121,15 +3328,15 @@
     },
     {
       "path": "electron/ui/splash.html",
-      "bytes": 26978
+      "bytes": 27816
+    },
+    {
+      "path": "electron/lib/google-routes.js",
+      "bytes": 26715
     },
     {
       "path": "electron/lib/brain-graph.js",
       "bytes": 26223
-    },
-    {
-      "path": "electron/lib/google-routes.js",
-      "bytes": 21317
     },
     {
       "path": "electron/lib/migration.js",

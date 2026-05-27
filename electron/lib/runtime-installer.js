@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFile, spawn } = require('child_process');
+const { execFile, spawn, execFileSync } = require('child_process');
 const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
 const execSync = require('child_process').execSync;
@@ -21,6 +21,11 @@ try {
   ({ isModelDownloaded, downloadModels } = require('./model-downloader'));
 } catch {}
 
+let detectSystemPython, ensurePython;
+try {
+  ({ detectSystemPython, ensurePython } = require('./python-runtime'));
+} catch {}
+
 // Pinned versions — loaded from a single canonical source so runtime-installer.js
 // and prebuild-vendor.js always agree. PINNING.md is the human-readable source.
 const SHARED_VERSIONS = (() => {
@@ -30,7 +35,7 @@ const SHARED_VERSIONS = (() => {
     ));
   } catch (e) {
     console.warn('[runtime-installer] versions.json not found, using defaults:', e?.message);
-    return { openclaw: '2026.4.14', openzca: '0.1.59', nineRouter: '0.4.12', gog: 'v0.13.0', node: '22.22.2' };
+    return { openclaw: '2026.4.14', openzca: '0.1.59', nineRouter: '0.4.63', gog: 'v0.13.0', node: '22.22.2' };
   }
 })();
 
@@ -40,6 +45,13 @@ const PINNED_VERSIONS = {
   openclaw: SHARED_VERSIONS.openclaw,
   openzca: SHARED_VERSIONS.openzca,
   nineRouter: SHARED_VERSIONS.nineRouter,
+};
+
+const PINNED_DOCUMENT_VERSIONS = {
+  docx: '9.6.1',
+  pptxgenjs: '4.0.1',
+  xlsx: '0.18.5',
+  pdfkit: '0.18.0',
 };
 
 // NOTE: the contract check uses regex on GOG_VERSION's string value. Do NOT refactor away.
@@ -53,6 +65,10 @@ const PACKAGES = [
   { name: 'openclaw', version: PINNED_VERSIONS.openclaw },
   { name: 'openzca', version: PINNED_VERSIONS.openzca },
   { name: '9router', version: PINNED_VERSIONS.nineRouter },
+  { name: 'docx', version: PINNED_DOCUMENT_VERSIONS.docx },
+  { name: 'pptxgenjs', version: PINNED_DOCUMENT_VERSIONS.pptxgenjs },
+  { name: 'xlsx', version: PINNED_DOCUMENT_VERSIONS.xlsx },
+  { name: 'pdfkit', version: PINNED_DOCUMENT_VERSIONS.pdfkit },
 ];
 
 const NPM_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
@@ -186,6 +202,53 @@ function verifyDownloadedGogArchive(filePath) {
   if (verifySha256(filePath, expected)) return;
   try { fs.unlinkSync(filePath); } catch {}
   throw new Error(`gogcli SHA256 mismatch for ${shaKey}`);
+}
+
+function isPythonRuntimeRequired() {
+  // Default document generation uses bundled Node packages on every platform.
+  // Windows still needs embedded Python prepared early because several
+  // Anthropics helper scripts use Python and Windows often has no real Python.
+  return process.platform === 'win32';
+}
+
+function checkPythonRuntimeReady() {
+  if (!isPythonRuntimeRequired()) return true;
+  if (typeof detectSystemPython !== 'function') return false;
+  return !!detectSystemPython();
+}
+
+async function ensurePythonHelperRuntime(onProgress) {
+  if (!isPythonRuntimeRequired()) {
+    if (onProgress) {
+      onProgress({
+        step: 'python',
+        percent: 100,
+        message: 'Runtime tạo file dùng Node.js; Python không bắt buộc trên nền tảng này',
+      });
+    }
+    return { ready: true, required: false, skipped: true };
+  }
+  if (typeof ensurePython !== 'function') {
+    throw new Error('Python runtime installer is unavailable');
+  }
+  if (onProgress) {
+    onProgress({ step: 'python', percent: 0, message: 'Đang kiểm tra Python helper runtime...' });
+  }
+  const bin = await ensurePython((p) => {
+    if (!onProgress) return;
+    if (p?.phase === 'detected') {
+      onProgress({ step: 'python', percent: 100, message: 'Python helper runtime đã có sẵn' });
+    } else if (p?.phase === 'ready') {
+      onProgress({ step: 'python', percent: 100, message: 'Python helper runtime đã sẵn sàng' });
+    } else if (p?.phase === 'downloading') {
+      const percent = typeof p.percent === 'number' ? p.percent : 5;
+      onProgress({ step: 'python', percent, message: 'Đang tải Python helper runtime...', subStep: 'Python ' + (p.percent ? `${p.percent}%` : '') });
+    }
+  });
+  if (onProgress) {
+    onProgress({ step: 'python', percent: 100, message: 'Python helper runtime đã sẵn sàng' });
+  }
+  return { ready: true, required: true, bin };
 }
 
 // =====================================================================
@@ -444,7 +507,11 @@ async function ensurePortableGit(onProgress) {
     try {
       execSync(`tar -xf "${zipPath}" -C "${dest}"`, { timeout: 120000 });
     } catch {
-      execSync(`powershell -NoProfile -Command "Expand-Archive -Force -Path '${zipPath}' -DestinationPath '${dest}'"`, { timeout: 120000 });
+      execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'Expand-Archive', '-Force', '-Path', zipPath, '-DestinationPath', dest],
+        { timeout: 120000, windowsHide: true }
+      );
     }
     try { fs.unlinkSync(zipPath); } catch {}
     if (onProgress) onProgress({ step: 'git-done', pct: 100, label: 'Git đã sẵn sàng' });
@@ -1108,8 +1175,12 @@ function killOrphan9RouterProcesses() {
       if (!vendorDir) return;
       const nrDir = path.join(vendorDir, '9router');
       if (!fs.existsSync(nrDir)) return;
-      const psCmd = `powershell -NoProfile -Command "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*9router*' }).ProcessId"`;
-      const out = execSync(psCmd, { encoding: 'utf-8', timeout: 8000, stdio: ['pipe', 'pipe', 'ignore'] });
+      const psCmd = "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*9router*' }).ProcessId";
+      const out = execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd],
+        { encoding: 'utf-8', timeout: 8000, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }
+      );
       const pids = out.split(/\r?\n/).map(l => l.trim()).filter(p => /^\d+$/.test(p));
       for (const pid of pids) {
         try { execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore', timeout: 5000 }); } catch {}
@@ -1540,6 +1611,7 @@ async function checkInstallation() {
   const installedPackages = await getInstalledPackages();
   const runtimeVersion = getInstalledVersion();
   const zaloReady = checkModoroZaloReady();
+  const pythonReady = checkPythonRuntimeReady();
 
   let layoutVersionOk = true;
   try {
@@ -1557,7 +1629,7 @@ async function checkInstallation() {
     return installed === pkg.version;
   });
 
-  const filesReady = nodeStatus.satisfiesMin && allPackagesInstalled && zaloReady && layoutVersionOk;
+  const filesReady = nodeStatus.satisfiesMin && allPackagesInstalled && zaloReady && pythonReady && layoutVersionOk;
   const ready = filesReady && runtimeVersion === '2.4.0' && layoutVersionOk;
   const gogReady = await checkGogCliReady();
 
@@ -1572,6 +1644,8 @@ async function checkInstallation() {
     }).map(p => p.name),
     needsNodeInstall: !nodeStatus.satisfiesMin,
     needsPackageInstall: !allPackagesInstalled,
+    pythonReady,
+    needsPythonInstall: !pythonReady,
     layoutVersionOk,
     needsLayoutMigration: !layoutVersionOk,
     modoroZaloReady: zaloReady,
@@ -1646,8 +1720,16 @@ async function runInstallation({ onProgress } = {}) {
     }
     if (onProgress) onProgress({ step: 'packages-done' });
 
+    // Step 3: Ensure Python helper runtime before any skill script can need it.
+    await ensurePythonHelperRuntime(onProgress);
+    if (onProgress) onProgress({ step: 'python-done' });
+
+    // npm install can prune modoro-zalo because it is copied into node_modules,
+    // not installed from npm. Re-check after package install before deciding.
+    const postPackageStatus = await checkInstallation();
+
     // Step 3: Ensure modoro-zalo plugin
-    if (status.needsModoroZaloInstall) {
+    if (postPackageStatus.needsModoroZaloInstall) {
       await ensureModoroZaloPlugin(onProgress);
     } else {
       if (onProgress) onProgress({ step: 'plugin', percent: 100, message: 'Plugin Zalo đã có sẵn' });
@@ -1967,6 +2049,7 @@ module.exports = {
   installNpmPackages,
   ensureModoroZaloPlugin,
   ensureGogCli,
+  ensurePythonHelperRuntime,
   // cleanupBundledTarIfInstalled removed — pure runtime, no bundled tar to clean
 
   // Path helpers
@@ -1985,6 +2068,7 @@ module.exports = {
   // Git helpers
   findGitBin,
   ensurePortableGit,
+  checkPythonRuntimeReady,
 
   // Version helpers
   getInstalledVersion,
@@ -2000,4 +2084,5 @@ module.exports = {
   MIN_NODE_VERSION,
   PACKAGES,
   GOG_VERSION,
+  PINNED_DOCUMENT_VERSIONS,
 };

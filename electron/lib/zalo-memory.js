@@ -8,6 +8,7 @@ const ctx = require('./context');
 const { getWorkspace, getOpenclawAgentWorkspace } = require('./workspace');
 const { findNodeBin, findGlobalPackageFile } = require('./boot');
 const { normalizeZaloBlocklist } = require('./zalo-settings');
+const { readOpenclawJsonFile } = require('./openclaw-json');
 
 // ============================================
 //  ZALO MANAGER — Group whitelist + User blacklist
@@ -46,7 +47,7 @@ function readZaloChannelState() {
   try {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(configPath);
       const oz = cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo || {};
       state.enabled = oz.enabled !== false;
       state.groupPolicy = oz.groupPolicy || 'open';
@@ -273,9 +274,34 @@ function parseZaloUserMemoryMeta(content) {
       else if (k === 'gender') meta.gender = v;
     }
   }
-  // Extract summary: first line after "## Tóm tắt" header
-  const sumMatch = content.match(/## Tóm tắt\s*\n+([^\n#]+)/);
-  if (sumMatch) meta.summary = sumMatch[1].trim().slice(0, 140);
+  // Extract summary: first useful line after "## Tóm tắt"; if that legacy
+  // section is absent, use the latest dated interaction section.
+  const cleanSummaryLine = (line) => String(line || '')
+    .replace(/^[-*]\s*/, '')
+    .trim();
+  const isUsefulSummaryLine = (line) => {
+    const cleaned = cleanSummaryLine(line);
+    return !!cleaned && !/^\((?:chưa có|chua co|không có|khong co)/i.test(cleaned);
+  };
+  const sumMatch = content.match(/## Tóm tắt\s*\n+([\s\S]*?)(?=\n## |\n---|$)/);
+  if (sumMatch) {
+    const line = sumMatch[1].split('\n').map(cleanSummaryLine).find(isUsefulSummaryLine);
+    if (line) meta.summary = line.slice(0, 140);
+  }
+  if (!meta.summary) {
+    const datedSections = [...content.matchAll(/\n## \d{4}-\d{2}-\d{2}[^\n]*\n([\s\S]*?)(?=\n## \d{4}-\d{2}-\d{2}|\n## [^\d]|$)/g)];
+    const summaries = datedSections
+      .map((section) => {
+        const header = section[0].match(/\n## (\d{4}-\d{2}-\d{2})/);
+        const line = section[1].split('\n').map(cleanSummaryLine).find(isUsefulSummaryLine);
+        return header && line ? { date: header[1], line } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (summaries[0]) {
+      meta.summary = summaries[0].line.slice(0, 140);
+    }
+  }
   return meta;
 }
 

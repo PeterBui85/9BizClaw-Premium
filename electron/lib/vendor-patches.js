@@ -256,6 +256,17 @@ function ensureWebFetchLocalhostFix(vendorDir, homeDir) {
         src = src.replace(WEBFETCH_WRITE_CACHE_LINE, '\t\tif (!skip9BizClawLocalApiCache) writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);');
         changed = true;
       }
+      // Part 3d: compact successful localhost web_fetch results too. The earlier
+      // nowrap patch only covered provider fallback responses; direct successful
+      // JSON responses still included SECURITY NOTICE wrappers and echoed huge
+      // prompt URLs in finalUrl, which can overflow long AUTO-MODE tool loops.
+      const DIRECT_COMPACT_MARKER = '// 9BizClaw LOCALHOST DIRECT COMPACT';
+      const DIRECT_COMPACT_ANCHOR = 'const wrappedWarning = wrapWebFetchField(responseTruncatedWarning);\n\t\tconst payload = {';
+      if (!src.includes(DIRECT_COMPACT_MARKER) && src.includes(DIRECT_COMPACT_ANCHOR)) {
+        const DIRECT_COMPACT_CODE = `const wrappedWarning = wrapWebFetchField(responseTruncatedWarning);\n\t\tif (/^https?:\\/\\/(?:127\\.0\\.0\\.1|localhost):2020[0-3](?:\\/|$)/.test(String(params.url || finalUrl || ""))) { const _lw = wrapWebFetchContent(text, params.maxChars); const _scrub = (_url) => { try { const _u = new URL(String(_url || params.url || "")); if (/^(?:127\\.0\\.0\\.1|localhost)$/i.test(_u.hostname) && _u.pathname.startsWith("/api/")) { _u.search = ""; return _u.toString(); } } catch {} return String(_url || params.url || ""); }; return { url: _scrub(params.url), finalUrl: _scrub(finalUrl), status: res.status, contentType: normalizedContentType, title: wrappedTitle, extractMode: params.extractMode, extractor, externalContent: { untrusted: false, source: "web_fetch", wrapped: false }, truncated: _lw.truncated, length: _lw.wrappedLength, rawLength: _lw.rawLength, wrappedLength: _lw.wrappedLength, fetchedAt: new Date().toISOString(), tookMs: Date.now() - start, text: _lw.text, warning: wrappedWarning }; } ${DIRECT_COMPACT_MARKER}\n\t\tconst payload = {`;
+        src = src.replace(DIRECT_COMPACT_ANCHOR, DIRECT_COMPACT_CODE);
+        changed = true;
+      }
       const WEBFETCH_OPTIONS_BLOCK = `const webFetchTool = createWebFetchTool({\n\t\tconfig: options?.config,\n\t\tsandboxed: options?.sandboxed,\n\t\truntimeWebFetch: runtimeWebTools?.fetch\n\t});`;
       if (src.includes(WEBFETCH_OPTIONS_BLOCK)) {
         src = src.replace(WEBFETCH_OPTIONS_BLOCK, `const webFetchTool = createWebFetchTool({\n\t\tconfig: options?.config,\n\t\tsandboxed: options?.sandboxed,\n\t\truntimeWebFetch: runtimeWebTools?.fetch,\n\t\tagentSessionKey: options?.agentSessionKey,\n\t\tagentChannel: options?.agentChannel\n\t});`);

@@ -1,9 +1,9 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 133
-- ipcHandlers: 195
-- preloadBridges: 187
+- apiRoutes: 143
+- ipcHandlers: 207
+- preloadBridges: 200
 - dashboardPages: 19
 - capabilityContracts: 5
 
@@ -15,7 +15,9 @@ Capability Contracts
 - zalo-cron: Create scheduled Zalo group messages or agent jobs (capabilities/zalo-cron.contract.json)
 
 API Routes
+- /api/attachments/analyze [local-api]
 - /api/auth/token [local-api]
+- /api/brand-assets/import [local-api]
 - /api/brand-assets/list [local-api]
 - /api/brand-assets/save [local-api]
 - /api/capabilities [local-api]
@@ -28,6 +30,7 @@ API Routes
 - /api/cron/toggle [local-api]
 - /api/customer-memory/write [local-api]
 - /api/exec [local-api]
+- /api/fb/insights [local-api]
 - /api/fb/post [local-api]
 - /api/fb/recent [local-api]
 - /api/fb/schedule [local-api]
@@ -76,6 +79,7 @@ API Routes
 - /api/google/drive/list [google-api]
 - /api/google/drive/share [google-api]
 - /api/google/drive/upload [google-api]
+- /api/google/gmail/attachment [google-api]
 - /api/google/gmail/inbox [google-api]
 - /api/google/gmail/read [google-api]
 - /api/google/gmail/reply [google-api]
@@ -116,10 +120,15 @@ API Routes
 - /api/media/list [local-api]
 - /api/media/search [local-api]
 - /api/media/upload [local-api]
+- /api/memory/context [local-api]
 - /api/memory/count [local-api]
 - /api/memory/delete [local-api]
+- /api/memory/events [local-api]
 - /api/memory/list [local-api]
+- /api/memory/prioritize [local-api]
 - /api/memory/search [local-api]
+- /api/memory/status [local-api]
+- /api/memory/supersede [local-api]
 - /api/memory/write [local-api]
 - /api/order/create [local-api]
 - /api/order/list [local-api]
@@ -145,6 +154,7 @@ API Routes
 - /api/workspace/read [local-api]
 - /api/zalo-crm/export [local-api]
 - /api/zalo/friends [local-api]
+- /api/zalo/groups [local-api]
 - /api/zalo/ready [local-api]
 - /api/zalo/send [local-api]
 - /api/zalo/send-media [local-api]
@@ -171,23 +181,23 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 633080 bytes
-- electron/lib/dashboard-ipc.js: 262830 bytes
-- electron/lib/cron-api.js: 160948 bytes
-- electron/lib/cron.js: 129541 bytes
+- electron/ui/dashboard.html: 662950 bytes
+- electron/lib/dashboard-ipc.js: 270606 bytes
+- electron/lib/cron-api.js: 174827 bytes
+- electron/lib/cron.js: 131274 bytes
 - electron/ui/wizard.html: 124246 bytes
-- electron/lib/channels.js: 98758 bytes
-- electron/lib/knowledge.js: 90926 bytes
-- electron/lib/gateway.js: 79334 bytes
-- electron/lib/runtime-installer.js: 77834 bytes
+- electron/lib/channels.js: 98709 bytes
+- electron/lib/knowledge.js: 95762 bytes
+- electron/lib/runtime-installer.js: 81059 bytes
+- electron/lib/gateway.js: 80331 bytes
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
-- electron/lib/workspace.js: 54484 bytes
-- electron/lib/config.js: 52641 bytes
-- electron/lib/vendor-patches.js: 47388 bytes
-- electron/lib/skill-manager.js: 44276 bytes
+- electron/lib/config.js: 56667 bytes
+- electron/lib/workspace.js: 54513 bytes
+- electron/lib/vendor-patches.js: 49200 bytes
+- electron/lib/nine-router.js: 46152 bytes
+- electron/lib/skill-manager.js: 45069 bytes
 - electron/lib/fb-schedule.js: 43962 bytes
-- electron/lib/nine-router.js: 42730 bytes
-- electron/lib/zalo-plugin.js: 37523 bytes
-- electron/lib/boot.js: 36471 bytes
-- electron/lib/media-library.js: 31008 bytes
-- electron/lib/google-api.js: 30860 bytes
+- electron/lib/zalo-plugin.js: 43036 bytes
+- electron/lib/google-api.js: 39642 bytes
+- electron/lib/boot.js: 37246 bytes
+- electron/lib/ceo-memory.js: 35404 bytes

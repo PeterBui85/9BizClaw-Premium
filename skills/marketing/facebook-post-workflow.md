@@ -36,7 +36,7 @@ PHA 4: ĐĂNG            → Chỉ khi CEO xác nhận "ok"
 **NGUYÊN TẮC VÀNG:**
 - Ảnh chưa được CEO xác nhận → KHÔNG ĐĂNG.
 - Không bao giờ nói "đã đăng" nếu chưa nhận được `id` hoặc `post_id` từ Facebook API.
-- **GỬI TIN THEO FLOW THẬT.** Gửi tin SAU mỗi bước blocking hoàn thành. API generate dùng `waitMs=180000` nên sẽ block đến khi ảnh xong — ĐỢI response rồi mới báo. KHÔNG gom tất cả rồi gửi hàng loạt cùng lúc.
+- **GỬI TIN THEO FLOW THẬT.** Gửi tin SAU mỗi bước blocking hoàn thành. API generate dùng `waitMs=300000` cho AUTO-MODE/long workflow; nếu trả `jobId` đang chạy thì poll tiếp bằng `/api/image/status`. Khi cần 2-3 ảnh độc lập, khởi tạo các job song song rồi poll từng job, không chạy tuần tự từng ảnh. KHÔNG gom tất cả rồi gửi hàng loạt cùng lúc.
 
 ---
 
@@ -61,7 +61,7 @@ web_fetch url="http://127.0.0.1:20200/api/brand-assets/list" method=GET
 ```
 - **Có file**: dùng file phù hợp nhất. Ưu tiên file có tên CEO nhắc (VD: "mascot" → file chứa `mascot`).
 - **Không có file**: nói "Anh chưa upload tài sản thương hiệu nào. Vào Dashboard > Facebook > Tài sản thương hiệu để thêm."
-- **CEO gửi kèm ảnh reference**: PHẢI lưu ảnh trước qua `POST /api/brand-assets/save` body `{"name":"ceo-reference.png","base64":"<base64>"}`, rồi dùng `assets=ceo-reference.png` khi generate. Không cần gọi brand-assets/list. KHÔNG dùng ảnh cũ từ brand-assets khi CEO vừa gửi ảnh mới.
+- **CEO gửi kèm ảnh reference**: PHẢI lưu ảnh trước qua `POST /api/brand-assets/save` body `{"name":"ceo-reference.png","base64":"<base64>"}`. Nếu chỉ có đường dẫn file ảnh, gọi `/api/brand-assets/import?path=<path>&name=ceo-reference.png`. Sau đó dùng `assets=ceo-reference.png` khi generate. KHÔNG dùng ảnh cũ từ brand-assets khi CEO vừa gửi ảnh mới.
 
 ### Bước 1.2 — Kết nối Fanpage (lần đầu)
 
@@ -101,14 +101,14 @@ Sau khi có thông tin (caption, mô tả ảnh, có/không brand assets):
 ```
 GET http://127.0.0.1:20200/api/image/generate
   ?autoSendTelegram=false
-  &waitMs=180000
+  &waitMs=300000
   &size=1024x1024
   &assets=<file1,file2>
   &prompt=<URL-encoded prompt>
 ```
 
 - **`autoSendTelegram=false` BẮT BUỘC** — workflow này tự gửi preview riêng ở Pha 3
-- **`waitMs=180000` BẮT BUỘC** — server chờ tối đa 180 giây cho ảnh xong rồi trả kết quả. KHÔNG cần poll riêng.
+- **`waitMs=300000` cho AUTO-MODE/long workflow** — server chờ tối đa 5 phút cho ảnh xong để trả quyền điều khiển lại cho agent. Job ảnh thật vẫn có timeout 15 phút ở backend. Nếu response `status: "generating"` + `timedOut: true`, KHÔNG tạo lại ảnh; poll `/api/image/status?jobId=<jobId>` mỗi 30 giây đến khi `done` hoặc `failed`, đồng thời tiếp tục các bước không phụ thuộc ảnh.
 - `size`: `1024x1024` (vuông), `1792x1024` (ngang/banner), `1024x1792` (doc/story)
 - `assets` để TRƯỚC `&prompt=`
 - `prompt` — **PHẢI là param CUỐI CÙNG**
@@ -117,7 +117,7 @@ GET http://127.0.0.1:20200/api/image/generate
 
 **Response lỗi:**
 - HTTP 502 + `status: "failed"` → báo lỗi thật
-- HTTP 504 + `status: "timeout"` → "Tạo ảnh bị timeout, thử lại sau nhé anh."
+- HTTP 200 + `status: "generating"` + `timedOut: true` → tiếp tục poll `retryStatusUrl`, không báo lỗi và không tạo lại ảnh.
 
 **TUYỆT ĐỐI KHÔNG:** Nói "đã tạo xong" nếu `status` không phải `"done"`.
 
@@ -146,6 +146,19 @@ Sau đó báo CEO:
 ---
 
 ## Pha 4: Đăng lên Fanpage
+
+### AUTO-MODE — bỏ qua preview/approval
+
+Khi prompt chứa `[AUTO-MODE]`, CEO đã duyệt toàn bộ pipeline. KHÔNG gọi preview, KHÔNG lấy `approvalNonce`, KHÔNG chờ "fb ok". Gọi thẳng:
+
+```
+GET http://127.0.0.1:20200/api/fb/post
+  ?autoMode=1
+  &imagePath=<relative-path>
+  &message=<URL-encoded caption>
+```
+
+Chỉ báo đã đăng khi response có `id` hoặc `post_id`. Nếu Facebook trả lỗi token/quyền/timeout thì báo lỗi thật và tiếp tục các bước còn lại của workflow AUTO-MODE.
 
 **CHỈ khi CEO xác nhận "ok" / "đăng đi" / "gửi đi".**
 
@@ -244,7 +257,7 @@ Tóm tắt: gọi `GET /api/image/skills` → CEO chọn skill hoặc mô tả t
 | API `/api/fb/post` trả lỗi token | Hướng dẫn CEO cập nhật Fanpage token |
 | Ảnh không tạo được (`error`) | Báo lỗi thật, không nói "đã tạo" |
 | Preview không gửi được | Báo lỗi, vẫn tiếp tục chờ CEO xác nhận caption để đăng |
-| HTTP 504 từ generate (timeout) | "Tạo ảnh bị timeout, thử lại sau nhé anh." |
+| Generate trả `status: "generating"` + `timedOut: true` | Poll `retryStatusUrl`/`/api/image/status?jobId=<jobId>`, không tạo lại ảnh |
 | Response timeout (504) từ FB post | "Facebook bị timeout, thử lại sau nhé anh." |
 
 ---

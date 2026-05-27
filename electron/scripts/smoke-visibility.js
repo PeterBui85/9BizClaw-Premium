@@ -34,6 +34,7 @@ function setupDb() {
       category TEXT DEFAULT 'general',
       summary TEXT,
       visibility TEXT NOT NULL DEFAULT 'public',
+      enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE documents_chunks (
@@ -49,20 +50,23 @@ function setupDb() {
     CREATE VIRTUAL TABLE documents_chunks_fts USING fts5(text, tokenize='unicode61');
   `);
 
-  const ins = db.prepare('INSERT INTO documents (filename, filepath, content, category, visibility) VALUES (?, ?, ?, ?, ?)');
-  ins.run('public-file.pdf', '/fake/p.pdf', 'khach hang giao hang', 'cong-ty', 'public');
-  ins.run('internal-file.pdf', '/fake/i.pdf', 'nhan vien noi quy giao hang', 'nhan-vien', 'internal');
-  ins.run('private-file.pdf', '/fake/pr.pdf', 'bao mat ceo giao hang', 'cong-ty', 'private');
+  const ins = db.prepare('INSERT INTO documents (filename, filepath, content, category, visibility, enabled) VALUES (?, ?, ?, ?, ?, ?)');
+  ins.run('public-file.pdf', '/fake/p.pdf', 'khach hang giao hang', 'cong-ty', 'public', 1);
+  ins.run('internal-file.pdf', '/fake/i.pdf', 'nhan vien noi quy giao hang', 'nhan-vien', 'internal', 1);
+  ins.run('private-file.pdf', '/fake/pr.pdf', 'bao mat ceo giao hang', 'cong-ty', 'private', 1);
+  ins.run('disabled-public.pdf', '/fake/off.pdf', 'khach hang giao hang disabled', 'cong-ty', 'public', 0);
 
   const insChunk = db.prepare('INSERT INTO documents_chunks (document_id, chunk_index, char_start, char_end, category, text, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const fakeEmb = Buffer.alloc(384 * 4);
   insChunk.run(1, 0, 0, 20, 'cong-ty', 'khach hang giao hang', fakeEmb);
   insChunk.run(2, 0, 0, 30, 'nhan-vien', 'nhan vien noi quy giao hang', fakeEmb);
   insChunk.run(3, 0, 0, 25, 'cong-ty', 'bao mat ceo giao hang', fakeEmb);
+  insChunk.run(4, 0, 0, 28, 'cong-ty', 'khach hang giao hang disabled', fakeEmb);
 
   db.prepare('INSERT INTO documents_chunks_fts (rowid, text) VALUES (?, ?)').run(1, 'khach hang giao hang');
   db.prepare('INSERT INTO documents_chunks_fts (rowid, text) VALUES (?, ?)').run(2, 'nhan vien noi quy giao hang');
   db.prepare('INSERT INTO documents_chunks_fts (rowid, text) VALUES (?, ?)').run(3, 'bao mat ceo giao hang');
+  db.prepare('INSERT INTO documents_chunks_fts (rowid, text) VALUES (?, ?)').run(4, 'khach hang giao hang disabled');
 
   return db;
 }
@@ -83,6 +87,7 @@ function testVectorFilter(db) {
     const rows = db.prepare(
       `SELECT d.id FROM documents_chunks c JOIN documents d ON d.id = c.document_id
        WHERE d.visibility IN (${placeholders}) AND c.embedding IS NOT NULL
+         AND d.enabled = 1
        ORDER BY c.id ASC`
     ).all(...allowedTiers);
     const ids = rows.map(r => r.id).sort((a, b) => a - b);
@@ -106,6 +111,7 @@ function testFts5Filter(db) {
        JOIN documents_chunks dc ON dc.id = documents_chunks_fts.rowid
        JOIN documents d ON d.id = dc.document_id
        WHERE documents_chunks_fts MATCH ? AND d.visibility IN (${placeholders})
+         AND d.enabled = 1
        ORDER BY dc.id ASC`
     ).all('giao', ...allowedTiers);
     const ids = [...new Set(rows.map(r => r.did))].sort((a, b) => a - b);
@@ -121,7 +127,7 @@ function testLikeFilter(db) {
   const placeholders = allowedTiers.map(() => '?').join(',');
   const rows = db.prepare(
     `SELECT d.id FROM documents d
-     WHERE d.visibility IN (${placeholders}) AND d.content LIKE ?`
+     WHERE d.visibility IN (${placeholders}) AND d.enabled = 1 AND d.content LIKE ?`
   ).all(...allowedTiers, '%giao%');
   const ids = rows.map(r => r.id).sort((a, b) => a - b);
   if (JSON.stringify(ids) !== JSON.stringify([1])) {
@@ -152,7 +158,9 @@ function testAlterUpgradePath() {
     `);
     db.prepare('INSERT INTO documents (filename, filepath, content, category) VALUES (?, ?, ?, ?)').run('legacy.pdf', '/l.pdf', 'x', 'cong-ty');
     db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`);
-    const row = db.prepare('SELECT visibility FROM documents WHERE filename = ?').get('legacy.pdf');
+    db.exec(`ALTER TABLE documents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`);
+    const row = db.prepare('SELECT visibility, enabled FROM documents WHERE filename = ?').get('legacy.pdf');
+    if (row.enabled !== 1) fail(`ALTER DEFAULT did not backfill enabled, got "${row.enabled}"`);
     if (row.visibility !== 'public') fail(`ALTER DEFAULT did not backfill — got "${row.visibility}"`);
     ok('ALTER upgrade path — legacy row reads visibility=public');
   } finally {
@@ -202,12 +210,18 @@ function testProductionCallSitesExist() {
   const path = require('node:path');
   const knowledgeJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'knowledge.js'), 'utf-8');
   const dashboardIpcJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
-  const combined = knowledgeJs + '\n' + dashboardIpcJs;
+  const cronApiJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron-api.js'), 'utf-8');
+  const preloadJs = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
+  const combined = knowledgeJs + '\n' + dashboardIpcJs + '\n' + cronApiJs + '\n' + preloadJs;
   const assertions = [
     { name: 'visibility column in CREATE TABLE',
       re: /visibility\s+TEXT\s+NOT\s+NULL\s+DEFAULT\s+'public'/ },
+    { name: 'enabled column in CREATE TABLE',
+      re: /enabled\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+1/ },
     { name: 'visibility ALTER TABLE',
       re: /ALTER\s+TABLE\s+documents\s+ADD\s+COLUMN\s+visibility/ },
+    { name: 'enabled ALTER TABLE',
+      re: /ALTER\s+TABLE\s+documents\s+ADD\s+COLUMN\s+enabled/ },
     { name: 'insertDocumentRow helper',
       re: /function\s+insertDocumentRow\s*\(/ },
     { name: 'searchKnowledge audience parameter',
@@ -216,8 +230,24 @@ function testProductionCallSitesExist() {
       re: /function\s+searchKnowledgeFTS5\(opts[^)]*\)[\s\S]{0,200}audience/ },
     { name: 'set-knowledge-visibility IPC',
       re: /ipcMain\.handle\(\s*'set-knowledge-visibility'/ },
+    { name: 'set-knowledge-enabled IPC',
+      re: /ipcMain\.handle\(\s*'set-knowledge-enabled'/ },
+    { name: 'setKnowledgeEnabled preload bridge',
+      re: /setKnowledgeEnabled\s*:\s*\(docId,\s*enabled\)\s*=>\s*ipcRenderer\.invoke\(\s*'set-knowledge-enabled'/ },
     { name: 'visibility IN filter in vector search',
       re: /d\.visibility\s+IN\s*\(/ },
+    { name: 'enabled filter in search',
+      re: /d\.enabled\s*=\s*1/ },
+    { name: 'file-read blocks disabled knowledge files before channel visibility',
+      re: /if\s*\(\s*row\s*&&\s*row\.enabled\s*===\s*0\s*\)[\s\S]{0,500}file_read_disabled_block/ },
+    { name: 'file-read falls back to persisted enabled metadata',
+      re: /getKnowledgeDocumentEnabled\s*\(\s*abs\s*,\s*true\s*\)\s*===\s*false/ },
+    { name: 'legacy search-documents filters enabled documents',
+      re: /ipcMain\.handle\(\s*'search-documents'[\s\S]{0,1600}d\.enabled\s*=\s*1/ },
+    { name: 'knowledge enabled toggle rolls back metadata on DB failure',
+      re: /setKnowledgeDocumentEnabledState\s*\(\s*row\.filepath,\s*previousEnabled\s*!==\s*0\s*\)/ },
+    { name: 'watcher delete clears enabled metadata',
+      re: /if\s*\(!exists\)[\s\S]{0,500}removeKnowledgeDocumentState\s*\(\s*filePath\s*\)/ },
   ];
   for (const a of assertions) {
     if (!a.re.test(combined)) fail(`production call site missing: ${a.name}`);

@@ -53,6 +53,12 @@ function _collectExplicitFiles(pairs) {
   return results;
 }
 
+function _get9RouterDataDir(appData) {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  if (process.platform === 'win32') return path.join(appData, '9router');
+  return path.join(os.homedir(), '.9router');
+}
+
 // ---------------------------------------------------------------------------
 //  collectBackupFiles — main collector (5 sources)
 // ---------------------------------------------------------------------------
@@ -126,8 +132,15 @@ function collectBackupFiles() {
   files.push(..._collectExplicitFiles(zcaFiles));
 
   // --- 4. 9Router (appDataDir/9router/) ---
-  const nrDir = path.join(appData, '9router');
-  files.push(..._collectExplicitFiles([{ abs: path.join(nrDir, 'db.json'), rel: '9router/db.json' }]));
+  const nrDir = _get9RouterDataDir(appData);
+  files.push(..._collectExplicitFiles([
+    { abs: path.join(nrDir, 'db.json'), rel: '9router/db.json' },
+    { abs: path.join(nrDir, 'machine-id'), rel: '9router/machine-id' },
+    { abs: path.join(nrDir, 'auth', 'cli-secret'), rel: '9router/auth/cli-secret' },
+    { abs: path.join(nrDir, 'db', 'data.sqlite'), rel: '9router/db/data.sqlite' },
+    { abs: path.join(nrDir, 'db', 'data.sqlite-wal'), rel: '9router/db/data.sqlite-wal' },
+    { abs: path.join(nrDir, 'db', 'data.sqlite-shm'), rel: '9router/db/data.sqlite-shm' },
+  ]));
 
   // --- 5. Provider keys (appDataDir/) ---
   files.push(..._collectExplicitFiles([{ abs: path.join(appData, 'modoroclaw-provider-keys.json'), rel: 'provider-keys/modoroclaw-provider-keys.json' }]));

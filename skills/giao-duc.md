@@ -42,12 +42,12 @@ metadata:
 
 **Ghi đơn đăng ký khóa học:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Phụ huynh Nguyễn Văn A\",\"items\":[{\"name\":\"Khóa IELTS 3 tháng\",\"qty\":1,\"price\":8000000}],\"note\":\"Học viên: Nguyễn B, bắt đầu 01/06\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Phụ huynh Nguyễn Văn A\",\"items\":[{\"name\":\"Khóa IELTS 3 tháng\",\"qty\":1,\"price\":8000000}],\"note\":\"Học viên: Nguyễn B, bắt đầu 01/06\"}"
 ```
 
 **Ghi nghỉ phép giáo viên:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Cô Hương\",\"type\":\"sick\",\"from\":\"2026-05-20\",\"to\":\"2026-05-20\",\"note\":\"Nghỉ ốm, cần tìm giáo viên thay\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Cô Hương\",\"type\":\"sick\",\"from\":\"2026-05-20\",\"to\":\"2026-05-20\",\"note\":\"Nghỉ ốm, cần tìm giáo viên thay\"}"
 ```
 
 **Xem tổng thu học phí tháng:**

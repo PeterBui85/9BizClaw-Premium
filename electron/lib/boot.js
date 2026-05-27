@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFile, spawn } = require('child_process');
+const { execFile, execFileSync, spawn } = require('child_process');
 const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
 const ctx = require('./context');
@@ -16,6 +16,34 @@ let _cachedNodeBin = null;
 let _cachedOpenClawCliJs = null;
 let _bootDiagState = { ts: null, lines: [] };
 let splashWindow = null;
+
+function quoteCmdArg(arg) {
+  return `"${String(arg).replace(/(["^&|<>%])/g, '^$1')}"`;
+}
+
+function buildCmdExeArgs(command, args = []) {
+  const commandPart = /[\\/\s]/.test(command) ? quoteCmdArg(command) : command;
+  const line = [commandPart, ...args.map(quoteCmdArg)].join(' ');
+  return ['/d', '/s', '/c', commandPart.startsWith('"') ? `"${line}"` : line];
+}
+
+function execFileMaybeCmd(command, args = [], opts = {}) {
+  if (process.platform === 'win32' && /\.cmd$/i.test(command)) {
+    const nextOpts = { ...opts };
+    delete nextOpts.shell;
+    return execFilePromise('cmd.exe', buildCmdExeArgs(command, args), nextOpts);
+  }
+  return execFilePromise(command, args, opts);
+}
+
+function execFileSyncMaybeCmd(command, args = [], opts = {}) {
+  if (process.platform === 'win32' && /\.cmd$/i.test(command)) {
+    const nextOpts = { ...opts };
+    delete nextOpts.shell;
+    return execFileSync('cmd.exe', buildCmdExeArgs(command, args), nextOpts);
+  }
+  return execFileSync(command, args, opts);
+}
 
 // =====================================================================
 //  VENDOR PATH (v2.4.0+ pure runtime install)
@@ -373,8 +401,7 @@ async function findOpenClawBin() {
     if (path.isAbsolute(bin) && !fs.existsSync(bin)) continue;
     try {
       const vOpts = { timeout: 5000, stdio: 'pipe', windowsHide: true };
-      if (isWin && bin.endsWith('.cmd')) vOpts.shell = true;
-      await execFilePromise(bin, ['--version'], vOpts);
+      await execFileMaybeCmd(bin, ['--version'], vOpts);
       _cachedBin = resolveBinAbsolute(bin); // cache absolute path so derived helpers work
       return _cachedBin;
     } catch {} /* expected: most candidates fail (not installed at that path) */
@@ -386,7 +413,6 @@ async function findOpenClawBin() {
 // Sync version only for startup (before window is created)
 function findOpenClawBinSync() {
   if (_cachedBin) return _cachedBin;
-  const { execFileSync } = require('child_process');
   const isWin = process.platform === 'win32';
 
   // 0. Bundled vendor — trust file existence, no spawn check.
@@ -419,8 +445,7 @@ function findOpenClawBinSync() {
     if (path.isAbsolute(bin) && !fs.existsSync(bin)) continue;
     try {
       const opts = { timeout: 5000, stdio: 'pipe', windowsHide: true };
-      if (isWin && bin.endsWith('.cmd')) opts.shell = true;
-      execFileSync(bin, ['--version'], opts);
+      execFileSyncMaybeCmd(bin, ['--version'], opts);
       _cachedBin = resolveBinAbsolute(bin);
       return _cachedBin;
     } catch {}
@@ -440,8 +465,7 @@ async function runOpenClaw(args, timeout = 10000) {
     const { stdout } = await execFilePromise(nodeBin, [bin, ...args], opts);
     return stdout;
   }
-  if (process.platform === 'win32' && bin.endsWith('.cmd')) opts.shell = true;
-  const { stdout } = await execFilePromise(bin, args, opts);
+  const { stdout } = await execFileMaybeCmd(bin, args, opts);
   return stdout;
 }
 

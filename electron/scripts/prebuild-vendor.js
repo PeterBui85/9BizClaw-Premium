@@ -46,7 +46,7 @@ const SHARED_VERSIONS = (() => {
   try {
     return JSON.parse(fs.readFileSync(path.join(__dirname, 'versions.json'), 'utf-8'));
   } catch {
-    return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12', gog: 'v0.13.0', node: '22.22.2' };
+    return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.63', gog: 'v0.13.0', node: '22.22.2' };
   }
 })();
 
@@ -56,6 +56,13 @@ const PINNED_VENDOR_VERSIONS = {
   openclaw: SHARED_VERSIONS.openclaw,
   '9router': SHARED_VERSIONS.nineRouter,
   openzca: SHARED_VERSIONS.openzca,
+};
+
+const PINNED_DOCUMENT_VENDOR_VERSIONS = {
+  docx: '9.6.1',
+  pptxgenjs: '4.0.1',
+  xlsx: '0.18.5',
+  pdfkit: '0.18.0',
 };
 
 // SHA256 checksums from https://nodejs.org/dist/<version>/SHASUMS256.txt
@@ -139,6 +146,10 @@ function getVendorBundleVersion(platform, arch) {
     `9router-${PINNED_VENDOR_VERSIONS['9router']}`,
     `openzca-${PINNED_VENDOR_VERSIONS.openzca}`,
     'modoro-zalo',
+    `docx-${PINNED_DOCUMENT_VENDOR_VERSIONS.docx}`,
+    `pptxgenjs-${PINNED_DOCUMENT_VENDOR_VERSIONS.pptxgenjs}`,
+    `xlsx-${PINNED_DOCUMENT_VENDOR_VERSIONS.xlsx}`,
+    `pdfkit-${PINNED_DOCUMENT_VENDOR_VERSIONS.pdfkit}`,
     `gog-${GOG_VERSION}`,
     `${platform}-${arch}`,
   ].join('_');
@@ -501,12 +512,11 @@ function npmInstallVendorPackages() {
   function readVendorVersion(pkgPath) {
     try { return require(path.resolve(pkgPath)).version || ''; } catch { return ''; }
   }
-  const expectedVersions = PINNED_VENDOR_VERSIONS;
-  const installedVersions = {
-    openclaw: readVendorVersion(path.join(VENDOR_NM, 'openclaw', 'package.json')),
-    '9router': readVendorVersion(path.join(VENDOR_NM, '9router', 'package.json')),
-    openzca: readVendorVersion(path.join(VENDOR_NM, 'openzca', 'package.json')),
-  };
+  const expectedVersions = { ...PINNED_VENDOR_VERSIONS, ...PINNED_DOCUMENT_VENDOR_VERSIONS };
+  const installedVersions = {};
+  for (const pkgName of Object.keys(expectedVersions)) {
+    installedVersions[pkgName] = readVendorVersion(path.join(VENDOR_NM, pkgName, 'package.json'));
+  }
   const allMatch = Object.entries(expectedVersions).every(([k, v]) => installedVersions[k] === v);
   // Arch marker — vendor/node_modules has native binaries (better-sqlite3 etc).
   // Cached install from a previous build for a DIFFERENT arch (e.g. last build
@@ -561,6 +571,10 @@ function npmInstallVendorPackages() {
     `openclaw@${PINNED_VENDOR_VERSIONS.openclaw}`,
     `9router@${PINNED_VENDOR_VERSIONS['9router']}`,
     `openzca@${PINNED_VENDOR_VERSIONS.openzca}`,
+    `docx@${PINNED_DOCUMENT_VENDOR_VERSIONS.docx}`,
+    `pptxgenjs@${PINNED_DOCUMENT_VENDOR_VERSIONS.pptxgenjs}`,
+    `xlsx@${PINNED_DOCUMENT_VENDOR_VERSIONS.xlsx}`,
+    `pdfkit@${PINNED_DOCUMENT_VENDOR_VERSIONS.pdfkit}`,
   ];
 
   log('npm install (PINNED versions): ' + PINNED.join(' '));
@@ -598,6 +612,18 @@ function npmInstallVendorPackages() {
     );
   }
   log('✓ 9router installed at', ninerouter);
+
+  for (const pkgName of Object.keys(PINNED_DOCUMENT_VENDOR_VERSIONS)) {
+    const pkgJson = path.join(VENDOR_NM, pkgName, 'package.json');
+    if (!fs.existsSync(pkgJson)) {
+      fatal(
+        `vendor document package missing: ${pkgJson}\n` +
+        `${pkgName} is REQUIRED so DOCX/XLSX/PPTX/PDF generation works on ` +
+        `fresh installs without asking the CEO to install npm packages.`
+      );
+    }
+    log(`✓ document runtime package ${pkgName} installed at`, path.dirname(pkgJson));
+  }
 
   // Copy modoro-zalo package from source tree (our fork, not from npm)
   const modoroZaloSrc = path.join(__dirname, '..', 'packages', 'modoro-zalo');
@@ -1020,22 +1046,12 @@ function packVendorForPackagedApp() {
   };
   fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
   log(`  ✓ vendor-meta.json written`);
-
-  // DELETE vendor/ directory after packing — we ship the tar, not the directory.
-  // electron-builder must not copy vendor/ (would double-bundle). This is safe
-  // because next build iteration will re-extract Node + re-npm-install fresh.
-  //
-  // Exception: darwin keeps vendor/ so smoke-test.js can verify package contents.
-  // smoke-test checks vendor/node_modules/openclaw/openclaw.mjs existence at
-  // smoke-test time (before electron-builder runs). The tar is still created
-  // for completeness (CI artifacts, future auto-extract use).
-  log('  removing vendor/ directory (will be re-created on next build)...');
-  if (targetPlatform !== 'darwin') {
-    rmrf(VENDOR);
-    log('  ✓ vendor/ removed (ship vendor-bundle.tar instead)');
-  } else {
-    log('  ✓ vendor/ kept on darwin (smoke-test needs to verify contents)');
-  }
+  // Keep vendor/ after packing. electron-builder only whitelists
+  // vendor/baileys-antiban/**/* from this directory, while the large runtime
+  // payload ships through vendor-bundle.tar. Keeping the local directory lets
+  // smoke tests verify package contents and prevents build scripts from
+  // deleting tracked vendored source files.
+  log('  ✓ vendor/ kept for smoke-test and tracked vendor assets');
 }
 
 async function main() {

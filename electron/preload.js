@@ -52,6 +52,14 @@ contextBridge.exposeInMainWorld('claw', {
   saveZaloManagerConfig: (config) => ipcRenderer.invoke('save-zalo-manager-config', config),
   getZaloGroupSummaries: () => ipcRenderer.invoke('get-zalo-group-summaries'),
   getZaloGroupMemory: (groupId) => ipcRenderer.invoke('get-zalo-group-memory', groupId),
+  seedGroupHistoryNow: (groupId, threadName, opts) => ipcRenderer.invoke('seed-group-history-now', groupId, threadName, opts),
+  getZaloMenuCatalog: () => ipcRenderer.invoke('get-zalo-menu-catalog'),
+  saveZaloMenuCatalog: (catalog) => ipcRenderer.invoke('save-zalo-menu-catalog', catalog),
+  dryRunZaloMenuCommand: (command, catalog) => ipcRenderer.invoke('dry-run-zalo-menu-command', { command, catalog }),
+  downloadZaloMenuTemplate: () => ipcRenderer.invoke('download-zalo-menu-template'),
+  pickZaloMenuImport: () => ipcRenderer.invoke('pick-zalo-menu-import'),
+  previewZaloMenuImport: (filePath) => ipcRenderer.invoke('preview-zalo-menu-import', filePath),
+  applyZaloMenuImport: (filePath) => ipcRenderer.invoke('apply-zalo-menu-import', filePath),
 
   // Personalization
   savePersonalization: (opts) => ipcRenderer.invoke('save-personalization', opts),
@@ -112,6 +120,7 @@ contextBridge.exposeInMainWorld('claw', {
   pickKnowledgeFile: () => ipcRenderer.invoke('pick-knowledge-file'),
   listKnowledgeFolders: () => ipcRenderer.invoke('list-knowledge-folders'),
   setKnowledgeVisibility: (docId, visibility) => ipcRenderer.invoke('set-knowledge-visibility', { docId, visibility }),
+  setKnowledgeEnabled: (docId, enabled) => ipcRenderer.invoke('set-knowledge-enabled', { docId, enabled }),
   createKnowledgeFolder: (name) => ipcRenderer.invoke('create-knowledge-folder', { name }),
   deleteKnowledgeFolder: (id) => ipcRenderer.invoke('delete-knowledge-folder', { id }),
   knowledgeSearch: (query, category, limit) => ipcRenderer.invoke('knowledge-search', { query, category, limit }),
@@ -125,6 +134,10 @@ contextBridge.exposeInMainWorld('claw', {
   deleteCeoMemory: (id) => ipcRenderer.invoke('delete-ceo-memory', { id }),
   writeCeoMemory: (type, content, source) => ipcRenderer.invoke('write-ceo-memory', { type, content, source }),
   searchCeoMemories: (query, limit) => ipcRenderer.invoke('search-ceo-memories', { query, limit }),
+  updateCeoMemoryStatus: (id, status) => ipcRenderer.invoke('update-ceo-memory-status', { id, status }),
+  prioritizeCeoMemory: (id, delta) => ipcRenderer.invoke('prioritize-ceo-memory', { id, delta }),
+  supersedeCeoMemory: (id, supersededById) => ipcRenderer.invoke('supersede-ceo-memory', { id, supersededById }),
+  getCeoMemoryEvents: (opts) => ipcRenderer.invoke('get-ceo-memory-events', opts || {}),
   getCeoMemoryCount: () => ipcRenderer.invoke('get-ceo-memory-count'),
 
   // Document Library

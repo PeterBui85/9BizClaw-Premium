@@ -66,6 +66,7 @@ web_fetch url="http://127.0.0.1:20200/api/brand-assets/list" method=GET
 ```
 - **Có file**: DÙNG LUÔN file phù hợp nhất. Ưu tiên file CEO nhắc (VD: "mascot" → file chứa `mascot`). Chỉ có 1 file → DÙNG LUÔN.
 - **Không có file**: nói CEO vào Dashboard thêm brand assets.
+- **CEO gửi kèm ảnh reference**: lưu ảnh mới trước bằng `/api/brand-assets/save` nếu có base64, hoặc `/api/brand-assets/import?path=<path>&name=ceo-reference.png` nếu context có đường dẫn file. Sau đó dùng `assets=ceo-reference.png`; không dùng asset cũ thay cho ảnh CEO vừa gửi.
 - **HARD RULE: Khi có brand asset, `assets=<filename>` PHẢI CÓ TRONG URL generate. Thiếu `assets=` = lỗi nghiêm trọng. KHÔNG chỉ mô tả brand trong prompt mà không đính kèm file.**
 
 ### Bước 1.3 — Xác nhận trước khi tạo
@@ -132,6 +133,8 @@ Nếu không dùng được route atomic:
      &allowInternalGenerated=true
      &caption=<URL-encoded caption>
    ```
+   Nếu `/api/image/status` chỉ trả `imagePath` thuộc `brand-assets/generated/...` mà không có `mediaId`, dùng `imagePath=<relative-path>` thay cho `mediaId`; API sẽ recover riêng cho ảnh AI-generated nội bộ. Không dùng raw path ngoài thư mục generated.
+   `caption` là tham số chuẩn. Nếu workflow cũ đang có `text=<noi dung>`, API vẫn nhận như alias caption, nhưng skill mới phải ưu tiên `caption`.
 4. **Chỉ báo "đã gửi" khi `success: true`** — đọc response body.
 
 ---

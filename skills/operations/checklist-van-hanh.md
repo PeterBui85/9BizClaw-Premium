@@ -66,7 +66,7 @@ Anh muốn em nhắc checklist này mỗi sáng [giờ] không?
 - "thêm mục X" / "bỏ mục Y" -> cập nhật ngay
 - "lưu" -> ghi qua workspace API:
   ```
-  web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"knowledge/cong-ty/files/checklist-[loai].md\",\"content\":\"<nội dung>\"}" headers="{\"Content-Type\":\"application/json\"}"
+  web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"knowledge/cong-ty/files/checklist-[loai].md\",\"content\":\"<nội dung>\"}"
   ```
 - CEO đồng ý nhắc -> tạo cron qua Cron API. CHỈ tạo khi CEO XÁC NHẬN
 

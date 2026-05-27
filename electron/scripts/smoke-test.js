@@ -37,6 +37,10 @@ const VENDOR = path.join(ROOT, 'vendor');
 const VENDOR_NM = path.join(VENDOR, 'node_modules');
 const VENDOR_TAR = path.join(ROOT, 'vendor-bundle.tar');
 const VENDOR_META = path.join(ROOT, 'vendor-meta.json');
+const {
+  resolveBootstrapMaxCharsForContext,
+  resolveDynamicContextBudgetTokens,
+} = require('../lib/config');
 
 let failures = 0;
 let warnings = 0;
@@ -58,7 +62,7 @@ const SHARED_VERSIONS = (() => {
   try {
     return JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'versions.json'), 'utf-8'));
   } catch {
-    return { openclaw: '2026.4.14', openzca: '0.1.59', nineRouter: '0.4.12' };
+    return { openclaw: '2026.4.14', openzca: '0.1.59', nineRouter: '0.4.63' };
   }
 })();
 
@@ -378,11 +382,18 @@ function checkVendorExtractionSentinels() {
     'vendor/node_modules/openclaw/openclaw.mjs',
     'vendor/node_modules/openclaw/package.json',
     'vendor/node_modules/modoro-zalo/openclaw.plugin.json',
-    'vendor/node_modules/9router/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+    'vendor/node_modules/9router/package.json',
     'vendor/models/Xenova/multilingual-e5-small/onnx/model_quantized.onnx',
     'vendor/models/Xenova/multilingual-e5-small/tokenizer.json',
     'vendor/models/Xenova/multilingual-e5-small/config.json',
   ];
+  const betterSqliteEntry = 'vendor/node_modules/9router/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node';
+  const betterSqlitePackageEntry = 'vendor/node_modules/9router/app/node_modules/better-sqlite3/package.json';
+  if (tarContents && tarContents.has(betterSqlitePackageEntry)) {
+    sentinelEntries.push(betterSqliteEntry);
+  } else if (hasVendorDir && fs.existsSync(path.join(ROOT, betterSqlitePackageEntry.replace(/\//g, path.sep)))) {
+    sentinelEntries.push(betterSqliteEntry);
+  }
   if (tarContents && !hasVendorDir) {
     const missing = sentinelEntries.filter(entry => !tarContents.has(entry));
     if (missing.length) {
@@ -460,8 +471,8 @@ if (!openclawCli) {
       entries: { 'modoro-zalo': { enabled: false } },
       allow: ['modoro-zalo'],
     },
-    models: { providers: { ninerouter: { baseUrl: 'http://127.0.0.1:20128/v1', apiKey: 'sk-fake', api: 'openai-completions', models: [{ id: 'main', name: 'fake' }] } } },
-    agents: { defaults: { model: 'ninerouter/main', workspace: tmpDir, blockStreamingDefault: 'off', contextInjection: 'always' } },
+    models: { providers: { ninerouter: { baseUrl: 'http://127.0.0.1:20128/v1', apiKey: 'sk-fake', api: 'openai-completions', models: [{ id: 'main', name: 'fake', contextWindow: 200000, contextTokens: 200000 }] } } },
+    agents: { defaults: { model: 'ninerouter/main', workspace: tmpDir, blockStreamingDefault: 'off', contextInjection: 'always', contextTokens: 200000, bootstrapMaxChars: 60000, bootstrapTotalMaxChars: 270000 } },
     tools: {
       allow: ['message', 'web_search', 'web_fetch', 'update_plan'],
       loopDetection: { enabled: true },
@@ -1252,8 +1263,10 @@ function checkModuleContracts() {
     for (const fn of required) {
       if (typeof ceoMem[fn] !== 'function') errors.push(`ceo-memory.js missing export: ${fn}`);
     }
-    if (!Array.isArray(ceoMem.VALID_TYPES) || ceoMem.VALID_TYPES.length !== 6) errors.push('ceo-memory.js VALID_TYPES wrong');
-    if (!Array.isArray(ceoMem.VALID_SOURCES) || ceoMem.VALID_SOURCES.length !== 5) errors.push('ceo-memory.js VALID_SOURCES wrong');
+    const expectedTypes = ['rule', 'pattern', 'preference', 'fact', 'correction', 'task', 'procedure', 'entity_note', 'task_state'];
+    const expectedSources = ['nudge', 'ceo_correction', 'evening_summary', 'manual', 'auto', 'workflow', 'system'];
+    if (!Array.isArray(ceoMem.VALID_TYPES) || !expectedTypes.every(t => ceoMem.VALID_TYPES.includes(t))) errors.push('ceo-memory.js VALID_TYPES wrong');
+    if (!Array.isArray(ceoMem.VALID_SOURCES) || !expectedSources.every(s => ceoMem.VALID_SOURCES.includes(s))) errors.push('ceo-memory.js VALID_SOURCES wrong');
   } catch (e) { errors.push(`ceo-memory.js failed to load: ${e.message}`); }
   // Wave 2: ceo-nudge.js
   try {
@@ -1628,13 +1641,18 @@ try {
 section('AGENTS.md integrity');
 if (fs.existsSync(agentsPath)) {
   const ac = fs.readFileSync(agentsPath, 'utf-8');
-  // Size guard — must stay under 20K chars for context budget
+  // Size guard — must stay under dynamic bootstrap budget chars
   const charCount = ac.length;
   const byteCount = Buffer.byteLength(ac, 'utf-8');
-  if (charCount > 20000) {
-    warn('AGENTS.md size', `${charCount} chars / ${byteCount} bytes — exceeds 20K context budget. Consider trimming.`);
+  const contextBudgetTokens = resolveDynamicContextBudgetTokens({
+    agents: { defaults: { model: 'ninerouter/main' } },
+    models: { providers: { ninerouter: { models: [{ id: 'main', name: 'gpt-5.4' }] } } },
+  });
+  const agentsBudgetChars = resolveBootstrapMaxCharsForContext(contextBudgetTokens);
+  if (charCount > agentsBudgetChars) {
+    warn('AGENTS.md size', `${charCount} chars / ${byteCount} bytes — exceeds dynamic bootstrap budget. Consider trimming.`);
   } else {
-    pass(`AGENTS.md size: ${charCount} chars / ${byteCount} bytes (<= 20K)`);
+    pass(`AGENTS.md size: ${charCount} chars / ${byteCount} bytes (<= ${agentsBudgetChars} dynamic budget)`);
   }
   // Escalation keywords present
   const escalationKeywords = ['em đã chuyển sếp', 'để em báo sếp', 'cần sếp xử lý', 'ngoài khả năng'];
@@ -1761,6 +1779,16 @@ try {
     fail('web_fetch cron token patch', 'vendor patch must pass agentChannel through createWebFetchTool into runWebFetch params, and attach Cron API auth only for Telegram-originated tool calls');
   } else {
     pass('web_fetch cron token patch is Telegram-channel-scoped');
+  }
+  const hasLocalApiDirectCompact =
+    vendorPatchSrc.includes('9BizClaw LOCALHOST DIRECT COMPACT') &&
+    vendorPatchSrc.includes('finalUrl: _scrub(finalUrl)') &&
+    vendorPatchSrc.includes('untrusted: false') &&
+    vendorPatchSrc.includes('wrapped: false');
+  if (!hasLocalApiDirectCompact) {
+    fail('web_fetch local API compact output', 'localhost web_fetch successes must not wrap SECURITY NOTICE or echo huge query URLs into agent context');
+  } else {
+    pass('web_fetch local API success output is compact');
   }
   // Session freeze patches — all 3 must be wired into ensureSessionFreezePatches
   const hasSessionFreeze =
@@ -2650,14 +2678,14 @@ section('WhatsApp + Lark channel integration');
     // 36: ready-pill-lark exists
     if (dashHtml.includes('id="ready-pill-lark"')) pass('ready-pill-lark exists');
     else fail('ready-pill-lark', 'not found in dashboard.html');
-    // 37: RAIL_GROUPS includes whatsapp + lark
+    // 37: WhatsApp + Lark stay implemented but hidden from the demo channel rail
     const railIdx = dashHtml.indexOf('RAIL_GROUPS');
     if (railIdx > -1) {
       const railSection = dashHtml.slice(railIdx, railIdx + 500);
       const hasWa = railSection.includes("'whatsapp'");
       const hasLark = railSection.includes("'lark'");
-      if (hasWa && hasLark) pass("RAIL_GROUPS channels includes 'whatsapp' and 'lark'");
-      else fail('RAIL_GROUPS', `whatsapp=${hasWa}, lark=${hasLark}`);
+      if (!hasWa && !hasLark) pass("RAIL_GROUPS channels hides 'whatsapp' and 'lark'");
+      else fail('RAIL_GROUPS', `hidden demo channels still visible: whatsapp=${hasWa}, lark=${hasLark}`);
     } else { fail('RAIL_GROUPS', 'RAIL_GROUPS not found in dashboard.html'); }
     // 38: WhatsApp page Vietnamese text
     const waPageIdx = dashHtml.indexOf('id="page-whatsapp"');

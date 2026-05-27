@@ -97,8 +97,13 @@ function killAllOpenClawProcesses() {
         // PowerShell avoids cmd.exe %var% expansion bug that silently broke
         // the old wmic LIKE query (wmic "CommandLine like '%openclaw%gateway%'"
         // → cmd.exe expands %openclaw% as env var → empty → matches nothing).
-        const psCmd = `powershell -NoProfile -Command "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openclaw*gateway*' }).ProcessId"`;
-        const out = execSync(psCmd, { encoding: 'utf-8', timeout: 8000, windowsHide: true });
+        const { execFileSync } = require('child_process');
+        const psCmd = "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*openclaw*gateway*' }).ProcessId";
+        const out = execFileSync(
+          'powershell.exe',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd],
+          { encoding: 'utf-8', timeout: 8000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
+        );
         const myPid = String(process.pid);
         for (const line of out.split(/\r?\n/)) {
           const pid = line.trim();
@@ -613,6 +618,23 @@ async function _startOpenClawImpl(opts = {}) {
     if (toAdd.length > 0) {
       enrichedEnv.PATH = toAdd.join(sep) + sep + currentPath;
       console.log('[gateway] enriched PATH with:', toAdd.join(' | '));
+    }
+    const nodeModuleDirs = [];
+    try {
+      const vd = getBundledVendorDir();
+      if (vd) nodeModuleDirs.push(path.join(vd, 'node_modules'));
+    } catch {}
+    // Dev fallback: generated document scripts run from the workspace, not
+    // electron/, so plain require("docx") needs this path during local testing.
+    nodeModuleDirs.push(path.join(__dirname, '..', 'node_modules'));
+    const existingNodePath = enrichedEnv.NODE_PATH || '';
+    const nodePathDirs = [
+      ...nodeModuleDirs.filter(d => d && fs.existsSync(d)),
+      ...existingNodePath.split(path.delimiter).filter(Boolean),
+    ];
+    if (nodePathDirs.length > 0) {
+      enrichedEnv.NODE_PATH = [...new Set(nodePathDirs)].join(path.delimiter);
+      console.log('[gateway] enriched NODE_PATH for child scripts:', enrichedEnv.NODE_PATH);
     }
     // Also expose absolute openzca cli.js path so modoro-zalo plugin (patched version)
     // can use it directly without having to search. Search ALL platform-specific

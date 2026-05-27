@@ -13,16 +13,16 @@ CEO có thể yêu cầu BẤT KỲ workflow nào kết hợp nhiều bước. B
 
 1. **KHÔNG DỪNG GIỮA CHỪNG.** CEO nói "tạo ảnh rồi gửi nhóm Zalo" = 2 bước. Tạo ảnh xong → PHẢI gửi tiếp. Im ru sau bước 1 = lỗi nghiêm trọng.
 2. **Output bước N = input bước N+1.** Dữ liệu từ Sheet → làm prompt tạo ảnh. imagePath từ generate → gửi qua send-media. KHÔNG để mất data giữa các bước.
-3. **Fail fast, fail loud.** Bước nào fail → dừng ngay, báo CEO rõ bước nào lỗi. KHÔNG tiếp tục với data thiếu.
+3. **Fail loud theo mode.** Chế độ thường: bước bắt buộc fail → dừng và báo CEO rõ bước nào lỗi. Prompt có `[AUTO-MODE]`: retry đúng 1 lần; nếu vẫn fail thì báo CEO 1 dòng ngắn, BỎ QUA bước đó và tiếp tục bước sau ngay, không chờ CEO.
 4. **Không giới hạn số bước.** 3, 5, 7, 10 bước đều OK. CEO muốn gì thì compose từ API có sẵn.
 
 ## API actions có sẵn (bot tự chọn)
 
 | Domain | Actions | Skill tham khảo |
 |--------|---------|-----------------|
-| Google Sheets | `sheets/get`, `sheets/update`, `sheets/append`, `sheets/create-formatted` | `google-workspace.md` |
+| Google Sheets | tạo mới: local `.xlsx` → `gog drive upload --convert`; sửa đơn giản: `sheets/get`, `sheets/update`, `sheets/append` | `google-workspace.md` |
 | Google Calendar | `calendar/events`, `calendar/create`, `calendar/free-slots` | `google-workspace.md` |
-| Google Gmail | `gmail/inbox`, `gmail/read`, `gmail/send` | `google-workspace.md` |
+| Google Gmail | `gmail/inbox`, `gmail/read`, `gmail/attachment`, `gmail/send` | `google-workspace.md` |
 | Google Drive | `drive/list`, `drive/download`, `drive/upload` | `google-workspace.md` |
 | Google Docs | `docs/read`, `docs/write`, `docs/create` | `google-workspace.md` |
 | Tạo ảnh | `image/generate`, `image/status`, `image/generate-and-send-zalo` | `image-generation.md` |
@@ -63,6 +63,10 @@ Mỗi bước:
 3. Dùng data đó cho bước tiếp theo
 4. Báo CEO ngắn gọn kết quả từng bước (KHÔNG đợi hết chain mới báo)
 
+**AUTO-MODE tool order:** nếu cần gửi tiến độ bằng `message`, chỉ gọi `message` sau khi các tool thật của bước đó đã xong và đặt `message` là tool cuối trong lượt. Không đặt `message` trước `web_fetch`/`exec`/upload/generate.
+
+**AUTO-MODE image rule:** mỗi job ảnh thật được phép chạy tối đa 15 phút; `waitMs` chỉ là thời gian agent chờ HTTP trước khi nhận `jobId`. Với 1 ảnh cần dùng ngay, dùng `waitMs=300000`. Với 2-3 ảnh độc lập, khởi tạo các `/api/image/generate` song song cùng một lượt với `autoSendTelegram=false&waitMs=300000`, giữ toàn bộ `jobId`, rồi poll từng job. Nếu job nào vẫn `generating/timedOut` sau 5 phút thì tiếp tục bước không phụ thuộc ảnh và quay lại poll, không tạo lại job cũ.
+
 ### Bước cuối: Tổng kết
 
 > Xong 4/4 bước:
@@ -77,8 +81,8 @@ Mỗi bước:
 
 - Tạo ảnh xong PHẢI gửi tiếp nếu CEO yêu cầu. KHÔNG im ru.
 - Gửi ẢNH THẬT, không gửi đường dẫn file dưới dạng text.
-- Dùng `generate-and-send-zalo` (atomic, 1 call) HOẶC poll `image/status` → lấy `mediaId` → gọi `zalo/send-media?mediaId=<mediaId>&allowInternalGenerated=true&caption=<text>`.
-- KHÔNG dùng `imagePath` cho `send-media` — API chỉ nhận `mediaId`. `caption` = text đi kèm ảnh cùng 1 tin nhắn.
+- Dùng `generate-and-send-zalo` (atomic, 1 call) HOẶC poll `image/status` → lấy `mediaId` rồi gọi `zalo/send-media?mediaId=<mediaId>&allowInternalGenerated=true&caption=<text>`.
+- Nếu chỉ có `imagePath` nội bộ dạng `brand-assets/generated/...`, vẫn được gọi `zalo/send-media?imagePath=<path>&allowInternalGenerated=true&caption=<text>`. KHÔNG dùng tool `message` channel modoro-zalo để gửi ảnh; phải gọi API `/api/zalo/send-media` để nhận success/error thật.
 - Đọc `skills/operations/image-generation.md` mục "Gửi ảnh vào nhóm Zalo SAU KHI tạo xong" cho chi tiết.
 
 ## Ví dụ workflow 5+ bước
@@ -104,5 +108,5 @@ web_fetch POST /api/cron/create body={"label":"Cảnh báo tồn kho sáng","cro
 ## An toàn
 
 - KHÔNG chain từ Zalo customer — chỉ CEO Telegram/Dashboard
-- Bước nào cần confirm CEO (gửi email, đăng Facebook, xóa dữ liệu) → hỏi trước khi chạy
+- Bước nào cần confirm CEO (gửi email, đăng Facebook, xóa dữ liệu) → hỏi trước khi chạy. Ngoại lệ: prompt có `[AUTO-MODE]` thì CEO đã duyệt pipeline, không hỏi confirm; Facebook dùng `/api/fb/post?autoMode=1`.
 - Bước đọc data (Sheet, email, memory) → chạy luôn không cần hỏi

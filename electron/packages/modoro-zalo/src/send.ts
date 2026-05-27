@@ -7,6 +7,7 @@ import { runOpenzcaAccountCommand } from "./openzca-account.js";
 import { getModoroZaloRuntime } from "./runtime.js";
 import type { CoreConfig, ResolvedModoroZaloAccount } from "./types.js";
 import { parseOpenzcaMessageRefs } from "./message-refs.js";
+import { shouldBypassZaloDmAllowlistForStranger } from "./dm-policy.js";
 
 type SendTextOptions = {
   cfg: CoreConfig;
@@ -532,8 +533,11 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
               __ofBlockReason = "group-not-allowed";
             }
           } else if (__ofAllowlistActive && !__ofAllowedUsers.includes(__ofTargetId)) {
-            __ofTransportBlocked = true;
-            __ofBlockReason = "user-not-in-allowlist";
+            const __ofStrangerBypass = shouldBypassZaloDmAllowlistForStranger(__ofTargetId, { workspaceDirs: __ofWorkspaceDirs });
+            if (!__ofStrangerBypass) {
+              __ofTransportBlocked = true;
+              __ofBlockReason = "user-not-in-allowlist";
+            }
           } else if (!__ofAllowlistActive && __ofBlockedUsers.includes(__ofTargetId)) {
             __ofTransportBlocked = true;
             __ofBlockReason = "user-blocked";
@@ -934,7 +938,10 @@ export async function sendMediaModoroZalo(
             if (Array.isArray(__tgAl) && __tgAl.length > 0) {
               __tgAlActive = true;
               if (!__tgAl.some((x: any) => String(x).trim() === target.threadId)) {
-                __tgBlocked = true; __tgReason = "user-not-in-allowlist"; break;
+                const __tgStrangerBypass = shouldBypassZaloDmAllowlistForStranger(target.threadId, { workspaceDirs: __tgWsDirs });
+                if (!__tgStrangerBypass) {
+                  __tgBlocked = true; __tgReason = "user-not-in-allowlist"; break;
+                }
               }
             }
             break; // allowlist found (even if empty) — skip blocklist

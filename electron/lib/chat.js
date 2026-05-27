@@ -117,10 +117,53 @@ function _trimChatHistoryIfNeeded(fp) {
 // Replaces the earlier eager INLINE.md merge that loaded all skills every turn.
 function _injectActiveSkills(text) {
   try {
-    const block = buildSkillInjectionBlock(text);
+    const block = buildSkillInjectionBlock(text, { scope: 'operations/telegram-ceo' });
     if (!block) return text;
     return `<active-user-skills>\n${block}\n</active-user-skills>\n\n${text}`;
   } catch { return text; }
+}
+
+function _inferMemoryTaskType(text) {
+  const t = String(text || '').toLowerCase();
+  if (/sheet|excel|xlsx|google/.test(t)) return 'google_workspace';
+  if (/facebook|fanpage|insight|fb\b/.test(t)) return 'facebook';
+  if (/zalo|whatsapp|telegram|lark/.test(t)) return 'channel_workflow';
+  if (/docx|word|pptx|powerpoint|pdf|slide/.test(t)) return 'document_generation';
+  if (/ảnh|hình|image|poster|banner/.test(t)) return 'image_generation';
+  return '';
+}
+
+async function _injectMemoryOsContext(text, queryText) {
+  try {
+    const { getMemoryContext } = require('./ceo-memory');
+    const ctx = await getMemoryContext({
+      query: queryText || text,
+      channel: 'app',
+      taskType: _inferMemoryTaskType(queryText || text),
+      limit: 8,
+    });
+    if (!ctx.memories?.length && !ctx.procedures?.length && !ctx.safetyWarnings?.length) return text;
+    const compact = {
+      scopes: ctx.scopes,
+      memories: (ctx.memories || []).map(m => ({
+        id: m.id,
+        type: m.type,
+        scope: m.scope,
+        content: m.content,
+        evidenceIds: m.evidence_event_ids || [],
+      })),
+      procedures: (ctx.procedures || []).map(m => ({
+        id: m.id,
+        scope: m.scope,
+        content: m.content,
+      })),
+      safetyWarnings: ctx.safetyWarnings || [],
+    };
+    return `<memory-os-context trusted="true">\n${JSON.stringify(compact)}\n</memory-os-context>\n\n${text}`;
+  } catch (e) {
+    console.warn('[chat] memory context injection failed:', e?.message);
+    return text;
+  }
 }
 
 // Parse openclaw agent --json output. Handle 3 stdout formats:
@@ -242,7 +285,7 @@ async function sendChatMessage(text) {
   if (_chatAbortController) { try { _chatAbortController.abort(); } catch {} }
   _chatAbortController = new AbortController();
   _chatGenerationAborted = false;
-  const enrichedText = _injectActiveSkills(text);
+  const enrichedText = await _injectMemoryOsContext(_injectActiveSkills(text), text);
   const args = buildAgentArgs(enrichedText, chatId, true);
 
   const sendTs = Date.now();

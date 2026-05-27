@@ -87,6 +87,7 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
 // ── 4. skill-manager: appliesTo migration + folder layout ──
 {
   const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'skill-manager.js'), 'utf-8');
+  const chatSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'chat.js'), 'utf-8');
   if (/_APPLIESTO_PATH_MIGRATIONS/.test(src) && /operations\/zalo-reply-rules.*operations\/zalo/.test(src)) {
     ok('skill-manager has appliesTo path migrations');
   } else bad('skill-manager has appliesTo path migrations', 'migration map missing');
@@ -101,6 +102,10 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   if (/function matchActiveSkills\(rawBody, opts/.test(src) && /opts\.scope/.test(src)) {
     ok('matchActiveSkills accepts scope filter for appliesTo');
   } else bad('matchActiveSkills accepts scope filter for appliesTo', 'scope param not wired');
+
+  if (/buildSkillInjectionBlock\(text,\s*\{\s*scope:\s*'operations\/telegram-ceo'\s*\}\)/.test(chatSrc)) {
+    ok('app chat injects user-skills with CEO scope');
+  } else bad('app chat injects user-skills with CEO scope', 'chat.js must not inject Zalo/marketing-scoped skills into app chat');
 
   // updateUserSkill must branch on layout.
   if (/skill\.layout === 'folder'/.test(src)) ok('updateUserSkill branches on layout');
@@ -128,7 +133,42 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   else bad('cron checks Zalo pause BEFORE agent run', 'pause check missing');
 }
 
-// ── 6. inbound.ts folder-skill resolution ──
+// ── 6. Anthropic document skills routing ──
+{
+  const root = path.join(__dirname, '..', '..');
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf-8');
+  const workspace = fs.readFileSync(path.join(__dirname, '..', 'lib', 'workspace.js'), 'utf-8');
+  const requiredSkills = [
+    'skills/anthropic-docx/SKILL.md',
+    'skills/anthropic-xlsx/SKILL.md',
+    'skills/anthropic-pptx/SKILL.md',
+    'skills/anthropic-pdf/SKILL.md',
+  ];
+  for (const skillPath of requiredSkills) {
+    if (fs.existsSync(path.join(root, skillPath))) ok('Anthropic skill exists: ' + skillPath);
+    else bad('Anthropic skill exists: ' + skillPath, 'missing folder skill');
+    if (agents.includes(skillPath)) ok('AGENTS routes document tasks to ' + skillPath);
+    else bad('AGENTS routes document tasks to ' + skillPath, 'route missing');
+  }
+  const staleRoutes = [
+    'skills/minimax-docx/SKILL.md',
+    'skills/minimax-xlsx/SKILL.md',
+    'skills/minimax-pdf/SKILL.md',
+    'skills/pptx-generator/SKILL.md',
+  ];
+  const stale = staleRoutes.filter(route => agents.includes(route));
+  if (stale.length === 0) ok('AGENTS no longer routes document tasks to MiniMax skills');
+  else bad('AGENTS no longer routes document tasks to MiniMax skills', stale.join(', '));
+  if (!/pptxgenjs`\s+v3/.test(agents)) ok('AGENTS does not claim pptxgenjs v3');
+  else bad('AGENTS does not claim pptxgenjs v3', 'installed dependency is v4.x');
+  if (/modoroclaw-agents-version:\s*106/.test(agents) && /CURRENT_AGENTS_MD_VERSION\s*=\s*106/.test(workspace)) {
+    ok('AGENTS template version bumped to 106');
+  } else {
+    bad('AGENTS template version bumped to 106', 'AGENTS.md and workspace.js must stay in sync');
+  }
+}
+
+// ── 7. inbound.ts folder-skill resolution ──
 {
   const src = fs.readFileSync(path.join(__dirname, '..', 'packages', 'modoro-zalo', 'src', 'inbound.ts'), 'utf-8');
   // Folder resolution: check SKILL.md path is constructed (any whitespace, may be on separate lines).

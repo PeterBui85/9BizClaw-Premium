@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const ctx = require('./context');
 const { writeJsonAtomic } = require('./util');
+const { readOpenclawJsonFile } = require('./openclaw-json');
 
 let app;
 try { app = require('electron').app; } catch {}
@@ -33,7 +34,7 @@ const DEFAULT_SCHEDULES_JSON = [
 ];
 
 // --- AGENTS.md versioning (private) ---
-const CURRENT_AGENTS_MD_VERSION = 105;
+const CURRENT_AGENTS_MD_VERSION = 106;
 const AGENTS_MD_VERSION_RE = /<!--\s*modoroclaw-agents-version:\s*(\d+)\s*-->/;
 
 // ─── User data dir (Electron/APPDATA level) ─────────────────────
@@ -206,7 +207,7 @@ function getOpenclawAgentWorkspace() {
   try {
     const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(cfgPath)) return null;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const cfg = readOpenclawJsonFile(cfgPath);
     const ws = cfg && cfg.agents && cfg.agents.defaults && cfg.agents.defaults.workspace;
     if (typeof ws === 'string' && ws.trim()) {
       // path.resolve() promotes relative paths to absolute (defensive — in
@@ -783,7 +784,7 @@ function isOpenClawConfigured() {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     console.log('[isOpenClawConfigured] configPath:', configPath, 'exists:', fs.existsSync(configPath));
     if (!fs.existsSync(configPath)) return false;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const config = readOpenclawJsonFile(configPath);
     const token = config && config.channels && config.channels.telegram && config.channels.telegram.botToken;
     console.log('[isOpenClawConfigured] token found:', !!token);
     return !!token && token.trim() !== '';

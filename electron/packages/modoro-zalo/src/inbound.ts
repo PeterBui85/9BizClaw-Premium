@@ -115,6 +115,7 @@ import {
 } from "./outbound-dedupe.js";
 import type { CoreConfig, ModoroZaloInboundMessage, ResolvedModoroZaloAccount } from "./types.js";
 import { dedupeStrings } from "./utils/dedupe-strings.js";
+import { shouldBypassZaloDmAllowlistForStranger } from "./dm-policy.js";
 
 const CHANNEL_ID = "modoro-zalo" as const;
 // Intentionally English — this is LLM system prompt context, not user-facing text
@@ -122,6 +123,32 @@ const DEFAULT_GROUP_SYSTEM_PROMPT =
   "When sending media/files in this same group, never claim success unless media is actually attached. " +
   "Prefer MEDIA:./relative-path or MEDIA:https://... in your reply text. " +
   "If the source file is outside workspace, copy it into workspace first and then use a relative MEDIA path.";
+
+function normalizeZaloSystemEventText(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isZaloFriendshipSystemText(value: string): boolean {
+  const text = normalizeZaloSystemEventText(value);
+  if (!text || text.length > 180) return false;
+  return [
+    /^ban vua ket ban voi .{1,100}$/,
+    /^vua ket ban voi .{1,100}$/,
+    /^ban va .{1,100} da tro thanh ban be$/,
+    /^ban da tro thanh ban be voi .{1,100}$/,
+    /^.{1,100} da chap nhan loi moi ket ban$/,
+    /^.{1,100} da dong y ket ban$/,
+    /^da ket ban voi .{1,100}$/,
+    /^ket ban thanh cong$/,
+  ].some((pattern) => pattern.test(text));
+}
 
 function nextModoroZaloOutboundSequence(map: Map<string, number>, key: string): number {
   const next = (map.get(key) ?? 0) + 1;
@@ -454,6 +481,10 @@ export async function handleModoroZaloInbound(params: {
   if (!rawBody && !hasMedia) {
     return;
   }
+  if (!message.isGroup && rawBody && isZaloFriendshipSystemText(rawBody)) {
+    runtime.log?.(`modoro-zalo: drop DM friendship system event from ${message.senderId}: ${rawBody.slice(0, 120)}`);
+    return;
+  }
   // === 9BizClaw OWNER-TAKEOVER PATCH v1 ===
   // Owner types /tamdung in any Zalo conversation → bot goes silent for that thread.
   // Owner types /tieptuc → bot resumes. Auto-expires after 1 hour.
@@ -620,9 +651,14 @@ export async function handleModoroZaloInbound(params: {
       } catch (__e) {
         runtime.log?.(`modoro-zalo: allowlist read error: ${String(__e)} → allow (fail open)`);
       }
-      if (__mzAllowed.length > 0 && !__mzAllowed.includes(__sender)) {
+      const __mzStrangerBypass = __mzAllowed.length > 0
+        && !__mzAllowed.includes(__sender)
+        && shouldBypassZaloDmAllowlistForStranger(__sender);
+      if (__mzAllowed.length > 0 && !__mzAllowed.includes(__sender) && !__mzStrangerBypass) {
         runtime.log?.(`modoro-zalo: drop sender=${__sender} (not in allowlist, ${__mzAllowed.length} allowed)`);
         return;
+      } else if (__mzStrangerBypass) {
+        runtime.log?.(`modoro-zalo: allowlist bypass for non-friend sender=${__sender} via stranger policy`);
       }
     }
   } catch (__e) {

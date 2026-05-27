@@ -2,6 +2,8 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const googleRoutes = require(path.join(__dirname, '..', 'lib', 'google-routes'));
 
 const t = googleRoutes._test;
@@ -37,6 +39,61 @@ assert(
   t.fitSheetRangeToValues("'Chi tiêu'!B2", [['A', 'B'], ['C', 'D']]) === "'Chi tiêu'!B2:C3",
   t.fitSheetRangeToValues("'Chi tiêu'!B2", [['A', 'B'], ['C', 'D']])
 );
+
+assert(
+  'create-formatted normalizer exported',
+  typeof t.normalizeCreateFormattedPayload === 'function',
+  typeof t.normalizeCreateFormattedPayload
+);
+
+if (typeof t.normalizeCreateFormattedPayload === 'function') {
+  const formatted = t.normalizeCreateFormattedPayload({
+    title: 'Weekly plan',
+    headers: '["day","channel","caption"]',
+    data: '[["Mon","Facebook","Long caption"]]',
+    textColumns: '[2]',
+    style: 'standard',
+  });
+  assert(
+    'create-formatted parses JSON query arrays',
+    formatted.ok &&
+      Array.isArray(formatted.headers) &&
+      formatted.headers.length === 3 &&
+      Array.isArray(formatted.data) &&
+      Array.isArray(formatted.data[0]) &&
+      formatted.textColumns[0] === 'C',
+    JSON.stringify(formatted)
+  );
+
+  const payloadFile = path.join(os.tmpdir(), '9bizclaw-create-formatted-payload.json');
+  fs.writeFileSync(payloadFile, '\uFEFF' + JSON.stringify({
+    headers: ['day', 'channel'],
+    data: [['Tue', 'Zalo']],
+    textColumns: ['B'],
+  }), 'utf8');
+  const fromFile = t.normalizeCreateFormattedPayload({
+    title: 'Weekly plan',
+    payloadFile,
+  });
+  assert(
+    'create-formatted reads BOM-prefixed payloadFile',
+    fromFile.ok &&
+      fromFile.headers[0] === 'day' &&
+      fromFile.data[0][1] === 'Zalo' &&
+      fromFile.textColumns[0] === 'B',
+    JSON.stringify(fromFile)
+  );
+
+  const badFormatted = t.normalizeCreateFormattedPayload({
+    title: 'Bad',
+    headers: '[not-json]',
+  });
+  assert(
+    'create-formatted rejects malformed JSON headers',
+    badFormatted.ok === false && /headers must be valid JSON/.test(badFormatted.error || ''),
+    JSON.stringify(badFormatted)
+  );
+}
 
 if (failures.length) {
   console.error('[google-sheets-route] FAIL');

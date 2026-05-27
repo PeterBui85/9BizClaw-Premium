@@ -43,12 +43,12 @@ metadata:
 
 **Ghi đơn hàng khách:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Mai\",\"items\":[{\"name\":\"iPhone 15 Pro 256GB\",\"qty\":1,\"price\":25900000},{\"name\":\"Ốp lưng MagSafe\",\"qty\":1,\"price\":350000}],\"note\":\"Ship COD Q7\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Mai\",\"items\":[{\"name\":\"iPhone 15 Pro 256GB\",\"qty\":1,\"price\":25900000},{\"name\":\"Ốp lưng MagSafe\",\"qty\":1,\"price\":350000}],\"note\":\"Ship COD Q7\"}"
 ```
 
 **Xuất kho:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"IP15P-256\",\"qty\":1,\"type\":\"out\",\"note\":\"Bán cho Chị Mai\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"IP15P-256\",\"qty\":1,\"type\":\"out\",\"note\":\"Bán cho Chị Mai\"}"
 ```
 
 **Kiểm tra tồn kho toàn bộ:**

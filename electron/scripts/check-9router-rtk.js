@@ -10,7 +10,7 @@ let pinnedVersions;
 try {
   pinnedVersions = JSON.parse(fs.readFileSync(versionsJsonPath, 'utf8'));
 } catch (e) {
-  pinnedVersions = { nineRouter: '0.4.12' };
+  pinnedVersions = { nineRouter: '0.4.63' };
 }
 const EXPECTED_9ROUTER = pinnedVersions.nineRouter;
 

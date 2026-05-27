@@ -502,6 +502,7 @@ function ensureDocumentsSchema(db) {
       category TEXT DEFAULT 'general',
       summary TEXT,
       visibility TEXT NOT NULL DEFAULT 'public',
+      enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -511,8 +512,11 @@ function ensureDocumentsSchema(db) {
   try { db.exec(`ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'general'`); } catch {}
   try { db.exec(`ALTER TABLE documents ADD COLUMN summary TEXT`); } catch {}
   try { db.exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`); } catch {}
+  try { db.exec(`ALTER TABLE documents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_enabled ON documents(enabled)`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_cat_vis ON documents(category, visibility)`); } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_cat_enabled ON documents(category, enabled)`); } catch {}
   try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_filename_cat ON documents(filename, category)`); } catch {}
   try { ensureKnowledgeChunksSchema(db); } catch (e) {
     console.warn('[documents] chunk schema init failed:', e.message);
@@ -609,6 +613,82 @@ function inferVisibilityFromPath(filePath) {
   return m ? (SUBFOLDER_TO_VISIBILITY[m[1]] || 'public') : 'public';
 }
 
+function getKnowledgeDocumentStatePath() {
+  return path.join(getWorkspace(), 'knowledge', '.document-state.json');
+}
+
+function normalizeKnowledgeStateKey(filePath) {
+  try {
+    return path.relative(getWorkspace(), path.resolve(filePath)).replace(/\\/g, '/');
+  } catch {
+    return String(filePath || '').replace(/\\/g, '/');
+  }
+}
+
+function readKnowledgeDocumentState() {
+  const statePath = getKnowledgeDocumentStatePath();
+  try {
+    if (!fs.existsSync(statePath)) return { version: 1, documents: {} };
+    const parsed = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    if (!parsed || typeof parsed !== 'object') return { version: 1, documents: {} };
+    if (!parsed.documents || typeof parsed.documents !== 'object') parsed.documents = {};
+    return parsed;
+  } catch (e) {
+    console.warn('[knowledge-state] read failed:', e.message);
+    return { version: 1, documents: {} };
+  }
+}
+
+function writeKnowledgeDocumentState(state) {
+  const statePath = getKnowledgeDocumentStatePath();
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  writeJsonAtomic(statePath, {
+    version: 1,
+    documents: state && typeof state.documents === 'object' ? state.documents : {},
+  });
+}
+
+function getKnowledgeDocumentEnabled(filePath, fallback = true) {
+  if (!filePath) return fallback !== false;
+  const key = normalizeKnowledgeStateKey(filePath);
+  const state = readKnowledgeDocumentState();
+  const entry = state.documents[key];
+  if (!entry || typeof entry !== 'object') return fallback !== false;
+  return entry.enabled !== false;
+}
+
+function setKnowledgeDocumentEnabledState(filePath, enabled) {
+  if (!filePath) return;
+  const key = normalizeKnowledgeStateKey(filePath);
+  const state = readKnowledgeDocumentState();
+  if (!state.documents[key] || typeof state.documents[key] !== 'object') state.documents[key] = {};
+  state.documents[key].enabled = enabled !== false;
+  state.documents[key].updatedAt = new Date().toISOString();
+  writeKnowledgeDocumentState(state);
+}
+
+function moveKnowledgeDocumentState(oldPath, newPath) {
+  if (!oldPath || !newPath || oldPath === newPath) return;
+  const oldKey = normalizeKnowledgeStateKey(oldPath);
+  const newKey = normalizeKnowledgeStateKey(newPath);
+  const state = readKnowledgeDocumentState();
+  if (state.documents[oldKey]) {
+    state.documents[newKey] = state.documents[oldKey];
+    delete state.documents[oldKey];
+    writeKnowledgeDocumentState(state);
+  }
+}
+
+function removeKnowledgeDocumentState(filePath) {
+  if (!filePath) return;
+  const key = normalizeKnowledgeStateKey(filePath);
+  const state = readKnowledgeDocumentState();
+  if (state.documents[key]) {
+    delete state.documents[key];
+    writeKnowledgeDocumentState(state);
+  }
+}
+
 function getKnowledgeCategories() {
   const ws = getWorkspace();
   const knowDir = path.join(ws, 'knowledge');
@@ -645,14 +725,14 @@ function getKnowledgeDir(category) {
 // ---------------------------------------------------------------------------
 function insertDocumentRow(db, {
   filename, filepath, content, filetype, filesize, wordCount,
-  category = 'general', summary = null, visibility = 'public'
+  category = 'general', summary = null, visibility = 'public', enabled = true
 }) {
   if (!['public', 'internal', 'private'].includes(visibility)) {
     throw new Error(`insertDocumentRow: invalid visibility "${visibility}"`);
   }
   return db.prepare(
-    'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(filename, filepath, content, filetype, filesize, wordCount, category, summary, visibility);
+    'INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(filename, filepath, content, filetype, filesize, wordCount, category, summary, visibility, enabled !== false ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -751,6 +831,7 @@ async function _processKnowledgeChange(filePath) {
 
   if (!exists) {
     // File deleted
+    try { removeKnowledgeDocumentState(filePath); } catch {}
     if (db) {
       try {
         const row = db.prepare('SELECT id FROM documents WHERE filename=? AND category=?').get(filename, category);
@@ -788,8 +869,9 @@ async function _processKnowledgeChange(filePath) {
         db.prepare('UPDATE documents SET filepath=?, content=?, filetype=?, filesize=?, word_count=?, visibility=? WHERE id=?')
           .run(filePath, content, filetype, stat.size, wordCount, visibility, existing.id);
       } else {
-        db.prepare('INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?,?,?,?,?,?,?,?,?)')
-          .run(filename, filePath, content, filetype, stat.size, wordCount, category, null, visibility);
+        const enabled = getKnowledgeDocumentEnabled(filePath, true) ? 1 : 0;
+        db.prepare('INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility, enabled) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(filename, filePath, content, filetype, stat.size, wordCount, category, null, visibility, enabled);
         try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?,?)').run(filename, content); } catch {}
       }
       const doc = db.prepare('SELECT id FROM documents WHERE filename=? AND category=?').get(filename, category);
@@ -924,9 +1006,10 @@ async function backfillKnowledgeFromDisk() {
         }
         const wordCount = content ? content.split(/\s+/).length : 0;
         try {
+          const enabled = getKnowledgeDocumentEnabled(fp, true) ? 1 : 0;
           const result = db.prepare(
-            'INSERT OR IGNORE INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null, visibility);
+            'INSERT OR IGNORE INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).run(entry.name, fp, content, filetype, stat.size, wordCount, cat, null, visibility, enabled);
           if (result.changes > 0) {
             try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?, ?)').run(entry.name, content); } catch {}
             inserted++;
@@ -1088,11 +1171,11 @@ function rewriteKnowledgeIndex(category) {
   if (db) {
     try {
       rows = db.prepare(
-        "SELECT filename, summary, filesize, created_at FROM documents WHERE category = ? AND visibility = 'public' ORDER BY created_at DESC"
+        "SELECT filename, summary, filesize, created_at FROM documents WHERE category = ? AND visibility = 'public' AND enabled = 1 ORDER BY created_at DESC"
       ).all(category);
     } catch (e) { console.error('[knowledge] rewrite index db query:', e.message); }
     try {
-      const npRows = db.prepare("SELECT filename FROM documents WHERE category = ? AND visibility != 'public'").all(category);
+      const npRows = db.prepare("SELECT filename FROM documents WHERE category = ? AND (visibility != 'public' OR enabled = 0)").all(category);
       nonPublicSet = new Set(npRows.map(r => r.filename));
     } catch {}
   }
@@ -1100,13 +1183,14 @@ function rewriteKnowledgeIndex(category) {
   for (const f of listKnowledgeFilesFromDisk(category)) {
     if (dbNames.has(f.filename)) continue;
     if (nonPublicSet !== null && nonPublicSet.has(f.filename)) continue;
+    if (f.enabled === 0) continue;
     rows.push({ filename: f.filename, summary: null, filesize: f.filesize, created_at: f.created_at });
   }
   // Count non-public files (internal + ceo-only) for display
   let nonPublicCount = 0;
   if (db) {
     try {
-      const npResult = db.prepare("SELECT COUNT(*) AS cnt FROM documents WHERE category = ? AND visibility != 'public'").get(category);
+      const npResult = db.prepare("SELECT COUNT(*) AS cnt FROM documents WHERE category = ? AND (visibility != 'public' OR enabled = 0)").get(category);
       nonPublicCount = npResult?.cnt || 0;
     } catch {}
   }
@@ -1180,6 +1264,7 @@ function listKnowledgeFilesFromDisk(category) {
           word_count: 0,
           summary: null,
           visibility,
+          enabled: getKnowledgeDocumentEnabled(fp, true) ? 1 : 0,
           created_at: st ? new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 19) : '',
           _source: 'disk',
         });
@@ -1330,6 +1415,7 @@ function searchKnowledgeFTS5(opts, sharedDb) {
     JOIN documents d ON d.id = dc.document_id
     WHERE documents_chunks_fts MATCH ?
       AND d.visibility IN (${visPlaceholders})
+      AND d.enabled = 1
   `;
   const catClause = category ? ' AND dc.category = ?' : '';
   const orderLimit = ' ORDER BY bm25(documents_chunks_fts) LIMIT ?';
@@ -1382,6 +1468,7 @@ function searchKnowledgeFTS5(opts, sharedDb) {
                substr(d.content, 1, 300) AS snippet
         FROM documents d
         WHERE d.visibility IN (${visPlaceholders})
+          AND d.enabled = 1
           AND (d.content LIKE ? OR d.filename LIKE ?)
         ${category ? 'AND d.category = ?' : ''}
         LIMIT ?
@@ -1450,6 +1537,30 @@ function extractChunkPrice(text) {
   return Number.isFinite(n) ? n : null;
 }
 
+function isKnowledgeMediaAssetEnabled(asset) {
+  if (!asset || !['knowledge_image', 'pdf_page'].includes(asset.type)) return true;
+  const meta = asset.metadata || {};
+  const db = getDocumentsDb();
+  if (db && meta.documentId) {
+    try {
+      const row = db.prepare('SELECT enabled FROM documents WHERE id = ?').get(Number(meta.documentId));
+      if (row) return row.enabled !== 0;
+    } catch {}
+  }
+  if (db && meta.knowledgeFilename) {
+    try {
+      const row = meta.knowledgeCategory
+        ? db.prepare('SELECT enabled FROM documents WHERE filename = ? AND category = ? LIMIT 1').get(String(meta.knowledgeFilename), String(meta.knowledgeCategory))
+        : db.prepare('SELECT enabled FROM documents WHERE filename = ? LIMIT 1').get(String(meta.knowledgeFilename));
+      if (row) return row.enabled !== 0;
+    } catch {}
+  }
+  if (meta.knowledgeFilepath || meta.pdfSource) {
+    return getKnowledgeDocumentEnabled(meta.knowledgeFilepath || meta.pdfSource, true);
+  }
+  return true;
+}
+
 function mergeMediaSearchResults(query, rows, { limit = 3, audience = 'customer' } = {}) {
   const base = Array.isArray(rows) ? rows.slice(0, limit) : [];
   try {
@@ -1457,6 +1568,7 @@ function mergeMediaSearchResults(query, rows, { limit = 3, audience = 'customer'
     const existing = new Set(base.map(r => r.media?.id).filter(Boolean));
     for (const asset of mediaHits) {
       if (existing.has(asset.id)) continue;
+      if (!isKnowledgeMediaAssetEnabled(asset)) continue;
       base.push({
         id: `media:${asset.id}`,
         chunk_id: null,
@@ -1600,6 +1712,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
             `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
              FROM documents_chunks c JOIN documents d ON d.id = c.document_id
              WHERE d.visibility IN (${visPlaceholders})
+               AND d.enabled = 1
                AND c.category = ? AND c.embedding IS NOT NULL
              ORDER BY c.id DESC LIMIT 2000`
           ).all(...allowedTiers, category)
@@ -1607,6 +1720,7 @@ async function searchKnowledge({ query, category, limit, audience = 'customer' }
             `SELECT c.id, c.document_id, c.chunk_index, c.char_start, c.char_end, c.embedding, d.filename, d.content
              FROM documents_chunks c JOIN documents d ON d.id = c.document_id
              WHERE d.visibility IN (${visPlaceholders})
+               AND d.enabled = 1
                AND c.embedding IS NOT NULL
              ORDER BY c.id DESC LIMIT 2000`
           ).all(...allowedTiers);
@@ -2113,6 +2227,10 @@ module.exports = {
   getKnowledgeCategories,
   getKnowledgeDir,
   inferVisibilityFromPath,
+  getKnowledgeDocumentEnabled,
+  setKnowledgeDocumentEnabledState,
+  moveKnowledgeDocumentState,
+  removeKnowledgeDocumentState,
 
   // CRUD helpers
   insertDocumentRow,

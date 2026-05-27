@@ -4,6 +4,7 @@ const path = require('path');
 const ctx = require('./context');
 const { getWorkspace, seedWorkspace, auditLog } = require('./workspace');
 const { normalizeZaloBlocklist } = require('./zalo-settings');
+const { parseOpenclawJsonText, readOpenclawJsonFile } = require('./openclaw-json');
 
 /** Canonical path to openclaw.json — single source of truth. */
 function getOpenClawConfigPath() {
@@ -23,6 +24,128 @@ function setJournalCronRun(fn) { _journalCronRunFn = fn; }
 // modoro-zalo path, we strip these known-offenders. Expand this list as we learn.
 const KNOWN_BAD_ZALO_KEYS = ['streaming', 'streamMode', 'nativeStreaming', 'blockStreamingDefault'];
 const AGENTS_MD_BOOTSTRAP_MAX_CHARS = 40000;
+const MIN_PREMIUM_CONTEXT_TOKENS = 200000;
+const GPT_54_CONTEXT_TOKENS = 272000;
+const ANTHROPIC_CONTEXT_1M_TOKENS = 1048576;
+const BOOTSTRAP_CHARS_PER_TOKEN = 3;
+const BOOTSTRAP_PER_FILE_RATIO = 0.10;
+const BOOTSTRAP_TOTAL_RATIO = 0.45;
+const BOOTSTRAP_MAX_CHARS_CAP = 120000;
+const BOOTSTRAP_TOTAL_MAX_CHARS_CAP = 800000;
+
+function normalizePositiveInt(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  const int = Math.floor(value);
+  return int > 0 ? int : 0;
+}
+
+function clampInt(value, min, max) {
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function normalizeModelText(model) {
+  return `${model?.id || ''} ${model?.name || ''}`.toLowerCase();
+}
+
+function inferModelContextTokens(model) {
+  const explicit = normalizePositiveInt(model?.contextTokens) || normalizePositiveInt(model?.contextWindow);
+  const text = normalizeModelText(model);
+  let floor = MIN_PREMIUM_CONTEXT_TOKENS;
+  if (/(^|\b)gpt[-_\s]?5[._-]?4(\b|$)/.test(text) || text.includes('gpt-5.4')) {
+    floor = GPT_54_CONTEXT_TOKENS;
+  }
+  if (/claude-(?:opus|sonnet)-4/.test(text) && (text.includes('1m') || text.includes('1000000') || text.includes('1048576'))) {
+    floor = ANTHROPIC_CONTEXT_1M_TOKENS;
+  }
+  return Math.max(explicit, floor);
+}
+
+function parseModelRef(modelRef) {
+  const raw = typeof modelRef === 'string' ? modelRef.trim() : '';
+  const slash = raw.indexOf('/');
+  if (slash <= 0) return { providerId: '', modelId: raw };
+  return {
+    providerId: raw.slice(0, slash).trim(),
+    modelId: raw.slice(slash + 1).trim(),
+  };
+}
+
+function findProviderConfig(config, providerId) {
+  const providers = config?.models?.providers;
+  if (!providers || typeof providers !== 'object') return null;
+  const wanted = String(providerId || '').toLowerCase();
+  for (const [id, provider] of Object.entries(providers)) {
+    if (String(id).toLowerCase() === wanted) return provider;
+  }
+  return null;
+}
+
+function findDefaultModelConfig(config) {
+  const ref = parseModelRef(config?.agents?.defaults?.model || 'ninerouter/main');
+  const provider = findProviderConfig(config, ref.providerId || 'ninerouter');
+  const models = Array.isArray(provider?.models) ? provider.models : [];
+  return models.find(m => m && m.id === ref.modelId) || models.find(m => m && m.id === 'main') || null;
+}
+
+function resolveDynamicContextBudgetTokens(config) {
+  const agentCap = normalizePositiveInt(config?.agents?.defaults?.contextTokens);
+  const modelBudget = inferModelContextTokens(findDefaultModelConfig(config));
+  return Math.max(agentCap, modelBudget, MIN_PREMIUM_CONTEXT_TOKENS);
+}
+
+function resolveBootstrapMaxCharsForContext(contextTokens) {
+  const tokens = Math.max(normalizePositiveInt(contextTokens), MIN_PREMIUM_CONTEXT_TOKENS);
+  return clampInt(tokens * BOOTSTRAP_CHARS_PER_TOKEN * BOOTSTRAP_PER_FILE_RATIO, AGENTS_MD_BOOTSTRAP_MAX_CHARS, BOOTSTRAP_MAX_CHARS_CAP);
+}
+
+function resolveBootstrapTotalMaxCharsForContext(contextTokens) {
+  const tokens = Math.max(normalizePositiveInt(contextTokens), MIN_PREMIUM_CONTEXT_TOKENS);
+  return clampInt(tokens * BOOTSTRAP_CHARS_PER_TOKEN * BOOTSTRAP_TOTAL_RATIO, 150000, BOOTSTRAP_TOTAL_MAX_CHARS_CAP);
+}
+
+function applyDynamicContextBudget(config) {
+  if (!config || typeof config !== 'object') return false;
+  if (!config.agents) config.agents = {};
+  if (!config.agents.defaults) config.agents.defaults = {};
+  let changed = false;
+  const budget = resolveDynamicContextBudgetTokens(config);
+  if (config.agents.defaults.contextTokens !== budget) {
+    config.agents.defaults.contextTokens = budget;
+    changed = true;
+  }
+
+  const provider = findProviderConfig(config, 'ninerouter');
+  if (provider && Array.isArray(provider.models)) {
+    const defaultRef = parseModelRef(config.agents.defaults.model || 'ninerouter/main');
+    for (const model of provider.models) {
+      if (!model || typeof model !== 'object') continue;
+      const inferred = Math.max(
+        inferModelContextTokens(model),
+        model.id === defaultRef.modelId ? budget : MIN_PREMIUM_CONTEXT_TOKENS
+      );
+      if (model.contextWindow !== inferred) {
+        model.contextWindow = inferred;
+        changed = true;
+      }
+      if (model.contextTokens !== inferred) {
+        model.contextTokens = inferred;
+        changed = true;
+      }
+    }
+  }
+
+  const bootstrapMaxChars = resolveBootstrapMaxCharsForContext(budget);
+  if (config.agents.defaults.bootstrapMaxChars !== bootstrapMaxChars) {
+    config.agents.defaults.bootstrapMaxChars = bootstrapMaxChars;
+    changed = true;
+  }
+  const bootstrapTotalMaxChars = resolveBootstrapTotalMaxCharsForContext(budget);
+  if (config.agents.defaults.bootstrapTotalMaxChars !== bootstrapTotalMaxChars) {
+    config.agents.defaults.bootstrapTotalMaxChars = bootstrapTotalMaxChars;
+    changed = true;
+  }
+  return changed;
+}
 
 // Single-writer mutex for openclaw.json read-modify-write sequences.
 // Multiple IPC handlers (save-zalo-manager-config, save-wizard-config,
@@ -127,7 +250,7 @@ function healOpenClawConfigInline(errStderr) {
     if (!fs.existsSync(configPath)) return false;
     const raw = fs.readFileSync(configPath, 'utf-8');
     let config;
-    try { config = JSON.parse(raw); } catch (e) {
+    try { config = parseOpenclawJsonText(raw); } catch (e) {
       console.error('[heal-inline] openclaw.json is not valid JSON — refusing to touch:', e.message);
       return false;
     }
@@ -391,7 +514,7 @@ async function ensureDefaultConfig() {
     if (!fs.existsSync(configPath)) return;
     let config;
     try {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      config = readOpenclawJsonFile(configPath);
     } catch (parseErr) {
       console.error('[config] openclaw.json corrupt — attempting sticky backup restore:', parseErr?.message);
       const _backupPath = path.join(ctx.HOME, '.openclaw', 'modoroclaw-zalo-config-sticky.json');
@@ -650,11 +773,11 @@ async function ensureDefaultConfig() {
       for (const legacyKey of ['blockStreaming', 'streamMode', 'chunkMode', 'draftChunk', 'blockStreamingCoalesce', 'messages']) {
         if (legacyKey in tg) { delete tg[legacyKey]; changed = true; }
       }
-      // Fix streaming: scalar string "progress" → nested object { mode: "progress" }
-      // openclaw 2026.4.14 requires nested object format, rejects scalar strings.
+      // Fix streaming: scalar values -> nested object { mode: "off" }.
+      // Keep OpenClaw's raw tool-progress off; user-facing progress belongs in the `message` tool.
       if (typeof tg.streaming === 'string') { delete tg.streaming; changed = true; }
-      if (!tg.streaming || typeof tg.streaming !== 'object' || tg.streaming.mode !== 'progress') {
-        tg.streaming = { mode: 'progress' };
+      if (!tg.streaming || typeof tg.streaming !== 'object' || tg.streaming.mode !== 'off') {
+        tg.streaming = { mode: 'off' };
         changed = true;
       }
       // Group policy: "open" lets bot reply in ANY group it's added to (no
@@ -741,15 +864,9 @@ async function ensureDefaultConfig() {
       config.agents.defaults.contextInjection = 'always';
       changed = true;
     }
-    // BOOTSTRAP-BUDGET FIX: openclaw default bootstrapMaxChars is 20,000 per file.
-    // AGENTS.md is ~24K and growing (v2.3.48 will add more rules). At 20K the tail
-    // of AGENTS.md is silently truncated — defense rules, cron rules, and channel
-    // rules at the bottom get cut. Raise to 40K so the full file is always injected.
-    // bootstrapTotalMaxChars default (150K) is generous and does not need changing.
-    if (config.agents.defaults.bootstrapMaxChars !== AGENTS_MD_BOOTSTRAP_MAX_CHARS) {
-      config.agents.defaults.bootstrapMaxChars = AGENTS_MD_BOOTSTRAP_MAX_CHARS;
-      changed = true;
-    }
+    // Dynamic context budget: align OpenClaw's model metadata, session cap, and
+    // bootstrap budgets with the actual premium model window (200K+ tokens).
+    if (applyDynamicContextBudget(config)) changed = true;
     // contextPruning and thinkingDefault intentionally NOT set.
     // Both trade output quality for speed — unacceptable for CEO + customer-facing bot.
     // LLM PROVIDER CACHE: extend prefix cache TTL to 1hr. No quality tradeoff —
@@ -981,4 +1098,8 @@ module.exports = {
   writeOpenClawConfigIfChanged,
   ensureDefaultConfig,
   setJournalCronRun,
+  applyDynamicContextBudget,
+  resolveDynamicContextBudgetTokens,
+  resolveBootstrapMaxCharsForContext,
+  resolveBootstrapTotalMaxCharsForContext,
 };

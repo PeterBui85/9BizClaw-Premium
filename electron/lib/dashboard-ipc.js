@@ -12,6 +12,8 @@ const ELECTRON_DIR = path.join(__dirname, '..');
 
 const ctx = require('./context');
 const { isPathSafe, writeJsonAtomic, sanitizeZaloText, stripTelegramMarkdown } = require('./util');
+const { readOpenclawJsonFile } = require('./openclaw-json');
+const zaloMenu = require('./zalo-menu');
 const {
   getWorkspace, invalidateWorkspaceCache, getWorkspaceTemplateRoot,
   getOpenclawAgentWorkspace, seedWorkspace, purgeAgentSessions,
@@ -21,6 +23,7 @@ const {
   auditLog, backupWorkspace,
   DEFAULT_SCHEDULES_JSON, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE,
 } = require('./workspace');
+zaloMenu.init({ getWorkspace });
 const {
   getBundledVendorDir, getBundledNodeBin, augmentPathWithBundledNode,
   appDataDir, findOpenClawBin, findOpenClawBinSync, findNodeBin, findOpenClawCliJs,
@@ -78,6 +81,7 @@ const {
   getZaloGroupsDir, getZaloBlocklistPath, getZaloAllowlistPath, cleanBlocklist,
 } = require('./zalo-memory');
 const { normalizeZaloBlocklist, resolveZaloBlocklistSave } = require('./zalo-settings');
+const { saveActiveZaloAccountSettings } = require('./zalo-account-settings');
 const {
   cleanupOrphanZaloListener, ensureModoroZaloNodeModulesLink,
   ensureZaloPlugin, seedZaloCustomersFromCache,
@@ -112,6 +116,7 @@ const {
   insertDocumentRow, ensureKnowledgeFolders, backfillKnowledgeFromDisk,
   resolveUniqueFilename, describeImageForKnowledge, summarizeKnowledgeContent,
   sanitizeKnowledgeContentForIndex, rewriteKnowledgeIndex, listKnowledgeFilesFromDisk,
+  setKnowledgeDocumentEnabledState, moveKnowledgeDocumentState, removeKnowledgeDocumentState,
   searchKnowledge, searchKnowledgeFTS5, getRagConfig,
   extractTextFromFile, expandSearchQuery, rerankSearchResults,
   indexDocumentChunks,
@@ -1056,6 +1061,9 @@ ipcMain.handle('list-zalo-friends', async () => {
 ipcMain.handle('refresh-zalo-cache', async () => {
   try {
     const result = await runZaloCacheRefresh({ source: 'manual' });
+    if (result?.ok) {
+      try { seedZaloCustomersFromCache(); } catch (e) { console.warn('[zalo-cache] post-refresh account sync failed:', e?.message || e); }
+    }
     return {
       success: !!result?.ok,
       skipped: !!result?.skipped,
@@ -1274,10 +1282,10 @@ ipcMain.handle('get-zalo-group-memory', async (_evt, groupId) => {
 
 // Manually re-seed a single group's history summary (dashboard "refresh context").
 // Returns { ok, reason, msgCount? }.
-ipcMain.handle('seed-group-history-now', async (_evt, groupId, threadName) => {
+ipcMain.handle('seed-group-history-now', async (_evt, groupId, threadName, opts = {}) => {
   try {
-    if (!groupId || typeof groupId !== 'string') return { ok: false, reason: 'invalid-groupId' };
-    return await seedGroupHistorySummary(groupId, threadName || groupId);
+    if (!groupId || typeof groupId !== 'string' || /[\/\\.]/.test(groupId)) return { ok: false, reason: 'invalid-groupId' };
+    return await seedGroupHistorySummary(groupId, threadName || groupId, opts || {});
   } catch (e) {
     return { ok: false, reason: 'exception: ' + (e && e.message ? e.message : String(e)) };
   }
@@ -1301,6 +1309,91 @@ ipcMain.handle('seed-group-history-all', async () => {
 // REMOVED: Zalo owner identification — owner/chủ nhân feature fully removed.
 // All Zalo messages are treated as customer messages uniformly.
 
+ipcMain.handle('get-zalo-menu-catalog', async () => {
+  try {
+    return { success: true, catalog: zaloMenu.loadCatalog(), catalogPath: zaloMenu.getCatalogPath() };
+  } catch (e) {
+    return { success: false, error: e?.message || String(e) };
+  }
+});
+
+ipcMain.handle('save-zalo-menu-catalog', async (_evt, catalog) => {
+  try {
+    const result = zaloMenu.saveCatalog(catalog || {});
+    return { success: result.ok, ...result };
+  } catch (e) {
+    return { success: false, ok: false, error: e?.message || String(e), errors: [e?.message || String(e)] };
+  }
+});
+
+ipcMain.handle('dry-run-zalo-menu-command', async (_evt, payload) => {
+  try {
+    const command = payload && typeof payload === 'object' ? payload.command : payload;
+    let catalog;
+    if (payload && typeof payload === 'object' && payload.catalog) {
+      const checked = zaloMenu.validateCatalog(payload.catalog);
+      if (!checked.ok) return { success: false, handled: false, errors: checked.errors, error: checked.errors.join('; ') };
+      catalog = checked.catalog;
+    }
+    return { success: true, ...zaloMenu.dryRunCommand(command, catalog) };
+  } catch (e) {
+    return { success: false, handled: false, error: e?.message || String(e) };
+  }
+});
+
+ipcMain.handle('download-zalo-menu-template', async () => {
+  try {
+    const parentWin = BrowserWindow?.getFocusedWindow?.() || ctx.mainWindow || null;
+    const saveRes = await dialog.showSaveDialog(parentWin, {
+      title: 'Tải mẫu XLSX menu Zalo',
+      defaultPath: 'zalo-menu-template.xlsx',
+      filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
+    });
+    if (saveRes.canceled || !saveRes.filePath) return { success: false, canceled: true };
+    fs.writeFileSync(saveRes.filePath, zaloMenu.buildTemplateWorkbookBuffer());
+    return { success: true, filePath: saveRes.filePath };
+  } catch (e) {
+    return { success: false, error: e?.message || String(e) };
+  }
+});
+
+ipcMain.handle('pick-zalo-menu-import', async () => {
+  try {
+    const parentWin = BrowserWindow?.getFocusedWindow?.() || ctx.mainWindow || null;
+    const result = await dialog.showOpenDialog(parentWin, {
+      title: 'Import XLSX menu Zalo',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Excel Workbook', extensions: ['xlsx', 'xls'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    return { success: true, filePath: result.filePaths[0] };
+  } catch (e) {
+    return { success: false, error: e?.message || String(e) };
+  }
+});
+
+ipcMain.handle('preview-zalo-menu-import', async (_evt, filePath) => {
+  try {
+    const result = zaloMenu.previewImport(filePath);
+    return { success: result.ok, ...result };
+  } catch (e) {
+    return { success: false, ok: false, error: e?.message || String(e), errors: [e?.message || String(e)] };
+  }
+});
+
+ipcMain.handle('apply-zalo-menu-import', async (_evt, filePath) => {
+  try {
+    const result = zaloMenu.applyImport(filePath);
+    return { success: result.ok, ...result };
+  } catch (e) {
+    return { success: false, ok: false, error: e?.message || String(e), errors: [e?.message || String(e)] };
+  }
+});
+
 
 // === Security Layer 1 (scoped) — File permission hardening ===
 // Real Layer 1 (DPAPI/Keychain encryption) is high-risk because decryption
@@ -1317,7 +1410,7 @@ ipcMain.handle('get-zalo-manager-config', async () => {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     let zalo = {};
     if (fs.existsSync(configPath)) {
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(configPath);
       zalo = cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo || {};
     }
     let blocklist = [];
@@ -1469,6 +1562,12 @@ function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, use
     }
   }
 
+  try {
+    saveActiveZaloAccountSettings({ workspace: getWorkspace() });
+  } catch (e) {
+    console.warn('[zalo-account] snapshot save after manager update failed:', e?.message || e);
+  }
+
   return { blocklistLength: blocklistSave.blocklist.length };
 }
 
@@ -1493,7 +1592,7 @@ async function forceDisableZaloFailClosed(source = 'manager-disabled') {
 
       const configPath = path.join(openclawDir, 'openclaw.json');
       if (!fs.existsSync(configPath)) return;
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(configPath);
       if (!cfg.channels) cfg.channels = {};
       if (!cfg.channels['modoro-zalo'] || typeof cfg.channels['modoro-zalo'] !== 'object') cfg.channels['modoro-zalo'] = {};
       cfg.channels['modoro-zalo'].enabled = false;
@@ -1571,7 +1670,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     try {
       const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
       if (fs.existsSync(configPath)) {
-        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        const cfg = readOpenclawJsonFile(configPath);
         prevEnabled = (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled !== false;
       }
     } catch {}
@@ -1581,7 +1680,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
     // 1. Update openclaw.json (groups handled natively by OpenZalo)
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(configPath);
       if (!cfg.channels) cfg.channels = {};
       if (!cfg.channels['modoro-zalo']) cfg.channels['modoro-zalo'] = {};
       cfg.channels['modoro-zalo'].enabled = enabled !== false;
@@ -2236,7 +2335,7 @@ ipcMain.handle('set-batch-config', async (_event, ops) => {
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
         let config = {};
         if (fs.existsSync(configPath)) {
-          try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+          try { config = readOpenclawJsonFile(configPath); } catch {}
         }
         const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
         for (const op of ops) {
@@ -2269,7 +2368,7 @@ ipcMain.handle('save-wizard-config', async (_event, configs) => {
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
         let config = {};
         if (fs.existsSync(configPath)) {
-          try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+          try { config = readOpenclawJsonFile(configPath); } catch {}
         }
         const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
         for (const { key, value } of configs) {
@@ -2686,7 +2785,7 @@ ipcMain.handle('resolve-zalo-target', async (_e, payload) => {
 ipcMain.handle('get-telegram-config', async () => {
   try {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const config = readOpenclawJsonFile(configPath);
     const tg = config.channels?.telegram || {};
     const token = tg.botToken || '';
     return {
@@ -2705,7 +2804,7 @@ ipcMain.handle('save-telegram-config', async (_e, { botToken, userId }) => {
     return await withOpenClawConfigLock(async () => {
       try {
         const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const config = readOpenclawJsonFile(configPath);
         if (!config.channels) config.channels = {};
         if (!config.channels.telegram) config.channels.telegram = {};
         const oldToken = config.channels.telegram.botToken;
@@ -2790,7 +2889,7 @@ ipcMain.handle('get-telegram-behavior', async () => {
     try {
       const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
       if (fs.existsSync(configPath)) {
-        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        const cfg = readOpenclawJsonFile(configPath);
         historyLimit = cfg?.channels?.telegram?.historyLimit || 50;
       }
     } catch {}
@@ -2834,7 +2933,7 @@ ipcMain.handle('save-telegram-behavior', async (_event, behavior) => {
         await withOpenClawConfigLock(async () => {
           const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
           if (fs.existsSync(configPath)) {
-            const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            const cfg = readOpenclawJsonFile(configPath);
             if (!cfg.channels) cfg.channels = {};
             if (!cfg.channels.telegram) cfg.channels.telegram = {};
             cfg.channels.telegram.historyLimit = limit;
@@ -2894,7 +2993,7 @@ ipcMain.handle('resume-zalo', async () => {
       try {
         const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
         if (fs.existsSync(cfgPath)) {
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+          const cfg = readOpenclawJsonFile(cfgPath);
           wasDisabled = (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled === false;
         }
       } catch {}
@@ -2905,7 +3004,7 @@ ipcMain.handle('resume-zalo', async () => {
       try {
         const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
         if (fs.existsSync(cfgPath)) {
-          const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+          const cfg = readOpenclawJsonFile(cfgPath);
           if (!cfg.channels) cfg.channels = {};
           if (!cfg.channels['modoro-zalo'] || typeof cfg.channels['modoro-zalo'] !== 'object') {
             cfg.channels['modoro-zalo'] = {};
@@ -2971,7 +3070,7 @@ ipcMain.handle('get-inbound-debounce', async () => {
   try {
     const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(cfgPath)) return { telegram: 0, zalo: 0 };
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const cfg = readOpenclawJsonFile(cfgPath);
     const globalMs = cfg?.messages?.inbound?.debounceMs ?? 0;
     return { telegram: globalMs, zalo: globalMs };
   } catch { return { telegram: 0, zalo: 0 }; }
@@ -2986,7 +3085,7 @@ ipcMain.handle('set-inbound-debounce', async (_e, { channel, ms } = {}) => {
     return await withOpenClawConfigLock(async () => {
       const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
       if (!fs.existsSync(cfgPath)) return { success: false, error: 'config not found' };
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(cfgPath);
       // Write debounce at global level only — per-channel `channels.telegram.messages`
       // is NOT in openclaw's Telegram schema and causes "must NOT have additional
       // properties" rejection. openclaw reads `config.messages.inbound.debounceMs`.
@@ -3443,6 +3542,7 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
           _watcherSkipPaths.add(filepath);
           _watcherSkipPaths.add(newPath);
           fs.renameSync(filepath, newPath);
+          try { moveKnowledgeDocumentState(filepath, newPath); } catch {}
           db.prepare('UPDATE documents SET filepath=? WHERE id=?').run(newPath, docId);
         }
       } catch (e) { console.warn('[set-knowledge-visibility] file move error:', e.message); }
@@ -3466,6 +3566,55 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
   }
 });
 
+ipcMain.handle('set-knowledge-enabled', async (_event, { docId, enabled }) => {
+  try {
+    if (!Number.isInteger(docId) || docId <= 0) {
+      return { success: false, error: 'Invalid docId' };
+    }
+    const nextEnabled = enabled !== false;
+    const db = getDocumentsDb();
+    if (!db) return { success: false, error: 'DB unavailable' };
+    let row, info;
+    try {
+      row = db.prepare('SELECT category, filename, filepath, enabled AS previousEnabled FROM documents WHERE id=?').get(docId);
+      if (!row) return { success: false, error: 'Document not found' };
+    } catch (e) {
+      return { success: false, error: 'DB error: ' + e.message };
+    }
+
+    const previousEnabled = row.previousEnabled;
+    try {
+      setKnowledgeDocumentEnabledState(row.filepath, nextEnabled);
+    } catch (e) {
+      console.warn('[set-knowledge-enabled] state write error:', e.message);
+      return { success: false, error: 'State write error: ' + e.message };
+    }
+
+    try {
+      info = db.prepare('UPDATE documents SET enabled=? WHERE id=?').run(nextEnabled ? 1 : 0, docId);
+    } catch (e) {
+      try { setKnowledgeDocumentEnabledState(row.filepath, previousEnabled !== 0); } catch {}
+      return { success: false, error: 'DB error: ' + e.message };
+    }
+    if (!info || (info.changes === 0 && (previousEnabled !== 0) !== nextEnabled)) {
+      try { setKnowledgeDocumentEnabledState(row.filepath, previousEnabled !== 0); } catch {}
+      return { success: false, error: 'Document not found' };
+    }
+
+    try { auditLog('knowledge-enabled-change', { docId, enabled: nextEnabled, ts: Date.now() }); } catch {}
+
+    let indexWarning;
+    if (row.category) {
+      try { rewriteKnowledgeIndex(row.category); } catch (e) { indexWarning = e.message; }
+      purgeAgentSessions('knowledge-enabled');
+    }
+    return { success: true, enabled: nextEnabled, indexWarning };
+  } catch (e) {
+    console.error('[set-knowledge-enabled] error:', e.message);
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('list-knowledge-files', async (_event, { category }) => {
   try {
     if (!KNOWLEDGE_CATEGORIES.includes(category)) return [];
@@ -3479,7 +3628,7 @@ ipcMain.handle('list-knowledge-files', async (_event, { category }) => {
     let dbRows = [];
     try {
       dbRows = db.prepare(
-        'SELECT id, filename, filetype, filesize, word_count, summary, visibility, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
+        'SELECT id, filename, filetype, filesize, word_count, summary, visibility, enabled, created_at FROM documents WHERE category = ? ORDER BY created_at DESC'
       ).all(category);
     } catch (e) {
       console.error('[knowledge] db query error:', e.message);
@@ -3526,6 +3675,7 @@ ipcMain.handle('delete-knowledge-file', async (_event, { category, filename }) =
     try {
       mediaLibrary.deleteKnowledgeMediaAssets({ docId, filename, filepath: fp }, { keepPath: fp });
     } catch (e) { console.warn('[knowledge] media cleanup failed:', e.message); }
+    try { removeKnowledgeDocumentState(fp); } catch {}
     if (fp) { _watcherSkipPaths.add(fp); }
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
     // Fallback: check root level for legacy installs
@@ -3775,6 +3925,7 @@ ipcMain.handle('search-documents', async (_event, query) => {
         FROM documents_fts f
         JOIN documents d ON d.filename = f.filename
         WHERE documents_fts MATCH ?
+          AND d.enabled = 1
         ORDER BY rank
         LIMIT 10
       `).all(expandedQuery);
@@ -3786,6 +3937,7 @@ ipcMain.handle('search-documents', async (_event, query) => {
         FROM documents_fts f
         JOIN documents d ON d.filename = f.filename
         WHERE documents_fts MATCH ?
+          AND d.enabled = 1
         ORDER BY rank
         LIMIT 10
       `).all(query);
@@ -4439,7 +4591,7 @@ ipcMain.handle('install-openclaw', async (event) => {
           require('path').join(__dirname, '..', 'scripts', 'versions.json'), 'utf-8'
         ));
       } catch {
-        return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.12' };
+        return { openclaw: '2026.4.14', openzca: '0.1.57', nineRouter: '0.4.63' };
       }
     })();
     const PINNED_VERSIONS = [
@@ -4800,7 +4952,7 @@ ipcMain.handle('get-gateway-token', async () => {
   try {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const config = readOpenclawJsonFile(configPath);
       return config.gateway?.auth?.token || null;
     }
   } catch {}
@@ -5308,6 +5460,46 @@ ipcMain.handle('download-and-install-update', async () => {
     }
   });
 
+  ipcMain.handle('update-ceo-memory-status', async (_event, { id, status }) => {
+    try {
+      const { updateMemoryStatus } = require('./ceo-memory');
+      return await updateMemoryStatus(id, status);
+    } catch (e) {
+      console.error('[ceo-memory] status update error:', e?.message);
+      return { updated: false, error: e?.message };
+    }
+  });
+
+  ipcMain.handle('prioritize-ceo-memory', async (_event, { id, delta }) => {
+    try {
+      const { prioritizeMemory } = require('./ceo-memory');
+      return await prioritizeMemory(id, delta);
+    } catch (e) {
+      console.error('[ceo-memory] prioritize error:', e?.message);
+      return { updated: false, error: e?.message };
+    }
+  });
+
+  ipcMain.handle('supersede-ceo-memory', async (_event, { id, supersededById }) => {
+    try {
+      const { supersedeMemory } = require('./ceo-memory');
+      return await supersedeMemory(id, supersededById || null);
+    } catch (e) {
+      console.error('[ceo-memory] supersede error:', e?.message);
+      return { updated: false, error: e?.message };
+    }
+  });
+
+  ipcMain.handle('get-ceo-memory-events', async (_event, { limit, channel, actorId, ids } = {}) => {
+    try {
+      const { listMemoryEvents } = require('./ceo-memory');
+      return { events: listMemoryEvents({ limit: limit || 100, channel, actorId, ids }) };
+    } catch (e) {
+      console.error('[ceo-memory] events list error:', e?.message);
+      return { events: [], error: e?.message };
+    }
+  });
+
   ipcMain.handle('get-ceo-memory-count', async () => {
     try {
       const { getMemoryCount } = require('./ceo-memory');
@@ -5644,6 +5836,15 @@ ipcMain.handle('download-and-install-update', async () => {
         backoffLevel: 0,
       };
 
+      // Strategy 0: 9Router v0.4.63 stores providers in SQLite and exposes a
+      // Codex access-token import route. Use it before the older /api/providers
+      // and db.json fallbacks.
+      const importTokenRes = await nineRouterApi('POST', '/api/oauth/codex/import-token', {
+        accessToken,
+        name: email,
+      }, 10000);
+      if (importTokenRes.success) return { success: true, email, planType, method: 'api-import-token' };
+
       // Strategy 1: POST full entry to 9router API (works on all platforms)
       const apiRes = await nineRouterApi('POST', '/api/providers', entry, 10000);
       if (apiRes.success) return { success: true, email, planType, method: 'api' };
@@ -5721,7 +5922,7 @@ ipcMain.handle('download-and-install-update', async () => {
     try {
       const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
       if (!fs.existsSync(cfgPath)) return {};
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(cfgPath);
       const def = getChannel(ch);
       return def ? (cfg.channels?.[def.id] || {}) : {};
     } catch { return {}; }
@@ -5733,7 +5934,7 @@ ipcMain.handle('download-and-install-update', async () => {
     try {
       return await withOpenClawConfigLock(async () => {
         const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+        const cfg = readOpenclawJsonFile(cfgPath);
         if (!cfg.channels) cfg.channels = {};
         if (!cfg.channels[def.id]) cfg.channels[def.id] = {};
         const ALLOWED_FIELDS = ['enabled', 'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom'];

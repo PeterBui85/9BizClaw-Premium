@@ -29,7 +29,7 @@ Bot NGAY LẬP TỨC:
 2. Suy luận khoản mục từ ngữ cảnh (SOUL.md biết ngành + sản phẩm)
 3. Ghi file (append nội dung mới vào cuối):
    ```
-   web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"so-sach.md\",\"content\":\"<nội dung mới theo format bên dưới>\",\"mode\":\"append\"}" headers="{\"Content-Type\":\"application/json\"}"
+   web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"so-sach.md\",\"content\":\"<nội dung mới theo format bên dưới>\",\"mode\":\"append\"}"
    ```
 4. Xác nhận:
 

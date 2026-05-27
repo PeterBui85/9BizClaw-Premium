@@ -96,7 +96,6 @@ Bot tự viết Python/Node script. **Nguyên tắc:**
 ```
 web_fetch url="http://127.0.0.1:20200/api/skill/test-exec" method=POST
   body="{\"code\":\"<full script code>\",\"runtime\":\"python\",\"args\":[\"<sample arg>\"]}"
-  headers="{\"Content-Type\":\"application/json\"}"
 ```
 
 Response: `{success, exitCode, stdout, stderr, durationMs}`.
@@ -142,7 +141,6 @@ web_fetch url="http://127.0.0.1:20200/api/user-skills/create" method=POST
     }],
     \"allowedTools\":[]
   }"
-  headers="{\"Content-Type\":\"application/json\"}"
 ```
 
 Sau create → run script với args thật:

@@ -52,6 +52,34 @@ function pruneJobs() {
   }
 }
 
+function _jobTiming(job, now = Date.now()) {
+  const startedAt = Number(job?.startedAt || now);
+  return {
+    ageMs: Math.max(0, now - startedAt),
+    startedAt: new Date(startedAt).toISOString(),
+    timeoutMs: JOB_TIMEOUT_MS,
+    timeoutAt: new Date(startedAt + JOB_TIMEOUT_MS).toISOString(),
+  };
+}
+
+function _expireJobIfStale(job, now = Date.now()) {
+  if (!job || job.status !== 'generating') return false;
+  const ageMs = now - Number(job.startedAt || now);
+  if (ageMs < JOB_TIMEOUT_MS) return false;
+  job.status = 'failed';
+  job.error = 'image generation timed out after 15 minutes';
+  if (typeof job._settle === 'function') {
+    try { job._settle(new Error(job.error), null); } catch {}
+  } else {
+    const waiters = job.waiters || [];
+    job.waiters = [];
+    for (const waiter of waiters) {
+      try { waiter(); } catch {}
+    }
+  }
+  return true;
+}
+
 function isAssetPathSafe(baseDir, filename) {
   if (!filename || typeof filename !== 'string') return false;
   if (filename.includes('\0')) return false;
@@ -217,14 +245,28 @@ function buildCodexRequest(prompt, assets, size, options = {}) {
 
 function findConnectionIdsViaApi() {
   return new Promise(resolve => {
-    const req = http.request({
-      hostname: '127.0.0.1', port: 20128,
-      path: '/api/providers', method: 'GET',
-      headers: { 'Accept': 'application/json' },
-    }, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
+    let tokenCandidates = [''];
+    try {
+      const { get9RouterCliTokenCandidates } = require('./nine-router');
+      const tokens = get9RouterCliTokenCandidates();
+      if (Array.isArray(tokens) && tokens.length) tokenCandidates = tokens;
+    } catch {}
+
+    const requestWithToken = (index) => {
+      const headers = { 'Accept': 'application/json' };
+      if (tokenCandidates[index]) headers['x-9r-cli-token'] = tokenCandidates[index];
+      const req = http.request({
+        hostname: '127.0.0.1', port: 20128,
+        path: '/api/providers', method: 'GET',
+        headers,
+      }, res => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+        if ((res.statusCode === 401 || res.statusCode === 403) && index + 1 < tokenCandidates.length) {
+          requestWithToken(index + 1);
+          return;
+        }
         try {
           const body = JSON.parse(data);
           // API returns { connections: [...] } — different key from db.json's providerConnections
@@ -237,14 +279,16 @@ function findConnectionIdsViaApi() {
           console.warn('[image-gen] API fallback parse error:', e.message);
           resolve([]);
         }
+        });
       });
-    });
-    req.on('error', (e) => {
-      console.warn('[image-gen] API fallback request error:', e.message);
-      resolve([]);
-    });
-    req.setTimeout(5000, () => { req.destroy(); resolve([]); });
-    req.end();
+      req.on('error', (e) => {
+        console.warn('[image-gen] API fallback request error:', e.message);
+        resolve([]);
+      });
+      req.setTimeout(5000, () => { req.destroy(); resolve([]); });
+      req.end();
+    };
+    requestWithToken(0);
   });
 }
 
@@ -400,6 +444,7 @@ function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
     }
     if (onComplete) onComplete(err, imgPath);
   }
+  job._settle = settle;
 
   const { loaded: assets, skipped: assetSkips } = loadAssets(brandAssetsDir, assetNames || []);
   if (assetSkips.length > 0) {
@@ -408,7 +453,7 @@ function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
 
   callCodexAPIWithFallback(prompt, assets, size).then(imgBuf => {
     return withGenLock(() => {
-      if (_settled) return;
+      if (_settled || job.status !== 'generating') return;
       const generatedDir = path.join(brandAssetsDir, 'generated');
       fs.mkdirSync(generatedDir, { recursive: true });
       const outPath = path.join(generatedDir, jobId + '.png');
@@ -431,18 +476,14 @@ function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
       settle(null, outPath);
     });
   }).catch(err => {
-    if (_settled) return;
+    if (_settled || job.status !== 'generating') return;
     job.status = 'failed';
     job.error = err.message;
     settle(err, null);
   });
 
   setTimeout(() => {
-    if (job.status === 'generating') {
-      job.status = 'failed';
-      job.error = 'Timeout sau 15 phut';
-      settle(new Error(job.error), null);
-    }
+    _expireJobIfStale(job);
   }, JOB_TIMEOUT_MS);
 
   return jobId;
@@ -451,10 +492,12 @@ function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
 function getJobStatus(jobId) {
   const job = _jobs.get(jobId);
   if (!job) return { status: 'not_found' };
+  _expireJobIfStale(job);
   const warnings = job.assetWarnings?.length ? { assetWarnings: job.assetWarnings } : {};
-  if (job.status === 'done') return { status: 'done', imagePath: job.relPath || job.imagePath, mediaId: job.mediaId || null, ...warnings };
-  if (job.status === 'failed') return { status: 'failed', error: job.error, ...warnings };
-  return { status: 'generating', ...warnings };
+  const timing = _jobTiming(job);
+  if (job.status === 'done') return { status: 'done', imagePath: job.relPath || job.imagePath, mediaId: job.mediaId || null, ...timing, ...warnings };
+  if (job.status === 'failed') return { status: 'failed', error: job.error, ...timing, ...warnings };
+  return { status: 'generating', ...timing, ...warnings };
 }
 
 function waitForJobResult(jobId, timeoutMs = 3000) {
@@ -480,5 +523,8 @@ module.exports = {
     buildCodexRequest,
     isImageToolChoiceUnsupported,
     findImageConnectionId,
+    _expireJobIfStale,
+    _jobTiming,
+    JOB_TIMEOUT_MS,
   }
 };

@@ -1,10 +1,9 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
-const execSync = require('child_process').execSync;
 
 let app;
 try { ({ app } = require('electron')); } catch {}
@@ -16,8 +15,9 @@ function findNpmBin() {
   const isWin = process.platform === 'win32';
   const name = isWin ? 'npm.cmd' : 'npm';
   try {
-    const cmd = isWin ? 'where npm.cmd' : 'command -v npm';
-    const out = execSync(cmd, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000, shell: !isWin }).trim();
+    const out = isWin
+      ? execFileSync('where', ['npm.cmd'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim()
+      : execFileSync('/bin/sh', ['-c', 'command -v npm'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim();
     const first = out.split(/\r?\n/)[0]?.trim();
     if (first && fs.existsSync(first)) return first;
   } catch {}
@@ -26,6 +26,24 @@ function findNpmBin() {
     try { if (fs.existsSync(p)) return p; } catch {}
   }
   return name;
+}
+
+function quoteCmdArg(arg) {
+  return `"${String(arg).replace(/(["^&|<>%])/g, '^$1')}"`;
+}
+
+function execNpmSync(npmBin, args, opts) {
+  if (process.platform === 'win32') {
+    // Use the PATH shim instead of an absolute npm.cmd under Program Files.
+    // Node/cmd quote handling for absolute .cmd paths is brittle on Windows.
+    const command = ['npm.cmd', ...args.map(quoteCmdArg)].join(' ');
+    return execFileSync(
+      'cmd.exe',
+      ['/d', '/c', command],
+      opts,
+    );
+  }
+  return execFileSync(npmBin, args, opts);
 }
 
 // =====================================================================
@@ -52,7 +70,7 @@ async function wouldNeedSudo() {
   const isWin = process.platform === 'win32';
   const npmBin = findNpmBin();
   try {
-    const out = execSync(npmBin + ' config get prefix', { encoding: 'utf-8', timeout: 5000, shell: isWin }).trim();
+    const out = execNpmSync(npmBin, ['config', 'get', 'prefix'], { encoding: 'utf-8', timeout: 5000 }).trim();
     if (isWin) return out.includes('Program Files');
     return out === '/usr' || out === '/usr/local';
   } catch {

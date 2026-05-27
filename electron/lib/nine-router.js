@@ -24,11 +24,20 @@ function getProviderKeysPath() { return path.join(appDataDir(), 'modoroclaw-prov
 /** @returns {string} Path to RTK default enablement marker file */
 function getRtkDefaultMarkerPath() { return path.join(appDataDir(), 'modoroclaw-rtk-default-applied.json'); }
 
-/** @returns {string} Path to 9Router's db.json settings file */
-function get9RouterDbPath() { return path.join(appDataDir(), '9router', 'db.json'); }
+/** @returns {string} Path to 9Router's DATA_DIR (matches upstream 9router defaults). */
+function get9RouterDataDir() {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || path.join(ctx.HOME, 'AppData', 'Roaming'), '9router');
+  }
+  return path.join(ctx.HOME, '.9router');
+}
+
+/** @returns {string} Path to 9Router's legacy db.json settings file */
+function get9RouterDbPath() { return path.join(get9RouterDataDir(), 'db.json'); }
 
 let _9routerSqliteFixAttempted = false;
-let _cached9RouterCliToken = null;
+let _cached9RouterCliSecret = null;
 
 function send9RouterAlert(text) {
   try {
@@ -78,21 +87,66 @@ function tryRequireNodeMachineId() {
   return null;
 }
 
-// 9Router v0.4.x protects /api/* with the same local CLI token used by its
-// own bundled CLI client. The token is deterministic per machine and only
-// accepted by the local server, so Electron can configure providers/settings
-// without asking the user to log into the 9Router web UI.
-function get9RouterCliToken() {
-  if (_cached9RouterCliToken !== null) return _cached9RouterCliToken;
+function compute9RouterCliToken(rawMachineId, cliSecret) {
+  if (!rawMachineId || !cliSecret) return '';
+  return crypto.createHash('sha256')
+    .update(String(rawMachineId) + '9r-cli-auth' + String(cliSecret))
+    .digest('hex')
+    .substring(0, 16);
+}
+
+function computeLegacy9RouterCliToken(rawMachineId) {
+  if (!rawMachineId) return '';
+  return crypto.createHash('sha256')
+    .update(String(rawMachineId) + '9r-cli-auth')
+    .digest('hex')
+    .substring(0, 16);
+}
+
+function getLegacy9RouterCliToken(rawMachineId = load9RouterRawMachineId()) {
+  return computeLegacy9RouterCliToken(rawMachineId);
+}
+
+function load9RouterRawMachineId() {
   try {
-    const machineId = tryRequireNodeMachineId()?.machineIdSync?.();
-    _cached9RouterCliToken = machineId
-      ? crypto.createHash('sha256').update(machineId + '9r-cli-auth').digest('hex').substring(0, 16)
-      : '';
-  } catch {
-    _cached9RouterCliToken = '';
-  }
-  return _cached9RouterCliToken;
+    const raw = fs.readFileSync(path.join(get9RouterDataDir(), 'machine-id'), 'utf8').trim();
+    if (raw) return raw;
+  } catch {}
+  try { return tryRequireNodeMachineId()?.machineIdSync?.() || ''; } catch {}
+  return '';
+}
+
+function load9RouterCliSecret() {
+  if (_cached9RouterCliSecret) return _cached9RouterCliSecret;
+  const authDir = path.join(get9RouterDataDir(), 'auth');
+  const secretPath = path.join(authDir, 'cli-secret');
+  try {
+    _cached9RouterCliSecret = fs.readFileSync(secretPath, 'utf8').trim();
+    if (_cached9RouterCliSecret) return _cached9RouterCliSecret;
+  } catch {}
+  _cached9RouterCliSecret = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.mkdirSync(authDir, { recursive: true });
+    fs.writeFileSync(secretPath, _cached9RouterCliSecret, { mode: 0o600 });
+  } catch {}
+  return _cached9RouterCliSecret;
+}
+
+// 9Router v0.4.63 protects /api/* with a CLI token derived from persisted
+// machine-id + auth/cli-secret. Keep the old v0.4.12 token as a rollout
+// fallback so updated 9BizClaw can still talk to older runtime installs.
+function get9RouterCliTokenCandidates() {
+  const rawMachineId = load9RouterRawMachineId();
+  if (!rawMachineId) return [];
+  const tokens = [
+    compute9RouterCliToken(rawMachineId, load9RouterCliSecret()),
+    computeLegacy9RouterCliToken(rawMachineId),
+  ].filter(Boolean);
+  return [...new Set(tokens)];
+}
+
+function get9RouterCliToken() {
+  return get9RouterCliTokenCandidates()[0] || '';
 }
 
 // Strip any stored password from 9Router's settings store so the default
@@ -268,7 +322,7 @@ function tryWrite9RouterRtkDefaultToDb() {
   }
 }
 
-// 9Router v0.4.12 defaults RTK (Rust Token Killer) on for new installs and
+// 9Router v0.4.x defaults RTK (Rust Token Killer) on for new installs and
 // reads it from per-request settings. For existing 9BizClaw installs, enable it
 // once so old db.json files get migrated without forcing the setting every run.
 // The marker lets users later disable RTK in 9Router without our startup code
@@ -281,12 +335,12 @@ async function ensure9RouterRtkDefaultEnabled() {
   const apiResult = await nineRouterApi('PATCH', '/api/settings', { rtkEnabled: true }, 5000);
   if (apiResult.success || dbResult.changed || dbResult.skipped === 'already-enabled') {
     writeRtkDefaultMarker({
-      source: '9bizclaw-default',
-      package: '9router',
-      version: '0.4.12',
-      dbChanged: dbResult.changed === true,
-      apiPatched: apiResult.success === true,
-    });
+        source: '9bizclaw-default',
+        package: '9router',
+        version: '0.4.63',
+        dbChanged: dbResult.changed === true,
+        apiPatched: apiResult.success === true,
+      });
     console.log('[9router] RTK default enablement applied');
     return true;
   }
@@ -331,7 +385,7 @@ function start9Router() {
       writeRtkDefaultMarker({
         source: '9bizclaw-db-startup',
         package: '9router',
-        version: '0.4.12',
+        version: '0.4.63',
         dbChanged: rtkDbResult.changed === true,
         apiPatched: false,
       });
@@ -393,6 +447,7 @@ function start9Router() {
     // and pinning JWT_SECRET makes auth cookies survive Electron restarts.
     const routerEnv = {
       ...process.env,
+      DATA_DIR: process.env.DATA_DIR || get9RouterDataDir(),
       INITIAL_PASSWORD: process.env.INITIAL_PASSWORD || '123456',
       JWT_SECRET: process.env.JWT_SECRET || 'modoroclaw-9router-jwt-secret-stable-v1',
     };
@@ -593,40 +648,49 @@ async function validateOllamaKeyDirect(apiKey) {
 function nineRouterApi(method, path, body = null, timeoutMs = 5000) {
   return new Promise((resolve) => {
     const http = require('http');
-    const headers = { 'Content-Type': 'application/json' };
-    const cliToken = get9RouterCliToken();
-    if (cliToken) headers['x-9r-cli-token'] = cliToken;
     let bodyStr = null;
     if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
       bodyStr = JSON.stringify(body);
-      headers['Content-Length'] = Buffer.byteLength(bodyStr);
     }
-    const req = http.request({
-      hostname: '127.0.0.1', port: 20128, path, method, headers, timeout: timeoutMs,
-    }, (res) => {
-      let buf = '';
-      res.setEncoding('utf8');
-      res.on('data', (c) => { buf += c; });
-      res.on('end', () => {
-        let parsed = null;
-        try { parsed = buf ? JSON.parse(buf) : {}; }
-        catch { parsed = { _raw: buf.slice(0, 200) }; }
-        if (res.statusCode >= 400 || (parsed && parsed.error)) {
-          resolve({
-            success: false,
-            statusCode: res.statusCode,
-            error: parsed?.error || `HTTP ${res.statusCode}`,
-            data: parsed,
-          });
-        } else {
-          resolve({ success: true, statusCode: res.statusCode, data: parsed });
-        }
+    const tokenCandidates = get9RouterCliTokenCandidates();
+    const attempts = tokenCandidates.length ? tokenCandidates : [''];
+    const send = (index) => {
+      const headers = { 'Content-Type': 'application/json' };
+      const cliToken = attempts[index];
+      if (cliToken) headers['x-9r-cli-token'] = cliToken;
+      if (bodyStr) headers['Content-Length'] = Buffer.byteLength(bodyStr);
+      const req = http.request({
+        hostname: '127.0.0.1', port: 20128, path, method, headers, timeout: timeoutMs,
+      }, (res) => {
+        let buf = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { buf += c; });
+        res.on('end', () => {
+          let parsed = null;
+          try { parsed = buf ? JSON.parse(buf) : {}; }
+          catch { parsed = { _raw: buf.slice(0, 200) }; }
+          if ((res.statusCode === 401 || res.statusCode === 403) && index + 1 < attempts.length) {
+            send(index + 1);
+            return;
+          }
+          if (res.statusCode >= 400 || (parsed && parsed.error)) {
+            resolve({
+              success: false,
+              statusCode: res.statusCode,
+              error: parsed?.error || `HTTP ${res.statusCode}`,
+              data: parsed,
+            });
+          } else {
+            resolve({ success: true, statusCode: res.statusCode, data: parsed });
+          }
+        });
       });
-    });
-    req.on('error', (e) => resolve({ success: false, error: 'Network: ' + e.message }));
-    req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'Timeout (>' + timeoutMs + 'ms)' }); });
-    if (bodyStr) req.write(bodyStr);
-    req.end();
+      req.on('error', (e) => resolve({ success: false, error: 'Network: ' + e.message }));
+      req.on('timeout', () => { req.destroy(); resolve({ success: false, error: 'Timeout (>' + timeoutMs + 'ms)' }); });
+      if (bodyStr) req.write(bodyStr);
+      req.end();
+    };
+    send(0);
   });
 }
 
@@ -957,6 +1021,20 @@ async function call9RouterVision(imagePath, prompt, { maxTokens = 1500, temperat
 // OAuth = 'ninerouter/main' (ChatGPT Plus included, cheap), else 'ninerouter/fast'.
 async function detectChatgptPlusOAuth() {
   try {
+    const apiRes = await nineRouterApi('GET', '/api/providers', null, 2000);
+    if (apiRes.success) {
+      const conns = apiRes.data?.connections || apiRes.data?.providers || apiRes.data?.providerConnections || [];
+      if (Array.isArray(conns)) {
+        return conns.some(p => {
+          if (p?.provider !== 'codex' || p.isActive === false) return false;
+          const plan = String(p.providerSpecificData?.chatgptPlanType || '').toLowerCase();
+          return plan === 'plus' || plan === 'team' ||
+            String(p.authType || '').toLowerCase().includes('oauth') ||
+            String(p.authType || '').toLowerCase().includes('access_token');
+        });
+      }
+    }
+
     // 9router db.json path: use appDataDir() to match how 9router actually
     // stores it on each platform (Win: %APPDATA%/9router/, Mac: Application
     // Support/9router/, Linux: ~/.config/9router/). Previous `HOME/.9router/`
@@ -965,10 +1043,15 @@ async function detectChatgptPlusOAuth() {
     const dbPath = get9RouterDbPath();
     if (!fs.existsSync(dbPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-    const providers = cfg?.providers || [];
+    const providers = cfg?.providerConnections || cfg?.providers || [];
     return providers.some(p =>
+      p?.provider === 'codex' && (
       String(p.type || p.kind || '').toLowerCase().includes('oauth') ||
-      String(p.label || '').toLowerCase().includes('chatgpt plus')
+      String(p.authType || '').toLowerCase().includes('oauth') ||
+      String(p.authType || '').toLowerCase().includes('access_token') ||
+      String(p.label || '').toLowerCase().includes('chatgpt plus') ||
+      ['plus', 'team'].includes(String(p.providerSpecificData?.chatgptPlanType || '').toLowerCase())
+      )
     );
   } catch { return false; }
 }
@@ -981,5 +1064,12 @@ module.exports = {
   waitFor9RouterReady, validateOllamaKeyDirect,
   call9Router, call9RouterVision, detectChatgptPlusOAuth,
   format9RouterVisionError,
+  get9RouterCliTokenCandidates,
   getRouterProcess, setKillPort,
+  _test: {
+    compute9RouterCliToken,
+    computeLegacy9RouterCliToken,
+    getLegacy9RouterCliToken,
+    get9RouterDataDir,
+  },
 };

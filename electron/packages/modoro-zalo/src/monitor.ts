@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { RuntimeEnv } from "../api.js";
 import { handleModoroZaloInbound } from "./inbound.js";
 import { OPENZCA_LISTEN_ARGS } from "./listen-args.js";
@@ -130,6 +133,50 @@ async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
 
     signal.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+type OpenzcaCredentialsVersion = string | null;
+
+export function getOpenzcaCredentialsPath(profile: string, home = os.homedir()): string {
+  const normalizedProfile = profile.trim() || "default";
+  return path.join(home, ".openzca", "profiles", normalizedProfile, "credentials.json");
+}
+
+function readOpenzcaCredentialsVersion(profile: string): OpenzcaCredentialsVersion {
+  try {
+    const stat = fs.statSync(getOpenzcaCredentialsPath(profile));
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function sleepWithAbortOrCredentialChange(
+  ms: number,
+  signal: AbortSignal,
+  readVersion: () => OpenzcaCredentialsVersion,
+  currentVersion: OpenzcaCredentialsVersion,
+  pollMs = 1000,
+): Promise<{ reason: "timeout" | "credentials-changed"; version: OpenzcaCredentialsVersion }> {
+  if (ms <= 0) {
+    return { reason: "timeout", version: readVersion() };
+  }
+  const deadlineAt = Date.now() + ms;
+  const normalizedPollMs = Math.max(1, Math.floor(pollMs));
+  while (true) {
+    if (signal.aborted) {
+      throw new Error("aborted");
+    }
+    const latestVersion = readVersion();
+    if (latestVersion !== null && latestVersion !== currentVersion) {
+      return { reason: "credentials-changed", version: latestVersion };
+    }
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      return { reason: "timeout", version: latestVersion };
+    }
+    await sleepWithAbort(Math.min(normalizedPollMs, remainingMs), signal);
+  }
 }
 
 function noteModoroZaloStreamActivity(params: {
@@ -397,13 +444,44 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
 
   let reconnectAttempt = 0;
   let consecutiveFastFails = 0;
+  let credentialsVersion = readOpenzcaCredentialsVersion(account.profile);
+
+  const waitForReconnectDelay = async (delayMs: number, label: string): Promise<void> => {
+    const wake = await sleepWithAbortOrCredentialChange(
+      delayMs,
+      abortSignal,
+      () => readOpenzcaCredentialsVersion(account.profile),
+      credentialsVersion,
+    );
+    credentialsVersion = wake.version;
+    if (wake.reason === "credentials-changed") {
+      consecutiveFastFails = 0;
+      reconnectAttempt = 1;
+      runtime.log?.(
+        `[${account.accountId}] openzca credentials changed during ${label}; retrying listener now`,
+      );
+    }
+  };
 
   while (!abortSignal.aborted) {
     if (consecutiveFastFails >= MODORO_ZALO_CIRCUIT_BREAKER_THRESHOLD) {
       runtime.error?.(
         `[${account.accountId}] circuit breaker: ${consecutiveFastFails} consecutive fast failures — cooling down ${MODORO_ZALO_CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s to avoid Zalo rate-limit`,
       );
-      try { await sleepWithAbort(MODORO_ZALO_CIRCUIT_BREAKER_COOLDOWN_MS, abortSignal); } catch { return; }
+      try {
+        const wake = await sleepWithAbortOrCredentialChange(
+          MODORO_ZALO_CIRCUIT_BREAKER_COOLDOWN_MS,
+          abortSignal,
+          () => readOpenzcaCredentialsVersion(account.profile),
+          credentialsVersion,
+        );
+        credentialsVersion = wake.version;
+        if (wake.reason === "credentials-changed") {
+          runtime.log?.(
+            `[${account.accountId}] openzca credentials changed during circuit breaker cooldown; retrying listener now`,
+          );
+        }
+      } catch { return; }
       consecutiveFastFails = 0;
       reconnectAttempt = 1;
     }
@@ -419,23 +497,21 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
         return;
       }
 
-      if (!selfId) {
-        try {
-          const me = await runOpenzcaCommand({
-            binary: account.zcaBinary,
-            profile: account.profile,
-            args: ["me", "id"],
-            timeoutMs: 10_000,
-            signal: abortSignal,
-          });
-          const resolved = me.stdout.trim().split(/\s+/g)[0]?.trim();
-          if (resolved) {
-            selfId = resolved;
-            runtime.log?.(`[${account.accountId}] resolved self id ${selfId}`);
-          }
-        } catch (error) {
-          runtime.error?.(`[${account.accountId}] failed to resolve self id: ${String(error)}`);
+      try {
+        const me = await runOpenzcaCommand({
+          binary: account.zcaBinary,
+          profile: account.profile,
+          args: ["me", "id"],
+          timeoutMs: 10_000,
+          signal: abortSignal,
+        });
+        const resolved = me.stdout.trim().split(/\s+/g)[0]?.trim();
+        if (resolved && resolved !== selfId) {
+          selfId = resolved;
+          runtime.log?.(`[${account.accountId}] resolved self id ${selfId}`);
         }
+      } catch (error) {
+        runtime.error?.(`[${account.accountId}] failed to resolve self id: ${String(error)}`);
       }
 
       const streamAbort = new AbortController();
@@ -466,8 +542,9 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
         streamAbort.abort();
       });
 
+      let streamExitCode: number | null = null;
       try {
-        await runOpenzcaStreaming({
+        const streamResult = await runOpenzcaStreaming({
           binary: account.zcaBinary,
           profile: account.profile,
           // Let Modoro Zalo own restart policy. Supervised mode gives us lifecycle
@@ -520,6 +597,7 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
             await inboundDebouncer.enqueue({ message });
           },
         });
+        streamExitCode = streamResult.exitCode;
       } finally {
         detachReconnect();
         stopWatchdog();
@@ -543,7 +621,7 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
       }
       reconnectAttempt = nextReconnectAttempt(reconnectAttempt, attemptDurationMs);
       const delayMs = computeReconnectDelayMs(reconnectAttempt);
-      const reason = streamEndReason ?? "listener exited";
+      const reason = streamEndReason ?? `listener exited (code=${streamExitCode ?? "unknown"})`;
       noteModoroZaloDisconnected({
         accountId: account.accountId,
         statusSink,
@@ -553,7 +631,7 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
       runtime.error?.(
         `[${account.accountId}] openzca ${reason}; reconnecting in ${Math.round(delayMs / 1000)}s`,
       );
-      await sleepWithAbort(delayMs, abortSignal);
+      await waitForReconnectDelay(delayMs, reason);
     } catch (error) {
       if (abortSignal.aborted) {
         noteModoroZaloDisconnected({
@@ -583,7 +661,7 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
           `reconnecting in ${Math.round(delayMs / 1000)}s`,
       );
       try {
-        await sleepWithAbort(delayMs, abortSignal);
+        await waitForReconnectDelay(delayMs, "listener error");
       } catch {
         return;
       }

@@ -34,8 +34,13 @@ function _resolveRuntimeBin(runtime) {
     return require('./python-runtime').detectSystemPython();
   }
   if (runtime === 'node') {
-    // Use the same Node that Electron's main process uses
-    return process.execPath;
+    try {
+      const boot = require('./boot');
+      const nodeBin = (typeof boot.findNodeBin === 'function' && boot.findNodeBin()) ||
+        (typeof boot.getBundledNodeBin === 'function' && boot.getBundledNodeBin());
+      if (nodeBin) return nodeBin;
+    } catch {}
+    return process.versions && process.versions.electron ? null : process.execPath;
   }
   if (runtime === 'bash') {
     // POSIX bash. On Windows, Git Bash often at C:\Program Files\Git\bin\bash.exe.
@@ -51,8 +56,28 @@ function _resolveRuntimeBin(runtime) {
   return null;
 }
 
+function _nodeModulePathEntries() {
+  const entries = [];
+  try {
+    const boot = require('./boot');
+    const vendor = typeof boot.getBundledVendorDir === 'function' ? boot.getBundledVendorDir() : null;
+    if (vendor) entries.push(path.join(vendor, 'node_modules'));
+  } catch {}
+  try {
+    const runtimeInstaller = require('./runtime-installer');
+    if (typeof runtimeInstaller.getRuntimeNodeModulesDir === 'function') {
+      entries.push(runtimeInstaller.getRuntimeNodeModulesDir());
+    }
+  } catch {}
+  entries.push(path.join(__dirname, '..', 'node_modules'));
+  if (process.env.APPDATA) entries.push(path.join(process.env.APPDATA, '9bizclaw', 'vendor', 'node_modules'));
+  const existing = String(process.env.NODE_PATH || '').split(path.delimiter).filter(Boolean);
+  return [...new Set([...entries, ...existing].filter(p => p && fs.existsSync(p)))];
+}
+
 // Build restricted env. Strip secrets, set workspace marker, allow PATH.
 function _buildSafeEnv(extra) {
+  const nodePath = _nodeModulePathEntries().join(path.delimiter);
   const safe = {
     ...extra,
     PATH: process.env.PATH,
@@ -65,6 +90,7 @@ function _buildSafeEnv(extra) {
     PYTHONIOENCODING: 'utf-8',
     PYTHONUNBUFFERED: '1',
   };
+  if (nodePath) safe.NODE_PATH = nodePath;
   return safe;
 }
 
@@ -96,7 +122,21 @@ async function runScript(scriptPath, opts = {}) {
   if (!runtime) {
     return { exitCode: -1, stdout: '', stderr: `Unsupported script type: ${filename}. Supported: .py, .js, .mjs, .sh, .ps1`, durationMs: 0, error: 'ENORUNTIME' };
   }
-  const bin = _resolveRuntimeBin(runtime);
+  let bin = _resolveRuntimeBin(runtime);
+  if (!bin && runtime === 'python' && opts.autoInstallPython !== false) {
+    try {
+      bin = await require('./python-runtime').ensurePython();
+    } catch (e) {
+      return {
+        exitCode: -1,
+        stdout: '',
+        stderr: e.message || 'Python runtime unavailable',
+        durationMs: Date.now() - startedAt,
+        error: 'ENORUNTIMEBIN',
+        runtime,
+      };
+    }
+  }
   if (!bin) {
     const msg = runtime === 'python'
       ? 'Python 3.8+ chưa cài. Bot sẽ tự download Python embedded lần đầu — chờ ~30s.'
@@ -212,4 +252,5 @@ module.exports = {
   testRunScript,
   _runtimeForFile,
   _resolveRuntimeBin,
+  _nodeModulePathEntries,
 };

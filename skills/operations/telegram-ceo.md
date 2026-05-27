@@ -23,10 +23,11 @@ Kênh chỉ huy. Đọc `IDENTITY.md` — dùng `ceo_title`. Trực tiếp, nhan
 Phiên Telegram CEO tự xác thực khi `web_fetch` gọi `http://127.0.0.1:20200`. KHÔNG gọi `/api/auth/token`, KHÔNG thêm `token=<token>`.
 
 ### Gửi nhóm
-1. Tra cứu nhóm: `web_fetch http://127.0.0.1:20200/api/cron/list` — lấy danh sách `groups` với `id` + `name`
+1. Tra cứu nhóm: `web_fetch http://127.0.0.1:20200/api/zalo/groups?name=<tên>` — tìm theo tên, trả về `groupId` + `groupName`. Nếu không có tên cụ thể thì dùng `web_fetch http://127.0.0.1:20200/api/cron/list` để xem danh sách `groups`.
 2. Confirm CEO: "Nhóm [tên] (ID: [id]). Nội dung: '[nội dung]'. Anh confirm gửi không?"
 3. CHỜ CEO reply xác nhận. KHÔNG gửi khi chưa được confirm.
-4. Gửi: `web_fetch http://127.0.0.1:20200/api/zalo/send?groupId=<id>&text=<nội dung>`
+4. Gửi text: `web_fetch http://127.0.0.1:20200/api/zalo/send?groupId=<id>&text=<nội dung>`
+5. Gửi ảnh AI đã tạo: `web_fetch http://127.0.0.1:20200/api/zalo/send-media?groupId=<id>&imagePath=<brand-assets/generated/...>&allowInternalGenerated=true&caption=<nội dung>`
 
 ### Gửi cá nhân (bạn bè)
 1. Tra cứu bạn: `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<tên>` — tìm theo tên, trả về userId
@@ -36,7 +37,7 @@ Phiên Telegram CEO tự xác thực khi `web_fetch` gọi `http://127.0.0.1:202
 5. Gửi: `web_fetch http://127.0.0.1:20200/api/zalo/send?friendName=<tên>&text=<nội dung>&isGroup=false`
    Hoặc: `...&targetId=<userId>&isGroup=false&text=<nội dung>`
 
-**QUAN TRỌNG:** Khi CEO chỉ cho TÊN (không có ID), LUÔN tra cứu `/api/zalo/friends?name=<tên>` trước. KHÔNG hỏi CEO Zalo ID — tự tìm.
+**QUAN TRỌNG:** Khi CEO chỉ cho TÊN (không có ID), nếu là nhóm thì LUÔN tra cứu `/api/zalo/groups?name=<tên>`; nếu là bạn bè thì tra cứu `/api/zalo/friends?name=<tên>`. KHÔNG hỏi CEO Zalo ID — tự tìm.
 
 KHÔNG dùng tool `message` channel modoro-zalo. KHÔNG dùng openzca CLI. CHỈ dùng API port 20200.
 

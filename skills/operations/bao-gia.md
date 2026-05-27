@@ -154,7 +154,7 @@ Không tìm thấy knowledge ngành → dùng format mặc định.
 
 ## Xuất file Word
 
-CEO muốn báo giá dạng file Word chuyên nghiệp -> dùng skill `skills/operations/docx/SKILL.md`. Nói "xuất file Word báo giá" hoặc "làm file docx báo giá".
+CEO muốn báo giá dạng file Word chuyên nghiệp -> dùng skill `skills/anthropic-docx/SKILL.md`. Nói "xuất file Word báo giá" hoặc "làm file docx báo giá".
 
 ## Lưu ý
 

@@ -112,6 +112,20 @@ cmd_fix() {
     green "  ✓ Python packages installed (reportlab, pypdf, matplotlib)"
   fi
 
+  # Vietnamese font (NotoSans — required for Vietnamese diacritics in body PDF)
+  if command -v python3 &>/dev/null; then
+    FONT_DIR="$(python3 -c "import os; print(os.path.join(os.path.expanduser('~'), '.cache', 'minimax-pdf', 'fonts'))" 2>/dev/null)"
+    if [[ -n "$FONT_DIR" ]]; then
+      mkdir -p "$FONT_DIR"
+      FONT_PATH="$FONT_DIR/NotoSans-Regular.ttf"
+      if [[ ! -f "$FONT_PATH" || "$(uname -s)" == *"indows" && -z "$(command -v curl)" ]]; then
+        yellow "  Vietnamese font not cached — render_body.py will download on first run"
+      else
+        green "  ✓ Vietnamese font: $FONT_PATH"
+      fi
+    fi
+  fi
+
   # Playwright
   if command -v npm &>/dev/null; then
     npm install -g playwright --silent 2>/dev/null && \
@@ -456,6 +470,26 @@ JSON
   rm -rf "$tmpdir"
 }
 
+# ── demo-vn ──────────────────────────────────────────────────────────────────
+cmd_demo_vn() {
+  local DEMO_CONTENT="$SCRIPTS/demo-vietnamese.json"
+  if [[ ! -f "$DEMO_CONTENT" ]]; then
+    red "demo-vietnamese.json not found at $DEMO_CONTENT"
+    exit 1
+  fi
+
+  bold "Building Vietnamese demo: Báo Cáo Tổng Kết Quý I"
+  cmd_run \
+    --title   "Báo Cáo Tổng Kết Quý I 2026" \
+    --type    "report" \
+    --author  "Công ty TNHH Minh Phát" \
+    --date    "Tháng 4, 2026" \
+    --subtitle "Báo cáo hoạt động kinh doanh" \
+    --accent  "#1C3A5E" \
+    --content "$DEMO_CONTENT" \
+    --out     "demo-vietnamese.pdf"
+}
+
 # ── dispatch ───────────────────────────────────────────────────────────────────
 main() {
   if [[ $# -lt 1 ]]; then
@@ -474,6 +508,7 @@ main() {
     echo "  fill   --input f.pdf              FILL: inspect or fill form fields"
     echo "  reformat --input doc.md           REFORMAT: parse doc → apply design → PDF"
     echo "  demo                              Build a full-featured demo PDF"
+    echo "  demo-vn                           Build a Vietnamese-language demo PDF"
     exit 0
   fi
 
@@ -484,6 +519,7 @@ main() {
     fill)     shift; cmd_fill     "$@" ;;
     reformat) shift; cmd_reformat "$@" ;;
     demo)     cmd_demo  ;;
+    demo-vn)  cmd_demo_vn ;;
     *)        echo "Unknown command: $1"; exit 1 ;;
   esac
 }

@@ -24,6 +24,12 @@ const _idRe = /^[a-z0-9][a-z0-9-]{0,79}$/;
 // rule would never inject).
 const _APPLIESTO_PATH_MIGRATIONS = {
   // Renamed/merged shipped skills (Round 1 consolidation, this session).
+  'operations/docx': 'anthropic-docx',
+  'operations/pptx': 'anthropic-pptx',
+  'operations/excel': 'anthropic-xlsx',
+  'operations/xlsx': 'anthropic-xlsx',
+  'operations/pdf': 'anthropic-pdf',
+  'pptx-generator': 'anthropic-pptx',
   'operations/zalo-reply-rules': 'operations/zalo',
   'operations/zalo-customer-care': 'operations/zalo',
   'operations/zalo-group': 'operations/zalo',
@@ -117,6 +123,19 @@ const _APPLIESTO_PATH_MIGRATIONS = {
   'hr/change-management': '',
   'hr/chro-advisor': '',
 };
+
+const _LEGACY_SHIPPED_SKILL_PATHS = new Set([
+  'operations/docx',
+  'operations/pptx',
+  'operations/excel',
+  'operations/xlsx',
+  'operations/pdf',
+  'pptx-generator',
+]);
+
+function _canonicalShippedSkillPath(relPath) {
+  return _APPLIESTO_PATH_MIGRATIONS[relPath] || relPath;
+}
 
 function _migrateAppliesTo(arr) {
   if (!Array.isArray(arr)) return [];
@@ -419,13 +438,15 @@ function getShippedSkillIds() {
       if (entry.name === '_archived') continue;
       const childPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        const relId = (prefix ? prefix + '/' : '') + entry.name;
+        if (_LEGACY_SHIPPED_SKILL_PATHS.has(relId)) continue;
         // Anthropic folder skill: has SKILL.md at root → treat dir as single skill.
         if (fs.existsSync(path.join(childPath, 'SKILL.md'))) {
-          ids.add((prefix ? prefix + '/' : '') + entry.name);
+          ids.add(relId);
           continue; // do NOT recurse into scripts/, references/, etc.
         }
         // Otherwise treat as category — recurse.
-        scan(childPath, (prefix ? prefix + '/' : '') + entry.name);
+        scan(childPath, relId);
       } else if (entry.name.endsWith('.md')) {
         ids.add((prefix ? prefix + '/' : '') + entry.name.replace(/\.md$/, ''));
       }
@@ -975,6 +996,8 @@ function listShippedSkills() {
       if (entry.isDirectory()) {
         const skillMd = path.join(dir, entry.name, 'SKILL.md');
         if (fs.existsSync(skillMd)) {
+          const skillId = (category && category !== 'Ngành' ? path.basename(dir) + '/' : '') + entry.name;
+          if (_LEGACY_SHIPPED_SKILL_PATHS.has(skillId)) continue;
           // Anthropic folder skill — treat dir as single skill, do NOT recurse
           const name = _parseSkillName(skillMd, entry.name);
           results.push({
@@ -1009,6 +1032,7 @@ function getShippedSkillContent(relPath) {
   const { getWorkspace } = require('./workspace');
   const ws = getWorkspace();
   if (!ws) return null;
+  relPath = _canonicalShippedSkillPath(relPath);
   const skillsDir = path.join(ws, 'skills');
   // Try Anthropic folder layout first: `skills/<relPath>/SKILL.md`
   const folderPath = path.resolve(skillsDir, relPath, 'SKILL.md');

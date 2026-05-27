@@ -11,26 +11,37 @@ let _watcherTimerId = null;
 let _watcherLeftover = '';
 
 const _CORRECTION_PATTERNS = [
-  // Corrections
-  /kh[oô]ng ph[aả]i/i,
-  /sai r[oồ]i/i,
-  /nh[oớ] l[aà]/i,
-  /ph[aả]i l[aà]/i,
-  /kh[oô]ng [đd][uú]ng/i,
-  /s[uử]a l[aạ]i/i,
-  // Rules
-  /t[uừ] gi[oờ]/i,
-  /lu[oô]n lu[oô]n/i,
-  /[đd][uừ]ng bao gi[oờ]/i,
-  /m[oỗ]i l[aầ]n/i,
-  /quy t[aắ]c/i,
-  // Preferences
-  /anh th[ií]ch/i,
-  /anh gh[eé]t/i,
-  /[đd][uừ]ng l[aà]m/i,
-  /kh[oô]ng c[aầ]n/i,
-  /anh mu[oố]n/i,
+  /khong phai/i,
+  /sai roi/i,
+  /nho la/i,
+  /phai la/i,
+  /khong dung/i,
+  /sua lai/i,
+  /tu gio/i,
+  /luon luon/i,
+  /dung bao gio/i,
+  /moi lan/i,
+  /quy tac/i,
+  /anh thich/i,
+  /anh ghet/i,
+  /dung lam/i,
+  /khong can/i,
+  /anh muon/i,
 ];
+
+function _normalizeVietnamese(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+}
+
+function _looksLikeMemorySignal(text) {
+  const normalized = _normalizeVietnamese(text);
+  return _CORRECTION_PATTERNS.some(p => p.test(normalized));
+}
 
 function startCeoMessageWatcher() {
   if (_watcherTimerId) return;
@@ -62,7 +73,7 @@ function startCeoMessageWatcher() {
           if (entry.event === 'message_inbound' && entry.channel === 'telegram') {
             _lastCeoMessageAt = Date.now();
             const text = entry.text || entry.body || '';
-            if (_CORRECTION_PATTERNS.some(p => p.test(text))) {
+            if (_looksLikeMemorySignal(text)) {
               _nudgeImmediate = true;
             }
           }
@@ -115,24 +126,26 @@ async function _runMemoryNudge(source) {
     return;
   }
   if (!transcript || transcript.length < 50) {
-    console.log('[nudge] skipped — no significant conversation to review');
+    console.log('[nudge] skipped - no significant conversation to review');
     return;
   }
 
   const prompt = `Review the last conversation with CEO. Decide if anything is worth remembering long-term.
 
-ONLY save these types (in priority order):
-1. correction — CEO sửa lỗi bot ("sai rồi", "không phải", giá/tên/thông tin sai)
-2. rule — CEO dặn quy tắc ("từ giờ luôn...", "đừng bao giờ...", "nhớ là...")
-3. preference — CEO nói sở thích ("anh thích...", "anh ghét...", "đừng làm kiểu...")
-4. pattern — Phát hiện pattern khách hàng (nhiều khách hỏi cùng 1 thứ)
-5. fact — Sự kiện quan trọng về doanh nghiệp (giá mới, sản phẩm mới, nhân sự)
+Only save durable, reusable memory:
+1. correction - CEO corrected the bot, for example wrong price, wrong name, wrong workflow.
+2. rule - CEO gave a future rule, for example "from now on always..." or "never...".
+3. preference - CEO revealed a style or working preference.
+4. procedure - CEO taught a reusable workflow or tool sequence.
+5. pattern - repeated customer or business pattern.
+6. fact - stable business fact.
 
-DO NOT save: task completions, "đã gửi email", "đã tạo Sheet", cron results. Those are logs, not memory.
+Do not save task completions, sent-message logs, created-file logs, cron results, or one-time errands.
+Sensitive data should be summarized without secrets.
 
-Respond ONLY with JSON (no markdown, no explanation):
+Respond only with JSON:
 {"memories":[{"action":"write","type":"correction","content":"Giá outlet là 2.5tr, không phải 3tr"}]}
-If nothing worth saving: {"memories":[]}
+If nothing is worth saving: {"memories":[]}
 
 Current CEO-MEMORY.md:
 ${currentMem}
@@ -140,11 +153,10 @@ ${currentMem}
 Last conversation:
 ${transcript}`;
 
-  // Use 9Router directly (fast, cheap ~200 tokens) instead of spawning full agent (slow, expensive)
   const { call9Router } = require('./nine-router');
   const raw = await call9Router(prompt, { maxTokens: 500, temperature: 0.2, timeoutMs: 20000 });
   if (!raw) {
-    console.warn('[nudge] 9Router returned null — skipping');
+    console.warn('[nudge] 9Router returned null - skipping');
     return;
   }
 
@@ -167,7 +179,7 @@ ${transcript}`;
   for (const mem of memoriesArr) {
     try {
       if (mem.action === 'write' && mem.content) {
-        await writeMemory({ type: mem.type || 'fact', content: mem.content, source });
+        await writeMemory({ type: mem.type || 'fact', content: mem.content, source, scope: 'ceo' });
         wrote++;
       } else if (mem.action === 'delete' && mem.id) {
         deleteMemory(mem.id);
@@ -177,7 +189,7 @@ ${transcript}`;
       console.warn('[nudge] memory op failed:', e?.message);
     }
   }
-  console.log(`[nudge] done — wrote ${wrote}, deleted ${deleted}`);
+  console.log(`[nudge] done - wrote ${wrote}, deleted ${deleted}`);
   try {
     const { auditLog } = require('./workspace');
     auditLog('memory_nudge', { wrote, deleted, source });
@@ -194,4 +206,5 @@ module.exports = {
   startCeoMessageWatcher,
   startNudgeTimer,
   cleanupNudgeTimers,
+  _looksLikeMemorySignal,
 };

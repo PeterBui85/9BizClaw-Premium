@@ -88,20 +88,6 @@
     /* Main content */
     .main-content { flex:1; padding:20px 24px; overflow-y:auto; display:flex; flex-direction:column; gap:16px; position:relative; }
 
-    /* === Premium lock overlay (Free edition) === */
-    .premium-lock-overlay { position:absolute; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); background:rgba(0,0,0,0.25); }
-    .premium-lock-card { text-align:center; padding:40px 48px; background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,0.2); max-width:380px; }
-    .premium-lock-icon { font-size:36px; margin-bottom:16px; opacity:0.7; }
-    .premium-lock-title { font-size:18px; font-weight:700; color:var(--text); margin-bottom:8px; }
-    .premium-lock-desc { font-size:13px; color:var(--text-muted); line-height:1.6; margin-bottom:20px; }
-    .premium-lock-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 28px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s; text-decoration:none; }
-    .premium-lock-btn:hover { opacity:0.85; }
-    .premium-lock-hotline { margin-top:12px; font-size:12px; color:var(--text-muted); }
-    .premium-lock-hotline a { color:var(--text-secondary); text-decoration:none; font-weight:600; }
-    .page.premium-locked { position:relative; }
-    .page.premium-locked > :not(.premium-lock-overlay) { filter:blur(6px); pointer-events:none; user-select:none; }
-
-
     /* Activity panel */
     .activity-panel { width:300px; background:var(--bg); border-left:1px solid var(--border); display:none; flex-direction:column; flex-shrink:0; }
     .activity-header { padding:16px; border-bottom:1px solid var(--border); }
@@ -511,14 +497,14 @@
     .zalo-mgr-row:hover { background:var(--surface); }
     .zalo-mgr-row:last-child { border-bottom:none; }
     /* Zalo cards — distinct card per group/user, colored by state */
-    .zc { padding:8px 10px; border-radius:8px; margin-bottom:4px; border:1px solid var(--border); border-left:4px solid transparent; background:var(--bg); display:flex; align-items:center; gap:8px; transition:box-shadow 0.15s, border-color 0.15s; min-width:0; overflow:hidden; min-height:44px; }
+    .zc { padding:11px 12px; border-radius:8px; margin-bottom:6px; border:1px solid var(--border); border-left:4px solid transparent; background:var(--bg); display:flex; align-items:center; gap:10px; transition:box-shadow 0.15s, border-color 0.15s; min-width:0; overflow:hidden; min-height:60px; }
     .zc:hover { box-shadow:var(--shadow-sm); border-color:var(--border-strong); }
-    .zc .zc-avatar { width:28px; height:28px; border-radius:50%; flex-shrink:0; object-fit:cover; background:var(--bg); border:1px solid var(--border); }
-    .zc .zc-avatar-fallback { width:28px; height:28px; border-radius:50%; flex-shrink:0; background:var(--bg); border:1px solid var(--border); display:inline-flex; align-items:center; justify-content:center; color:var(--text-muted); }
+    .zc .zc-avatar { width:34px; height:34px; border-radius:50%; flex-shrink:0; object-fit:cover; background:var(--bg); border:1px solid var(--border); }
+    .zc .zc-avatar-fallback { width:34px; height:34px; border-radius:50%; flex-shrink:0; background:var(--bg); border:1px solid var(--border); display:inline-flex; align-items:center; justify-content:center; color:var(--text-muted); }
     .zc .zc-body { flex:1 1 0; min-width:0; overflow:hidden; }
     .zc .zc-name { display:flex; align-items:center; gap:6px; min-width:0; line-height:1.2; }
-    .zc .zc-name-text { font-size:13px; font-weight:600; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .zc .zc-meta { font-size:11px; color:var(--text-muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .zc .zc-name-text { font-size:14px; font-weight:650; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .zc .zc-meta { font-size:12px; color:var(--text-muted); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35; }
     .zc .zc-badge { display:inline-flex; padding:1px 6px; border-radius:4px; font-size:9px; font-weight:700; letter-spacing:0.2px; vertical-align:middle; white-space:nowrap; flex-shrink:0; }
     .zc .zc-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
     .zc .zc-actions .zc-pills,
@@ -560,7 +546,11 @@
     .zc-pill.pill-green { color:#22c55e; background:rgba(34,197,94,0.12); }
     .zc-pill.pill-yellow { color:#eab308; background:rgba(234,179,8,0.12); }
     .zc-pill.pill-red { color:#ef4444; background:rgba(239,68,68,0.08); }
-    @media (max-width:1400px) { .zc-pill { padding:0 7px; font-size:10px; } }
+    @media (max-width:1400px) {
+      .zc-pill { padding:0 8px; font-size:11px; }
+      .zc .zc-actions { gap:6px; }
+      .zc .internal-flag { padding:0 6px; }
+    }
     /* Internal "NB" tag */
     .zc-summary-btn { background:none; border:1px solid var(--border); border-radius:6px; padding:0 6px; cursor:pointer; color:var(--muted); display:inline-flex; align-items:center; justify-content:center; width:28px; }
     .zc-summary-btn:hover { color:var(--accent); border-color:var(--accent); }
@@ -597,6 +587,12 @@
     /* Zalo master on/off toggle in header */
     .zalo-master-toggle { display:inline-flex; align-items:center; gap:0; padding:0; border:none; background:transparent; margin-left:4px; }
     /* Zalo page: compact toolbar + split lists */
+    .zalo-page-tabs { display:flex; gap:8px; padding:4px; border:1px solid var(--border); border-radius:12px; background:var(--surface); margin-bottom:10px; flex-shrink:0; width:max-content; max-width:100%; }
+    .zalo-page-tab { border:0; background:transparent; color:var(--text-muted); cursor:pointer; border-radius:9px; padding:10px 18px; min-width:132px; font:inherit; font-size:14px; font-weight:650; transition:background .15s,color .15s,box-shadow .15s; }
+    .zalo-page-tab:hover { color:var(--text); background:var(--surface-hover, rgba(255,255,255,0.04)); }
+    .zalo-page-tab.active { color:var(--text); background:var(--bg); box-shadow:var(--shadow-sm); }
+    .zalo-subtab-pane { display:none; flex:1; min-height:0; overflow:hidden; }
+    .zalo-subtab-pane.active { display:flex; flex-direction:column; }
     .zalo-toolbar { display:flex; align-items:center; gap:14px; padding:10px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px; margin-bottom:8px; flex-shrink:0; flex-wrap:wrap; }
     .zalo-toolbar-sep { width:1px; height:28px; background:var(--border); flex-shrink:0; }
     .zs-field { display:flex; flex-direction:column; gap:2px; min-width:0; }
@@ -611,8 +607,37 @@
     .zalo-split-col .zalo-list-container::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
     .zalo-split-col .zalo-list-container::-webkit-scrollbar-thumb:hover { background:var(--text-muted); }
     .zalo-col-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-shrink:0; }
+    .zalo-menu-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface); margin-bottom:12px; flex-shrink:0; }
+    .zalo-menu-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .zalo-menu-grid { display:grid; grid-template-columns:minmax(360px, 0.95fr) minmax(420px, 1.05fr); gap:12px; flex:1; min-height:0; overflow:hidden; }
+    .zalo-menu-panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+    .zalo-menu-panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:12px; flex-shrink:0; }
+    .zalo-menu-panel-title { font-size:14px; font-weight:750; color:var(--text); }
+    .zalo-menu-panel-sub { font-size:12px; color:var(--text-muted); margin-top:3px; line-height:1.4; }
+    .zalo-menu-items { flex:1; min-height:0; overflow:auto; padding-right:2px; }
+    .zalo-menu-item { border:1px solid var(--border); border-radius:10px; padding:12px; background:var(--bg); margin-bottom:10px; display:grid; gap:10px; }
+    .zalo-menu-item-top { display:grid; grid-template-columns:minmax(120px, .7fr) minmax(160px, 1.2fr) 76px auto; gap:8px; align-items:center; }
+    .zalo-menu-field { display:flex; flex-direction:column; gap:5px; min-width:0; }
+    .zalo-menu-field label { font-size:10px; color:var(--text-muted); font-weight:750; letter-spacing:.45px; text-transform:uppercase; }
+    .zalo-menu-input, .zalo-menu-textarea { width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font:inherit; font-size:13px; padding:8px 10px; min-width:0; }
+    .zalo-menu-input:focus, .zalo-menu-textarea:focus { outline:none; border-color:var(--accent); }
+    .zalo-menu-textarea { resize:vertical; min-height:58px; line-height:1.4; }
+    .zalo-menu-preview-controls { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; margin-bottom:12px; flex-shrink:0; }
+    .zalo-menu-command { width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); font:inherit; font-size:15px; padding:11px 13px; }
+    .zalo-menu-examples { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+    .zalo-menu-chip { border:1px solid var(--border); background:var(--bg); color:var(--text-muted); border-radius:999px; padding:5px 10px; font-size:12px; cursor:pointer; }
+    .zalo-menu-chip:hover { color:var(--text); border-color:var(--accent); }
+    .zalo-phone-preview { flex:1; min-height:0; overflow:auto; border-radius:16px; background:linear-gradient(180deg, #f6f4f0, #ebe7df); padding:18px; border:1px solid var(--border); }
+    .zalo-message-bubble { max-width:520px; background:#fff; color:#202124; border-radius:14px 14px 14px 4px; padding:13px 15px; line-height:1.55; font-size:14px; box-shadow:0 4px 18px rgba(0,0,0,.08); white-space:normal; word-break:break-word; }
+    .zalo-message-bubble strong { font-weight:750; }
+    .zalo-menu-import-state { margin-top:10px; font-size:12px; color:var(--text-muted); line-height:1.45; min-height:18px; }
+    .zalo-menu-import-state.error { color:var(--danger, #e53e3e); }
+    .zalo-menu-import-state.success { color:var(--success); }
     @media (max-width: 900px) {
       .zalo-split { grid-template-columns:1fr; }
+      .zalo-menu-grid { grid-template-columns:1fr; overflow:auto; }
+      .zalo-menu-item-top { grid-template-columns:1fr; }
+      .zalo-menu-preview-controls { grid-template-columns:1fr; }
       #page-zalo.page.active { height:auto; }
       #page-telegram.page.active { height:auto; }
       .skills-layout { flex-direction:column; height:auto; }
@@ -650,7 +675,13 @@
     .know-file .file-name { font-weight:600; word-break:break-word; }
     .know-file .file-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
     .know-file .file-summary { font-size:12px; color:var(--text); margin-top:6px; line-height:1.4; padding:6px 8px; background:var(--bg); border-radius:6px; }
-    .know-file .file-actions { display:flex; align-items:flex-start; }
+    .know-file.disabled { opacity:0.64; }
+    .know-file.disabled .file-summary { color:var(--text-muted); }
+    .know-file .file-actions { display:flex; align-items:flex-start; gap:10px; }
+    .know-enabled-control { display:inline-flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-muted); font-size:10px; white-space:nowrap; }
+    .know-enabled-control .toggle-switch { width:40px; height:22px; }
+    .know-enabled-control .toggle-slider::before { width:18px; height:18px; }
+    .know-enabled-control .toggle-switch input:checked + .toggle-slider::before { transform:translateX(18px); }
     .vis-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:500; cursor:pointer; margin-left:8px; vertical-align:middle; }
     .vis-badge.vis-public { background:var(--border); color:var(--text-muted); }
     .vis-badge.vis-internal { background:rgba(245,158,11,0.15); color:#b45309; }
@@ -2933,53 +2964,112 @@
           <span>Bot Zalo đang tạm dừng. <span id="zalo-pause-until"></span></span>
         </div>
 
-        <div id="zalo-all-off-banner" style="display:none;padding:8px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;margin-bottom:8px;font-size:12px;color:var(--text);flex-shrink:0">Tất cả bạn bè đã tắt — bot không trả lời ai.</div>
-
-        <div class="zalo-toolbar">
-          <div class="zs-field"><span class="zs-label">Chế độ</span><select id="zalo-mode-select" class="zs-select" onchange="changeZaloMode(this.value)"><option value="auto">Tự động</option><option value="read">Chỉ đọc</option></select></div>
-          <div class="zs-field"><span class="zs-label">Người lạ</span><select id="zalo-stranger-policy" class="zs-select" onchange="changeStrangerPolicy(this.value)"><option value="reply">Trả lời</option><option value="greet-only">Chào 1 lần</option><option value="ignore">Bỏ qua</option></select></div>
-          <div class="zs-field"><span class="zs-label">Nhóm mới</span><select id="zalo-default-group-mode" class="zs-select" onchange="updateDefaultGroupMode(this.value)"><option value="mention">@mention</option><option value="all">Mọi tin</option><option value="off">Tắt</option></select></div>
-          <div class="zs-field"><span class="zs-label">Gộp tin</span><select id="zl-debounce-select" class="zs-select" onchange="onDebounceSelect('zalo', this.value)"><option value="0">Tắt</option><option value="1000">1s</option><option value="2000">2s</option><option value="3000" selected>3s</option><option value="4000">4s</option><option value="5000">5s</option></select></div>
+        <div class="zalo-page-tabs" role="tablist" aria-label="Zalo workspace">
+          <button class="zalo-page-tab active" id="zalo-subtab-overview" onclick="switchZaloSubtab('overview')" role="tab" aria-selected="true">Tổng quan</button>
+          <button class="zalo-page-tab" id="zalo-subtab-menu" onclick="switchZaloSubtab('menu')" role="tab" aria-selected="false">Menu</button>
         </div>
-        <div id="zalo-mode-status" style="display:none;margin-bottom:4px"><div class="test-result success" style="margin:0;font-size:11px">Đã cập nhật</div></div>
 
-        <div class="zalo-split">
-          <!-- LEFT: Groups -->
-          <div class="zalo-split-col">
-            <div class="zalo-col-header" style="flex-shrink:0">
-              <div style="font-size:13px"><span style="font-weight:700">Nhóm</span> <span id="zalo-mgr-group-count" style="font-weight:700;color:var(--text)">0</span> <span id="zalo-mgr-group-active-count" style="font-size:11px;color:#22c55e;font-weight:400"></span></div>
+        <div class="zalo-subtab-pane active" id="zalo-overview-pane" role="tabpanel">
+          <div id="zalo-all-off-banner" style="display:none;padding:8px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;margin-bottom:8px;font-size:12px;color:var(--text);flex-shrink:0">Tất cả bạn bè đã tắt — bot không trả lời ai.</div>
+
+          <div class="zalo-toolbar">
+            <div class="zs-field"><span class="zs-label">Chế độ</span><select id="zalo-mode-select" class="zs-select" onchange="changeZaloMode(this.value)"><option value="auto">Tự động</option><option value="read">Chỉ đọc</option></select></div>
+            <div class="zs-field"><span class="zs-label">Người lạ</span><select id="zalo-stranger-policy" class="zs-select" onchange="changeStrangerPolicy(this.value)"><option value="reply">Trả lời</option><option value="greet-only">Chào 1 lần</option><option value="ignore">Bỏ qua</option></select></div>
+            <div class="zs-field"><span class="zs-label">Nhóm mới</span><select id="zalo-default-group-mode" class="zs-select" onchange="updateDefaultGroupMode(this.value)"><option value="mention">@mention</option><option value="all">Mọi tin</option><option value="off">Tắt</option></select></div>
+            <div class="zs-field"><span class="zs-label">Gộp tin</span><select id="zl-debounce-select" class="zs-select" onchange="onDebounceSelect('zalo', this.value)"><option value="0">Tắt</option><option value="1000">1s</option><option value="2000">2s</option><option value="3000" selected>3s</option><option value="4000">4s</option><option value="5000">5s</option></select></div>
+          </div>
+          <div id="zalo-mode-status" style="display:none;margin-bottom:4px"><div class="test-result success" style="margin:0;font-size:11px">Đã cập nhật</div></div>
+
+          <div class="zalo-split">
+            <!-- LEFT: Groups -->
+            <div class="zalo-split-col">
+              <div class="zalo-col-header" style="flex-shrink:0">
+                <div style="font-size:14px"><span style="font-weight:750">Nhóm</span> <span id="zalo-mgr-group-count" style="font-weight:750;color:var(--text)">0</span> <span id="zalo-mgr-group-active-count" style="font-size:12px;color:#22c55e;font-weight:500"></span></div>
+              </div>
+              <div class="zalo-segments" id="zalo-group-segments">
+                <button class="zalo-seg" data-tab="active" onclick="switchZaloTab('groups','active')">Đang bật<span class="seg-count" id="zalo-seg-groups-active">0</span></button>
+                <button class="zalo-seg active" data-tab="all" onclick="switchZaloTab('groups','all')">Tất cả<span class="seg-count" id="zalo-seg-groups-all">0</span></button>
+                <button class="zalo-seg" data-tab="internal" onclick="switchZaloTab('groups','internal')">Nội bộ<span class="seg-count" id="zalo-seg-groups-internal">0</span></button>
+              </div>
+              <input type="text" class="zalo-mgr-search" id="zalo-mgr-group-search" placeholder="Tìm nhóm..." oninput="renderZaloGroups()" style="flex-shrink:0">
+              <div id="zalo-groups-bulk-links" class="zalo-bulk-actions">
+                <button class="zalo-bulk-btn zalo-bulk-on" onclick="setAllGroupsMode('mention')">Bật tất cả</button>
+                <button class="zalo-bulk-btn zalo-bulk-off" onclick="setAllGroupsMode('off')">Tắt tất cả</button>
+              </div>
+              <div class="zalo-list-container">
+                <div id="zalo-mgr-groups-list"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải...</div></div>
+              </div>
             </div>
-            <div class="zalo-segments" id="zalo-group-segments">
-              <button class="zalo-seg" data-tab="active" onclick="switchZaloTab('groups','active')">Đang bật<span class="seg-count" id="zalo-seg-groups-active">0</span></button>
-              <button class="zalo-seg active" data-tab="all" onclick="switchZaloTab('groups','all')">Tất cả<span class="seg-count" id="zalo-seg-groups-all">0</span></button>
-              <button class="zalo-seg" data-tab="internal" onclick="switchZaloTab('groups','internal')">Nội bộ<span class="seg-count" id="zalo-seg-groups-internal">0</span></button>
-            </div>
-            <input type="text" class="zalo-mgr-search" id="zalo-mgr-group-search" placeholder="Tìm nhóm..." oninput="renderZaloGroups()" style="flex-shrink:0">
-            <div id="zalo-groups-bulk-links" class="zalo-bulk-actions">
-              <button class="zalo-bulk-btn zalo-bulk-on" onclick="setAllGroupsMode('mention')">Bật tất cả</button>
-              <button class="zalo-bulk-btn zalo-bulk-off" onclick="setAllGroupsMode('off')">Tắt tất cả</button>
-            </div>
-            <div class="zalo-list-container">
-              <div id="zalo-mgr-groups-list"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải...</div></div>
+            <!-- RIGHT: Friends -->
+            <div class="zalo-split-col">
+              <div class="zalo-col-header" style="flex-shrink:0">
+                <div style="font-size:14px"><span style="font-weight:750">Bạn bè</span> <span id="zalo-mgr-friend-count" style="font-weight:750;color:var(--text)">0</span> <span id="zalo-mgr-friend-active-count" style="font-size:12px;color:#22c55e;font-weight:500"></span></div>
+              </div>
+              <div class="zalo-segments" id="zalo-friend-segments">
+                <button class="zalo-seg" data-tab="active" onclick="switchZaloTab('friends','active')">Đang bật<span class="seg-count" id="zalo-seg-friends-active">0</span></button>
+                <button class="zalo-seg active" data-tab="all" onclick="switchZaloTab('friends','all')">Tất cả<span class="seg-count" id="zalo-seg-friends-all">0</span></button>
+                <button class="zalo-seg" data-tab="internal" onclick="switchZaloTab('friends','internal')">Nội bộ<span class="seg-count" id="zalo-seg-friends-internal">0</span></button>
+              </div>
+              <input type="text" class="zalo-mgr-search" id="zalo-mgr-friend-search" placeholder="Tìm bạn bè..." oninput="clearTimeout(window._friendSearchTimer);window._friendSearchTimer=setTimeout(()=>renderZaloFriends(),150)" style="flex-shrink:0">
+              <div id="zalo-friends-bulk-links" class="zalo-bulk-actions">
+                <button class="zalo-bulk-btn zalo-bulk-on" onclick="toggleAllFriends(true)">Bật tất cả</button>
+                <button class="zalo-bulk-btn zalo-bulk-off" onclick="toggleAllFriends(false)">Tắt tất cả</button>
+              </div>
+              <div class="zalo-list-container">
+                <div id="zalo-mgr-friends-list"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải...</div></div>
+              </div>
             </div>
           </div>
-          <!-- RIGHT: Friends -->
-          <div class="zalo-split-col">
-            <div class="zalo-col-header" style="flex-shrink:0">
-              <div style="font-size:13px"><span style="font-weight:700">Bạn bè</span> <span id="zalo-mgr-friend-count" style="font-weight:700;color:var(--text)">0</span> <span id="zalo-mgr-friend-active-count" style="font-size:11px;color:#22c55e;font-weight:400"></span></div>
+        </div>
+
+        <div class="zalo-subtab-pane" id="zalo-menu-pane" role="tabpanel">
+          <div class="zalo-menu-toolbar">
+            <div>
+              <div class="zalo-menu-panel-title">Menu dry-run</div>
+              <div class="zalo-menu-panel-sub">Soạn catalog, import XLSX và xem trước tin nhắn Zalo trước khi nối vào command dispatch.</div>
             </div>
-            <div class="zalo-segments" id="zalo-friend-segments">
-              <button class="zalo-seg" data-tab="active" onclick="switchZaloTab('friends','active')">Đang bật<span class="seg-count" id="zalo-seg-friends-active">0</span></button>
-              <button class="zalo-seg active" data-tab="all" onclick="switchZaloTab('friends','all')">Tất cả<span class="seg-count" id="zalo-seg-friends-all">0</span></button>
-              <button class="zalo-seg" data-tab="internal" onclick="switchZaloTab('friends','internal')">Nội bộ<span class="seg-count" id="zalo-seg-friends-internal">0</span></button>
+            <div class="zalo-menu-actions">
+              <button class="btn btn-secondary btn-small" onclick="downloadZaloMenuTemplate()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="download" data-icon-size="14"></span>Tải mẫu XLSX</button>
+              <button class="btn btn-secondary btn-small" onclick="importZaloMenuXlsx()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Import XLSX</button>
+              <button class="btn btn-primary btn-small" onclick="dryRunZaloMenu()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="play" data-icon-size="14"></span>Dry-run</button>
             </div>
-            <input type="text" class="zalo-mgr-search" id="zalo-mgr-friend-search" placeholder="Tìm bạn bè..." oninput="clearTimeout(window._friendSearchTimer);window._friendSearchTimer=setTimeout(()=>renderZaloFriends(),150)" style="flex-shrink:0">
-            <div id="zalo-friends-bulk-links" class="zalo-bulk-actions">
-              <button class="zalo-bulk-btn zalo-bulk-on" onclick="toggleAllFriends(true)">Bật tất cả</button>
-              <button class="zalo-bulk-btn zalo-bulk-off" onclick="toggleAllFriends(false)">Tắt tất cả</button>
+          </div>
+
+          <div class="zalo-menu-grid">
+            <div class="zalo-menu-panel">
+              <div class="zalo-menu-panel-head">
+                <div>
+                  <div class="zalo-menu-panel-title">Catalog</div>
+                  <div class="zalo-menu-panel-sub">Khách chỉ thấy tin nhắn đã format, không thấy màn hình dry-run.</div>
+                </div>
+                <div class="zalo-menu-actions">
+                  <button class="btn btn-secondary btn-small" onclick="addZaloMenuItem()">Thêm mục</button>
+                  <button class="btn btn-primary btn-small" onclick="saveZaloMenuCatalog()">Lưu</button>
+                </div>
+              </div>
+              <div id="zalo-menu-catalog-list" class="zalo-menu-items"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải menu...</div></div>
+              <div id="zalo-menu-import-state" class="zalo-menu-import-state"></div>
             </div>
-            <div class="zalo-list-container">
-              <div id="zalo-mgr-friends-list"><div class="zalo-list-loading"><div class="spinner"></div>Đang tải...</div></div>
+
+            <div class="zalo-menu-panel">
+              <div class="zalo-menu-panel-head">
+                <div>
+                  <div class="zalo-menu-panel-title">Live Zalo preview</div>
+                  <div class="zalo-menu-panel-sub">Hỗ trợ /menu, /menu premium, /baogia premium.</div>
+                </div>
+              </div>
+              <div class="zalo-menu-preview-controls">
+                <input id="zalo-menu-command" class="zalo-menu-command" value="/menu premium" placeholder="/menu premium" onkeydown="if(event.key==='Enter')dryRunZaloMenu()">
+                <button class="btn btn-primary" onclick="dryRunZaloMenu()">Dry-run</button>
+              </div>
+              <div class="zalo-menu-examples">
+                <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/menu')">/menu</button>
+                <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/menu premium')">/menu premium</button>
+                <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/baogia premium')">/baogia premium</button>
+              </div>
+              <div class="zalo-phone-preview">
+                <div id="zalo-menu-preview" class="zalo-message-bubble">Chạy dry-run để xem trước tin nhắn.</div>
+              </div>
             </div>
           </div>
         </div>
@@ -3215,16 +3305,7 @@
       </div>
 
       <!-- PAGE: Brain (Knowledge Graph) -->
-      <div class="page premium-locked" id="page-brain">
-        <div class="premium-lock-overlay">
-          <div class="premium-lock-card">
-            <div class="premium-lock-icon">&#128274;</div>
-            <div class="premium-lock-title">Brain AI</div>
-            <div class="premium-lock-desc">Đồ thị tri thức — phân tích và kết nối dữ liệu doanh nghiệp thông minh. Tính năng này dành cho phiên bản Premium.</div>
-            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
-            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
-          </div>
-        </div>
+      <div class="page" id="page-brain">
         <style>
           #page-brain { display:none; flex-direction:column; height:calc(100vh - 32px); overflow:hidden; }
           #page-brain.page.active { display:flex; }
@@ -3543,16 +3624,7 @@
       </div>
 
       <!-- PAGE: Chat (ChatGPT-class) -->
-      <div class="page premium-locked" id="page-chat">
-        <div class="premium-lock-overlay">
-          <div class="premium-lock-card">
-            <div class="premium-lock-icon">&#128274;</div>
-            <div class="premium-lock-title">Chat AI</div>
-            <div class="premium-lock-desc">Chat trực tiếp với trợ lý AI trong app. Tính năng này dành cho phiên bản Premium.</div>
-            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
-            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
-          </div>
-        </div>
+      <div class="page" id="page-chat">
         <div class="chat-container">
           <div class="chat-top-bar">
             <div class="chat-top-left">
@@ -3705,16 +3777,7 @@
         </div>
       </div>
 
-      <div class="page premium-locked" id="page-facebook">
-        <div class="premium-lock-overlay">
-          <div class="premium-lock-card">
-            <div class="premium-lock-icon">&#128274;</div>
-            <div class="premium-lock-title">Facebook</div>
-            <div class="premium-lock-desc">Tự động đăng bài lên Fanpage và quản lý nội dung Facebook. Tính năng này dành cho phiên bản Premium.</div>
-            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
-            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
-          </div>
-        </div>
+      <div class="page" id="page-facebook">
         <div class="page-header">
           <span class="page-icon" data-icon="brand-facebook" data-icon-size="26"></span>
           <div><h2>Facebook</h2><div class="page-sub">Đăng bài lên Fanpage + quản lý tài sản thương hiệu</div></div>
@@ -3818,16 +3881,7 @@
       </div>
 
       <!-- PAGE: Google Workspace -->
-      <div class="page premium-locked" id="page-google">
-        <div class="premium-lock-overlay">
-          <div class="premium-lock-card">
-            <div class="premium-lock-icon">&#128274;</div>
-            <div class="premium-lock-title">Google Workspace</div>
-            <div class="premium-lock-desc">Kết nối Calendar, Gmail, Drive, Docs — quản lý công việc và tài liệu từ một nơi. Tính năng này dành cho phiên bản Premium.</div>
-            <a class="premium-lock-btn" href="#" onclick="window.claw.openExternal('https://zalo.me/g/cacrutqf7boylfhqlewo');return false">Liên hệ nâng cấp</a>
-            <div class="premium-lock-hotline">Hotline: <a href="tel:0908104166">0908 104 166</a></div>
-          </div>
-        </div>
+      <div class="page" id="page-google">
         <div class="page-header">
           <span class="page-icon" data-icon="brand-google" data-icon-size="26"></span>
           <div><h2>Google Workspace</h2><div class="page-sub">Calendar, Gmail, Drive, Docs, Contacts, Tasks</div></div>
@@ -5061,11 +5115,9 @@
     const RAIL_GROUPS = {
       overview: { pages: ['overview'], tabs: null },
       chat:     { pages: ['chat'], tabs: null },
-      channels: { pages: ['telegram','zalo','whatsapp','lark','facebook','google'], tabs: [
+      channels: { pages: ['telegram','zalo','facebook','google'], tabs: [
         { page: 'telegram', icon: 'brand-telegram', label: 'Telegram', statusId: 'ready-dot-telegram' },
         { page: 'zalo', icon: 'brand-zalo', label: 'Zalo', statusId: 'ready-dot-zalo' },
-        { page: 'whatsapp', icon: 'brand-whatsapp', label: 'WhatsApp', statusId: 'ready-dot-whatsapp' },
-        { page: 'lark', icon: 'message-circle', label: 'Lark', statusId: 'ready-dot-lark' },
         { page: 'facebook', icon: 'brand-facebook', label: 'Facebook' },
         { page: 'google', icon: 'brand-google', label: 'Google' },
       ]},
@@ -5213,6 +5265,7 @@
         else loadZaloManagerData({ preserveDraft: true });
         startZaloAutoRefresh();
         loadInboundDebounce();
+        if (zaloSubtab === 'menu') loadZaloMenuWorkspace();
       } else {
         stopZaloAutoRefresh();
       }
@@ -6339,6 +6392,154 @@
       } catch (e) { console.error('[overview] memory delete error', e); }
     }
 
+    const _memTypeLabelsV2 = {
+      correction: 'Sửa lỗi',
+      rule: 'Quy tắc',
+      procedure: 'Quy trình',
+      preference: 'Sở thích',
+      pattern: 'Mẫu',
+      fact: 'Sự kiện',
+      entity_note: 'Đối tượng',
+      task_state: 'Trạng thái',
+      task: 'Việc'
+    };
+    const _memScopeLabelsV2 = { ceo: 'CEO', internal: 'Nội bộ', customer: 'Khách', public: 'Công khai', workflow: 'Workflow' };
+    const _memStatusLabelsV2 = { active: 'Đang bật', pending_review: 'Chờ duyệt', disabled: 'Đã tắt', superseded: 'Đã thay', deleted: 'Đã xóa' };
+    const _memSensitivityLabelsV2 = { none: 'Bình thường', personal: 'Cá nhân', secret: 'Nhạy cảm', credential: 'Bảo mật' };
+
+    function _memoryFilterValue(id) {
+      return (document.getElementById(id)?.value || '').trim();
+    }
+
+    function _filterMemories(memories) {
+      const type = _memoryFilterValue('memory-filter-type');
+      const status = _memoryFilterValue('memory-filter-status');
+      const scope = _memoryFilterValue('memory-filter-scope');
+      const sensitivity = _memoryFilterValue('memory-filter-sensitivity');
+      return (memories || []).filter(m => {
+        if (type && m.type !== type) return false;
+        if (status && (m.status || 'active') !== status) return false;
+        if (scope && (m.scope || 'ceo') !== scope) return false;
+        if (sensitivity && (m.sensitivity || 'none') !== sensitivity) return false;
+        return true;
+      });
+    }
+
+    function _renderMemRow(m) {
+      const status = m.status || 'active';
+      const evidenceIds = Array.isArray(m.evidence_event_ids) ? m.evidence_event_ids : [];
+      const badge = '<span class="ov-mem-badge">' + _esc(_memTypeLabelsV2[m.type] || m.type) + '</span>';
+      const meta = '<span class="ov-mem-badge" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border)">' +
+        _esc(_memScopeLabelsV2[m.scope] || m.scope || 'CEO') + ' · ' +
+        _esc(_memStatusLabelsV2[status] || status) + ' · ' +
+        _esc(_memSensitivityLabelsV2[m.sensitivity] || m.sensitivity || 'Bình thường') + '</span>';
+      const content = '<span class="ov-mem-content">' + _esc(m.content) + '</span>';
+      const approve = status === 'pending_review' ? '<button class="ov-mem-del" onclick="approveCeoMemory(\'' + _esc(m.id) + '\')" title="Duyệt">Duyệt</button>' : '';
+      const disable = status === 'active' ? '<button class="ov-mem-del" onclick="disableCeoMemory(\'' + _esc(m.id) + '\')" title="Tắt">Tắt</button>' : '';
+      const enable = status === 'disabled' ? '<button class="ov-mem-del" onclick="approveCeoMemory(\'' + _esc(m.id) + '\')" title="Bật lại">Bật</button>' : '';
+      const prioritize = '<button class="ov-mem-del" onclick="prioritizeCeoMemory(\'' + _esc(m.id) + '\')" title="Ưu tiên">Ưu tiên</button>';
+      const supersede = status === 'active' ? '<button class="ov-mem-del" onclick="supersedeCeoMemory(\'' + _esc(m.id) + '\')" title="Đánh dấu đã thay">Đã thay</button>' : '';
+      const evidence = evidenceIds.length ? '<button class="ov-mem-del" onclick="showMemoryEvidence(\'' + _esc(evidenceIds.join(',')) + '\')" title="Xem bằng chứng">Nguồn</button>' : '';
+      const del = '<button class="ov-mem-del" data-mem-id="' + _esc(m.id) + '" title="Xóa">Xóa</button>';
+      return '<div class="ov-mem-row">' + badge + meta + content +
+        '<span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">' + approve + enable + disable + prioritize + supersede + evidence + del + '</span></div>';
+    }
+
+    async function loadOverviewMemories() {
+      try {
+        const data = await window.claw.getCeoMemories();
+        const listEl = document.getElementById('ov-mem-list');
+        const countEl = document.getElementById('ov-mem-count-label');
+        const count = data.count || 0;
+        countEl.textContent = count > 0 ? (count + ' mục') : '';
+        if (!data.memories?.length) {
+          listEl.innerHTML = '<div class="ov-mem-empty">Trợ lý sẽ tự học từ cuộc hội thoại</div>';
+        } else {
+          const show = data.memories.slice(0, 8);
+          listEl.innerHTML = show.map(_renderMemRow).join('')
+            + (count > 8 ? '<div style="padding:8px 4px;text-align:center"><button class="ov-card-action" onclick="showMemoryModal()" style="font-size:12px;color:var(--accent);border:none;background:none;cursor:pointer">Xem tất cả ' + count + ' mục</button></div>' : '');
+        }
+      } catch (e) { console.error('[overview] memory load error', e); }
+    }
+
+    async function showMemoryModal() {
+      try {
+        const data = await window.claw.getCeoMemories();
+        const list = document.getElementById('memory-list');
+        const filtered = _filterMemories(data.memories || []);
+        const evidenceBox = document.getElementById('memory-evidence');
+        if (evidenceBox) evidenceBox.style.display = 'none';
+        if (!data.memories?.length) {
+          list.innerHTML = '<div class="ov-mem-empty">Chưa có ký ức nào. Trợ lý sẽ tự học từ cuộc hội thoại.</div>';
+        } else if (!filtered.length) {
+          list.innerHTML = '<div class="ov-mem-empty">Không có ký ức khớp bộ lọc.</div>';
+        } else {
+          list.innerHTML = filtered.map(_renderMemRow).join('');
+        }
+      } catch (e) {
+        console.error('[overview] memory modal error', e);
+        const list = document.getElementById('memory-list');
+        list.innerHTML = '<div class="ov-mem-empty">Không tải được bộ nhớ</div>';
+      }
+      document.getElementById('memory-modal-overlay').style.display = 'flex';
+    }
+
+    async function deleteCeoMemory(id) {
+      try {
+        await window.claw.deleteCeoMemory(id);
+        await showMemoryModal();
+        await loadOverviewMemories();
+      } catch (e) { console.error('[overview] memory delete error', e); }
+    }
+
+    async function approveCeoMemory(id) {
+      try {
+        await window.claw.updateCeoMemoryStatus(id, 'active');
+        await showMemoryModal();
+        await loadOverviewMemories();
+      } catch (e) { console.error('[overview] memory approve error', e); }
+    }
+
+    async function disableCeoMemory(id) {
+      try {
+        await window.claw.updateCeoMemoryStatus(id, 'disabled');
+        await showMemoryModal();
+        await loadOverviewMemories();
+      } catch (e) { console.error('[overview] memory disable error', e); }
+    }
+
+    async function prioritizeCeoMemory(id) {
+      try {
+        await window.claw.prioritizeCeoMemory(id, 0.5);
+        await showMemoryModal();
+        await loadOverviewMemories();
+      } catch (e) { console.error('[overview] memory prioritize error', e); }
+    }
+
+    async function supersedeCeoMemory(id) {
+      try {
+        await window.claw.supersedeCeoMemory(id);
+        await showMemoryModal();
+        await loadOverviewMemories();
+      } catch (e) { console.error('[overview] memory supersede error', e); }
+    }
+
+    async function showMemoryEvidence(idsCsv) {
+      const ids = String(idsCsv || '').split(',').map(s => s.trim()).filter(Boolean);
+      try {
+        const data = await window.claw.getCeoMemoryEvents({ ids, limit: Math.max(ids.length, 1) });
+        const events = (data.events || []).filter(ev => ids.includes(ev.id));
+        const box = document.getElementById('memory-evidence');
+        if (!box) return;
+        if (!events.length) {
+          box.innerHTML = '<div class="ov-mem-empty">Không tìm thấy nguồn bằng chứng.</div>';
+        } else {
+          box.innerHTML = events.map(ev => '<div class="ov-mem-row"><span class="ov-mem-badge">' + _esc(ev.channel || 'unknown') + '</span><span class="ov-mem-content">' + _esc(ev.summary) + '</span></div>').join('');
+        }
+        box.style.display = 'block';
+      } catch (e) { console.error('[overview] memory evidence error', e); }
+    }
+
     function startOverviewAutoRefresh() {
       if (_overviewTimer) clearInterval(_overviewTimer);
       _overviewTimer = setInterval(() => {
@@ -7063,8 +7264,18 @@
           const visBadge = (f.id != null)
             ? `<span class="vis-badge vis-${vis}" data-doc-id="${f.id}" onclick="editVisibility(${f.id}, this)" title="Đổi tầng hiển thị">${visLabel}</span>`
             : `<span class="vis-badge vis-${vis}" title="Tầng hiển thị (cần DB để chỉnh)">${visLabel}</span>`;
+          const enabled = f.enabled !== 0 && f.enabled !== false;
+          const enabledControl = (f.id != null)
+            ? `<div class="know-enabled-control" title="${enabled ? 'Bot đang dùng tài liệu này' : 'Bot đang bỏ qua tài liệu này'}">
+                <label class="toggle-switch" onclick="event.stopPropagation()">
+                  <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleKnowledgeEnabled(${f.id}, this)">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>${enabled ? 'Bot dùng' : 'Bot tắt'}</span>
+              </div>`
+            : `<div class="know-enabled-control" title="Cần DB để bật/tắt"><span>Bot dùng</span></div>`;
           return `
-            <div class="know-file">
+            <div class="know-file ${enabled ? '' : 'disabled'}">
               <div class="file-icon" data-icon="file-text" data-icon-size="20"></div>
               <div class="file-info">
                 <div class="file-name">${esc(f.filename)}${visBadge}</div>
@@ -7072,6 +7283,7 @@
                 ${f.summary ? `<div class="file-summary">${esc(f.summary)}</div>` : ''}
               </div>
               <div class="file-actions">
+                ${enabledControl}
                 <button class="know-file-delete" onclick="deleteKnowledgeFile('${escJs(f.filename)}')" title="Xóa">
                   <span data-icon="trash" data-icon-size="16"></span>
                 </button>
@@ -7113,6 +7325,26 @@
       const current = el.classList.contains('vis-private') ? 'private'
                     : el.classList.contains('vis-internal') ? 'internal' : 'public';
       return showKnowledgeVisibilityDialog(docId, current);
+    }
+
+    async function toggleKnowledgeEnabled(docId, input) {
+      const next = !!(input && input.checked);
+      if (input) input.disabled = true;
+      try {
+        const r = await window.claw.setKnowledgeEnabled(docId, next);
+        if (!r || !r.success) {
+          if (input) input.checked = !next;
+          showToast('Không cập nhật được trạng thái tài liệu: ' + (r && r.error ? r.error : 'không rõ lỗi'), 'error', 6000);
+          return;
+        }
+        showToast(next ? 'Bot sẽ dùng tài liệu này' : 'Bot sẽ bỏ qua tài liệu này', 'success');
+        refreshKnowledgeFiles();
+      } catch (e) {
+        if (input) input.checked = !next;
+        showToast('Không cập nhật được trạng thái tài liệu: ' + (e.message || 'không rõ lỗi'), 'error', 6000);
+      } finally {
+        if (input) input.disabled = false;
+      }
     }
 
     async function pickKnowledgeFiles() {
@@ -7247,6 +7479,264 @@
     }
     function stopZaloAutoRefresh() {
       if (_zaloRefreshTimer) { clearInterval(_zaloRefreshTimer); _zaloRefreshTimer = null; }
+    }
+
+    let zaloSubtab = 'overview';
+    let zaloMenuCatalog = null;
+    let zaloMenuImportPath = '';
+
+    function switchZaloSubtab(tab) {
+      zaloSubtab = tab === 'menu' ? 'menu' : 'overview';
+      const overviewBtn = document.getElementById('zalo-subtab-overview');
+      const menuBtn = document.getElementById('zalo-subtab-menu');
+      const overviewPane = document.getElementById('zalo-overview-pane');
+      const menuPane = document.getElementById('zalo-menu-pane');
+      if (overviewBtn) {
+        overviewBtn.classList.toggle('active', zaloSubtab === 'overview');
+        overviewBtn.setAttribute('aria-selected', zaloSubtab === 'overview' ? 'true' : 'false');
+      }
+      if (menuBtn) {
+        menuBtn.classList.toggle('active', zaloSubtab === 'menu');
+        menuBtn.setAttribute('aria-selected', zaloSubtab === 'menu' ? 'true' : 'false');
+      }
+      if (overviewPane) overviewPane.classList.toggle('active', zaloSubtab === 'overview');
+      if (menuPane) menuPane.classList.toggle('active', zaloSubtab === 'menu');
+      if (zaloSubtab === 'menu') loadZaloMenuWorkspace();
+    }
+
+    function setZaloMenuImportState(message, type = '') {
+      const el = document.getElementById('zalo-menu-import-state');
+      if (!el) return;
+      el.className = 'zalo-menu-import-state' + (type ? ' ' + type : '');
+      el.textContent = message || '';
+    }
+
+    async function loadZaloMenuWorkspace() {
+      const list = document.getElementById('zalo-menu-catalog-list');
+      if (list && !zaloMenuCatalog) list.innerHTML = '<div class="zalo-list-loading"><div class="spinner"></div>Đang tải menu...</div>';
+      try {
+        const result = await window.claw.getZaloMenuCatalog();
+        if (!result?.success) throw new Error(result?.error || 'Không tải được catalog');
+        zaloMenuCatalog = result.catalog;
+        renderZaloMenuCatalog();
+        if (!document.getElementById('zalo-menu-preview')?.dataset.ready) dryRunZaloMenu();
+      } catch (e) {
+        if (list) list.innerHTML = '<div class="zalo-mgr-empty">Lỗi tải menu: ' + esc(e.message || e) + '</div>';
+      }
+    }
+
+    function renderZaloMenuCatalog() {
+      const list = document.getElementById('zalo-menu-catalog-list');
+      if (!list) return;
+      const items = Array.isArray(zaloMenuCatalog?.items) ? zaloMenuCatalog.items : [];
+      if (items.length === 0) {
+        list.innerHTML = '<div class="zalo-mgr-empty">Chưa có mục menu. Bấm "Thêm mục" hoặc import XLSX.</div>';
+        return;
+      }
+      list.innerHTML = items.map((item, index) => `
+        <div class="zalo-menu-item" data-index="${index}">
+          <div class="zalo-menu-item-top">
+            <div class="zalo-menu-field">
+              <label>Slug</label>
+              <input class="zalo-menu-input" data-field="slug" value="${escAttr(item.slug || '')}" placeholder="premium">
+            </div>
+            <div class="zalo-menu-field">
+              <label>Tên hiển thị</label>
+              <input class="zalo-menu-input" data-field="title" value="${escAttr(item.title || '')}" placeholder="9BizClaw Premium">
+            </div>
+            <div class="zalo-menu-field">
+              <label>Thứ tự</label>
+              <input class="zalo-menu-input" data-field="sortOrder" type="number" value="${escAttr(item.sortOrder ?? index + 1)}">
+            </div>
+            <label class="internal-flag" title="Hiển thị mục này trong menu Zalo"><input type="checkbox" data-field="enabled" ${item.enabled !== false ? 'checked' : ''}>Bật</label>
+          </div>
+          <div class="zalo-menu-field">
+            <label>Nhóm</label>
+            <input class="zalo-menu-input" data-field="category" value="${escAttr(item.category || '')}" placeholder="Gói vận hành">
+          </div>
+          <div class="zalo-menu-field">
+            <label>Mô tả ngắn</label>
+            <input class="zalo-menu-input" data-field="subtitle" value="${escAttr(item.subtitle || '')}" placeholder="Dành cho CEO muốn có trợ lý AI vận hành hằng ngày">
+          </div>
+          <div class="zalo-menu-field">
+            <label>Nội dung</label>
+            <textarea class="zalo-menu-textarea" data-field="description" placeholder="Mô tả gói, lợi ích, phạm vi...">${esc(item.description || '')}</textarea>
+          </div>
+          <div class="zalo-menu-field">
+            <label>Giá / nhãn giá</label>
+            <textarea class="zalo-menu-textarea" data-field="priceLabel" placeholder="Giá niêm yết: ...">${esc(item.priceLabel || '')}</textarea>
+          </div>
+          <div class="zalo-menu-item-top">
+            <div class="zalo-menu-field">
+              <label>CTA</label>
+              <input class="zalo-menu-input" data-field="ctaLabel" value="${escAttr(item.ctaLabel || '')}" placeholder="Gõ /baogia premium để xem bảng giá">
+            </div>
+            <div class="zalo-menu-field">
+              <label>Lệnh CTA</label>
+              <input class="zalo-menu-input" data-field="ctaCommand" value="${escAttr(item.ctaCommand || '')}" placeholder="/baogia premium">
+            </div>
+            <button class="btn btn-secondary btn-small" onclick="previewZaloMenuItem(${index})">Xem</button>
+            <button class="btn btn-secondary btn-small" onclick="removeZaloMenuItem(${index})" style="color:var(--danger)">Xóa</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function collectZaloMenuCatalogFromUi() {
+      const rows = Array.from(document.querySelectorAll('#zalo-menu-catalog-list .zalo-menu-item'));
+      const items = rows.map((row, index) => {
+        const read = (field) => {
+          const el = row.querySelector(`[data-field="${field}"]`);
+          if (!el) return '';
+          if (el.type === 'checkbox') return el.checked;
+          return el.value || '';
+        };
+        return {
+          slug: read('slug'),
+          category: read('category'),
+          title: read('title'),
+          subtitle: read('subtitle'),
+          description: read('description'),
+          priceLabel: read('priceLabel'),
+          ctaLabel: read('ctaLabel'),
+          ctaCommand: read('ctaCommand'),
+          sortOrder: Number(read('sortOrder')) || index + 1,
+          enabled: read('enabled') !== false,
+        };
+      });
+      return { version: zaloMenuCatalog?.version || 1, items };
+    }
+
+    async function saveZaloMenuCatalog() {
+      try {
+        const catalog = collectZaloMenuCatalogFromUi();
+        const result = await window.claw.saveZaloMenuCatalog(catalog);
+        if (!result?.success) {
+          const msg = (result?.errors || [result?.error || 'Lỗi lưu catalog']).join('; ');
+          setZaloMenuImportState(msg, 'error');
+          showToast(msg, 'error');
+          return;
+        }
+        zaloMenuCatalog = result.catalog;
+        renderZaloMenuCatalog();
+        setZaloMenuImportState('Đã lưu catalog menu Zalo.', 'success');
+        showToast('Đã lưu menu Zalo', 'success');
+        dryRunZaloMenu();
+      } catch (e) {
+        setZaloMenuImportState(e.message || String(e), 'error');
+      }
+    }
+
+    function addZaloMenuItem() {
+      if (!zaloMenuCatalog) zaloMenuCatalog = { version: 1, items: [] };
+      const next = (zaloMenuCatalog.items || []).length + 1;
+      zaloMenuCatalog.items.push({
+        slug: 'muc-moi-' + next,
+        category: '',
+        title: 'Mục menu mới',
+        subtitle: '',
+        description: '',
+        priceLabel: '',
+        ctaLabel: '',
+        ctaCommand: '',
+        sortOrder: next * 10,
+        enabled: true,
+      });
+      renderZaloMenuCatalog();
+    }
+
+    function removeZaloMenuItem(index) {
+      if (!zaloMenuCatalog?.items?.[index]) return;
+      if (!confirm('Xóa mục menu này khỏi catalog?')) return;
+      zaloMenuCatalog.items.splice(index, 1);
+      renderZaloMenuCatalog();
+    }
+
+    function setZaloMenuCommand(command) {
+      const input = document.getElementById('zalo-menu-command');
+      if (input) input.value = command;
+      dryRunZaloMenu();
+    }
+
+    function previewZaloMenuItem(index) {
+      const catalog = collectZaloMenuCatalogFromUi();
+      const item = catalog.items[index];
+      if (!item?.slug) return;
+      const input = document.getElementById('zalo-menu-command');
+      if (input) input.value = '/menu ' + item.slug;
+      dryRunZaloMenu();
+    }
+
+    function renderZaloMenuPreviewText(text, handled) {
+      const preview = document.getElementById('zalo-menu-preview');
+      if (!preview) return;
+      const safe = esc(text || '').replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+      preview.innerHTML = safe.replace(/\n/g, '<br>');
+      preview.dataset.ready = '1';
+      preview.style.opacity = handled === false ? '0.72' : '1';
+    }
+
+    async function dryRunZaloMenu() {
+      const input = document.getElementById('zalo-menu-command');
+      const command = input ? input.value : '/menu';
+      try {
+        const hasDraftRows = !!document.querySelector('#zalo-menu-catalog-list .zalo-menu-item');
+        const draftCatalog = hasDraftRows ? collectZaloMenuCatalogFromUi() : null;
+        const result = await window.claw.dryRunZaloMenuCommand(command, draftCatalog);
+        if (!result?.success) throw new Error(result?.error || 'Dry-run thất bại');
+        renderZaloMenuPreviewText(result.text || '', result.handled);
+      } catch (e) {
+        renderZaloMenuPreviewText('Lỗi dry-run: ' + (e.message || e), false);
+      }
+    }
+
+    async function downloadZaloMenuTemplate() {
+      try {
+        const result = await window.claw.downloadZaloMenuTemplate();
+        if (result?.canceled) return;
+        if (!result?.success) throw new Error(result?.error || 'Không tải được mẫu');
+        setZaloMenuImportState('Đã lưu mẫu XLSX: ' + result.filePath, 'success');
+      } catch (e) {
+        setZaloMenuImportState(e.message || String(e), 'error');
+      }
+    }
+
+    async function importZaloMenuXlsx() {
+      try {
+        const picked = await window.claw.pickZaloMenuImport();
+        if (picked?.canceled) return;
+        if (!picked?.success) throw new Error(picked?.error || 'Không chọn được file');
+        zaloMenuImportPath = picked.filePath;
+        const preview = await window.claw.previewZaloMenuImport(zaloMenuImportPath);
+        if (!preview?.success) {
+          const msg = (preview?.errors || [preview?.error || 'File import không hợp lệ']).join('; ');
+          setZaloMenuImportState(msg, 'error');
+          return;
+        }
+        setZaloMenuImportState(`Đọc được ${preview.items.length} mục từ XLSX. Bấm để áp dụng import.`, 'success');
+        const shouldApply = confirm(`Import ${preview.items.length} mục menu từ XLSX và ghi đè catalog hiện tại?`);
+        if (shouldApply) await applyZaloMenuImport();
+      } catch (e) {
+        setZaloMenuImportState(e.message || String(e), 'error');
+      }
+    }
+
+    async function applyZaloMenuImport() {
+      if (!zaloMenuImportPath) return;
+      try {
+        const result = await window.claw.applyZaloMenuImport(zaloMenuImportPath);
+        if (!result?.success) {
+          const msg = (result?.errors || [result?.error || 'Import thất bại']).join('; ');
+          setZaloMenuImportState(msg, 'error');
+          return;
+        }
+        zaloMenuCatalog = result.catalog;
+        renderZaloMenuCatalog();
+        setZaloMenuImportState('Đã import XLSX vào catalog menu Zalo.', 'success');
+        dryRunZaloMenu();
+      } catch (e) {
+        setZaloMenuImportState(e.message || String(e), 'error');
+      }
     }
 
     // Helper: is bot currently set to reply to ALL groups? (open mode via "*")
@@ -7396,7 +7886,7 @@
     }
 
     function updateBlockedCount() {
-      const allowed = (zaloMgrConfig.userAllowlist || []).length;
+      const allowed = _effectiveUserAllowlist().length;
       const total = (zaloFriends || []).length;
       const el = document.getElementById('zalo-mgr-blocked-count');
       if (el) el.textContent = allowed + '/' + total;
@@ -7433,7 +7923,7 @@
       <div class="zc-meta">${esc(metaParts.join(' · '))}</div>
     </div>
     <div class="zc-actions">
-      ${summary?.hasContent ? `<button class="zc-summary-btn" onclick="viewGroupMemory('${escAttr(g.groupId)}', '${escAttr(g.name)}')" title="Xem tóm tắt nhóm">${icon('file-text', 14)}</button>` : ''}
+      <button class="zc-summary-btn" onclick="viewGroupMemory('${escAttr(escJs(g.groupId))}', '${escAttr(escJs(g.name))}')" title="Xem hồ sơ nhóm">${icon('file-text', 14)}</button>
       <div class="zc-pills">
         <button class="zc-pill${pillOff}" onclick="setGroupMode('${escAttr(g.groupId)}', 'off')">Tắt</button>
         <button class="zc-pill${pillMention}" onclick="setGroupMode('${escAttr(g.groupId)}', 'mention')">@mention</button>
@@ -7704,10 +8194,6 @@
     async function viewGroupMemory(groupId, groupName) {
       try {
         const result = await window.claw.getZaloGroupMemory(groupId);
-        if (!result.exists || !result.content.trim()) {
-          showToast('Chưa có tóm tắt cho nhóm này', 'info');
-          return;
-        }
         // Remove existing modal
         const old = document.getElementById('group-memory-modal');
         if (old) old.remove();
@@ -7716,14 +8202,38 @@
         modal.className = 'group-memory-modal';
         modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
         const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const hasContent = !!(result.exists && result.content && result.content.trim());
+        const body = hasContent
+          ? `<pre>${esc(result.content)}</pre>`
+          : `<div class="zalo-mgr-empty" style="padding:24px 12px">Chưa có hồ sơ nhóm. Bấm "Cập nhật ngữ cảnh nhóm" để lấy tin gần đây và tóm tắt.</div>`;
         modal.innerHTML = `<div class="group-memory-content">
           <button class="group-memory-close" onclick="document.getElementById('group-memory-modal').remove()">×</button>
           <h3>${esc(groupName)}</h3>
-          <pre>${esc(result.content)}</pre>
+          ${body}
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+            <button class="btn btn-secondary" onclick="refreshGroupMemoryNow('${escAttr(escJs(groupId))}', '${escAttr(escJs(groupName))}')">${icon('refresh-cw', 14)} Cập nhật ngữ cảnh nhóm</button>
+          </div>
         </div>`;
         document.body.appendChild(modal);
       } catch (e) {
         showToast('Lỗi: ' + (e.message || e), 'error');
+      }
+    }
+
+    async function refreshGroupMemoryNow(groupId, groupName) {
+      try {
+        showToast('Đang cập nhật hồ sơ nhóm...', 'info');
+        const result = await window.claw.seedGroupHistoryNow(groupId, groupName, { force: true });
+        if (result?.ok) {
+          try { zaloGroupSummaries = await window.claw.getZaloGroupSummaries(); } catch {}
+          renderZaloGroups();
+          await viewGroupMemory(groupId, groupName);
+          showToast(result.reason === 'empty-history' ? 'Nhóm chưa có tin để tóm tắt' : 'Đã cập nhật hồ sơ nhóm', 'success');
+        } else {
+          showToast('Chưa cập nhật được: ' + (result?.reason || 'không rõ lỗi'), 'error');
+        }
+      } catch (e) {
+        showToast('Lỗi cập nhật: ' + (e.message || e), 'error');
       }
     }
 
@@ -7819,8 +8329,13 @@
     function _isGroupInternal(groupId) {
       return !!(zaloMgrConfig.groupSettings || {})[groupId]?.internal;
     }
+    function _effectiveUserAllowlist() {
+      return (zaloMgrConfig.userAllowlist || [])
+        .map(id => String(id || '').trim())
+        .filter(id => id && id !== '__NONE__');
+    }
     function _isFriendActive(userId) {
-      return (zaloMgrConfig.userAllowlist || []).includes(userId);
+      return _effectiveUserAllowlist().includes(userId);
     }
     function _isFriendInternal(userId) {
       return !!(zaloMgrConfig.userSettings || {})[userId]?.internal;
@@ -7829,7 +8344,7 @@
       const activeGroups = zaloGroups.filter(g => _isGroupActive(g.groupId)).length;
       const internalGroups = zaloGroups.filter(g => _isGroupInternal(g.groupId)).length;
       const totalGroups = zaloGroups.length;
-      const activeFriends = (zaloMgrConfig.userAllowlist || []).length;
+      const activeFriends = _effectiveUserAllowlist().length;
       const internalFriends = Object.values(zaloMgrConfig.userSettings || {}).filter(u => u?.internal).length;
       const totalFriends = zaloFriends.length;
       const _s = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -7846,7 +8361,7 @@
     }
     function _renderFriendItem(f, opts) {
       const inactive = opts?.inactive;
-      const allowed = (zaloMgrConfig.userAllowlist || []).includes(f.userId);
+      const allowed = _isFriendActive(f.userId);
       const uSettings = (zaloMgrConfig.userSettings || {})[f.userId] || {};
       const avatarHtml = f.avatar
         ? `<img class="zc-avatar" src="${esc(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
@@ -7968,7 +8483,7 @@
         else msg = zaloFriends.length === 0 ? 'Chưa có bạn bè. Bấm "Làm mới" để đồng bộ từ Zalo.' : 'Không tìm thấy user.';
         list.innerHTML = '<div class="zalo-mgr-empty">' + msg + '</div>';
         const allOffBanner = document.getElementById('zalo-all-off-banner');
-        if (allOffBanner) allOffBanner.style.display = (zaloMgrConfig.userAllowlist || []).length === 0 ? 'block' : 'none';
+        if (allOffBanner) allOffBanner.style.display = _effectiveUserAllowlist().length === 0 ? 'block' : 'none';
         return;
       }
       const sorted = [...filtered].sort((a, b) => {
@@ -7998,21 +8513,21 @@
         _renderMoreFriends();
       }
       const allOffBanner = document.getElementById('zalo-all-off-banner');
-      if (allOffBanner) allOffBanner.style.display = (zaloMgrConfig.userAllowlist || []).length === 0 ? 'block' : 'none';
+      if (allOffBanner) allOffBanner.style.display = _effectiveUserAllowlist().length === 0 ? 'block' : 'none';
     }
 
     // Checked = bot replies (add to allowlist); unchecked = remove from allowlist
     function toggleUserReply(userId, checked) {
       const row = document.querySelector(`.zc[data-user-id="${userId}"]`);
       const wasActive = _isFriendActive(userId);
-      const arr = zaloMgrConfig.userAllowlist || [];
+      const arr = _effectiveUserAllowlist();
       if (checked) {
         if (!arr.includes(userId)) arr.push(userId);
       } else {
         const i = arr.indexOf(userId);
         if (i !== -1) arr.splice(i, 1);
       }
-      zaloMgrConfig.userAllowlist = arr;
+      zaloMgrConfig.userAllowlist = arr.length > 0 ? arr : ['__NONE__'];
       zaloUserAllowlistTouched = true;
       const nowActive = _isFriendActive(userId);
       const shouldFade = row && _zaloFriendTab === 'active' && wasActive && !nowActive;
@@ -8024,7 +8539,7 @@
         renderZaloFriends();
       }
       const _aob = document.getElementById('zalo-all-off-banner');
-      if (_aob) _aob.style.display = arr.length === 0 ? 'block' : 'none';
+      if (_aob) _aob.style.display = _effectiveUserAllowlist().length === 0 ? 'block' : 'none';
       autoSaveZaloManager();
     }
 
@@ -11645,6 +12160,40 @@
       <span style="font-weight:600;font-size:15px">Bộ nhớ bot</span>
       <button onclick="hideMemoryModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1">&times;</button>
     </div>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 20px;border-bottom:1px solid var(--border, #e5e5e5)">
+      <select id="memory-filter-type" onchange="showMemoryModal()" style="min-width:0;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)">
+        <option value="">Mọi loại</option>
+        <option value="correction">Sửa lỗi</option>
+        <option value="rule">Quy tắc</option>
+        <option value="procedure">Quy trình</option>
+        <option value="preference">Sở thích</option>
+        <option value="pattern">Mẫu</option>
+        <option value="fact">Sự kiện</option>
+      </select>
+      <select id="memory-filter-status" onchange="showMemoryModal()" style="min-width:0;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)">
+        <option value="">Mọi trạng thái</option>
+        <option value="active">Đang bật</option>
+        <option value="pending_review">Chờ duyệt</option>
+        <option value="disabled">Đã tắt</option>
+        <option value="superseded">Đã thay</option>
+      </select>
+      <select id="memory-filter-scope" onchange="showMemoryModal()" style="min-width:0;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)">
+        <option value="">Mọi phạm vi</option>
+        <option value="ceo">CEO</option>
+        <option value="internal">Nội bộ</option>
+        <option value="customer">Khách</option>
+        <option value="public">Công khai</option>
+        <option value="workflow">Workflow</option>
+      </select>
+      <select id="memory-filter-sensitivity" onchange="showMemoryModal()" style="min-width:0;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)">
+        <option value="">Mọi mức nhạy cảm</option>
+        <option value="none">Bình thường</option>
+        <option value="personal">Cá nhân</option>
+        <option value="secret">Nhạy cảm</option>
+        <option value="credential">Bảo mật</option>
+      </select>
+    </div>
+    <div id="memory-evidence" style="display:none;padding:8px 20px;border-bottom:1px solid var(--border, #e5e5e5);background:var(--bg)"></div>
     <div id="memory-list" style="flex:1;overflow-y:auto;padding:8px 20px"></div>
   </div>
 </div>

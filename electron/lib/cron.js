@@ -59,6 +59,50 @@ function journalCronRun(entry) {
 // Wire journalCronRun into config.js so config can call it without circular dep
 setJournalCronRun(journalCronRun);
 
+function inferMemoryTaskType(text) {
+  const t = String(text || '').toLowerCase();
+  if (/sheet|excel|xlsx|google|gmail|drive|calendar/.test(t)) return 'google_workspace';
+  if (/facebook|fanpage|insight|fb\b/.test(t)) return 'facebook';
+  if (/zalo|whatsapp|telegram|lark/.test(t)) return 'channel_workflow';
+  if (/docx|word|pptx|powerpoint|pdf|slide/.test(t)) return 'document_generation';
+  if (/ảnh|hình|image|poster|banner/.test(t)) return 'image_generation';
+  return 'workflow';
+}
+
+async function injectMemoryOsContext(prompt, { label = '' } = {}) {
+  try {
+    const { getMemoryContext } = require('./ceo-memory');
+    const ctx = await getMemoryContext({
+      query: [label, prompt].filter(Boolean).join('\n'),
+      channel: 'telegram',
+      taskType: inferMemoryTaskType([label, prompt].join(' ')),
+      intent: label,
+      limit: 10,
+    });
+    if (!ctx.memories?.length && !ctx.procedures?.length && !ctx.safetyWarnings?.length) return prompt;
+    const compact = {
+      scopes: ctx.scopes,
+      memories: (ctx.memories || []).map(m => ({
+        id: m.id,
+        type: m.type,
+        scope: m.scope,
+        content: m.content,
+        evidenceIds: m.evidence_event_ids || [],
+      })),
+      procedures: (ctx.procedures || []).map(m => ({
+        id: m.id,
+        scope: m.scope,
+        content: m.content,
+      })),
+      safetyWarnings: ctx.safetyWarnings || [],
+    };
+    return `<memory-os-context trusted="true">\n${JSON.stringify(compact)}\n</memory-os-context>\n\n${prompt}`;
+  } catch (e) {
+    console.warn('[cron-agent] memory context injection failed:', e?.message);
+    return prompt;
+  }
+}
+
 /**
  * Self-test the openclaw agent CLI — verifies --version works, caches flag profile.
  * Alerts CEO via Telegram on failure. Runs once then caches for 30min.
@@ -463,7 +507,8 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, t
 
   // Wrap ALL cron prompts with [AUTO-MODE] tag so AGENTS.md skips confirmation rules.
   // Zalo-targeted crons get additional delivery instruction.
-  let finalPrompt = '[AUTO-MODE]\n' + prompt;
+  const promptWithMemory = await injectMemoryOsContext(prompt, { label: niceLabel });
+  let finalPrompt = '[AUTO-MODE]\n' + promptWithMemory;
   if (zaloTarget && zaloTarget.id) {
     finalPrompt += '\n\n[Kết quả của task này sẽ được gửi trực tiếp đến Zalo. CHỈ output nội dung cuối cùng dành cho người nhận. TUYỆT ĐỐI KHÔNG mô tả quy trình, bước làm, workflow, hay giải thích cách em xử lý. Nếu đã hoàn thành qua tool call và không cần gửi thêm gì, chỉ output: DONE]';
   }

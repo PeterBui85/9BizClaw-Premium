@@ -14,7 +14,7 @@ CHỈ CEO Telegram. Khách Zalo -> "Dạ đây là thông tin nội bộ ạ."
 CEO nói "báo cáo hôm nay" -> gọi NGAY:
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/report/daily" method=POST body="{\"date\":\"2026-05-19\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/report/daily" method=POST body="{\"date\":\"2026-05-19\"}"
 ```
 
 Response chứa: `revenue` (income/expense/net), `customers` (newToday/pendingFollowUp), `crons` (fired/failed), `highlights`, `sources`.

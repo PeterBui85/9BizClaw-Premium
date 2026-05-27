@@ -42,7 +42,7 @@ metadata:
 
 **Ghi đơn dịch vụ:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Lan\",\"items\":[{\"name\":\"Gói chăm sóc da mặt\",\"qty\":1,\"price\":500000},{\"name\":\"Massage body 60p\",\"qty\":1,\"price\":400000}],\"note\":\"Hẹn 14h ngày 20/05\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Lan\",\"items\":[{\"name\":\"Gói chăm sóc da mặt\",\"qty\":1,\"price\":500000},{\"name\":\"Massage body 60p\",\"qty\":1,\"price\":400000}],\"note\":\"Hẹn 14h ngày 20/05\"}"
 ```
 
 **Kiểm tra vật tư tiêu hao:**

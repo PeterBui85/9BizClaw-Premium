@@ -48,7 +48,7 @@ metadata:
 
 **Ghi đơn cọc:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Anh Tuấn\",\"items\":[{\"name\":\"Căn A-1205 Vinhomes\",\"qty\":1,\"price\":50000000}],\"note\":\"Đặt cọc, hẹn công chứng 25/05\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Anh Tuấn\",\"items\":[{\"name\":\"Căn A-1205 Vinhomes\",\"qty\":1,\"price\":50000000}],\"note\":\"Đặt cọc, hẹn công chứng 25/05\"}"
 ```
 
 **Xem danh sách giao dịch đang chờ:**
@@ -58,5 +58,5 @@ web_fetch http://127.0.0.1:20200/api/order/list?status=pending
 
 **Ghi nghỉ phép nhân viên môi giới:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Hùng\",\"type\":\"personal\",\"from\":\"2026-05-22\",\"to\":\"2026-05-23\",\"note\":\"Đi công chứng cho khách\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Hùng\",\"type\":\"personal\",\"from\":\"2026-05-22\",\"to\":\"2026-05-23\",\"note\":\"Đi công chứng cho khách\"}"
 ```

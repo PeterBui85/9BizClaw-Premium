@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "updatedAt": "2026-05-27T07:31:54.522Z",
+  "items": [
+    {
+      "slug": "starter",
+      "category": "Gói nền tảng",
+      "title": "9BizClaw Starter",
+      "subtitle": "Bắt đầu tự động hóa bán hàng và CSKH",
+      "description": "Quản lý chat đa kênh, mẫu trả lời bán hàng, lịch nhắc cơ bản và kho tri thức doanh nghiệp.",
+      "priceLabel": "Miễn phí khi cài đặt lần đầu",
+      "ctaLabel": "Gõ /menu premium để xem gói nâng cấp",
+      "ctaCommand": "/menu premium",
+      "sortOrder": 10,
+      "enabled": true
+    },
+    {
+      "slug": "premium",
+      "category": "Gói vận hành",
+      "title": "9BizClaw Premium",
+      "subtitle": "Dành cho CEO muốn có trợ lý AI vận hành hằng ngày",
+      "description": "Bao gồm Zalo/Facebook/Telegram, quản lý khách hàng, tự động hóa lịch nội dung, tài liệu doanh nghiệp và báo cáo vận hành.",
+      "priceLabel": "Giá niêm yết: 24 triệu. Giá mua sớm: 12 triệu.",
+      "ctaLabel": "Gõ /baogia premium để xem bảng giá",
+      "ctaCommand": "/baogia premium",
+      "sortOrder": 20,
+      "enabled": true
+    },
+    {
+      "slug": "signature",
+      "category": "Gói triển khai riêng",
+      "title": "9BizClaw Signature",
+      "subtitle": "Thiết kế quy trình riêng theo ngành và đội ngũ",
+      "description": "Tư vấn workflow, dựng bộ lệnh nội bộ, chuẩn hóa dữ liệu, đào tạo đội ngũ và bàn giao quy trình vận hành.",
+      "priceLabel": "Báo giá theo phạm vi triển khai",
+      "ctaLabel": "Liên hệ tư vấn để chốt phạm vi",
+      "ctaCommand": "",
+      "sortOrder": 30,
+      "enabled": true
+    }
+  ]
+}

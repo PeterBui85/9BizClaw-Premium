@@ -27,7 +27,7 @@ Bot NGAY LẬP TỨC:
    (tạo mới nếu chưa có)
 2. Ghi file (append dòng mới):
    ```
-   web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"cong-no.md\",\"content\":\"<dòng mới theo format bảng>\",\"mode\":\"append\"}" headers="{\"Content-Type\":\"application/json\"}"
+   web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"cong-no.md\",\"content\":\"<dòng mới theo format bảng>\",\"mode\":\"append\"}"
    ```
 3. Giả định:
    - Hạn trả: +30 ngày từ hôm nay (nếu CEO không nói)

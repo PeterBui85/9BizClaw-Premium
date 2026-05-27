@@ -16,7 +16,7 @@ CEO nói: "tổng hợp khách Zalo", "báo cáo khách vào Sheet", "follow-up 
 ## Cách dùng (1 API call)
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/zalo-crm/export" method=POST body="{\"dateRange\":\"today\"}" headers="{\"Content-Type\":\"application/json\"}"
+web_fetch url="http://127.0.0.1:20200/api/zalo-crm/export" method=POST body="{\"dateRange\":\"today\"}"
 ```
 
 Response: `{spreadsheetId, spreadsheetUrl, customersExported, customers: [{name, phone, summary}]}`
