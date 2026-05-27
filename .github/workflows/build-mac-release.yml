@@ -153,6 +153,16 @@ jobs:
             fi
           fi
 
+      - name: Prebuild models
+        working-directory: electron
+        run: npm run prebuild:models
+
+      - name: Prebuild vendor bundle
+        working-directory: electron
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: npm run prebuild:vendor
+
       - name: Prebuild modoro-zalo plugin
         working-directory: electron
         run: npm run prebuild:modoro-zalo
