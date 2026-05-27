@@ -1,10 +1,27 @@
-# Nha Khoa Workflow Pack — Design Spec
+# Nha Khoa Workflow Pack — Umbrella Design Spec (SUPERSEDED)
 
-**Status:** Draft v1
+**Status:** SUPERSEDED by 3 sequenced child specs (see banner below). Kept as the brainstorm-source-of-truth snapshot.
 **Date:** 2026-05-28
 **Author:** Brainstorm session (CEO + Claude)
 **Supersedes:** `docs/superpowers/specs/2026-05-27-zalo-menu-ui-brainstorm-design.md` (folds dispatcher into pack infrastructure)
-**Implements:** First production workflow pack on the 9BizClaw pack platform
+
+---
+
+## SUPERSEDED BY 3 CHILD SPECS
+
+Spec-document-reviewer (2026-05-28) flagged this as 3 independent subsystems. CEO chose decomposition. This umbrella is preserved for reference; do not implement from it directly.
+
+| Order | Child spec | Path |
+|------:|------------|------|
+| 1 | Pack platform v0 (loader, dispatcher, flows, SOP RAG, channel adapter, escalation framework) | [`2026-05-28-pack-platform-v0-design.md`](2026-05-28-pack-platform-v0-design.md) |
+| 2 | Pack license + auto-update (Ed25519 per-pack key, hardware seal, revocation, daily update cron) | [`2026-05-28-pack-license-and-update-design.md`](2026-05-28-pack-license-and-update-design.md) |
+| 3 | Dental pack content (commands, flows, SOPs, install wizard pages, dental persona) | [`2026-05-28-nha-khoa-pack-content-design.md`](2026-05-28-nha-khoa-pack-content-design.md) |
+
+Dental content (3) depends on platform (1). License (2) plugs in on top of platform (1) and can ship before or alongside dental content. Reviewer clarifications are folded into each child spec where they apply.
+
+---
+
+**Original implementation goal (no longer the unit of work):** First production workflow pack on the 9BizClaw pack platform
 
 ---
 
