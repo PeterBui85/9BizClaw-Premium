@@ -37,7 +37,8 @@ function withTempWorkspace(fn) {
 
 function tarEntries() {
   if (!fs.existsSync(vendorTar)) return new Set();
-  const out = cp.execFileSync('tar', ['-tf', vendorTar], { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
+  const tarArgs = process.platform === 'win32' ? ['-tf', vendorTar] : ['-tf', vendorTar];
+  const out = cp.execFileSync('tar', tarArgs, { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
   return new Set(out.split(/\r?\n/).filter(Boolean));
 }
 

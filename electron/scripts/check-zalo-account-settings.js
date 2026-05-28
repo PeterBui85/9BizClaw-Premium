@@ -139,15 +139,22 @@ try {
     friendIds: ['new-friend'],
     groupIds: ['new-group'],
   });
+  // v2.4.10 fix: removed fingerprint-mismatch wipe.
+  // When no active-account file exists and legacy state has meaningful settings,
+  // we now ADOPT the legacy state for the new selfId instead of wiping it. Friend
+  // list churn (add/remove a top-10 friend) used to silently clobber CEO's choices
+  // because fingerprint changed; that data loss is gone now. CEO's explicit settings
+  // are preserved across QR rescans and friend churn — adopted under the new selfId.
   const mismatchCurrent = legacyState(mismatch);
-  assert.deepEqual(mismatchCurrent.allowlist, ['__NONE__']);
-  assert.deepEqual(readJson(path.join(mismatch, 'zalo-blocklist.json')), []);
-  assert.equal(mismatchCurrent.stranger, 'ignore');
-  assert.equal(mismatchCurrent.groups['new-group'].mode, 'off');
-  assert.equal(mismatchCurrent.groups['old-group'], undefined);
-  const unassigned = readJson(path.join(mismatch, 'zalo-legacy-unassigned-settings.json'));
-  assert.deepEqual(unassigned.state.userAllowlist, ['old-friend']);
-  assert.equal(unassigned.seed.fingerprint, 'old-friend,old-peer');
+  assert.deepEqual(mismatchCurrent.allowlist, ['old-friend'], 'legacy allowlist must be preserved (no fingerprint wipe)');
+  assert.deepEqual(readJson(path.join(mismatch, 'zalo-blocklist.json')), ['old-blocked']);
+  assert.equal(mismatchCurrent.stranger, 'reply');
+  assert.equal(mismatchCurrent.groups['old-group'].mode, 'all', 'legacy group settings must be preserved');
+  assert.equal(
+    fs.existsSync(path.join(mismatch, 'zalo-legacy-unassigned-settings.json')),
+    false,
+    'no archive file should be created when fingerprint differs',
+  );
 
   const fresh = path.join(tmp, 'fresh');
   fs.mkdirSync(fresh, { recursive: true });
@@ -182,6 +189,71 @@ try {
   assert.deepEqual(freshStubCurrent.allowlist, ['__NONE__']);
   assert.deepEqual(readJson(path.join(freshStub, 'zalo-blocklist.json')), []);
   assert.equal(freshStubCurrent.groups['fresh-stub-group'].mode, 'off');
+
+  // === v2.4.11: new friend auto-ON after refresh ===
+  const refreshDir = path.join(tmp, 'refresh-test');
+  fs.mkdirSync(refreshDir, { recursive: true });
+  // First sync — establish active account with 1 friend
+  syncActiveZaloAccountSettings({
+    workspace: refreshDir,
+    selfId: 'refresh-acct',
+    displayName: 'Refresh Test',
+    profile: 'default',
+    friendIds: ['existing-friend'],
+    groupIds: [],
+  });
+  // Second sync — same account, CEO added a new friend on Zalo, hits refresh
+  syncActiveZaloAccountSettings({
+    workspace: refreshDir,
+    selfId: 'refresh-acct',
+    displayName: 'Refresh Test',
+    profile: 'default',
+    friendIds: ['existing-friend', 'new-friend'],
+    groupIds: [],
+  });
+  let refreshState = legacyState(refreshDir);
+  assert(refreshState.allowlist.includes('new-friend'), 'new friend must be auto-ON after refresh');
+
+  // Toggle-off persistence: CEO turned off new-friend, refresh must NOT re-enable
+  writeJson(path.join(refreshDir, 'zalo-allowlist.json'), ['existing-friend']);
+  saveActiveZaloAccountSettings({ workspace: refreshDir });
+  syncActiveZaloAccountSettings({
+    workspace: refreshDir,
+    selfId: 'refresh-acct',
+    displayName: 'Refresh Test',
+    profile: 'default',
+    friendIds: ['existing-friend', 'new-friend'],
+    groupIds: [],
+  });
+  refreshState = legacyState(refreshDir);
+  assert(refreshState.allowlist.includes('existing-friend'), 'existing friend stays ON');
+  assert(!refreshState.allowlist.includes('new-friend'), 'CEO toggled-off friend must stay OFF');
+
+  // __NONE__ (deny-all) + new friend → only new friend gets added
+  const denyDir = path.join(tmp, 'deny-test');
+  fs.mkdirSync(denyDir, { recursive: true });
+  syncActiveZaloAccountSettings({
+    workspace: denyDir,
+    selfId: 'deny-acct',
+    displayName: 'Deny Test',
+    profile: 'default',
+    friendIds: ['old-friend'],
+    groupIds: [],
+  });
+  writeJson(path.join(denyDir, 'zalo-allowlist.json'), ['__NONE__']);
+  saveActiveZaloAccountSettings({ workspace: denyDir });
+  syncActiveZaloAccountSettings({
+    workspace: denyDir,
+    selfId: 'deny-acct',
+    displayName: 'Deny Test',
+    profile: 'default',
+    friendIds: ['old-friend', 'brand-new'],
+    groupIds: [],
+  });
+  const denyState = legacyState(denyDir);
+  assert(denyState.allowlist.includes('brand-new'), 'new friend ON even after deny-all');
+  assert(!denyState.allowlist.includes('old-friend'), 'old friend stays OFF per deny-all');
+  assert(!denyState.allowlist.includes('__NONE__'), '__NONE__ sentinel removed');
 
   assert.equal(recordGroupOwnerSelfIds({ workspace: tmp, selfId: 'account-a', groupIds: ['group-a'] }), 1);
   assert.equal(recordGroupOwnerSelfIds({ workspace: tmp, selfId: 'account-b', groupIds: ['group-a'] }), 1);
