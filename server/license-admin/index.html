@@ -196,6 +196,13 @@
           <input id="gen-name" type="text" placeholder="Company or person name">
         </div>
         <div class="form-group">
+          <label>Pack ID</label>
+          <select id="gen-pack">
+            <option value="">App License (default)</option>
+            <option value="nha-khoa">nha-khoa</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Note</label>
           <input id="gen-note" type="text" placeholder="Optional">
         </div>
@@ -283,8 +290,9 @@ async function createClient() {
     if (!name) { toast('Enter a client name', true); btn.disabled = false; return; }
     const maxMachines = 1;
     const note = document.getElementById('gen-note').value.trim();
+    const packId = document.getElementById('gen-pack').value || undefined;
 
-    const data = await api('/api/admin/create-client', { name, keysPerClient: 1, maxMachines, note });
+    const data = await api('/api/admin/create-client', { name, keysPerClient: 1, maxMachines, note, packId });
     const client = data.client;
 
     const out = document.getElementById('gen-output');
@@ -476,7 +484,7 @@ function renderClientCard(client) {
 
   return '<div class="client-card" data-client-id="' + esc(client.id) + '" data-client-name="' + esc(client.name) + '">' +
     '<div class="client-header" onclick="toggleCard(this)">' +
-      '<span class="client-name">' + esc(client.name) + '</span>' +
+      '<span class="client-name">' + esc(client.name) + (client.packId ? ' <span class="badge badge-unused" style="margin-left:8px;font-size:10px">PACK: ' + esc(client.packId) + '</span>' : '') + '</span>' +
       '<div class="client-meta">' +
         statusSummary +
         '<span>' + keys.length + ' keys</span>' +

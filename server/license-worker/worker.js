@@ -3,7 +3,7 @@
 
 const VALID_DAYS = 90;
 const DEFAULT_MONTHS = 12;
-const KEY_FORMAT_RE = /^CLAW-[A-Za-z0-9_-]{20,}$/;
+const KEY_FORMAT_RE = /^CLAW-(?:PACK-)?[A-Za-z0-9_-]{20,}$/;
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -68,7 +68,7 @@ async function signEd25519(privateKey, data) {
   }
 }
 
-async function generateEd25519Key(env, email, months) {
+async function generateEd25519Key(env, email, months, packId) {
   const now = new Date();
   const expiry = new Date(now);
   expiry.setMonth(expiry.getMonth() + (months || DEFAULT_MONTHS));
@@ -78,13 +78,15 @@ async function generateEd25519Key(env, email, months) {
     i: now.toISOString().slice(0, 10),
     v: expiry.toISOString().slice(0, 10),
   };
+  if (packId) payload.packId = packId;
   const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
   const privateKey = await importEd25519PrivateKey(env.ED25519_PRIVATE_KEY_B64);
   const signature = await signEd25519(privateKey, payloadBytes);
   const combined = new Uint8Array(payloadBytes.length + signature.byteLength);
   combined.set(payloadBytes, 0);
   combined.set(new Uint8Array(signature), payloadBytes.length);
-  const key = 'CLAW-' + base64urlEncode(combined);
+  const prefix = packId ? 'CLAW-PACK-' : 'CLAW-';
+  const key = prefix + base64urlEncode(combined);
   const keyHash = (await sha256hex(key)).slice(0, 16);
   return { key, keyHash, payload };
 }
@@ -230,9 +232,11 @@ async function handleAdminCreateClient(body, env) {
     const now = new Date().toISOString();
     const keys = [];
 
+    const packId = (body.packId || '').trim() || null;
+
     for (let i = 0; i < keysPerClient; i++) {
       const email = name + (i + 1) + '@gmail.com';
-      const { key, keyHash, payload } = await generateEd25519Key(env, email, months);
+      const { key, keyHash, payload } = await generateEd25519Key(env, email, months, packId);
       const record = {
         key,
         keyHash,
@@ -241,13 +245,14 @@ async function handleAdminCreateClient(body, env) {
         createdAt: now,
         maxMachines: 1,
         machines: [],
+        packId,
         note: note || (email + ' | ' + payload.p + ' | ' + payload.i + ' to ' + payload.v),
       };
       await env.LICENSE_KV.put(`key:${keyHash}`, JSON.stringify(record));
       keys.push(key);
     }
 
-    const client = { id: clientId, name, createdAt: now, keys, keysPerClient, maxMachines: 1, note };
+    const client = { id: clientId, name, createdAt: now, keys, keysPerClient, maxMachines: 1, note, packId };
     await env.LICENSE_KV.put(`client:${clientId}`, JSON.stringify(client));
 
     return jsonResponse({ ok: true, client });
@@ -275,7 +280,7 @@ async function handleAdminListClients(env) {
   for (const k of allKeys) {
     if (k.clientId) {
       if (!clients.has(k.clientId)) {
-        clients.set(k.clientId, { id: k.clientId, name: k.clientName || k.clientId, keys: [] });
+        clients.set(k.clientId, { id: k.clientId, name: k.clientName || k.clientId, packId: k.packId || null, keys: [] });
       }
       clients.get(k.clientId).keys.push(k);
     } else {
