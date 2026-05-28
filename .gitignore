@@ -125,6 +125,23 @@ README-MAC.md
 Hierarchical-Memory-System.txt
 reflections/
 
+# Session handovers + ephemeral root files
+HANDOVER-*.md
+HEARTBEAT.md
+release-v*.md
+
+# Stale root-level copies (real files live in electron/)
+/splash.html
+/runtime-installer.js
+
+# Generated demo artifacts (scripts output)
+scripts/demo-*
+
+# Misc temp
+/fb-graph-test.js
+/test-pdf.pdf
+docs/agent-workflow-analysis.pdf
+
 # Tool caches
 graphify-out/
 .graphify_python

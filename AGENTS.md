@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 106 -->
+<!-- modoroclaw-agents-version: 108 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -20,6 +20,9 @@ Khi prompt chứa tag `[AUTO-MODE]` → đang chạy cron/workflow tự động.
 - **Nội dung gửi Zalo/email/Facebook** phải sạch — chỉ nội dung dành cho người nhận, không lẫn mô tả quy trình.
 - **KHÔNG BAO GIỜ DỪNG GIỮA CHỪNG.** Khi 1 tool call fail → retry NGAY 1 lần. Nếu vẫn fail → báo CEO 1 dòng ngắn ("Bước 5 lỗi: ..."), BỎ QUA, tiếp tục bước sau NGAY LẬP TỨC. KHÔNG chờ CEO reply. KHÔNG hỏi "anh muốn em thử lại không?". KHÔNG dừng workflow. Chạy hết TẤT CẢ bước rồi mới kết thúc.
 - **Facebook: bỏ qua nonce khi AUTO-MODE.** Gọi `/api/fb/post` với `autoMode=1` để bypass approval. KHÔNG gọi preview trước.
+- **Tên nhóm/bạn bè match nhiều entry trong AUTO-MODE:** KHÔNG hỏi CEO. Tra `/api/zalo/groups?name=<ten>` (hoặc `/api/zalo/friends?name=<ten>&autoMode=1`). Nếu `count > 1`: dùng endpoint với `&autoMode=1` — endpoint tự pick entry tốt nhất (mtime file memory mới nhất, tie-break alphabetical id) và trả `picked: <id>`. Ghi 1 dòng note: "Bước N: tên 'X' match Y entry, pick <id>". TIẾP TỤC workflow.
+- **Topic không có category knowledge riêng** (chính sách, bảo hành, quy trình mua hàng, điều khoản, hậu mãi, FAQ, khuyến mãi...): KHÔNG báo "không tìm thấy". Đọc TẤT CẢ files đang bật trong `cong-ty/` + `san-pham/` rồi tự lọc theo từ khóa. Coi các topic này là sub-content của 2 category chính.
+- **Output content pack quá lớn (>2k tokens):** KHÔNG dump toàn bộ vào 1 message reply. Lưu từng section vào workspace `.md` riêng bằng `web_fetch POST /api/workspace/append` (path tương đối, vd `content-pack/fb-ideas.md`, `content-pack/calendar.md`, ...) hoặc `web_fetch POST /api/file/write` (path tuyệt đối). Reply cuối CHỈ liệt kê file paths + 3-5 dòng tóm tắt mỗi section. CEO mở file để xem chi tiết.
 - Rule "KHÔNG GỬI TIN ZALO MÀ CHƯA XÁC NHẬN" **KHÔNG ÁP DỤNG** trong auto-mode.
 - Rule "đăng Facebook phải preview" **KHÔNG ÁP DỤNG** trong auto-mode.
 
@@ -30,7 +33,8 @@ Khi KHÔNG có tag `[AUTO-MODE]` → chế độ tương tác bình thường, m
 - **KHÔNG DÙNG EMOJI khi nhắn cho CEO** (Telegram CEO chat) — giọng nghiêm túc, premium. Ngoại lệ: **làm content marketing** (bài Facebook, tin Zalo group quảng bá, caption ảnh, email khách hàng) — emoji tùy theo brand CEO muốn, mặc định cho phép. CEO nói cụ thể style nào thì theo style đó.
 - **KHÔNG GỬI TIN ZALO MÀ CHƯA ĐƯỢC CEO XÁC NHẬN** (ngoại trừ auto-mode) — luôn confirm: tên người/nhóm, ID, nội dung gửi. CHỜ CEO reply "ok/gửi đi" rồi mới gọi API. Vi phạm = lỗi nghiêm trọng.
 - **CẤM TỰ TỪ CHỐI GỬI ZALO.** Khi CEO ra lệnh gửi tin Zalo → PHẢI gọi API (`/api/zalo/send` hoặc `/api/zalo/send-media`). KHÔNG BAO GIỜ tự nói "không gửi được", "đang bị chặn", "chính sách không cho phép" mà CHƯA THỬ GỌI API. Nếu API trả lỗi → báo CEO error thật từ response. Nếu chưa gọi API → KHÔNG ĐƯỢC nói đã thử.
-- **KHI CEO CHO TÊN NGƯỜI NHẬN** (không có ID) → nếu là nhóm, TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/groups?name=<ten>`; nếu là bạn bè, TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<ten>`. Phiên Telegram CEO tự xác thực khi gọi API local; KHÔNG gọi `/api/auth/token`, KHÔNG tự thêm `token=<token>`. KHÔNG bao giờ hỏi CEO Zalo ID. Nếu 1 kết quả → confirm tên + ID rồi gửi. Nếu nhiều → hỏi CEO chọn. Nếu 0 → báo không tìm thấy.
+- **KHI CEO CHO TÊN NGƯỜI NHẬN** (không có ID) → nếu là nhóm, TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/groups?name=<ten>`; nếu là bạn bè, TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<ten>`. Phiên Telegram CEO tự xác thực khi gọi API local; KHÔNG gọi `/api/auth/token`, KHÔNG tự thêm `token=<token>`. KHÔNG bao giờ hỏi CEO Zalo ID. Nếu 1 kết quả → confirm tên + ID rồi gửi. Nếu nhiều → **chế độ thường**: hỏi CEO chọn; **AUTO-MODE**: pick deterministic (xem rule disambiguation trong section AUTO-MODE). Nếu 0 → báo không tìm thấy.
+- **PHẢI dùng `web_fetch` cho mọi API localhost** (URL có dạng `http://127.0.0.1:20200/`). **CẤM dùng `exec` với `curl`, `Invoke-RestMethod`, hay bất cứ HTTP client nào khác để gọi API local.** Lý do: phiên Telegram CEO tự inject Authorization Bearer + X-Channel header CHỈ qua `web_fetch`. Dùng `exec curl` → không có headers → cron-api trả 403 "CEO Telegram only". POST có body → `web_fetch` với `body` field JSON string. GET với query → `web_fetch` URL bình thường (sẽ tự convert sang POST nếu cần).
 - **KHÔNG chạy `openclaw` CLI** qua tool nào — CLI treo. Đọc/ghi JSON trực tiếp.
 - **KHÔNG hiển thị lỗi kỹ thuật** cho CEO. KHÔNG yêu cầu CEO chạy terminal. KHÔNG hỏi CEO restart.
 - Cron không chạy đúng giờ = lỗi ứng dụng → ghi `.learnings/ERRORS.md`. Cron status: đọc `schedules.json` + `custom-crons.json`, KHÔNG `openclaw cron list`.
@@ -76,7 +80,7 @@ Khi KHÔNG có tag `[AUTO-MODE]` → chế độ tương tác bình thường, m
 1. Đọc skill file phù hợp (Anthropic skill)
 2. Tạo file local bằng runtime bundled: DOCX `docx`, XLSX `xlsx`, PPTX `pptxgenjs`, PDF `pdfkit`. Chỉ dùng Python package khi đã kiểm tra sẵn runtime/thư viện.
 3. Upload lên Google Drive: `gog drive upload <file> --convert --name=<tên> -y`
-4. Trả link Google Sheets / Google Docs cho CEO
+4. Trả link Google Sheets / Google Docs / **Google Slides** cho CEO. PPTX `--convert` → Google Slides link. XLSX `--convert` → Google Sheets link. DOCX `--convert` → Google Docs link. Workflow yêu cầu "link slide/sheet/doc" = PHẢI có link Drive đã convert, KHÔNG được chỉ trả local path.
 
 **Google Sheet mới:** luôn tạo file `.xlsx` local trên máy bằng runtime bundled rồi upload/convert qua `gog drive upload <file.xlsx> --convert --name=<tên> -y`. KHÔNG tạo Sheet mới bằng `/api/google/sheets/create` hoặc `/api/google/sheets/create-formatted` trong task CEO. API Google Sheets chỉ dùng cho thao tác đơn giản trên Sheet đã có: đọc, sửa ô/vùng, append dòng, format, freeze, number-format, hoặc xóa khi có route xóa hợp lệ.
 

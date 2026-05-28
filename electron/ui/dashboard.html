@@ -599,6 +599,10 @@
     .zs-label { font-size:9px; font-weight:700; color:var(--text-muted); letter-spacing:0.5px; white-space:nowrap; text-transform:uppercase; }
     .zs-select { padding:5px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; cursor:pointer; }
     .zs-select:focus { outline:none; border-color:var(--accent); }
+    /* Header-mounted variants of zalo-page-tabs + zalo-toolbar: compact, no surface, no bottom margin */
+    .zalo-page-tabs.zalo-page-tabs--header { margin-bottom:0; padding:3px; gap:4px; }
+    .zalo-page-tabs--header .zalo-page-tab { min-width:auto; padding:6px 14px; font-size:13px; }
+    .zalo-toolbar.zalo-toolbar--header { padding:0; background:transparent; border:0; margin-bottom:0; gap:10px; }
     .zalo-split { display:grid; grid-template-columns:1fr 1fr; gap:12px; flex:1; min-height:0; overflow:hidden; }
     .zalo-split-col { display:flex; flex-direction:column; min-height:0; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px; }
     .zalo-split-col .zalo-list-container { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; min-width:0; }
@@ -633,6 +637,11 @@
     .zalo-menu-import-state { margin-top:10px; font-size:12px; color:var(--text-muted); line-height:1.45; min-height:18px; }
     .zalo-menu-import-state.error { color:var(--danger, #e53e3e); }
     .zalo-menu-import-state.success { color:var(--success); }
+    @media (max-width: 1280px) {
+      .zalo-split { grid-template-columns:1fr; overflow:auto; }
+      .zalo-split-col { min-height:360px; }
+      .zalo-menu-grid { grid-template-columns:1fr; overflow:auto; }
+    }
     @media (max-width: 900px) {
       .zalo-split { grid-template-columns:1fr; }
       .zalo-menu-grid { grid-template-columns:1fr; overflow:auto; }
@@ -2951,12 +2960,28 @@
             <div class="page-sub">Quản lý nhóm, bạn bè và chế độ trả lời</div>
             <div style="margin-top:8px"><span class="ready-pill" id="ready-pill-zalo" data-state="checking"><span class="pill-icon"></span><span id="ready-pill-zalo-text">Đang kiểm tra kết nối...</span></span></div>
           </div>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-start">
-            <button class="page-help-btn" onclick="guideReplay('zalo')" title="Xem hướng dẫn trang Zalo">?</button>
-            <button class="btn btn-secondary btn-small" onclick="recheckZaloFull()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Làm mới</button>
-            <button class="btn btn-secondary btn-small" id="reconnect-zalo-btn" onclick="reconnectZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
-            <button class="btn btn-secondary btn-small" id="zalo-pause-btn" onclick="toggleZaloPause()" title="Tạm dừng bot Zalo 30 phút. Bot sẽ im lặng hoàn toàn, không trả lời bất kỳ tin nhắn nào cho đến khi bật lại." style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="zalo-pause-label">Tạm dừng</span></button>
-            <label class="toggle-switch zalo-master-toggle" title="Bật/tắt kênh Zalo hoàn toàn. Tắt = bot ngừng nhận và trả lời mọi tin nhắn Zalo."><input type="checkbox" id="zalo-mgr-enabled" onchange="onZaloEnabledToggle()"><span class="toggle-slider"></span></label>
+          <div style="margin-left:auto;display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="page-help-btn" onclick="guideReplay('zalo')" title="Xem hướng dẫn trang Zalo">?</button>
+              <button class="btn btn-secondary btn-small" onclick="recheckZaloFull()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Làm mới</button>
+              <button class="btn btn-secondary btn-small" id="reconnect-zalo-btn" onclick="reconnectZalo()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Đổi tài khoản</button>
+              <button class="btn btn-secondary btn-small" id="zalo-pause-btn" onclick="toggleZaloPause()" title="Tạm dừng bot Zalo 30 phút. Bot sẽ im lặng hoàn toàn, không trả lời bất kỳ tin nhắn nào cho đến khi bật lại." style="display:inline-flex;align-items:center;gap:6px"><span data-icon="pause-circle" data-icon-size="14"></span><span id="zalo-pause-label">Tạm dừng</span></button>
+              <label class="toggle-switch zalo-master-toggle" title="Bật/tắt kênh Zalo hoàn toàn. Tắt = bot ngừng nhận và trả lời mọi tin nhắn Zalo."><input type="checkbox" id="zalo-mgr-enabled" onchange="onZaloEnabledToggle()"><span class="toggle-slider"></span></label>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+              <div class="zalo-page-tabs zalo-page-tabs--header" role="tablist" aria-label="Zalo workspace">
+                <button class="zalo-page-tab active" id="zalo-subtab-overview" onclick="switchZaloSubtab('overview')" role="tab" aria-selected="true">Tổng quan</button>
+                <!-- Menu sub-tab hidden for v2.4.10 client release. Catalog editor incomplete. To re-enable: remove style="display:none" -->
+                <button class="zalo-page-tab" id="zalo-subtab-menu" onclick="switchZaloSubtab('menu')" role="tab" aria-selected="false" style="display:none">Menu</button>
+              </div>
+              <div class="zalo-toolbar zalo-toolbar--header">
+                <div class="zs-field"><span class="zs-label">Chế độ</span><select id="zalo-mode-select" class="zs-select" onchange="changeZaloMode(this.value)"><option value="auto">Tự động</option><option value="read">Chỉ đọc</option></select></div>
+                <div class="zs-field"><span class="zs-label">Người lạ</span><select id="zalo-stranger-policy" class="zs-select" onchange="changeStrangerPolicy(this.value)"><option value="reply">Trả lời</option><option value="greet-only">Chào 1 lần</option><option value="ignore">Bỏ qua</option></select></div>
+                <div class="zs-field"><span class="zs-label">Nhóm mới</span><select id="zalo-default-group-mode" class="zs-select" onchange="updateDefaultGroupMode(this.value)"><option value="mention">@mention</option><option value="all">Mọi tin</option><option value="off">Tắt</option></select></div>
+                <div class="zs-field"><span class="zs-label">Gộp tin</span><select id="zl-debounce-select" class="zs-select" onchange="onDebounceSelect('zalo', this.value)"><option value="0">Tắt</option><option value="1000">1s</option><option value="2000">2s</option><option value="3000" selected>3s</option><option value="4000">4s</option><option value="5000">5s</option></select></div>
+                <div id="zalo-mode-status" style="display:none"><div class="test-result success" style="margin:0;font-size:11px;padding:4px 8px">Đã cập nhật</div></div>
+              </div>
+            </div>
           </div>
         </div>
         <div id="zalo-pause-banner" class="pause-banner" style="flex-shrink:0">
@@ -2964,21 +2989,8 @@
           <span>Bot Zalo đang tạm dừng. <span id="zalo-pause-until"></span></span>
         </div>
 
-        <div class="zalo-page-tabs" role="tablist" aria-label="Zalo workspace">
-          <button class="zalo-page-tab active" id="zalo-subtab-overview" onclick="switchZaloSubtab('overview')" role="tab" aria-selected="true">Tổng quan</button>
-          <button class="zalo-page-tab" id="zalo-subtab-menu" onclick="switchZaloSubtab('menu')" role="tab" aria-selected="false">Menu</button>
-        </div>
-
         <div class="zalo-subtab-pane active" id="zalo-overview-pane" role="tabpanel">
           <div id="zalo-all-off-banner" style="display:none;padding:8px 14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;margin-bottom:8px;font-size:12px;color:var(--text);flex-shrink:0">Tất cả bạn bè đã tắt — bot không trả lời ai.</div>
-
-          <div class="zalo-toolbar">
-            <div class="zs-field"><span class="zs-label">Chế độ</span><select id="zalo-mode-select" class="zs-select" onchange="changeZaloMode(this.value)"><option value="auto">Tự động</option><option value="read">Chỉ đọc</option></select></div>
-            <div class="zs-field"><span class="zs-label">Người lạ</span><select id="zalo-stranger-policy" class="zs-select" onchange="changeStrangerPolicy(this.value)"><option value="reply">Trả lời</option><option value="greet-only">Chào 1 lần</option><option value="ignore">Bỏ qua</option></select></div>
-            <div class="zs-field"><span class="zs-label">Nhóm mới</span><select id="zalo-default-group-mode" class="zs-select" onchange="updateDefaultGroupMode(this.value)"><option value="mention">@mention</option><option value="all">Mọi tin</option><option value="off">Tắt</option></select></div>
-            <div class="zs-field"><span class="zs-label">Gộp tin</span><select id="zl-debounce-select" class="zs-select" onchange="onDebounceSelect('zalo', this.value)"><option value="0">Tắt</option><option value="1000">1s</option><option value="2000">2s</option><option value="3000" selected>3s</option><option value="4000">4s</option><option value="5000">5s</option></select></div>
-          </div>
-          <div id="zalo-mode-status" style="display:none;margin-bottom:4px"><div class="test-result success" style="margin:0;font-size:11px">Đã cập nhật</div></div>
 
           <div class="zalo-split">
             <!-- LEFT: Groups -->
@@ -3022,7 +3034,9 @@
           </div>
         </div>
 
-        <div class="zalo-subtab-pane" id="zalo-menu-pane" role="tabpanel">
+        <!-- Zalo Menu sub-tab pane: feature DISABLED for v2.4.10 client release. Pane hidden via display:none. -->
+        <!-- Sub-tab button also hidden in zalo-page-tabs above. IPC handlers short-circuit (see dashboard-ipc.js). -->
+        <div class="zalo-subtab-pane" id="zalo-menu-pane" role="tabpanel" style="display:none">
           <div class="zalo-menu-toolbar">
             <div>
               <div class="zalo-menu-panel-title">Menu dry-run</div>
@@ -3055,17 +3069,17 @@
               <div class="zalo-menu-panel-head">
                 <div>
                   <div class="zalo-menu-panel-title">Live Zalo preview</div>
-                  <div class="zalo-menu-panel-sub">Hỗ trợ /menu, /menu premium, /baogia premium.</div>
+                  <div class="zalo-menu-panel-sub">Hỗ trợ /menu, /menu &lt;slug&gt;, /baogia &lt;slug&gt;.</div>
                 </div>
               </div>
               <div class="zalo-menu-preview-controls">
-                <input id="zalo-menu-command" class="zalo-menu-command" value="/menu premium" placeholder="/menu premium" onkeydown="if(event.key==='Enter')dryRunZaloMenu()">
+                <input id="zalo-menu-command" class="zalo-menu-command" value="/menu" placeholder="/menu hoặc /menu <slug>" onkeydown="if(event.key==='Enter')dryRunZaloMenu()">
                 <button class="btn btn-primary" onclick="dryRunZaloMenu()">Dry-run</button>
               </div>
               <div class="zalo-menu-examples">
                 <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/menu')">/menu</button>
-                <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/menu premium')">/menu premium</button>
-                <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/baogia premium')">/baogia premium</button>
+                <!-- Example chips disabled with feature. Re-enable with real slugs when ZALO_MENU_DISABLED flips. -->
+                <button class="zalo-menu-chip" onclick="setZaloMenuCommand('/menu')">/menu</button>
               </div>
               <div class="zalo-phone-preview">
                 <div id="zalo-menu-preview" class="zalo-message-bubble">Chạy dry-run để xem trước tin nhắn.</div>
@@ -3667,27 +3681,6 @@
             <span class="icon drop-icon" data-icon="file-up"></span>
             <div class="drop-label">Thả file vào đây</div>
             <div class="drop-sub">PDF, Word, Excel, ảnh — tối đa 10MB</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- PAGE: ChatGPT Import -->
-      <div class="page" id="page-chatgpt-import">
-        <div class="page-header">
-          <span class="page-icon" data-icon="download" data-icon-size="26"></span>
-          <div><h2>Import tài khoản ChatGPT</h2><div class="page-sub">Dán session JSON từ chatgpt.com để kết nối tài khoản ChatGPT Plus/Pro với bot</div></div>
-        </div>
-        <div style="padding:24px 28px;max-width:600px">
-          <ol style="margin:0 0 16px;padding-left:20px;font-size:13px;line-height:1.8;color:var(--text-secondary)">
-            <li>Mở <strong>chatgpt.com</strong> trên trình duyệt, đăng nhập bình thường</li>
-            <li>Vào <a href="#" onclick="event.preventDefault(); window.claw.openExternal('https://chatgpt.com/api/auth/session')" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer">chatgpt.com/api/auth/session</a></li>
-            <li>Bấm <strong>Ctrl+A</strong> rồi <strong>Ctrl+C</strong></li>
-            <li>Dán vào ô bên dưới</li>
-          </ol>
-          <textarea id="chatgpt-tab-json" rows="4" class="input" style="width:100%;font-family:monospace;font-size:12px;resize:vertical" placeholder="Dán nội dung JSON vào đây..."></textarea>
-          <div id="chatgpt-tab-status" style="margin-top:8px;font-size:12px;min-height:18px"></div>
-          <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-            <button id="chatgpt-tab-import-btn" class="btn btn-primary" disabled onclick="doChatGPTTabImport()">Import tài khoản</button>
           </div>
         </div>
       </div>
@@ -4929,34 +4922,72 @@
       clearTimeout(_fallbackTimer);
       renderSchedules();
     }
-    function cronToTime(expr) {
-      // "30 23 * * *" → "23:30"
-      if (!expr) return expr;
-      const parts = expr.split(' ');
-      if (parts.length >= 2 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
-        return parts[1].padStart(2,'0') + ':' + parts[0].padStart(2,'0');
+    // Returns true if a cron's day-of-week field allows today.
+    // Handles '*', single digit, range (1-5), list (0,6). Anything else → permissive.
+    // Used to suppress misleading "trong N phút" countdowns for DOW-restricted schedules
+    // that won't actually fire today (e.g., 30 17 * * 5 on a Tuesday).
+    function cronDowAllowedToday(cronExpr) {
+      if (!cronExpr) return true;
+      const parts = cronExpr.split(' ');
+      if (parts.length < 5) return true;
+      const dow = parts[4].replace(/\b7\b/g, '0');
+      if (dow === '*') return true;
+      const today = new Date().getDay();
+      if (dow.includes('-')) {
+        const [s, e] = dow.split('-').map(Number);
+        if (!isNaN(s) && !isNaN(e)) return today >= s && today <= e;
+        return true;
       }
-      return expr;
+      if (dow.includes(',')) {
+        return dow.split(',').map(x => Number(x)).filter(n => !isNaN(n)).includes(today);
+      }
+      if (/^\d+$/.test(dow)) return Number(dow) === today;
+      return true;
+    }
+    function cronToTime(expr) {
+      // Returns "HH:MM" only when minute + hour are both purely numeric (e.g., "30 23 * * *" → "23:30").
+      // Returns '' for any other shape (intervals, day-of-week, ranges) so callers can fall back
+      // to cronToHuman() instead of leaking raw "0 0 * 1 1" into the UI.
+      if (!expr) return '';
+      const parts = expr.split(' ');
+      if (parts.length < 5) return '';
+      const [m, h] = parts;
+      if (/^\d+$/.test(m) && /^\d+$/.test(h)) {
+        return h.padStart(2,'0') + ':' + m.padStart(2,'0');
+      }
+      return '';
     }
     function cronToHuman(expr) {
       if (!expr) return '';
       const parts = expr.split(' ');
       if (parts.length < 5) return expr;
       const [m, h, dom, mon, dow] = parts;
-      const days = {'1':'T2','2':'T3','3':'T4','4':'T5','5':'T6','6':'T7','0':'CN','*':'mỗi ngày'};
+      const days = {'1':'T2','2':'T3','3':'T4','4':'T5','5':'T6','6':'T7','0':'CN'};
+      const months = {'1':'tháng 1','2':'tháng 2','3':'tháng 3','4':'tháng 4','5':'tháng 5','6':'tháng 6','7':'tháng 7','8':'tháng 8','9':'tháng 9','10':'tháng 10','11':'tháng 11','12':'tháng 12'};
+      // Interval forms first
+      if (m.startsWith('*/')) return `Mỗi ${m.slice(2)} phút`;
+      if (h.startsWith('*/')) return `Mỗi ${h.slice(2)} tiếng`;
+      // Time component (only when both numeric)
+      const timeStr = (/^\d+$/.test(h) && /^\d+$/.test(m))
+        ? ` lúc ${h.padStart(2,'0')}:${m.padStart(2,'0')}`
+        : '';
+      // When component
       let when = '';
       if (dow !== '*') {
-        when = dow.split(',').map(d => days[d] || d).join(', ');
         if (dow === '1-5') when = 'T2–T6';
-        if (dow === '0,6') when = 'T7, CN';
+        else if (dow === '0,6' || dow === '6,0') when = 'T7, CN';
+        else when = dow.split(',').map(d => days[d] || d).join(', ');
+        if (mon !== '*') when += ' trong ' + (months[mon] || `tháng ${mon}`);
       } else if (dom !== '*') {
-        when = `ngày ${dom}` + (mon !== '*' ? ` tháng ${mon}` : ' hàng tháng');
+        when = `ngày ${dom}`;
+        if (mon !== '*') when += ' ' + (months[mon] || `tháng ${mon}`);
+        else when += ' hàng tháng';
+      } else if (mon !== '*') {
+        when = months[mon] || `tháng ${mon}`;
       } else {
         when = 'mỗi ngày';
       }
-      if (h.startsWith('*/')) return `Mỗi ${h.slice(2)} tiếng`;
-      if (m.startsWith('*/')) return `Mỗi ${m.slice(2)} phút`;
-      return `${when} lúc ${h.padStart(2,'0')}:${m.padStart(2,'0')}`;
+      return when + timeStr;
     }
     // Map schedule ID → icon name
     const SCHEDULE_ICON_MAP = {
@@ -5127,10 +5158,9 @@
         { page: 'schedules', icon: 'calendar', label: 'Lịch tự động' },
       ]},
       brain:    { pages: ['brain'], tabs: null },
-      config:   { pages: ['skills','persona-mix','chatgpt-import','9router','openclaw'], tabs: [
+      config:   { pages: ['skills','persona-mix','9router','openclaw'], tabs: [
         { page: 'skills', icon: 'zap', label: 'Skills' },
         { page: 'persona-mix', icon: 'sparkles', label: 'Tính cách' },
-        { page: 'chatgpt-import', icon: 'download', label: 'ChatGPT' },
         { page: '9router', icon: 'cpu', label: 'AI Models', action: 'openAiModelsBrowser' },
         { page: 'openclaw', icon: 'terminal', label: 'OpenClaw' },
       ]},
@@ -6792,66 +6822,6 @@
         }
       };
     })();
-    // ── ChatGPT session import (dedicated tab) ──
-    (function() {
-      let _parsed = null;
-      document.addEventListener('DOMContentLoaded', () => {
-        const ta = document.getElementById('chatgpt-tab-json');
-        if (!ta) return;
-        const st = document.getElementById('chatgpt-tab-status');
-        const btn = document.getElementById('chatgpt-tab-import-btn');
-        ta.addEventListener('input', () => {
-          _parsed = null; btn.disabled = true; st.textContent = ''; st.style.color = '';
-          let raw = ta.value.replace(/^﻿/, '').replace(/[\x00-\x09\x0B\x0C\x0E-\x1F]/g, '').trim();
-          if (!raw) return;
-          const first = raw.indexOf('{'); const last = raw.lastIndexOf('}');
-          if (first >= 0 && last > first) raw = raw.substring(first, last + 1);
-          try {
-            const s = JSON.parse(raw);
-            if (!s.accessToken || typeof s.accessToken !== 'string' || s.accessToken.length < 50) {
-              st.style.color = 'var(--danger)'; st.textContent = 'Thiếu accessToken'; return;
-            }
-            let email = s.user?.email || '';
-            let plan = '';
-            try {
-              const parts = s.accessToken.split('.');
-              if (parts.length === 3) {
-                const p = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
-                email = email || (p['https://api.openai.com/profile'] || {}).email || '';
-                plan = (p['https://api.openai.com/auth'] || {}).chatgpt_plan_type || '';
-              }
-            } catch {}
-            if (!email) { st.style.color = 'var(--danger)'; st.textContent = 'Không tìm thấy email'; return; }
-            _parsed = s; btn.disabled = false;
-            st.style.color = 'var(--success)'; st.textContent = email + (plan ? ' (' + plan + ')' : '');
-          } catch (err) {
-            st.style.color = 'var(--danger)'; st.textContent = 'JSON không hợp lệ: ' + (err.message || '').substring(0, 80);
-          }
-        });
-      });
-      window.doChatGPTTabImport = async function() {
-        if (!_parsed) return;
-        const btn = document.getElementById('chatgpt-tab-import-btn');
-        const st = document.getElementById('chatgpt-tab-status');
-        btn.disabled = true;
-        st.style.color = 'var(--text-tertiary)'; st.textContent = 'Đang import...';
-        try {
-          const res = await window.claw.importChatGPTSession(JSON.stringify(_parsed));
-          if (res.success) {
-            st.style.color = 'var(--success)';
-            st.textContent = 'Import thành công — ' + res.email + (res.planType && res.planType !== 'unknown' ? ' (' + res.planType + ')' : '');
-            btn.textContent = 'Đã import';
-            try { reloadEmbed('9router'); } catch {}
-          } else {
-            st.style.color = 'var(--danger)'; st.textContent = res.error || 'Import thất bại';
-            btn.disabled = false;
-          }
-        } catch (e) {
-          st.style.color = 'var(--danger)'; st.textContent = e.message || 'Lỗi import';
-          btn.disabled = false;
-        }
-      };
-    })();
     async function copyAndShowGatewayToken() {
       try {
         const token = await window.claw.getGatewayToken();
@@ -7483,7 +7453,7 @@
 
     let zaloSubtab = 'overview';
     let zaloMenuCatalog = null;
-    let zaloMenuImportPath = '';
+    let zaloMenuImportToken = '';
 
     function switchZaloSubtab(tab) {
       zaloSubtab = tab === 'menu' ? 'menu' : 'overview';
@@ -7542,7 +7512,7 @@
             </div>
             <div class="zalo-menu-field">
               <label>Tên hiển thị</label>
-              <input class="zalo-menu-input" data-field="title" value="${escAttr(item.title || '')}" placeholder="9BizClaw Premium">
+              <input class="zalo-menu-input" data-field="title" value="${escAttr(item.title || '')}" placeholder="Tên gói">
             </div>
             <div class="zalo-menu-field">
               <label>Thứ tự</label>
@@ -7569,11 +7539,11 @@
           <div class="zalo-menu-item-top">
             <div class="zalo-menu-field">
               <label>CTA</label>
-              <input class="zalo-menu-input" data-field="ctaLabel" value="${escAttr(item.ctaLabel || '')}" placeholder="Gõ /baogia premium để xem bảng giá">
+              <input class="zalo-menu-input" data-field="ctaLabel" value="${escAttr(item.ctaLabel || '')}" placeholder="VD: Gõ /baogia &lt;slug&gt; để xem bảng giá">
             </div>
             <div class="zalo-menu-field">
               <label>Lệnh CTA</label>
-              <input class="zalo-menu-input" data-field="ctaCommand" value="${escAttr(item.ctaCommand || '')}" placeholder="/baogia premium">
+              <input class="zalo-menu-input" data-field="ctaCommand" value="${escAttr(item.ctaCommand || '')}" placeholder="VD: /baogia &lt;slug&gt;">
             </div>
             <button class="btn btn-secondary btn-small" onclick="previewZaloMenuItem(${index})">Xem</button>
             <button class="btn btn-secondary btn-small" onclick="removeZaloMenuItem(${index})" style="color:var(--danger)">Xóa</button>
@@ -7695,7 +7665,7 @@
         const result = await window.claw.downloadZaloMenuTemplate();
         if (result?.canceled) return;
         if (!result?.success) throw new Error(result?.error || 'Không tải được mẫu');
-        setZaloMenuImportState('Đã lưu mẫu XLSX: ' + result.filePath, 'success');
+        setZaloMenuImportState('Đã lưu mẫu XLSX: ' + (result.fileName || 'zalo-menu-template.xlsx'), 'success');
       } catch (e) {
         setZaloMenuImportState(e.message || String(e), 'error');
       }
@@ -7706,15 +7676,16 @@
         const picked = await window.claw.pickZaloMenuImport();
         if (picked?.canceled) return;
         if (!picked?.success) throw new Error(picked?.error || 'Không chọn được file');
-        zaloMenuImportPath = picked.filePath;
-        const preview = await window.claw.previewZaloMenuImport(zaloMenuImportPath);
+        zaloMenuImportToken = picked.token;
+        const preview = await window.claw.previewZaloMenuImport(zaloMenuImportToken);
         if (!preview?.success) {
           const msg = (preview?.errors || [preview?.error || 'File import không hợp lệ']).join('; ');
           setZaloMenuImportState(msg, 'error');
           return;
         }
-        setZaloMenuImportState(`Đọc được ${preview.items.length} mục từ XLSX. Bấm để áp dụng import.`, 'success');
-        const shouldApply = confirm(`Import ${preview.items.length} mục menu từ XLSX và ghi đè catalog hiện tại?`);
+        const label = picked.fileName ? ` từ ${picked.fileName}` : '';
+        setZaloMenuImportState(`Đọc được ${preview.items.length} mục${label}. Bấm để áp dụng import.`, 'success');
+        const shouldApply = confirm(`Import ${preview.items.length} mục menu${label} và ghi đè catalog hiện tại?`);
         if (shouldApply) await applyZaloMenuImport();
       } catch (e) {
         setZaloMenuImportState(e.message || String(e), 'error');
@@ -7722,15 +7693,16 @@
     }
 
     async function applyZaloMenuImport() {
-      if (!zaloMenuImportPath) return;
+      if (!zaloMenuImportToken) return;
       try {
-        const result = await window.claw.applyZaloMenuImport(zaloMenuImportPath);
+        const result = await window.claw.applyZaloMenuImport(zaloMenuImportToken);
         if (!result?.success) {
           const msg = (result?.errors || [result?.error || 'Import thất bại']).join('; ');
           setZaloMenuImportState(msg, 'error');
           return;
         }
         zaloMenuCatalog = result.catalog;
+        zaloMenuImportToken = '';
         renderZaloMenuCatalog();
         setZaloMenuImportState('Đã import XLSX vào catalog menu Zalo.', 'success');
         dryRunZaloMenu();
@@ -7905,7 +7877,7 @@
       const gSettings = (zaloMgrConfig.groupSettings || {})[g.groupId] || {};
       const mode = getZaloGroupMode(g.groupId);
       const avatarHtml = g.avatar
-        ? `<img class="zc-avatar" src="${esc(g.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('users', 16)}</span>`
+        ? `<img class="zc-avatar" src="${escAttr(g.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('users', 16)}</span>`
         : `<span class="zc-avatar-fallback">${icon('users', 16)}</span>`;
       const stateClass = mode === 'off' ? 'zc-state-off' : mode === 'all' ? 'zc-state-on' : 'zc-state-mention';
       const inactiveClass = inactive ? ' zc-inactive' : '';
@@ -8364,7 +8336,7 @@
       const allowed = _isFriendActive(f.userId);
       const uSettings = (zaloMgrConfig.userSettings || {})[f.userId] || {};
       const avatarHtml = f.avatar
-        ? `<img class="zc-avatar" src="${esc(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
+        ? `<img class="zc-avatar" src="${escAttr(f.avatar)}" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"><span class="zc-avatar-fallback" style="display:none">${icon('user', 16)}</span>`
         : `<span class="zc-avatar-fallback">${icon('user', 16)}</span>`;
       const stateClass = allowed ? 'zc-state-on' : 'zc-state-off';
       const inactiveClass = inactive ? ' zc-inactive' : '';
@@ -8386,7 +8358,7 @@
       ${metaParts.length ? `<div class="zc-meta">${esc(metaParts.join(' · '))}</div>` : ''}
     </div>
     <div class="zc-actions">
-      ${f.userId ? `<button type="button" class="zc-summary-btn" onclick="openZaloUserMemory('${escJs(f.userId)}', '${escJs(f.displayName)}', '${escJs(f.phoneNumber || '')}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>` : ''}
+      ${f.userId ? `<button type="button" class="zc-summary-btn" onclick="openZaloUserMemory('${escAttr(escJs(f.userId))}', '${escAttr(escJs(f.displayName))}', '${escAttr(escJs(f.phoneNumber || ''))}')" title="Xem hồ sơ">${icon('file-text', 14)}</button>` : ''}
       <label class="internal-flag" title="User nội bộ — được truy cập tài liệu nội bộ và chạy lệnh quản trị"><input type="checkbox" ${uSettings.internal ? 'checked' : ''} onchange="updateUserInternal('${escAttr(f.userId)}', this.checked)">Nội bộ</label>
       <label class="toggle-switch"><input type="checkbox" ${allowed ? 'checked' : ''} onchange="toggleUserReply('${escAttr(f.userId)}', this.checked)"><span class="toggle-slider"></span></label>
     </div>
@@ -8623,22 +8595,33 @@
       });
       customCrons.forEach(c => {
         const isOC = c.source === 'openclaw';
-        const t = isOC ? (c.displayTime || c.cronExpr || '') : (cronToTime(c.cronExpr) || '');
-        let meta = isOC ? cronToHuman(c.cronExpr) : cronToHuman(c.cronExpr);
+        // Time display priority: explicit displayTime (openclaw) → strict HH:MM → human-readable.
+        // Never leak raw cron expression (e.g., "0 0 * 1 1") into the time column.
+        const hhmm = cronToTime(c.cronExpr); // strict HH:MM only, '' for intervals/dow/ranges
+        const human = cronToHuman(c.cronExpr);
+        const t = isOC ? (c.displayTime || hhmm || human || '') : (hhmm || human || '');
+        // Sort key: chronological only when HH:MM extractable, else bucket to end.
+        const sortKey = /^\d{1,2}:\d{2}$/.test(hhmm) ? hhmm : '99:99';
+        let meta = human;
         if (isOC && c.lastStatus) meta += ' · ' + (c.lastStatus === 'ok' ? 'OK' : c.lastStatus);
-        items.push({ type: isOC ? 'openclaw' : 'custom', id: c.id, time: t, label: c.label || 'Custom cron', desc: c.prompt ? c.prompt.slice(0, 80) : '', enabled: c.enabled, meta, once: !!c.deleteAfterRun, sortKey: t || '99:99' });
+        items.push({ type: isOC ? 'openclaw' : 'custom', id: c.id, time: t, label: c.label || 'Custom cron', desc: c.prompt ? c.prompt.slice(0, 80) : '', enabled: c.enabled, meta, once: !!c.deleteAfterRun, sortKey, firesToday: cronDowAllowedToday(c.cronExpr) });
       });
       let fbScheds = [];
       try { fbScheds = await window.claw.getFbSchedules() || []; } catch {}
+      const _todayDow = new Date().getDay();
       fbScheds.forEach(fb => {
         const dow = Array.isArray(fb.daysOfWeek) && fb.daysOfWeek.length
           ? fb.daysOfWeek.map(d => ['CN','T2','T3','T4','T5','T6','T7'][d]).join(', ')
           : 'Mỗi ngày';
-        items.push({ type: 'fb', id: fb.id, time: fb.postTime || '', label: fb.label || 'FB Post', desc: dow + (fb.autoPost ? ' · Tự đăng' : ' · Cần duyệt'), enabled: fb.enabled, sortKey: fb.postTime || '99:99' });
+        // FB schedules with daysOfWeek restriction shouldn't show "trong N phút"
+        // when today isn't a fire day — that misleads CEO into expecting a post today.
+        const firesToday = !Array.isArray(fb.daysOfWeek) || fb.daysOfWeek.length === 0 || fb.daysOfWeek.includes(_todayDow);
+        items.push({ type: 'fb', id: fb.id, time: fb.postTime || '', label: fb.label || 'FB Post', desc: dow + (fb.autoPost ? ' · Tự đăng' : ' · Cần duyệt'), enabled: fb.enabled, sortKey: fb.postTime || '99:99', firesToday });
       });
-      // Compute relative time until next fire for each item
+      // Compute relative time until next fire for each item — only if it fires today.
       const _nowMin = new Date().getHours() * 60 + new Date().getMinutes();
       items.forEach(item => {
+        if (item.firesToday === false) return;
         const [_rh, _rm] = (item.time || '').split(':').map(Number);
         if (!isNaN(_rh) && !isNaN(_rm)) {
           const fireMin = _rh * 60 + _rm;
@@ -8888,6 +8871,16 @@
     if (window.claw.onZaloCacheRefreshed) {
       window.claw.onZaloCacheRefreshed(() => {
         if (currentPage === 'zalo') loadZaloManagerData({ preserveDraft: true });
+      });
+    }
+    // v2.4.10 fix: auto-refresh when bot rewrites zalo config files
+    // (auto-friend addition, openzca CLI edits, account-settings sync).
+    if (window.claw.onZaloManagerConfigChanged) {
+      window.claw.onZaloManagerConfigChanged(() => {
+        if (currentPage === 'zalo') {
+          console.log('[dashboard] Zalo config changed externally — reloading');
+          loadZaloManagerData({ preserveDraft: true });
+        }
       });
     }
     // Skill registry change broadcast — refresh the Skills tab automatically
@@ -10309,7 +10302,6 @@
         { id: 'page-zalo', label: 'Mở Zalo', keywords: 'zalo' },
         { id: 'page-knowledge', label: 'Mở Knowledge', keywords: 'knowledge tai lieu' },
         { id: 'page-schedules', label: 'Mở Lịch tự động', keywords: 'schedules lich tu dong cron' },
-        { id: 'page-chatgpt-import', label: 'Mở ChatGPT Import', keywords: 'chatgpt import session' },
         { id: 'page-9router', label: 'Mở AI Models', keywords: 'ai models 9router' },
         { id: 'page-openclaw', label: 'Mở OpenClaw', keywords: 'openclaw' },
         { id: 'action-help', label: 'Xem phím tắt (?)', keywords: 'help shortcut phim tat' }

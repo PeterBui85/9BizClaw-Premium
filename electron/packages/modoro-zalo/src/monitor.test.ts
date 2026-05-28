@@ -35,12 +35,25 @@ test("openzca credentials path is profile-specific", () => {
   );
 });
 
-test("monitor resolves openzca self id on every listener reconnect", async () => {
+test("monitor resolves openzca self id only on first attempt or credentials change", async () => {
+  // Each `openzca me id` triggers a full Zalo login via loginWithStoredCredentials.
+  // Resolving on EVERY reconnect causes Zalo to rate-limit and displace the listener WS
+  // (root cause of the v2.4.10 listener-flapping regression).
+  //
+  // Required contract:
+  //   1. selfId is resolved on first attempt (selfId === undefined).
+  //   2. selfId is re-resolved when credentials.json changes (account switch).
+  //   3. selfId is NOT resolved on every reconnect when credentials are stable.
   const source = await readFile(new URL("./monitor.ts", import.meta.url), "utf8");
 
-  assert.doesNotMatch(
+  assert.match(
     source,
-    /if\s*\(!selfId\)\s*\{[\s\S]{0,600}?runOpenzcaCommand/,
-    "selfId must not be guarded by if (!selfId); account re-login can change the active Zalo identity",
+    /lastSelfIdResolvedAtVersion/,
+    "monitor must track which credentials version selfId was resolved against",
+  );
+  assert.match(
+    source,
+    /if\s*\(\s*selfId\s*===\s*undefined\s*\|\|\s*lastSelfIdResolvedAtVersion\s*!==\s*credentialsVersion\s*\)[\s\S]{0,400}?runOpenzcaCommand[\s\S]{0,200}?"me",\s*"id"/,
+    "me id resolution must be guarded by `selfId === undefined || lastSelfIdResolvedAtVersion !== credentialsVersion`",
   );
 });

@@ -1698,16 +1698,52 @@ function startCronApi() {
       if (q) {
         groups = groups.filter(g => g.groupName.normalize('NFC').toLowerCase().includes(q));
       }
+      // AUTO-MODE deterministic disambiguation: when caller passes autoMode=1 AND multiple
+      // matches exist, pick the entry with the most recently modified memory file. Tie-break
+      // alphabetical id. Returns a `picked` field so the agent doesn't need to ask CEO.
+      const autoMode = String(params.autoMode || params.auto_mode || '').trim() === '1';
+      if (autoMode && groups.length > 1) {
+        const ws = getWorkspace();
+        const memDir = ws ? path.join(ws, 'memory', 'zalo-groups') : null;
+        const scored = groups.map(g => {
+          let mtimeMs = 0;
+          if (memDir) {
+            try { mtimeMs = fs.statSync(path.join(memDir, g.id + '.md')).mtimeMs; } catch {}
+          }
+          return { g, mtimeMs };
+        });
+        scored.sort((a, b) => (b.mtimeMs - a.mtimeMs) || String(a.g.id).localeCompare(String(b.g.id), 'en'));
+        const picked = scored[0].g.id;
+        return jsonResp(res, 200, { query: qRaw, count: groups.length, groups, picked, autoMode: true });
+      }
       return jsonResp(res, 200, { query: qRaw, count: groups.length, groups });
 
     } else if (urlPath === '/api/zalo/friends') {
       const friends = loadFriendsList();
       const q = String(params.name || params.q || '').trim().toLowerCase();
+      const autoMode = String(params.autoMode || params.auto_mode || '').trim() === '1';
+      const pickBest = (matches) => {
+        if (!autoMode || matches.length <= 1) return null;
+        const ws = getWorkspace();
+        const memDir = ws ? path.join(ws, 'memory', 'zalo-users') : null;
+        const scored = matches.map(f => {
+          let mtimeMs = 0;
+          if (memDir) {
+            try { mtimeMs = fs.statSync(path.join(memDir, f.userId + '.md')).mtimeMs; } catch {}
+          }
+          return { f, mtimeMs };
+        });
+        scored.sort((a, b) => (b.mtimeMs - a.mtimeMs) || String(a.f.userId).localeCompare(String(b.f.userId), 'en'));
+        return scored[0].f.userId;
+      };
       if (q) {
         const matches = friends.filter(f =>
           f.displayName.toLowerCase().includes(q) || f.zaloName.toLowerCase().includes(q)
         );
-        return jsonResp(res, 200, { query: q, count: matches.length, friends: matches });
+        const picked = pickBest(matches);
+        const payload = { query: q, count: matches.length, friends: matches };
+        if (picked) { payload.picked = picked; payload.autoMode = true; }
+        return jsonResp(res, 200, payload);
       }
       return jsonResp(res, 200, { count: friends.length, friends });
 
@@ -2173,7 +2209,7 @@ function startCronApi() {
       // The agent only needs these specific tools — everything else is blocked.
       const cmdTrimmed = cmd.trimStart();
       const ALLOWED_PREFIXES = [
-        'openzca', 'openclaw', 'git', 'npm',
+        'openzca', 'openclaw',
         'dir', 'ls', 'cat', 'type', 'echo', 'whoami',
       ];
       const firstToken = cmdTrimmed.split(/[\s\/\\]/)[0].toLowerCase();
@@ -2185,6 +2221,11 @@ function startCronApi() {
       // Includes \n \r (command separators in both cmd.exe and /bin/sh)
       // and ^ (cmd.exe escape character that can unblock & | etc.)
       const SHELL_META = /[;|&`$(){}!<>\n\r^%]/;
+      // Block UNC paths (\\server\share) — NTLM hash exfiltration vector on Windows.
+      if (/\\\\/.test(cmdTrimmed)) {
+        auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'UNC path detected' });
+        return jsonResp(res, 403, { error: 'SECURITY: UNC paths are not allowed.' });
+      }
       if (SHELL_META.test(cmdTrimmed)) {
         auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'shell metacharacter detected' });
         return jsonResp(res, 403, { error: 'SECURITY: command contains blocked shell metacharacters.' });

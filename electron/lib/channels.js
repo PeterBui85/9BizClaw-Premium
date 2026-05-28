@@ -5,6 +5,7 @@ const ctx = require('./context');
 const { writeJsonAtomic, sanitizeZaloText, stripTelegramMarkdown } = require('./util');
 const { getWorkspace, auditLog } = require('./workspace');
 const { writeOpenClawConfigIfChanged } = require('./config');
+const { readOpenclawJsonFile } = require('./openclaw-json');
 const {
   findGlobalPackageFile, findNodeBin, spawnOpenClawSafe,
 } = require('./boot');
@@ -228,7 +229,7 @@ async function recoverChatIdFromTelegram(token) {
 function getTelegramConfig() {
   try {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const config = readOpenclawJsonFile(configPath);
     const token = config?.channels?.telegram?.botToken;
     const allowFrom = config?.channels?.telegram?.allowFrom;
     let chatId = allowFrom && allowFrom[0]; // First allowed user = CEO
@@ -263,7 +264,7 @@ function getGatewayAuthToken() {
   if (process.env.OPENCLAW_GATEWAY_TOKEN) return process.env.OPENCLAW_GATEWAY_TOKEN;
   try {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const config = readOpenclawJsonFile(configPath);
     return config?.gateway?.auth?.token || null;
   } catch { return null; }
 }
@@ -277,7 +278,7 @@ async function getCeoSessionKey() {
     const ocPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     let dmScope = 'main';
     try {
-      const oc = JSON.parse(fs.readFileSync(ocPath, 'utf-8'));
+      const oc = readOpenclawJsonFile(ocPath);
       dmScope = oc?.session?.dmScope || 'main';
     } catch {}
     if (dmScope === 'per-channel-peer') return `agent:main:telegram:direct:${chatId}`;
@@ -566,7 +567,7 @@ function isZaloChannelEnabled() {
   try {
     const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(configPath)) return false;
-    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const cfg = readOpenclawJsonFile(configPath);
     return (cfg?.channels?.['modoro-zalo'] || cfg?.channels?.openzalo)?.enabled !== false;
   } catch (e) {
     console.error('[zalo] read enabled state error:', e.message);
@@ -580,7 +581,7 @@ async function setZaloChannelEnabled(enabled) {
     return await withOpenClawConfigLock(async () => {
       const configPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
       if (!fs.existsSync(configPath)) return false;
-      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(configPath);
       if (!cfg.channels) cfg.channels = {};
       if (!cfg.channels['modoro-zalo'] || typeof cfg.channels['modoro-zalo'] !== 'object') {
         cfg.channels['modoro-zalo'] = {};
@@ -1071,7 +1072,7 @@ function readZaloMediaPolicy() {
   try {
     const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (fs.existsSync(cfgPath)) {
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      const cfg = readOpenclawJsonFile(cfgPath);
       const candidates = [
         cfg?.mediaMaxMb,
         cfg?.messages?.mediaMaxMb,
@@ -2049,7 +2050,7 @@ async function probeChannelReady(channelKey) {
   try {
     const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(cfgPath)) return { ready: false, error: 'config not found' };
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const cfg = readOpenclawJsonFile(cfgPath);
     const chCfg = cfg.channels?.[def.id];
     if (!chCfg?.enabled) return { ready: false, reason: 'disabled' };
     return { ready: true, reason: 'config-enabled' };
@@ -2111,7 +2112,7 @@ async function disconnectChannel(channelKey) {
 
   try {
     const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    const cfg = readOpenclawJsonFile(cfgPath);
     if (cfg.channels?.[def.id]) {
       cfg.channels[def.id].enabled = false;
       const { writeOpenClawConfigIfChanged } = require('./config');
@@ -2125,7 +2126,7 @@ async function disconnectChannel(channelKey) {
 module.exports = {
   // Config
   getStickyChatIdPath, persistStickyChatId, loadStickyChatId,
-  recoverChatIdFromTelegram, getTelegramConfig, getTelegramConfigWithRecovery,
+  getTelegramConfig, getTelegramConfigWithRecovery,
   getGatewayAuthToken, getCeoSessionKey, sendToGatewaySession,
   // Filter + Pause
   filterSensitiveOutput,

@@ -445,6 +445,11 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
   let reconnectAttempt = 0;
   let consecutiveFastFails = 0;
   let credentialsVersion = readOpenzcaCredentialsVersion(account.profile);
+  // Track which credentials version selfId was resolved against. Re-resolve only when
+  // credentials change (account switch). Resolving on EVERY reconnect causes Zalo to
+  // rate-limit / displace the listener WS because each `openzca me id` triggers a full
+  // Zalo login via loginWithStoredCredentials.
+  let lastSelfIdResolvedAtVersion: OpenzcaCredentialsVersion = null;
 
   const waitForReconnectDelay = async (delayMs: number, label: string): Promise<void> => {
     const wake = await sleepWithAbortOrCredentialChange(
@@ -497,21 +502,24 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
         return;
       }
 
-      try {
-        const me = await runOpenzcaCommand({
-          binary: account.zcaBinary,
-          profile: account.profile,
-          args: ["me", "id"],
-          timeoutMs: 10_000,
-          signal: abortSignal,
-        });
-        const resolved = me.stdout.trim().split(/\s+/g)[0]?.trim();
-        if (resolved && resolved !== selfId) {
-          selfId = resolved;
-          runtime.log?.(`[${account.accountId}] resolved self id ${selfId}`);
+      if (selfId === undefined || lastSelfIdResolvedAtVersion !== credentialsVersion) {
+        try {
+          const me = await runOpenzcaCommand({
+            binary: account.zcaBinary,
+            profile: account.profile,
+            args: ["me", "id"],
+            timeoutMs: 10_000,
+            signal: abortSignal,
+          });
+          const resolved = me.stdout.trim().split(/\s+/g)[0]?.trim();
+          if (resolved && resolved !== selfId) {
+            selfId = resolved;
+            runtime.log?.(`[${account.accountId}] resolved self id ${selfId}`);
+          }
+          lastSelfIdResolvedAtVersion = credentialsVersion;
+        } catch (error) {
+          runtime.error?.(`[${account.accountId}] failed to resolve self id: ${String(error)}`);
         }
-      } catch (error) {
-        runtime.error?.(`[${account.accountId}] failed to resolve self id: ${String(error)}`);
       }
 
       const streamAbort = new AbortController();
@@ -558,6 +566,13 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
                 accountId: account.accountId,
                 statusSink,
               });
+              // Capture openzca CLI's plain-text "Listener closed (CODE) REASON" line.
+              // This is logged via console.log inside openzca cli.js when zca-js fires
+              // the "closed" event. Forwarding to runtime.log exposes the actual close
+              // code from Zalo's server (4xxx = client error, 1xxx = WS standard, etc).
+              if (/^Listener closed/i.test(line.trim())) {
+                runtime.error?.(`[${account.accountId}] openzca ${line.trim()}`);
+              }
             }
           },
           onStderrLine: (line) => {
@@ -588,6 +603,16 @@ export async function monitorModoroZaloProvider(options: ModoroZaloMonitorOption
             if (!message) {
               if (payload.kind === "lifecycle" && payload.event === "connected") {
                 runtime.log?.(`[${account.accountId}] openzca connected`);
+              } else if (payload.kind === "lifecycle" && payload.event === "closed") {
+                // Critical diagnostic: zca-js fired "closed" → openzca will exit clean (supervised mode).
+                // Code + reason tell us WHY: 1000=normal, 1001=going away, 1006=abnormal,
+                // 4xxx = app-level (Zalo session conflict, rate-limit, token invalid).
+                const code = (payload as any).code ?? "unknown";
+                const reason = (payload as any).reason ?? "";
+                runtime.error?.(`[${account.accountId}] openzca lifecycle closed code=${code} reason=${String(reason).slice(0, 200)}`);
+              } else if (payload.kind === "lifecycle" && payload.event === "error") {
+                const msg = (payload as any).message ?? JSON.stringify(payload).slice(0, 300);
+                runtime.error?.(`[${account.accountId}] openzca lifecycle error: ${msg}`);
               }
               return;
             }

@@ -12,45 +12,17 @@ let getWorkspaceFn = () => {
 
 const TEMPLATE_SHEET = 'Menu';
 const README_SHEET = 'Huong dan';
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const MAX_IMPORT_ROWS = 500;
+const MAX_IMPORT_COLUMNS = 20;
+const MAX_CATALOG_ITEMS = 500;
+const MAX_FIELD_CHARS = 4000;
+const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
+const CATALOG_TEXT_FIELDS = ['slug', 'category', 'title', 'subtitle', 'description', 'priceLabel', 'ctaLabel', 'ctaCommand'];
 
-const DEFAULT_ITEMS = [
-  {
-    slug: 'starter',
-    category: 'Gói nền tảng',
-    title: '9BizClaw Starter',
-    subtitle: 'Bắt đầu tự động hóa bán hàng và CSKH',
-    description: 'Quản lý chat đa kênh, mẫu trả lời bán hàng, lịch nhắc cơ bản và kho tri thức doanh nghiệp.',
-    priceLabel: 'Miễn phí khi cài đặt lần đầu',
-    ctaLabel: 'Gõ /menu premium để xem gói nâng cấp',
-    ctaCommand: '/menu premium',
-    sortOrder: 10,
-    enabled: true,
-  },
-  {
-    slug: 'premium',
-    category: 'Gói vận hành',
-    title: '9BizClaw Premium',
-    subtitle: 'Dành cho CEO muốn có trợ lý AI vận hành hằng ngày',
-    description: 'Bao gồm Zalo/Facebook/Telegram, quản lý khách hàng, tự động hóa lịch nội dung, tài liệu doanh nghiệp và báo cáo vận hành.',
-    priceLabel: 'Giá niêm yết: 24 triệu. Giá mua sớm: 12 triệu.',
-    ctaLabel: 'Gõ /baogia premium để xem bảng giá',
-    ctaCommand: '/baogia premium',
-    sortOrder: 20,
-    enabled: true,
-  },
-  {
-    slug: 'signature',
-    category: 'Gói triển khai riêng',
-    title: '9BizClaw Signature',
-    subtitle: 'Thiết kế quy trình riêng theo ngành và đội ngũ',
-    description: 'Tư vấn workflow, dựng bộ lệnh nội bộ, chuẩn hóa dữ liệu, đào tạo đội ngũ và bàn giao quy trình vận hành.',
-    priceLabel: 'Báo giá theo phạm vi triển khai',
-    ctaLabel: 'Liên hệ tư vấn để chốt phạm vi',
-    ctaCommand: '',
-    sortOrder: 30,
-    enabled: true,
-  },
-];
+// Empty default — clients fill via Dashboard "Thêm mục" or XLSX import.
+// (Sub-tab UI hidden in dashboard.html for v2.4.10 — feature flagged off until catalog editor is finalized.)
+const DEFAULT_ITEMS = [];
 
 function init(opts = {}) {
   if (typeof opts.getWorkspace === 'function') getWorkspaceFn = opts.getWorkspace;
@@ -103,10 +75,27 @@ function normalizeBool(value, defaultValue = true) {
   return defaultValue;
 }
 
+function hasPaymentTerms(value) {
+  const normalized = stripAccents(value).toLowerCase();
+  return /\bsepay\b/.test(normalized)
+    || /\bqr\b/.test(normalized)
+    || /ma qr|quet qr/.test(normalized)
+    || /chuyen khoan/.test(normalized)
+    || /so tai khoan/.test(normalized)
+    || /\bstk\b/.test(normalized)
+    || /thanh toan/.test(normalized)
+    || /bank transfer/.test(normalized)
+    || /account number/.test(normalized);
+}
+
 function normalizeItem(raw, index = 0) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const title = String(source.title || '').trim();
   const slug = slugify(source.slug || title);
+  const rawSortOrder = source.sortOrder;
+  const sortOrder = rawSortOrder === undefined || rawSortOrder === null || rawSortOrder === ''
+    ? index + 1
+    : Number(rawSortOrder);
   return {
     slug,
     category: String(source.category || '').trim(),
@@ -116,7 +105,7 @@ function normalizeItem(raw, index = 0) {
     priceLabel: String(source.priceLabel || '').trim(),
     ctaLabel: String(source.ctaLabel || '').trim(),
     ctaCommand: String(source.ctaCommand || '').trim(),
-    sortOrder: Number.isFinite(Number(source.sortOrder)) ? Number(source.sortOrder) : index + 1,
+    sortOrder: Number.isFinite(sortOrder) ? sortOrder : index + 1,
     enabled: normalizeBool(source.enabled, true),
   };
 }
@@ -130,6 +119,9 @@ function validateCatalog(input) {
     items: [],
   };
   const items = Array.isArray(input?.items) ? input.items : [];
+  if (items.length > MAX_CATALOG_ITEMS) {
+    errors.push(`Catalog có quá nhiều mục. Giới hạn ${MAX_CATALOG_ITEMS} mục.`);
+  }
   const seen = new Set();
   items.forEach((raw, index) => {
     const item = normalizeItem(raw, index);
@@ -140,9 +132,17 @@ function validateCatalog(input) {
     if (!item.priceLabel) warnings.push(`${label}: thiếu priceLabel`);
     if (item.slug && seen.has(item.slug)) errors.push(`${label}: slug bị trùng (${item.slug})`);
     if (item.slug) seen.add(item.slug);
+    for (const field of CATALOG_TEXT_FIELDS) {
+      const value = String(item[field] || '');
+      if (CONTROL_CHAR_RE.test(value)) errors.push(`${label}: ${field} chứa ký tự điều khiển không hợp lệ`);
+      if (value.length > MAX_FIELD_CHARS) errors.push(`${label}: ${field} vượt quá ${MAX_FIELD_CHARS} ký tự`);
+      if (hasPaymentTerms(value)) {
+        errors.push(`${label}: ${field} chứa nội dung thanh toán/QR/SePay ngoài phạm vi v1`);
+      }
+    }
     catalog.items.push(item);
   });
-  if (catalog.items.length === 0) errors.push('Catalog phải có ít nhất 1 dòng menu');
+  if (catalog.items.length === 0) warnings.push('Catalog đang rỗng — thêm mục để khách có thể tra qua /menu.');
   catalog.items.sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.title.localeCompare(b.title, 'vi');
@@ -198,7 +198,10 @@ function stripMenuMarkdown(text) {
 
 function renderList(catalog = loadCatalog()) {
   const items = activeItems(catalog);
-  const lines = ['**Menu Zalo 9BizClaw**', ''];
+  if (items.length === 0) {
+    return 'Menu chưa được cấu hình. Vui lòng liên hệ chủ shop.';
+  }
+  const lines = ['**Menu**', ''];
   items.forEach((item, index) => {
     lines.push(`**${index + 1}. ${item.title}**`);
     if (item.subtitle) lines.push(item.subtitle);
@@ -206,7 +209,7 @@ function renderList(catalog = loadCatalog()) {
     lines.push(`Lệnh: /menu ${item.slug}`);
     lines.push('');
   });
-  lines.push('Gõ /menu premium hoặc /baogia premium để xem chi tiết mẫu.');
+  lines.push('Gõ /menu <slug> để xem chi tiết.');
   return lines.join('\n').trim();
 }
 
@@ -237,8 +240,7 @@ function renderQuote(item) {
     lines.push(item.description);
   }
   lines.push('');
-  lines.push('Bảng giá này chỉ là thông tin gói, chưa bao gồm bước thanh toán.');
-  if (item.ctaLabel) lines.push(item.ctaLabel);
+  lines.push('Đội ngũ tư vấn sẽ xác nhận phạm vi triển khai trước khi chốt báo giá cuối.');
   return lines.join('\n').trim();
 }
 
@@ -249,8 +251,8 @@ function dryRunCommand(command, catalog = loadCatalog()) {
     return {
       handled: false,
       command: raw,
-      text: 'Chưa khớp lệnh menu. Thử /menu, /menu premium hoặc /baogia premium.',
-      plainText: 'Chưa khớp lệnh menu. Thử /menu, /menu premium hoặc /baogia premium.',
+      text: 'Chưa khớp lệnh menu. Thử /menu hoặc /menu <slug>.',
+      plainText: 'Chưa khớp lệnh menu. Thử /menu hoặc /menu <slug>.',
     };
   }
   const action = match[1].toLowerCase();
@@ -259,9 +261,11 @@ function dryRunCommand(command, catalog = loadCatalog()) {
   if (!slug && action !== 'baogia') {
     text = renderList(catalog);
   } else {
-    const item = findItem(slug || 'premium', catalog);
+    const item = findItem(slug, catalog);
     if (!item) {
-      text = `Không tìm thấy mục "${slug}".\nGõ /menu để xem danh sách đang bật.`;
+      text = slug
+        ? `Không tìm thấy mục "${slug}".\nGõ /menu để xem danh sách đang bật.`
+        : 'Vui lòng nhập kèm slug. Gõ /menu để xem danh sách.';
     } else {
       text = action === 'baogia' ? renderQuote(item) : renderDetail(item);
     }
@@ -293,7 +297,7 @@ const HEADER_MAP = {
   enabled: ['enabled', 'bat', 'hienthi', 'trangthai'],
 };
 
-function normalizeImportRow(row) {
+function normalizeImportRow(row, index = 0) {
   const normalized = {};
   for (const [key, value] of Object.entries(row || {})) {
     const canonical = canonicalHeader(key);
@@ -304,19 +308,55 @@ function normalizeImportRow(row) {
       }
     }
   }
-  return normalizeItem(normalized);
+  return normalizeItem(normalized, index);
 }
 
 function readImportRows(filePath) {
   if (!filePath || typeof filePath !== 'string') throw new Error('Thiếu file XLSX');
   const ext = path.extname(filePath).toLowerCase();
-  if (!['.xlsx', '.xls'].includes(ext)) throw new Error('Chỉ hỗ trợ .xlsx hoặc .xls');
+  if (ext !== '.xlsx') throw new Error('Chỉ hỗ trợ file .xlsx');
+  const stat = fs.statSync(filePath);
+  if (stat.size > MAX_IMPORT_BYTES) {
+    throw new Error(`File XLSX quá lớn. Giới hạn ${Math.floor(MAX_IMPORT_BYTES / 1024 / 1024)}MB.`);
+  }
+  const magic = Buffer.alloc(4);
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    fs.readSync(fd, magic, 0, 4, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (magic[0] !== 0x50 || magic[1] !== 0x4b) {
+    throw new Error('File không đúng định dạng .xlsx');
+  }
   const wb = XLSX.readFile(filePath);
   const sheetName = wb.SheetNames.includes(TEMPLATE_SHEET) ? TEMPLATE_SHEET : wb.SheetNames[0];
   if (!sheetName) throw new Error('File không có sheet dữ liệu');
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', raw: false });
+  const sheet = wb.Sheets[sheetName];
+  const range = sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : null;
+  if (range) {
+    const rowCount = Math.max(0, range.e.r - range.s.r);
+    const colCount = Math.max(0, range.e.c - range.s.c + 1);
+    if (rowCount > MAX_IMPORT_ROWS) {
+      throw new Error(`File XLSX có quá nhiều dòng. Giới hạn ${MAX_IMPORT_ROWS} row menu.`);
+    }
+    if (colCount > MAX_IMPORT_COLUMNS) {
+      throw new Error(`File XLSX có quá nhiều cột. Giới hạn ${MAX_IMPORT_COLUMNS} cột.`);
+    }
+  }
+  for (const [addr, cell] of Object.entries(sheet)) {
+    if (addr.startsWith('!')) continue;
+    if (cell && (cell.f || cell.l)) throw new Error(`File XLSX chứa công thức hoặc hyperlink tại ô ${addr}`);
+    const value = String(cell?.v ?? '');
+    if (CONTROL_CHAR_RE.test(value)) throw new Error(`File XLSX chứa ký tự điều khiển tại ô ${addr}`);
+    if (value.length > MAX_FIELD_CHARS) throw new Error(`File XLSX có ô vượt quá ${MAX_FIELD_CHARS} ký tự tại ${addr}`);
+  }
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  if (rows.length > MAX_IMPORT_ROWS) {
+    throw new Error(`File XLSX có quá nhiều dòng. Giới hạn ${MAX_IMPORT_ROWS} row menu.`);
+  }
   return rows
-    .map(normalizeImportRow)
+    .map((row, index) => normalizeImportRow(row, index))
     .filter(item => item.slug || item.title || item.description || item.priceLabel);
 }
 

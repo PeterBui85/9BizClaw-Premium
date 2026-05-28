@@ -20,7 +20,7 @@ let _zaloReady = false;
 let _zaloPluginInFlight = null;
 let _groupHistorySeedInFlight = false;
 let _cachedOpenzcaCliJs = null;
-const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.4';
+const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.5';
 
 // ============================================
 //  GETTERS

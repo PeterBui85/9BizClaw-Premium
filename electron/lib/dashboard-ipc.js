@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { randomUUID, createHash } = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { promisify } = require('util');
 const execFilePromise = promisify(execFile);
@@ -24,6 +25,58 @@ const {
   DEFAULT_SCHEDULES_JSON, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE,
 } = require('./workspace');
 zaloMenu.init({ getWorkspace });
+const zaloMenuImportSelections = new Map();
+const ZALO_MENU_IMPORT_TOKEN_TTL_MS = 15 * 60 * 1000;
+const ZALO_MENU_IMPORT_TOKEN_LIMIT = 20;
+const ZALO_MENU_IMPORT_HASH_LIMIT_BYTES = 5 * 1024 * 1024;
+
+function hashZaloMenuImportFile(filePath, size) {
+  if (size > ZALO_MENU_IMPORT_HASH_LIMIT_BYTES) return '';
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function cleanupZaloMenuImportSelections() {
+  const now = Date.now();
+  for (const [token, entry] of zaloMenuImportSelections.entries()) {
+    if (!entry || now - entry.createdAt > ZALO_MENU_IMPORT_TOKEN_TTL_MS) {
+      zaloMenuImportSelections.delete(token);
+    }
+  }
+  while (zaloMenuImportSelections.size > ZALO_MENU_IMPORT_TOKEN_LIMIT) {
+    const oldest = zaloMenuImportSelections.keys().next().value;
+    if (!oldest) break;
+    zaloMenuImportSelections.delete(oldest);
+  }
+}
+
+function createZaloMenuImportToken(filePath) {
+  cleanupZaloMenuImportSelections();
+  const stat = fs.statSync(filePath);
+  const token = randomUUID();
+  zaloMenuImportSelections.set(token, {
+    filePath,
+    createdAt: Date.now(),
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    sha256: hashZaloMenuImportFile(filePath, stat.size),
+  });
+  return token;
+}
+
+function resolveZaloMenuImportToken(token, consume = false) {
+  cleanupZaloMenuImportSelections();
+  const key = String(token || '').trim();
+  const entry = key ? zaloMenuImportSelections.get(key) : null;
+  if (!entry || !entry.filePath) throw new Error('Import token không hợp lệ hoặc đã hết hạn');
+  const stat = fs.statSync(entry.filePath);
+  const currentHash = hashZaloMenuImportFile(entry.filePath, stat.size);
+  if (stat.size !== entry.size || stat.mtimeMs !== entry.mtimeMs || currentHash !== entry.sha256) {
+    zaloMenuImportSelections.delete(key);
+    throw new Error('File import đã thay đổi sau khi chọn. Vui lòng chọn lại file XLSX.');
+  }
+  if (consume) zaloMenuImportSelections.delete(key);
+  return entry.filePath;
+}
 const {
   getBundledVendorDir, getBundledNodeBin, augmentPathWithBundledNode,
   appDataDir, findOpenClawBin, findOpenClawBinSync, findNodeBin, findOpenClawCliJs,
@@ -167,9 +220,88 @@ function startRuntimeSidecars(source) {
   try { startAppointmentDispatcher(); } catch (e) { console.error(prefix, 'startAppointmentDispatcher error:', e?.message || e); }
 }
 
+// v2.4.10 fix: fs.watch on Zalo config files so Dashboard auto-refreshes when
+// underlying state changes (QR rescan, auto-friend addition, openzca CLI edits).
+// Without this, the renderer cache shows stale strangerPolicy / friend toggles
+// after the bot itself rewrites these files.
+function startZaloConfigWatcher() {
+  try {
+    const ws = getWorkspace();
+    // v2.4.10 fix: do NOT gate on ctx.mainWindow here — registerAllIpcHandlers()
+    // runs at module load (before app.whenReady() creates the BrowserWindow), so
+    // ctx.mainWindow is always null at this point. Previously this returned early
+    // and the watcher was permanently dead. The emit() closure re-checks
+    // ctx.mainWindow before sending, so initialization is safe before the window
+    // exists.
+    if (!ws) return;
+    const watchFiles = [
+      'zalo-stranger-policy.json',
+      'zalo-allowlist.json',
+      'zalo-blocklist.json',
+      'zalo-user-settings.json',
+      'zalo-group-settings.json',
+      'zalo-active-account.json',
+    ];
+    let debounceTimer = null;
+    let lastEmit = 0;
+    const emit = () => {
+      const now = Date.now();
+      if (now - lastEmit < 300) return; // dedupe burst writes (atomic rename = double-fire)
+      lastEmit = now;
+      try {
+        if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+          ctx.mainWindow.webContents.send('zalo-manager-config-changed', { changedAt: new Date().toISOString() });
+        }
+      } catch {}
+    };
+    for (const name of watchFiles) {
+      const fp = path.join(ws, name);
+      try {
+        // watch the directory entry so we capture rename-replace patterns (writeJsonAtomic).
+        fs.watch(ws, { persistent: false }, (eventType, filename) => {
+          if (!filename) return;
+          if (!watchFiles.includes(String(filename))) return;
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(emit, 150);
+        });
+        break; // one workspace watcher handles all 5 files
+      } catch (e) {
+        // fall through, try next entry
+      }
+    }
+    // Also watch openzca friends cache so new auto-added friends trigger refresh.
+    let friendSyncInFlight = false;
+    try {
+      const home = require('os').homedir();
+      const friendsDir = path.join(home, '.openzca', 'profiles', 'default', 'cache');
+      if (fs.existsSync(friendsDir)) {
+        fs.watch(friendsDir, { persistent: false }, (eventType, filename) => {
+          if (filename === 'friends.json' || filename === 'groups.json') {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(async () => {
+              if (filename === 'friends.json' && !friendSyncInFlight) {
+                friendSyncInFlight = true;
+                try { await seedZaloCustomersFromCache(); } catch (e) {
+                  console.warn('[zalo-watcher] auto-seed failed:', e?.message);
+                }
+                friendSyncInFlight = false;
+              }
+              emit();
+            }, 500);
+          }
+        });
+      }
+    } catch {}
+  } catch (e) {
+    console.warn('[zalo-watcher] failed to start:', e?.message || e);
+  }
+}
+
 function registerAllIpcHandlers() {
 
 registerChatIpc();
+// Start auto-refresh watcher (idempotent: gated by ctx.mainWindow availability).
+try { startZaloConfigWatcher(); } catch (e) { console.warn('[zalo-watcher] init error:', e?.message); }
 
 // ============================================
 //  IPC HANDLERS
@@ -1309,15 +1441,26 @@ ipcMain.handle('seed-group-history-all', async () => {
 // REMOVED: Zalo owner identification — owner/chủ nhân feature fully removed.
 // All Zalo messages are treated as customer messages uniformly.
 
+// === Zalo Menu feature DISABLED for v2.4.10 client release ===
+// Reason: catalog editor not finalized, not reviewed for client-facing usage.
+// All 7 IPC handlers short-circuit to a disabled response. UI sub-tab also hidden.
+// To re-enable: flip ZALO_MENU_DISABLED to false (and unhide the sub-tab in dashboard.html).
+const ZALO_MENU_DISABLED = true;
+function _zaloMenuDisabledResponse() {
+  return { success: false, ok: false, disabled: true, error: 'Tính năng Menu Zalo đang phát triển, sẽ mở trong bản cập nhật sau.' };
+}
+
 ipcMain.handle('get-zalo-menu-catalog', async () => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
-    return { success: true, catalog: zaloMenu.loadCatalog(), catalogPath: zaloMenu.getCatalogPath() };
+    return { success: true, catalog: zaloMenu.loadCatalog() };
   } catch (e) {
     return { success: false, error: e?.message || String(e) };
   }
 });
 
 ipcMain.handle('save-zalo-menu-catalog', async (_evt, catalog) => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
     const result = zaloMenu.saveCatalog(catalog || {});
     return { success: result.ok, ...result };
@@ -1327,6 +1470,7 @@ ipcMain.handle('save-zalo-menu-catalog', async (_evt, catalog) => {
 });
 
 ipcMain.handle('dry-run-zalo-menu-command', async (_evt, payload) => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
     const command = payload && typeof payload === 'object' ? payload.command : payload;
     let catalog;
@@ -1342,6 +1486,7 @@ ipcMain.handle('dry-run-zalo-menu-command', async (_evt, payload) => {
 });
 
 ipcMain.handle('download-zalo-menu-template', async () => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
     const parentWin = BrowserWindow?.getFocusedWindow?.() || ctx.mainWindow || null;
     const saveRes = await dialog.showSaveDialog(parentWin, {
@@ -1351,33 +1496,37 @@ ipcMain.handle('download-zalo-menu-template', async () => {
     });
     if (saveRes.canceled || !saveRes.filePath) return { success: false, canceled: true };
     fs.writeFileSync(saveRes.filePath, zaloMenu.buildTemplateWorkbookBuffer());
-    return { success: true, filePath: saveRes.filePath };
+    return { success: true, fileName: path.basename(saveRes.filePath) };
   } catch (e) {
     return { success: false, error: e?.message || String(e) };
   }
 });
 
 ipcMain.handle('pick-zalo-menu-import', async () => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
     const parentWin = BrowserWindow?.getFocusedWindow?.() || ctx.mainWindow || null;
     const result = await dialog.showOpenDialog(parentWin, {
       title: 'Import XLSX menu Zalo',
       properties: ['openFile'],
       filters: [
-        { name: 'Excel Workbook', extensions: ['xlsx', 'xls'] },
+        { name: 'Excel Workbook', extensions: ['xlsx'] },
       ],
     });
     if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
       return { success: false, canceled: true };
     }
-    return { success: true, filePath: result.filePaths[0] };
+    const filePath = result.filePaths[0];
+    return { success: true, token: createZaloMenuImportToken(filePath), fileName: path.basename(filePath) };
   } catch (e) {
     return { success: false, error: e?.message || String(e) };
   }
 });
 
-ipcMain.handle('preview-zalo-menu-import', async (_evt, filePath) => {
+ipcMain.handle('preview-zalo-menu-import', async (_evt, token) => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
+    const filePath = resolveZaloMenuImportToken(token);
     const result = zaloMenu.previewImport(filePath);
     return { success: result.ok, ...result };
   } catch (e) {
@@ -1385,8 +1534,10 @@ ipcMain.handle('preview-zalo-menu-import', async (_evt, filePath) => {
   }
 });
 
-ipcMain.handle('apply-zalo-menu-import', async (_evt, filePath) => {
+ipcMain.handle('apply-zalo-menu-import', async (_evt, token) => {
+  if (ZALO_MENU_DISABLED) return _zaloMenuDisabledResponse();
   try {
+    const filePath = resolveZaloMenuImportToken(token, true);
     const result = zaloMenu.applyImport(filePath);
     return { success: result.ok, ...result };
   } catch (e) {

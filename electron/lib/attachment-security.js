@@ -221,16 +221,28 @@ function toAgentAttachment(record) {
 }
 
 function findAnalyzerScript() {
-  const candidates = [
-    path.join(__dirname, '..', 'scripts', 'attachment-analyzer-child.js'),
-  ];
+  // CRITICAL: in packaged builds, __dirname is inside app.asar/. fs.existsSync returns true
+  // for asar-virtual paths via Electron's shim, but a child Node process (spawnSync) has NO
+  // asar support — it gets ENOENT. The real file lives at app.asar.unpacked/scripts/ because
+  // scripts/** is in electron-builder asarUnpack. Always prefer the unpacked path.
+  const candidates = [];
   try {
     if (process.resourcesPath) {
       candidates.push(path.join(process.resourcesPath, 'app.asar.unpacked', 'scripts', 'attachment-analyzer-child.js'));
+    }
+  } catch {}
+  // __dirname-relative path: rewrite asar → asar.unpacked if we're inside an asar archive,
+  // so the spawned child reads from real filesystem instead of the virtual asar path.
+  const dirDev = path.join(__dirname, '..', 'scripts', 'attachment-analyzer-child.js');
+  const dirUnpacked = dirDev.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+  if (dirUnpacked !== dirDev) candidates.push(dirUnpacked);
+  candidates.push(dirDev);
+  try {
+    if (process.resourcesPath) {
       candidates.push(path.join(process.resourcesPath, 'app', 'scripts', 'attachment-analyzer-child.js'));
     }
   } catch {}
-  return candidates.find(p => fs.existsSync(p)) || candidates[0];
+  return candidates.find(p => fs.existsSync(p) && !p.includes('app.asar' + path.sep + 'scripts')) || candidates[0];
 }
 
 function findNodeBin() {

@@ -58,8 +58,8 @@ contextBridge.exposeInMainWorld('claw', {
   dryRunZaloMenuCommand: (command, catalog) => ipcRenderer.invoke('dry-run-zalo-menu-command', { command, catalog }),
   downloadZaloMenuTemplate: () => ipcRenderer.invoke('download-zalo-menu-template'),
   pickZaloMenuImport: () => ipcRenderer.invoke('pick-zalo-menu-import'),
-  previewZaloMenuImport: (filePath) => ipcRenderer.invoke('preview-zalo-menu-import', filePath),
-  applyZaloMenuImport: (filePath) => ipcRenderer.invoke('apply-zalo-menu-import', filePath),
+  previewZaloMenuImport: (token) => ipcRenderer.invoke('preview-zalo-menu-import', token),
+  applyZaloMenuImport: (token) => ipcRenderer.invoke('apply-zalo-menu-import', token),
 
   // Personalization
   savePersonalization: (opts) => ipcRenderer.invoke('save-personalization', opts),
@@ -167,6 +167,10 @@ contextBridge.exposeInMainWorld('claw', {
   onZaloFriendsRefreshed: (callback) => {
     ipcRenderer.removeAllListeners('zalo-friends-refreshed');
     ipcRenderer.on('zalo-friends-refreshed', () => callback());
+  },
+  onZaloManagerConfigChanged: (callback) => {
+    ipcRenderer.removeAllListeners('zalo-manager-config-changed');
+    ipcRenderer.on('zalo-manager-config-changed', (_, data) => callback(data));
   },
 
   // Appointments (local calendar)

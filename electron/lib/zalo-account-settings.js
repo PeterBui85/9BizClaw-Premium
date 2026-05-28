@@ -3,6 +3,20 @@
 const fs = require('fs');
 const path = require('path');
 const { writeJsonAtomic } = require('./util');
+const ctx = require('./context');
+
+// Defensive backstop: fs.watch is unreliable on Windows for atomic-rename writes,
+// so writers in this module explicitly notify the Dashboard renderer when state
+// changes. The renderer listens on 'zalo-manager-config-changed' and reloads
+// loadZaloManagerData() to re-sync the cached zaloMgrConfig. Safe to call before
+// mainWindow exists — the function short-circuits.
+function notifyZaloConfigChanged() {
+  try {
+    const win = ctx.mainWindow;
+    if (!win || win.isDestroyed?.()) return;
+    win.webContents.send('zalo-manager-config-changed', { changedAt: new Date().toISOString(), source: 'zalo-account-settings' });
+  } catch {}
+}
 
 const ACTIVE_ACCOUNT_FILE = 'zalo-active-account.json';
 const ACCOUNT_SETTINGS_DIR = 'zalo-account-settings';
@@ -178,6 +192,31 @@ function normalizeSnapshot(snapshot) {
   return normalized;
 }
 
+function mergeNewFriends(snapshot, friendIds) {
+  const currentFriendIds = normalizeList(friendIds);
+  if (currentFriendIds.length === 0) return snapshot;
+
+  if (!Array.isArray(snapshot.cache?.knownFriendIds)) {
+    return { ...snapshot, cache: { ...snapshot.cache, knownFriendIds: currentFriendIds } };
+  }
+
+  const knownSet = new Set(snapshot.cache.knownFriendIds);
+  const newFriends = currentFriendIds.filter(id => !knownSet.has(id));
+  const updatedCache = { ...snapshot.cache, knownFriendIds: currentFriendIds };
+
+  if (newFriends.length === 0) {
+    return { ...snapshot, cache: updatedCache };
+  }
+
+  const allowlist = normalizeList(snapshot.userAllowlist);
+  const isDenyAll = allowlist.length === 1 && allowlist[0] === '__NONE__';
+  const updatedAllowlist = isDenyAll
+    ? newFriends
+    : [...new Set([...allowlist, ...newFriends])];
+
+  return { ...snapshot, userAllowlist: updatedAllowlist, cache: updatedCache };
+}
+
 function buildSnapshotFromLegacy(workspace, accountMeta = {}, previous = null) {
   const now = new Date().toISOString();
   const legacy = readLegacyZaloState(workspace);
@@ -246,6 +285,7 @@ function writeLegacyZaloState(workspace, snapshot) {
   writeJsonAtomic(path.join(workspace, LEGACY_FILES.userSettings), normalized.userSettings);
   writeJsonAtomic(path.join(workspace, LEGACY_FILES.groupSettings), normalized.groupSettings);
   writeJsonAtomic(path.join(workspace, LEGACY_FILES.strangerPolicy), { mode: normalized.strangerPolicy });
+  notifyZaloConfigChanged();
 }
 
 function saveActiveZaloAccountSettings({ workspace, selfId, displayName, profile, friendIds, groupIds } = {}) {
@@ -301,23 +341,18 @@ function syncActiveZaloAccountSettings({ workspace, selfId, displayName, profile
         updatedAt: new Date().toISOString(),
       },
     });
-    writeLegacyZaloState(workspace, snapshot);
   } else if (!active?.selfId) {
-    if (legacyStateLooksLikeDifferentAccount(workspace, accountMeta)) {
-      archiveUnassignedLegacyState(workspace, accountMeta);
+    if (!legacyStateHasMeaningfulSettings(workspace)) {
       snapshot = buildDefaultSnapshot(accountMeta);
-      writeLegacyZaloState(workspace, snapshot);
-    } else if (!legacyStateHasMeaningfulSettings(workspace)) {
-      snapshot = buildDefaultSnapshot(accountMeta);
-      writeLegacyZaloState(workspace, snapshot);
     } else {
       snapshot = buildSnapshotFromLegacy(workspace, accountMeta, null);
     }
   } else {
     snapshot = buildDefaultSnapshot(accountMeta);
-    writeLegacyZaloState(workspace, snapshot);
   }
 
+  snapshot = mergeNewFriends(snapshot, accountMeta.friendIds);
+  writeLegacyZaloState(workspace, snapshot);
   snapshot = writeZaloAccountSnapshot(workspace, snapshot);
   writeActiveZaloAccount(workspace, snapshot);
   return snapshot;

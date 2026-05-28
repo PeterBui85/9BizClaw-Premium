@@ -984,7 +984,7 @@ export async function sendMediaModoroZalo(
     }
   } catch (__tgErr) {
     try { logOutbound("error", "media transport gate error — blocking send", { err: String(__tgErr) }); } catch {}
-    return { messageId: "transport-gate-error", kind: "text" as const };
+    return { messageId: "transport-gate-error", kind: "media" as const, receipts: [] };
   }
   // === END 9BizClaw TRANSPORT-GATE (media) ===
   const rawSource = (mediaPath ?? mediaUrl ?? "").trim();

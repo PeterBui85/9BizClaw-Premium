@@ -1291,7 +1291,7 @@ function checkModuleContracts() {
     const ch = require('../lib/channels');
     const required = [
       'getStickyChatIdPath', 'persistStickyChatId', 'loadStickyChatId',
-      'recoverChatIdFromTelegram', 'getTelegramConfig', 'getTelegramConfigWithRecovery',
+      'getTelegramConfig', 'getTelegramConfigWithRecovery',
       'getGatewayAuthToken', 'getCeoSessionKey', 'sendToGatewaySession',
       'filterSensitiveOutput',
       '_getPausePath', 'setChannelPermanentPause', 'clearChannelPermanentPause',
