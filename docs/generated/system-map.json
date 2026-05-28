@@ -4,7 +4,7 @@
     "apiRoutes": 143,
     "ipcHandlers": 207,
     "preloadBridges": 200,
-    "dashboardPages": 19,
+    "dashboardPages": 18,
     "capabilityContracts": 5
   },
   "apiRoutes": [
@@ -3146,10 +3146,6 @@
       "source": "electron/ui/dashboard.html"
     },
     {
-      "id": "chatgpt-import",
-      "source": "electron/ui/dashboard.html"
-    },
-    {
       "id": "facebook",
       "source": "electron/ui/dashboard.html"
     },
@@ -3236,15 +3232,15 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 662950
+      "bytes": 662763
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 270606
+      "bytes": 277123
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 174827
+      "bytes": 177002
     },
     {
       "path": "electron/lib/cron.js",
@@ -3252,11 +3248,11 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 124246
+      "bytes": 117791
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 98709
+      "bytes": 98615
     },
     {
       "path": "electron/lib/knowledge.js",

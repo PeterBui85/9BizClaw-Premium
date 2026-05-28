@@ -4,7 +4,7 @@ Counts
 - apiRoutes: 143
 - ipcHandlers: 207
 - preloadBridges: 200
-- dashboardPages: 19
+- dashboardPages: 18
 - capabilityContracts: 5
 
 Capability Contracts
@@ -164,7 +164,6 @@ Dashboard Pages
 - brain
 - calendar
 - chat
-- chatgpt-import
 - facebook
 - google
 - image-assets
@@ -181,12 +180,12 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 662950 bytes
-- electron/lib/dashboard-ipc.js: 270606 bytes
-- electron/lib/cron-api.js: 174827 bytes
+- electron/ui/dashboard.html: 662763 bytes
+- electron/lib/dashboard-ipc.js: 277123 bytes
+- electron/lib/cron-api.js: 177002 bytes
 - electron/lib/cron.js: 131274 bytes
-- electron/ui/wizard.html: 124246 bytes
-- electron/lib/channels.js: 98709 bytes
+- electron/ui/wizard.html: 117791 bytes
+- electron/lib/channels.js: 98615 bytes
 - electron/lib/knowledge.js: 95762 bytes
 - electron/lib/runtime-installer.js: 81059 bytes
 - electron/lib/gateway.js: 80331 bytes

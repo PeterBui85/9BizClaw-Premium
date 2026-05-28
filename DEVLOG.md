@@ -4,6 +4,26 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-05-28
+
+**v2.4.10 released** (tag b126bbd9)
+
+- GitHub Release: https://github.com/PeterBui85/9BizClaw-Premium/releases/tag/v2.4.10
+- Windows EXE 144.5 MB, macOS arm64 DMG 175.4 MB, macOS x64 DMG 181.1 MB (notarized)
+- Mac build run #26528258590 — both arm64 + x64 success
+- Drive folder created: v2.4.10/ under release parent (binaries need manual drag-drop)
+
+**Brain semantic linking deferred**
+- Plan written: docs/superpowers/plans/2026-05-28-brain-semantic-linking.md
+- Phase 1 scope: TF-IDF + Vietnamese tokenization, doc-doc/group-doc/learning-doc collectors, default hide membership-only nodes
+- Not in v2.4.10. ~1 day effort.
+
+**Guard fixes (during build)**
+- check-api-doc-drift.js: skip `*-backlog.md` files (planned routes are not implementation drift)
+- check-anthropic-doc-runtime.js: bsdtar needs `--force-local` on Windows for `C:\` paths
+
+---
+
 ## 2026-05-22
 
 **v2.4.7 committed** (7707a263, EXE 142.9 MB)
@@ -258,3 +278,5 @@ Daily development log. Each entry records what was shipped, not how.
 - Windows PATH case sensitivity breaks MinGit fix
 - Splash cancel race fix
 - v2.4.0 installer reliability — MinGit, splash hard-stop, cron dedup
+
+2026-05-27 — v2.4.10 shipped, v2.4.11 backlog captured in docs/v2.4.11-backlog.md
