@@ -3288,7 +3288,11 @@ ipcMain.handle('set-app-prefs', async (_e, partial) => {
 ipcMain.handle('list-brand-assets', async () => {
   try {
     mediaLibrary.backfillLegacyBrandAssets();
-    return mediaLibrary.listMediaAssets({ type: 'brand' }).map(asset => {
+    // audience:'ceo' — this is the CEO's own Dashboard (trusted local UI), so it
+    // must see brand assets regardless of visibility. Brand assets default to
+    // 'internal'; without an explicit audience listMediaAssets fail-closes to
+    // 'customer' and hides them all (the "brand images lost" bug).
+    return mediaLibrary.listMediaAssets({ type: 'brand', audience: 'ceo' }).map(asset => {
       const filePath = asset.path;
       if (!filePath || !fs.existsSync(filePath)) return null;
       const stat = fs.statSync(filePath);
@@ -3355,7 +3359,11 @@ ipcMain.handle('pick-brand-asset-file', async () => {
 ipcMain.handle('list-media-assets', async (_event, filters = {}) => {
   try {
     mediaLibrary.backfillLegacyBrandAssets();
-    return mediaLibrary.listMediaAssets(filters || {});
+    // Default audience:'ceo' — the Media tab is the CEO's own Dashboard, so it
+    // sees all visibility tiers. (A renderer can still pass an explicit audience
+    // to preview a narrower view.) Without this it fail-closes to 'customer' and
+    // hides every internal/generated asset.
+    return mediaLibrary.listMediaAssets({ ...(filters || {}), audience: (filters && filters.audience) || 'ceo' });
   } catch { return []; }
 });
 

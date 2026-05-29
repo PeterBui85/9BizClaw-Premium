@@ -3236,7 +3236,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 281785
+      "bytes": 282462
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -3312,7 +3312,7 @@
     },
     {
       "path": "electron/lib/media-library.js",
-      "bytes": 31424
+      "bytes": 31821
     },
     {
       "path": "electron/lib/conversation.js",

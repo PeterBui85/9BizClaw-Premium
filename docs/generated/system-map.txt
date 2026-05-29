@@ -181,7 +181,7 @@ Dashboard Pages
 
 Large Source Files
 - electron/ui/dashboard.html: 662733 bytes
-- electron/lib/dashboard-ipc.js: 281785 bytes
+- electron/lib/dashboard-ipc.js: 282462 bytes
 - electron/lib/cron-api.js: 177549 bytes
 - electron/lib/cron.js: 131464 bytes
 - electron/ui/wizard.html: 117791 bytes

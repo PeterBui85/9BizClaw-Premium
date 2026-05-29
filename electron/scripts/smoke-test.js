@@ -2973,6 +2973,25 @@ section('Cron Telegram delivery (no content-less acks)');
   } catch (e) { fail('cron telegram delivery', 'cron.js read failed: ' + e.message); }
 }
 
+// CEO Dashboard + agent image-composer must pass audience:'ceo' to
+// listMediaAssets. The shared default fail-closes to 'customer', which hides
+// every internal/generated/brand asset — the "brand images lost" regression
+// (Dashboard) and silently logo-less generated images (composer).
+{
+  try {
+    const dashSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
+    const mlSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'media-library.js'), 'utf-8');
+    const brandList = dashSrc.includes("listMediaAssets({ type: 'brand', audience: 'ceo' })");
+    const mediaList = dashSrc.includes("audience: (filters && filters.audience) || 'ceo'");
+    const brandNames = mlSrc.includes('function listBrandAssetNames') && mlSrc.includes("listMediaAssets({ type: 'brand', audience: 'ceo' })");
+    if (brandList && mediaList && brandNames) {
+      pass('CEO Dashboard + image composer pass audience:ceo (brand/internal assets visible)');
+    } else {
+      fail('media audience ceo', `list-brand=${brandList} list-media=${mediaList} listBrandAssetNames=${brandNames} — internal/brand assets hidden from CEO`);
+    }
+  } catch (e) { fail('media audience ceo', 'read failed: ' + e.message); }
+}
+
 // =========================================================================
 // SUMMARY
 // =========================================================================

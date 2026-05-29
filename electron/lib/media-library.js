@@ -787,7 +787,12 @@ function backfillLegacyBrandAssets() {
 
 function listBrandAssetNames() {
   backfillLegacyBrandAssets();
-  return listMediaAssets({ type: 'brand' })
+  // audience:'ceo' — this lists brand assets for the trusted image composer
+  // (/api/brand-assets/list, used by the agent to put the logo/mascot into
+  // generated marketing images). Brand assets are 'internal'; without an
+  // explicit audience listMediaAssets fail-closes to 'customer' and returns
+  // nothing, so generated images silently come out with no brand assets.
+  return listMediaAssets({ type: 'brand', audience: 'ceo' })
     .filter(a => a.path && fs.existsSync(a.path))
     .map(a => a.filename);
 }
