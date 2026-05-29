@@ -2823,6 +2823,56 @@ section('WhatsApp + Lark channel integration');
 }
 
 // =========================================================================
+// CLI shims — bundled openclaw/9router/node/npm exposed on PATH.
+// Guards the drive/space-safety intent: shims MUST quote embedded paths so
+// a D:\ install or a path with spaces ("D:\My Apps\...") doesn't break.
+// =========================================================================
+section('CLI shims (drive/space-safe)');
+{
+  try {
+    const cs = require('../lib/cli-shims');
+    if (typeof cs.ensureCliShims === 'function') pass('cli-shims.js exports ensureCliShims');
+    else fail('cli-shims', 'ensureCliShims not exported');
+
+    const node = 'D:\\My Apps\\9bizclaw\\vendor\\node\\node.exe';
+    const oc = 'D:\\My Apps\\9bizclaw\\vendor\\node_modules\\openclaw\\openclaw.mjs';
+    const win = cs._buildShimContent('win32', node, oc);
+    if (win.includes('"' + node + '"') && win.includes('"' + oc + '"') && win.includes('%*') && win.startsWith('@echo off')) {
+      pass('win shim quotes D:\\ + spaces and forwards %*');
+    } else {
+      fail('cli-shims win shim', 'must quote both paths, forward %*, start with @echo off');
+    }
+
+    const winNode = cs._buildShimContent('win32', node, null);
+    if (winNode.includes('"' + node + '"') && winNode.includes('%*') && !winNode.includes('.mjs')) pass('win node passthrough shim');
+    else fail('cli-shims win node', 'node passthrough must quote node + forward %*');
+
+    const nix = cs._buildShimContent('darwin', '/Users/a b/node', '/Users/a b/openclaw.mjs');
+    if (nix.startsWith('#!/bin/sh') && nix.includes('exec ') && nix.includes('"$@"') && nix.includes('"/Users/a b/node"')) {
+      pass('unix shim: #!/bin/sh + exec + quoted "$@"');
+    } else {
+      fail('cli-shims unix shim', 'must be #!/bin/sh, exec, quote paths + "$@"');
+    }
+
+    if (cs._shimFileName('win32', 'openclaw') === 'openclaw.cmd' && cs._shimFileName('darwin', 'openclaw') === 'openclaw') {
+      pass('shim filenames per-platform (.cmd vs bare)');
+    } else {
+      fail('cli-shims filename', 'win must be .cmd, unix bare');
+    }
+  } catch (e) { fail('cli-shims.js', 'failed to load: ' + e.message); }
+
+  // main.js must actually wire it at boot
+  try {
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+    if (mainSrc.includes("require('./lib/cli-shims')") && mainSrc.includes('ensureCliShims(')) {
+      pass('main.js wires ensureCliShims at boot');
+    } else {
+      fail('cli-shims wiring', 'main.js does not require + call ensureCliShims');
+    }
+  } catch (e) { fail('cli-shims wiring', 'could not read main.js: ' + e.message); }
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');

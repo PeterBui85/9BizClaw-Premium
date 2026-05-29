@@ -178,6 +178,7 @@ const {
 } = require('./lib/knowledge');
 const { isModelDownloaded, downloadModels } = require('./lib/model-downloader');
 const { runPreflightChecks } = require('./lib/preflight');
+const { ensureCliShims } = require('./lib/cli-shims');
 
 // Wire compilePersonaMix into workspace.js (used by seedWorkspace persona compilation)
 setCompilePersonaMix(compilePersonaMix);
@@ -851,6 +852,12 @@ app.whenReady().then(async () => {
   } catch (e) {
     console.warn('[boot] preflight error (non-fatal):', e?.message || e);
   }
+
+  // Expose bundled openclaw/9router/node/npm as PATH shims so they run in any
+  // terminal (like a normal global install). Non-blocking: shim writes are
+  // instant; the one-time PowerShell PATH update runs async. Drive-safe —
+  // paths resolve from userData (always on C:) even if app.exe is on D:.
+  ensureCliShims().catch((e) => console.warn('[boot] ensureCliShims error:', e?.message || e));
 
   installEmbedHeaderStripper(); // BEFORE createWindow so first iframe load is unblocked
   createWindow();

@@ -280,3 +280,21 @@ Daily development log. Each entry records what was shipped, not how.
 - v2.4.0 installer reliability — MinGit, splash hard-stop, cron dedup
 
 2026-05-27 — v2.4.10 shipped, v2.4.11 backlog captured in docs/v2.4.11-backlog.md
+
+---
+
+## 2026-05-29
+
+**Code review of pending changeset (3 blockers + 4 cleanups) — commit 8272de74**
+- Model switch ninerouter/main→ninerouter/zalo moved out of pre-9Router `ensureDefaultConfig` (probe ran before 9Router/combo existed → never fired on cold boot) into `ensureZaloModelDefault()`, called post-9Router-ready in gateway.js
+- Verified new config keys (`heartbeat.every`, `maxConcurrent`, `session.dmScope`) against openclaw 2026.4.14 strict schema — all legal
+- `stopIdleMemoryTimer` wired into `_beforeQuitCleanup`
+- Idle-memory trigger fixed to openclaw's real marker `telegram inbound:` (old `[telegram] sendMessage ok` had wrong brackets → never matched) + always-on `[session-freeze] prompt CACHE` proxy
+- Removed orphan prompts (meditation-prompt.md, afternoon-nudge.md), stale `meditation` dashboard icon; added `cron_skipped` activity label
+
+**CLI shims — openclaw / 9router / node / npm in any terminal**
+- `ensureCliShims()` (electron/lib/cli-shims.js): generates shims in `userData/bin/` + prepends to user PATH, auto on every machine, no admin
+- Standalone shims hardcode the bundled node absolute path → work with zero system Node (npm `.bin` shims failed without it)
+- Drive/space-safe: all paths resolved at runtime from `userData` (always C: — no `app.setPath`) and quoted → D:\ install + spaces OK
+- Hardened Windows PATH write: User-scope `SetEnvironmentVariable` (no setx truncation), length guard, verify-after-write, `WM_SETTINGCHANGE` broadcast; `claw-node`/`claw-npm` aliases so a system Node is never hijacked
+- installer.nsh uninstall cleanup; smoke-test guard for quoting/drive-safety; 2-lens adversarial review + hardening

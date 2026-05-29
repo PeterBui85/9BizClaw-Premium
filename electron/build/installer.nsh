@@ -20,9 +20,13 @@
   DetailPrint "Cleaning user PATH..."
   nsExec::ExecToLog 'powershell -NoProfile -Command "$$p = [Environment]::GetEnvironmentVariable(''PATH'',''User''); if ($$p) { $$parts = $$p -split '';'' | Where-Object { $$_ -notlike ''*9bizclaw*'' }; [Environment]::SetEnvironmentVariable(''PATH'', ($$parts -join '';''), ''User'') }"'
 
-  ; Remove CLI shim dir (legacy)
+  ; Remove CLI shim dir + generated PATH helpers (the *9bizclaw* PATH filter
+  ; above already strips the bin dir from user PATH).
   DetailPrint "Removing CLI shims..."
   RMDir /r "$APPDATA\9bizclaw\cli"
+  RMDir /r "$APPDATA\9bizclaw\bin"
+  Delete "$APPDATA\9bizclaw\.add-to-path.ps1"
+  Delete "$APPDATA\9bizclaw\.cli-path-added"
 
   ; Ask user about runtime vendor dir (~200 MB)
   ${IfNot} ${Silent}
