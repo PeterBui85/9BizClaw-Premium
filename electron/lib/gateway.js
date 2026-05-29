@@ -1044,6 +1044,16 @@ async function _startOpenClawImpl(opts = {}) {
             console.log('[restart-guard] connect-fail recovery skipped — another start in progress or intentional stop');
             return;
           }
+          // Rate-limit: if the upstream is persistently unreachable the gateway
+          // can emit "gateway connect failed" on every boot — and the per-closure
+          // flag resets on each restart — so without a cap this loops forever.
+          // Gate through the shared 5/hr limiter so a broken upstream can NEVER
+          // cause a restart storm.
+          if (!_fwCanRestart()) {
+            console.warn('[restart-guard] connect-fail recovery skipped — restart rate limit (' + FW_MAX_RESTARTS_PER_HOUR + '/hr) reached');
+            return;
+          }
+          _fwRestartTimestamps.push(Date.now());
           console.log('[restart-guard] restarting gateway to recover from channel connect failure');
           stopOpenClaw().then(() => {
             setTimeout(() => startOpenClaw({ silent: true }), 3000);
@@ -1548,13 +1558,34 @@ async function fastWatchdogTick() {
               console.warn('[fast-watchdog] Zalo listener not running (3 checks)');
             }
             if (_fwZaloMissCount === 6) {
-              // Intentional mtime bump to trigger gateway config reloader → openzalo plugin reload
-              console.warn('[fast-watchdog] Zalo listener still dead after 6 checks — touching config for plugin reload');
-              try {
-                const cfgPath = path.join(ctx.HOME, '.openclaw', 'openclaw.json');
-                const raw = fs.readFileSync(cfgPath, 'utf-8');
-                fs.writeFileSync(cfgPath, raw, 'utf-8');
-              } catch (e) { console.warn('[fast-watchdog] config touch for Zalo reload failed:', e?.message); }
+              // Zalo listener confirmed dead ~120s and the plugin did not self-
+              // recover. The lever to respawn it is a gateway restart (the
+              // modoro-zalo plugin spawns the openzca listener on load). The OLD
+              // code did a raw openclaw.json rewrite to "reload the plugin", but
+              // openclaw's config reloader turns ANY external write into a FULL
+              // gateway restart — with NO rate limit and racing this watchdog's
+              // own restart logic (the documented cascade). Do an EXPLICIT,
+              // rate-limited restart instead (_fwCanRestart caps at 5/hr →
+              // cannot cascade); if rate-limited, alert the CEO so the outage is
+              // never silent.
+              if (_fwCanRestart() && !ctx.startOpenClawInFlight && !ctx.gatewayRestartInFlight && _gatewayIntentionalStopDepth === 0) {
+                console.warn('[fast-watchdog] Zalo listener dead 6 checks — one rate-limited gateway restart to respawn it');
+                _fwRestartTimestamps.push(Date.now());
+                ctx.gatewayRestartInFlight = true;
+                try { await stopOpenClaw(); await startOpenClaw({ silent: true }); }
+                catch (e) { console.error('[fast-watchdog] Zalo-recovery restart error:', e?.message); }
+                finally { ctx.gatewayRestartInFlight = false; }
+              } else {
+                const _now = Date.now();
+                const _lastAlert = global._zaloDownAlertSentAt || 0;
+                if (_now - _lastAlert > 30 * 60 * 1000) {
+                  global._zaloDownAlertSentAt = _now;
+                  console.warn('[fast-watchdog] Zalo listener dead 6 checks but restart rate-limited/in-flight — alerting CEO');
+                  sendCeoAlert('Kênh Zalo đang tạm dừng (listener không chạy) và đã chạm giới hạn tự khởi động lại. Bot Telegram vẫn hoạt động. Vui lòng mở lại app để khôi phục Zalo.').catch(() => {});
+                } else {
+                  console.warn('[fast-watchdog] Zalo listener dead 6 checks — rate-limited, CEO already alerted recently');
+                }
+              }
             }
             if (_fwZaloMissCount > 0 && _fwZaloMissCount % 15 === 0 && _fwZaloMissCount <= 60) {
               console.warn(`[fast-watchdog] Zalo listener still dead (${_fwZaloMissCount} checks)`);

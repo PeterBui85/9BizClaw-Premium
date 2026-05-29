@@ -236,6 +236,22 @@ function _stripProcessAcks(text) {
   return cleaned.join('\n').trim();
 }
 
+// Throttled CEO alert when a cron produced output the filter blocked (typically
+// an upstream/provider error). Without this the failure is silent: the customer
+// or CEO gets a polite content-less ack and nobody knows the cron actually
+// failed. Max one alert per 30 min per cron so a down upstream (every cron
+// firing blocked) does not flood the CEO.
+const _lastCronBlockedAlertAt = new Map();
+async function _alertCronBlocked(label, pattern, channelLabel) {
+  try {
+    const now = Date.now();
+    const last = _lastCronBlockedAlertAt.get(label) || 0;
+    if (now - last < 30 * 60 * 1000) return;
+    _lastCronBlockedAlertAt.set(label, now);
+    await sendCeoAlert(`[Cron "${label}"] đã chạy nhưng kết quả bị bộ lọc nội dung chặn (thường do lỗi nhà cung cấp AI / token hết hạn). Không gửi gì cho ${channelLabel}. Vui lòng kiểm tra logs.`);
+  } catch {}
+}
+
 async function deliverCronResultToZalo(replyText, zaloTarget, label) {
   if (!replyText) return true;
   const cleaned = _stripProcessAcks(String(replyText));
@@ -243,6 +259,18 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
     console.log(`[cron-agent] Zalo delivery for "${label}" skipped — agent completed via tools (no customer-facing text)`);
     return true;
   }
+  // If the output filter would block this (raw upstream error/leak), do NOT
+  // send a substituted polite ack to a CUSTOMER group — that looks broken and
+  // the customer gets no real content. Skip delivery and alert the CEO instead.
+  try {
+    const f = filterSensitiveOutput(cleaned);
+    if (f && f.blocked) {
+      console.log(`[cron-agent] Zalo delivery for "${label}" skipped — reply blocked by output filter (${f.pattern})`);
+      try { auditLog('cron_zalo_blocked', { label, pattern: f.pattern }); } catch {}
+      await _alertCronBlocked(label, f.pattern, 'nhóm Zalo');
+      return false;
+    }
+  } catch {}
   const target = zaloTarget || {};
   const targetId = target.id;
   const isGroup = target.isGroup === true;
@@ -286,6 +314,7 @@ async function deliverCronResultToTelegram(replyText, label) {
     if (f && f.blocked) {
       console.log(`[cron-agent] Telegram delivery for "${label}" skipped — reply blocked by output filter (${f.pattern})`);
       try { auditLog('cron_telegram_blocked', { label, pattern: f.pattern }); } catch {}
+      await _alertCronBlocked(label, f.pattern, 'Telegram');
       return true;
     }
   } catch {}

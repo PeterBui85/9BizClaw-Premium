@@ -23,6 +23,31 @@ function setJournalCronRun(fn) { _journalCronRunFn = fn; }
 // are NOT in its schema. When we see "additional properties" error at the
 // modoro-zalo path, we strip these known-offenders. Expand this list as we learn.
 const KNOWN_BAD_ZALO_KEYS = ['streaming', 'streamMode', 'nativeStreaming', 'blockStreamingDefault'];
+// Canonical whitelist of all fields the modoro-zalo plugin schema accepts
+// (source: modoro-zalo/src/config-schema-core.ts). Hoisted to module scope so
+// healOpenClawConfigInline() can use it for whitelist-diff self-healing.
+const MODORO_ZALO_VALID_FIELDS = new Set([
+  'name', 'enabled', 'profile', 'zcaBinary', 'acpx', 'markdown',
+  'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom', 'groups',
+  'historyLimit', 'dmHistoryLimit', 'textChunkLimit', 'chunkMode',
+  'blockStreaming', 'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
+  'threadBindings', 'actions', 'accounts', 'defaultAccount',
+]);
+// Canonical whitelist of all fields the openclaw Telegram channel schema accepts
+// (mirrors ensureDefaultConfig's telegram cleanup). Hoisted so
+// healOpenClawConfigInline() can whitelist-diff channels.telegram when openclaw's
+// strict schema rejects an unknown key (the cron-killing "Config invalid" bug).
+const TELEGRAM_VALID_FIELDS = new Set([
+  'name', 'capabilities', 'execApprovals', 'enabled', 'markdown',
+  'commands', 'customCommands', 'configWrites', 'dmPolicy', 'botToken',
+  'tokenFile', 'replyToMode', 'groups', 'allowFrom', 'defaultTo',
+  'groupAllowFrom', 'groupPolicy', 'contextVisibility', 'historyLimit',
+  'dmHistoryLimit', 'dms', 'direct', 'textChunkLimit',
+  'mediaMaxMb', 'timeoutSeconds', 'retry', 'network', 'webhookUrl',
+  'webhookSecret', 'webhookPath', 'webhookHost', 'webhookPort',
+  'webhookCertPath', 'accounts', 'defaultAccount',
+  'profile', 'sendTypingIndicators', 'streaming',
+]);
 const AGENTS_MD_BOOTSTRAP_MAX_CHARS = 40000;
 const MIN_PREMIUM_CONTEXT_TOKENS = 200000;
 const GPT_54_CONTEXT_TOKENS = 272000;
@@ -319,6 +344,44 @@ function healOpenClawConfigInline(errStderr) {
             }
             if (parent && typeof parent === 'object') {
               stripBadZaloKeys(parent, keyPath.join('.'));
+              // Whitelist-diff: delete every key on the CHANNEL block that is NOT
+              // in MODORO_ZALO_VALID_FIELDS. Catches future openclaw schema
+              // updates that reject a key KNOWN_BAD_ZALO_KEYS doesn't list yet.
+              // GUARD: only when keyPath is exactly channels.<chan> (length 2) —
+              // a deeper path like channels.modoro-zalo.accounts[N] resolves
+              // `parent` to an ACCOUNT object with a DIFFERENT field set, so
+              // applying the channel whitelist there could delete valid keys.
+              if (keyPath.length === 2) {
+                for (const k of Object.keys(parent)) {
+                  if (!MODORO_ZALO_VALID_FIELDS.has(k)) {
+                    delete parent[k];
+                    removed.push(`${keyPath.join('.')}.${k}`);
+                    changed = true;
+                  }
+                }
+              }
+            }
+          } else if (keyPath[0] === 'channels' && keyPath[1] === 'telegram' && keyPath.length === 2) {
+            // Telegram strict-schema rejected an unknown key ("additional
+            // properties") → openclaw exits 1 on EVERY command → the cron
+            // pipeline can't spawn the agent → CEO gets repeated "Config
+            // invalid" failures (the reported screenshot bug). Whitelist-diff
+            // against TELEGRAM_VALID_FIELDS so the inline heal strips the
+            // offender and the next spawn succeeds; valid keys (streaming,
+            // groupPolicy, …) are kept.
+            let parent = config;
+            for (const segment of keyPath) {
+              if (parent && typeof parent === 'object' && segment in parent) parent = parent[segment];
+              else { parent = null; break; }
+            }
+            if (parent && typeof parent === 'object') {
+              for (const k of Object.keys(parent)) {
+                if (!TELEGRAM_VALID_FIELDS.has(k)) {
+                  delete parent[k];
+                  removed.push(`${keyPath.join('.')}.${k}`);
+                  changed = true;
+                }
+              }
             }
           }
         } else if (!keyPath && key) {
@@ -717,14 +780,8 @@ async function ensureDefaultConfig() {
       // workspace 2026-04-15) or other legacy keys that make the gateway
       // reject config with "channels['modoro-zalo']: must NOT have additional
       // properties" → gateway never binds WS → bot dead silently.
-      // Fields valid per modoro-zalo/src/config-schema-core.ts config schema:
-      const MODORO_ZALO_VALID_FIELDS = new Set([
-        'name', 'enabled', 'profile', 'zcaBinary', 'acpx', 'markdown',
-        'dmPolicy', 'allowFrom', 'groupPolicy', 'groupAllowFrom', 'groups',
-        'historyLimit', 'dmHistoryLimit', 'textChunkLimit', 'chunkMode',
-        'blockStreaming', 'mediaMaxMb', 'mediaLocalRoots', 'sendTypingIndicators',
-        'threadBindings', 'actions', 'accounts', 'defaultAccount',
-      ]);
+      // Fields valid per modoro-zalo/src/config-schema-core.ts config schema
+      // (hoisted to module scope as MODORO_ZALO_VALID_FIELDS — see top of file):
       if (_stripUnknownFields(oz, MODORO_ZALO_VALID_FIELDS, 'modoro-zalo')) changed = true;
       // DO NOT set `zcaBinary` here: the modoro-zalo plugin's
       // resolveOpenzcaCliJs() on Windows only searches hardcoded npm global
@@ -800,17 +857,8 @@ async function ensureDefaultConfig() {
       // or other top-level keys nested under channels.telegram by mistake.
       // openclaw 2026.4.14 uses strict() → any unknown key = "must NOT have
       // additional properties" → gateway refuses to start.
-      const TELEGRAM_VALID_FIELDS = new Set([
-        'name', 'capabilities', 'execApprovals', 'enabled', 'markdown',
-        'commands', 'customCommands', 'configWrites', 'dmPolicy', 'botToken',
-        'tokenFile', 'replyToMode', 'groups', 'allowFrom', 'defaultTo',
-        'groupAllowFrom', 'groupPolicy', 'contextVisibility', 'historyLimit',
-        'dmHistoryLimit', 'dms', 'direct', 'textChunkLimit',
-        'mediaMaxMb', 'timeoutSeconds', 'retry', 'network', 'webhookUrl',
-        'webhookSecret', 'webhookPath', 'webhookHost', 'webhookPort',
-        'webhookCertPath', 'accounts', 'defaultAccount',
-        'profile', 'sendTypingIndicators', 'streaming',
-      ]);
+      // TELEGRAM_VALID_FIELDS is hoisted to module scope (top of file) so the
+      // inline heal can reuse the same whitelist — single source of truth.
       if (_stripUnknownFields(tg, TELEGRAM_VALID_FIELDS, 'telegram')) changed = true;
     }
     // WhatsApp — only heal if plugin is installed

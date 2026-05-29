@@ -640,16 +640,28 @@ export async function handleModoroZaloInbound(params: {
       const __sender = String(message.senderId || "").trim();
       if (!__sender) return;
       let __mzAllowed: string[] = [];
+      let __mzAllowlistCorrupt = false;
       const __mzAlPath = __mzPath.join(__mzWs, "zalo-allowlist.json");
       try {
         if (__mzFs.existsSync(__mzAlPath)) {
           const __parsed = JSON.parse(__mzFs.readFileSync(__mzAlPath, "utf-8"));
           if (Array.isArray(__parsed)) {
             __mzAllowed = __parsed.map((x: any) => String(x || "").trim()).filter(Boolean);
+          } else {
+            // File exists but is not an array → misconfigured allowlist.
+            __mzAllowlistCorrupt = true;
           }
         }
       } catch (__e) {
-        runtime.log?.(`modoro-zalo: allowlist read error: ${String(__e)} → allow (fail open)`);
+        // The file EXISTS (CEO configured an allowlist) but could not be
+        // read/parsed. Failing OPEN here would let EVERY stranger through —
+        // the exact security hole. Fail CLOSED: drop the DM until it is fixed.
+        __mzAllowlistCorrupt = true;
+        runtime.log?.(`modoro-zalo: allowlist UNREADABLE (${String(__e)}) → FAIL CLOSED`);
+      }
+      if (__mzAllowlistCorrupt) {
+        runtime.log?.(`modoro-zalo: drop sender=${__sender} (allowlist file corrupt — fail closed)`);
+        return;
       }
       const __mzStrangerBypass = __mzAllowed.length > 0
         && !__mzAllowed.includes(__sender)

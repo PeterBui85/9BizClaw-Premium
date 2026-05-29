@@ -2166,12 +2166,25 @@ try {
   } else {
     fail('internal frame usage', `inbound.ts still hardcodes the customer fence in ${hardcoded} rewrite(s) — internal users framed as customers`);
   }
-  // 3. fork version bumped so existing installs re-copy the patched inbound.ts
+  // 3. fork version bumped so existing installs re-copy the patched inbound.ts,
+  //    AND the .fork-version file matches the JS constant (else the version
+  //    check never matches and the whole plugin is re-copied on EVERY boot).
   const zaloPlugin = fs.readFileSync(path.join(__dirname, '..', 'lib', 'zalo-plugin.js'), 'utf-8');
-  if (/MODORO_ZALO_FORK_VERSION\s*=\s*'modoro-zalo-v1\.0\.10'/.test(zaloPlugin)) {
-    pass('MODORO_ZALO_FORK_VERSION bumped to v1.0.10');
+  const forkVerM = zaloPlugin.match(/MODORO_ZALO_FORK_VERSION\s*=\s*'([^']+)'/);
+  const forkVerConst = forkVerM ? forkVerM[1] : null;
+  if (forkVerConst === 'modoro-zalo-v1.0.11') {
+    pass('MODORO_ZALO_FORK_VERSION bumped to v1.0.11');
   } else {
-    fail('fork version', 'MODORO_ZALO_FORK_VERSION not bumped to v1.0.10 — patched inbound.ts will not reach existing installs');
+    fail('fork version', `MODORO_ZALO_FORK_VERSION is ${forkVerConst} — expected modoro-zalo-v1.0.11 (patched fork will not reach existing installs)`);
+  }
+  const forkVerFile = (() => {
+    try { return fs.readFileSync(path.join(__dirname, '..', 'packages', 'modoro-zalo', 'src', '.fork-version'), 'utf-8').trim(); }
+    catch { return null; }
+  })();
+  if (forkVerFile && forkVerConst && forkVerFile === forkVerConst) {
+    pass('.fork-version file matches MODORO_ZALO_FORK_VERSION (no re-copy-every-boot)');
+  } else {
+    fail('fork version sync', `.fork-version ("${forkVerFile}") != constant ("${forkVerConst}") — plugin re-copied on EVERY boot`);
   }
   // 4. AGENTS.md internal-user section + version bumped (re-seeds to existing workspaces)
   const agentsMd = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
@@ -2179,6 +2192,21 @@ try {
     pass('AGENTS.md has internal-user behavior section + version 109');
   } else {
     fail('AGENTS.md internal rule', 'AGENTS.md missing internal-user section or version not bumped to 109');
+  }
+  // 5. internal-flag path consistency: marking someone "Nội bộ" only works if the
+  //    Dashboard WRITES the flag where the bot READS it. Both route through
+  //    getWorkspace(): Dashboard → getWorkspace()/zalo-*-settings.json; gateway
+  //    exports 9BIZ_WORKSPACE=getWorkspace(); inbound.ts reads 9BIZ_WORKSPACE first.
+  //    If any link drifts, "internal" silently never reaches the agent.
+  const dashIpcSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
+  const gwSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'gateway.js'), 'utf-8');
+  const dashWrites = /path\.join\(getWorkspace\(\),\s*'zalo-user-settings\.json'\)/.test(dashIpcSrc);
+  const gwExports = /const __ws = getWorkspace\(\)/.test(gwSrc) && /enrichedEnv\['9BIZ_WORKSPACE'\]\s*=\s*__ws/.test(gwSrc);
+  const inboundReads = /process\.env\['9BIZ_WORKSPACE'\]/.test(inboundTs) && /zalo-user-settings\.json/.test(inboundTs);
+  if (dashWrites && gwExports && inboundReads) {
+    pass('internal-flag path consistent (Dashboard getWorkspace → 9BIZ_WORKSPACE → inbound.ts read)');
+  } else {
+    fail('internal-flag path', `Dashboard-write=${dashWrites} gateway-9BIZ_WORKSPACE=${gwExports} inbound-read=${inboundReads} — marking "Nội bộ" may never reach the bot`);
   }
 } catch (e) {
   if (modoroZaloPkgSrc) fail('internal-user frame', 'check failed: ' + e.message);

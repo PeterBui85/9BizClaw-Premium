@@ -888,6 +888,19 @@ function injectMemoryIntoAgentsMd() {
     if (agents !== current) {
       fs.writeFileSync(agentsPath, agents, 'utf-8');
     }
+
+    // Warn if AGENTS.md exceeds the openclaw bootstrap budget floor.
+    // Threshold mirrors AGENTS_MD_BOOTSTRAP_MAX_CHARS in electron/lib/config.js.
+    // Warn-only: never throws, never blocks, never modifies the write outcome.
+    try {
+      const AGENTS_MD_BOOTSTRAP_MAX_CHARS = 40000; // keep in sync with config.js
+      const byteSize = Buffer.byteLength(agents, 'utf-8');
+      if (byteSize > AGENTS_MD_BOOTSTRAP_MAX_CHARS) {
+        console.warn(
+          `[ceo-memory] AGENTS.md is ${byteSize} chars — exceeds bootstrap floor (${AGENTS_MD_BOOTSTRAP_MAX_CHARS}); risk of tail truncation by the gateway`
+        );
+      }
+    } catch {}
   } catch (e) {
     console.warn('[ceo-memory] inject into AGENTS.md failed:', e?.message);
   }

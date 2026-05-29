@@ -37,8 +37,15 @@ function withTempWorkspace(fn) {
 
 function tarEntries() {
   if (!fs.existsSync(vendorTar)) return new Set();
-  const tarArgs = process.platform === 'win32' ? ['-tf', vendorTar] : ['-tf', vendorTar];
-  const out = cp.execFileSync('tar', tarArgs, { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
+  // Pass the bare filename with cwd set to its directory. A full Windows path
+  // like D:\...\vendor-bundle.tar makes GNU tar treat "D:" as a remote host
+  // ("tar: Cannot connect to D:"). Using basename + cwd avoids the colon
+  // entirely and works for both GNU tar and bsdtar on every platform.
+  const out = cp.execFileSync('tar', ['-tf', path.basename(vendorTar)], {
+    cwd: path.dirname(vendorTar),
+    encoding: 'utf8',
+    maxBuffer: 128 * 1024 * 1024,
+  });
   return new Set(out.split(/\r?\n/).filter(Boolean));
 }
 

@@ -544,6 +544,12 @@ function getVersionFile() {
   return path.join(getUserDataDir(), 'runtime-version.txt');
 }
 
+// Runtime-install completion marker. Intentionally DECOUPLED from the app
+// version (app is 2.4.x+, this is the runtime-layout schema marker). Single-
+// sourced here so it is never a magic literal scattered across call sites —
+// drift would either force a re-stamp loop or mask a stale install.
+const RUNTIME_INSTALL_VERSION = '2.4.0';
+
 function getInstalledVersion() {
   try {
     const vf = getVersionFile();
@@ -1630,7 +1636,7 @@ async function checkInstallation() {
   });
 
   const filesReady = nodeStatus.satisfiesMin && allPackagesInstalled && zaloReady && pythonReady && layoutVersionOk;
-  const ready = filesReady && runtimeVersion === '2.4.0' && layoutVersionOk;
+  const ready = filesReady && runtimeVersion === RUNTIME_INSTALL_VERSION && layoutVersionOk;
   const gogReady = await checkGogCliReady();
 
   return {
@@ -1677,8 +1683,8 @@ async function runInstallation({ onProgress } = {}) {
       return status;
     }
 
-    if (status.filesReady && status.runtimeVersion !== '2.4.0') {
-      writeInstalledVersion('2.4.0');
+    if (status.filesReady && status.runtimeVersion !== RUNTIME_INSTALL_VERSION) {
+      writeInstalledVersion(RUNTIME_INSTALL_VERSION);
       writeLayoutVersion();
       _installStatus = await checkInstallation();
       if (onProgress) onProgress({ step: 'complete', percent: 100, message: 'Đã sẵn sàng!' });
@@ -1771,7 +1777,7 @@ async function runInstallation({ onProgress } = {}) {
     if (onProgress) onProgress({ step: 'model-done' });
 
     // Step 6: Write version + layout markers
-    writeInstalledVersion('2.4.0');
+    writeInstalledVersion(RUNTIME_INSTALL_VERSION);
     writeLayoutVersion();
 
     if (onProgress) onProgress({ step: 'complete', percent: 100, message: 'Hoàn tất cài đặt!' });

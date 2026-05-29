@@ -11,6 +11,11 @@ const { appDataDir } = require('./boot');
 //  Constants
 // ---------------------------------------------------------------------------
 const BACKUP_VERSION = 1;
+// Oldest app version whose restore schema is still compatible with the current
+// backup format. Raise this constant ONLY when a genuinely backward-incompatible
+// backup format change ships (e.g. new required section, changed archive layout).
+// Do NOT set it to appVersion — that would permanently lock out rollback restores.
+const MIN_RESTORE_FLOOR = '2.4.0';
 const SKIP_DIRS = new Set(['logs', 'backups', 'vendor', 'node_modules', '.git']);
 const SKIP_FILES = new Set(['brain-graph.json', '.machine-id']);
 
@@ -92,6 +97,9 @@ function collectBackupFiles() {
     'zalo-blocklist', 'zalo-allowlist', 'zalo-stranger-policy', 'shop-state',
     'fb-config', 'fb-scheduled-posts', 'google-workspace', 'media-library',
     'app-prefs', 'setup-complete', 'follow-up-queue', 'license',
+    'appointments', // calendar appointments written by bot + dispatcher
+    'telegram-paused', 'zalo-paused', // channel pause state (channels.js pauseChannel)
+    'zalo-thread-paused', // per-thread takeover pause (inbound.ts /tamdung command)
   ];
   for (const name of wsJsonFiles) {
     files.push(..._collectExplicitFiles([{ abs: path.join(ws, name + '.json'), rel: 'workspace/' + name + '.json' }]));
@@ -146,6 +154,12 @@ function collectBackupFiles() {
   // --- 5. Provider keys (appDataDir/) ---
   files.push(..._collectExplicitFiles([{ abs: path.join(appData, 'modoroclaw-provider-keys.json'), rel: 'provider-keys/modoroclaw-provider-keys.json' }]));
 
+  // --- 6. Google OAuth credentials (userData/gog/) ---
+  // getGogConfigDir() = app.getPath('userData')/gog = appDataDir()/9bizclaw/gog
+  // Backed up under 'google-oauth/gog/' so restore maps section 'google-oauth' → userData.
+  const gogDir = path.join(appData, '9bizclaw', 'gog');
+  files.push(..._collectDir(gogDir, 'google-oauth/gog', SKIP_DIRS, SKIP_FILES));
+
   return files;
 }
 
@@ -164,7 +178,7 @@ function buildManifest(files, appVersion) {
     version: BACKUP_VERSION,
     app: '9bizclaw',
     appVersion,
-    minRestoreVersion: appVersion,
+    minRestoreVersion: MIN_RESTORE_FLOOR,
     createdAt: new Date().toISOString(),
     machine: os.hostname(),
     platform: process.platform,
@@ -360,6 +374,7 @@ function restoreBackup(backupPath, password, appVersion) {
       'openzca': path.join(home, '.openzca'),
       '9router': path.join(appData, '9router'),
       'provider-keys': appData,
+      'google-oauth': path.join(appData, '9bizclaw'), // gog/ subdir restored to userData/gog/
     };
 
     // Copy files from each section to their target

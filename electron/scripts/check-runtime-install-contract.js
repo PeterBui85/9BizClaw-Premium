@@ -108,7 +108,8 @@ if (/execFilePromise\(\s*nodeBin\s*,\s*\[\s*['"]npm['"]/.test(runtimeSrc)) {
 }
 requireContains('downloadFile native fetch branch does not fall through to client handlers', runtimeSrc, 'reject(attachHint');
 requireContains('runtime readiness considers version marker', runtimeSrc, 'runtimeVersion');
-requireContains('runtime install writes marker after fast ready path', runtimeSrc, "writeInstalledVersion('2.4.0')");
+requireContains('runtime install writes marker after fast ready path', runtimeSrc, 'writeInstalledVersion(RUNTIME_INSTALL_VERSION)');
+requireContains('runtime install marker value is 2.4.0', runtimeSrc, "RUNTIME_INSTALL_VERSION = '2.4.0'");
 requireContains('main verifies runtime install result before boot continues', mainSrc, 'Runtime install incomplete');
 // CLEANUP_PATHS must not include bare "vendor" (no slash) which would delete the
 // runtime vendor directory at userData/vendor/. A directory form "vendor/" (with /)

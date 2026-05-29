@@ -93,18 +93,23 @@ function isModelDownloaded() {
     return false;
   }
 
-  // Check if all required files exist
+  // Check if all required files exist and are complete (not truncated)
   for (const file of MODEL_CONFIG.files) {
     const filePath = getModelFilePath(file);
     if (!fs.existsSync(filePath)) {
       console.log('[model-downloader] Missing file:', file);
       return false;
     }
-    // Check file is not empty
     try {
       const stats = fs.statSync(filePath);
       if (stats.size === 0) {
         console.log('[model-downloader] Empty file:', file);
+        return false;
+      }
+      // If we have an expected size, require at least 95% to guard against truncated downloads
+      const expectedSize = EXPECTED_SIZES[file];
+      if (expectedSize > 0 && stats.size < expectedSize * 0.95) {
+        console.log(`[model-downloader] Truncated file: ${file} (${stats.size} bytes, expected ~${expectedSize} bytes)`);
         return false;
       }
     } catch {
@@ -153,6 +158,13 @@ function getMissingFiles() {
         const stats = fs.statSync(filePath);
         if (stats.size === 0) {
           missing.push(file);
+        } else {
+          // If we have an expected size, treat truncated files (< 95%) as missing so they re-download
+          const expectedSize = EXPECTED_SIZES[file];
+          if (expectedSize > 0 && stats.size < expectedSize * 0.95) {
+            console.log(`[model-downloader] Truncated file will be re-downloaded: ${file} (${stats.size} bytes, expected ~${expectedSize} bytes)`);
+            missing.push(file);
+          }
         }
       } catch {
         missing.push(file);

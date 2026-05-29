@@ -764,7 +764,32 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
     }
     } // end if (!__ofIsInternal)
   } catch (__ofE) {
-    try { logOutbound("error", "output filter error — falling through to normal send", { err: String(__ofE) }); } catch {}
+    try { logOutbound("error", "output filter error — FAIL CLOSED (safe reply, not raw body)", { err: String(__ofE) }); } catch {}
+    // FAIL CLOSED: an exception inside the filter must NOT fall through to the
+    // raw-body send below — that would leak exactly what the filter exists to
+    // catch (paths, keys, chain-of-thought). Send a safe canned reply instead.
+    const __ofErrSafe = "Dạ em xin lỗi, cho em một phút em rà lại thông tin rồi báo lại mình ạ.";
+    const __ofErrArgs = ["msg", "send", target.threadId, __ofErrSafe];
+    if (target.isGroup) __ofErrArgs.push("--group");
+    try {
+      const __ofErrResult = await runOpenzcaAccountCommand({
+        account,
+        binary: account.zcaBinary,
+        profile: account.profile,
+        args: __ofErrArgs,
+        timeoutMs: 20_000,
+      });
+      const __ofErrRefs = parseOpenzcaMessageRefs(__ofErrResult.stdout);
+      return {
+        messageId: __ofErrRefs.msgId || "ok",
+        msgId: __ofErrRefs.msgId,
+        cliMsgId: __ofErrRefs.cliMsgId,
+        kind: "text" as const,
+        textPreview: __ofErrSafe.slice(0, 80),
+      };
+    } catch (__ofErrSend) {
+      return { messageId: "filter-error-blocked", kind: "text" as const };
+    }
   }
   // === END 9BizClaw OUTPUT-FILTER PATCH ===
   // === 9BizClaw ESCALATION-DETECT PATCH v2 ===

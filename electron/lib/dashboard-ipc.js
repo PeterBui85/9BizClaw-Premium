@@ -3502,9 +3502,71 @@ ipcMain.handle('queue-follow-up', async (_event, { channel, recipientId, recipie
 //  DOCUMENT LIBRARY (Telegram file → FTS5 index)
 // ============================================
 
+/**
+ * Guard against a compromised renderer supplying a crafted filepath to exfiltrate
+ * sensitive files via the knowledge-upload path.
+ *
+ * Strategy: denylist of clearly-sensitive locations (conservative — we block the
+ * obvious dangerous dirs, NOT allowlist valid doc paths, so Desktop/Downloads/etc.
+ * all pass). The normal flow (main-process file dialog → pick-knowledge-file →
+ * renderer → upload-knowledge-file) always returns a user-chosen path that will
+ * pass this check.
+ *
+ * @param {string} absPath - Renderer-supplied source path
+ * @returns {boolean} true = safe to proceed; false = reject
+ */
+function isUploadSourceSafe(absPath) {
+  if (!absPath || typeof absPath !== 'string') return false;
+  let resolved;
+  try {
+    // realpathSync resolves symlinks so a link into /etc still gets caught.
+    resolved = fs.realpathSync(absPath);
+  } catch {
+    // File does not exist or is inaccessible — reject (statSync below will also
+    // reject, but being explicit here avoids a misleading error message).
+    return false;
+  }
+  let stat;
+  try { stat = fs.statSync(resolved); } catch { return false; }
+  if (!stat.isFile()) return false;
+
+  // Normalize to forward-slash lowercase for portable substring checks.
+  const norm = resolved.toLowerCase().replace(/\\/g, '/');
+
+  // Sensitive directory prefixes / substrings — block anything touching these.
+  const BLOCKED = [
+    '/.ssh/',          // SSH private keys (all OS)
+    '/.openclaw/',     // app credentials/tokens
+    '/.openzca/',      // openzca session/credentials
+    '/.aws/',          // AWS credentials
+    '/.gnupg/',        // GPG private keys
+    '/.config/gcloud', // GCP credentials
+    '/appdata/roaming/9bizclaw/',  // app license store (Windows)
+    '/windows/system32',           // Windows OS files
+    '/windows/syswow64',           // Windows OS files (32-bit compat)
+    '/private/etc/',               // macOS /etc
+    '/etc/passwd',
+    '/etc/shadow',
+    '/etc/ssh/',
+    // Common credential file name fragments (path-segment check below handles dirs;
+    // these catch individual files that might live anywhere)
+  ];
+  if (BLOCKED.some(b => norm.includes(b))) return false;
+
+  // Also block if any path segment looks like a well-known credential store.
+  const BLOCKED_SEGMENTS = ['.ssh', '.gnupg', '.aws', '.openclaw', '.openzca'];
+  const segments = norm.split('/');
+  if (segments.some(seg => BLOCKED_SEGMENTS.includes(seg))) return false;
+
+  return true;
+}
+
 ipcMain.handle('upload-knowledge-file', async (_event, { category, filepath, originalName, visibility = 'public' }) => {
   if (!['public', 'internal', 'private'].includes(visibility)) {
     return { success: false, error: 'Chế độ hiển thị không hợp lệ. Vui lòng chọn Công khai, Nội bộ hoặc Chỉ CEO.' };
+  }
+  if (!isUploadSourceSafe(filepath)) {
+    return { success: false, error: 'Đường dẫn file không hợp lệ hoặc nằm trong vùng bảo mật.' };
   }
   try {
     if (!KNOWLEDGE_CATEGORIES.includes(category)) {
@@ -4052,6 +4114,7 @@ ipcMain.handle('pick-knowledge-file', async () => {
 ipcMain.handle('index-document', async (_event, { filepath, filename }) => {
   try {
     if (!filename || /[\/\\]/.test(filename) || filename.includes('..')) return { success: false, error: 'Invalid filename' };
+    if (!isUploadSourceSafe(filepath)) return { success: false, error: 'Invalid or disallowed source path' };
     ensureDocumentsDir();
     const dst = path.join(getDocumentsDir(), filename);
     fs.copyFileSync(filepath, dst);
@@ -4087,10 +4150,15 @@ ipcMain.handle('search-documents', async (_event, query) => {
     const expandedQuery = await expandSearchQuery(query);
     if (expandedQuery !== query) console.log(`[search] expanded "${query}" → "${expandedQuery}"`);
     // Layer 2: FTS5 search with expanded query.
+    // NOTE: documents_fts JOIN on filename can fan-out when the same filename
+    // exists in multiple categories (unique index is on (filename, category),
+    // not filename alone). We select d.id and dedupe by it in JS (rank order
+    // preserved) so cross-category duplicates are eliminated without touching
+    // the visibility gate.
     let results;
     try {
       results = db.prepare(`
-        SELECT d.filename, d.filetype, d.word_count, d.created_at,
+        SELECT d.id, d.filename, d.filetype, d.word_count, d.created_at,
                snippet(documents_fts, 1, '**', '**', '...', 32) as snippet
         FROM documents_fts f
         JOIN documents d ON d.filename = f.filename
@@ -4098,12 +4166,12 @@ ipcMain.handle('search-documents', async (_event, query) => {
           AND d.enabled = 1
           AND d.visibility IN ('public')
         ORDER BY rank
-        LIMIT 10
+        LIMIT 20
       `).all(expandedQuery);
     } catch {
       // Expanded query may have FTS5 syntax issues — fall back to original.
       results = db.prepare(`
-        SELECT d.filename, d.filetype, d.word_count, d.created_at,
+        SELECT d.id, d.filename, d.filetype, d.word_count, d.created_at,
                snippet(documents_fts, 1, '**', '**', '...', 32) as snippet
         FROM documents_fts f
         JOIN documents d ON d.filename = f.filename
@@ -4111,9 +4179,13 @@ ipcMain.handle('search-documents', async (_event, query) => {
           AND d.enabled = 1
           AND d.visibility IN ('public')
         ORDER BY rank
-        LIMIT 10
+        LIMIT 20
       `).all(query);
     }
+    // Dedupe by document id (eliminates cross-category fan-out from filename JOIN).
+    // Rank order is preserved; first occurrence of each id wins.
+    const seenIds = new Set();
+    results = results.filter(r => { if (seenIds.has(r.id)) return false; seenIds.add(r.id); return true; }).slice(0, 10);
     if (results.length === 0) return results;
     // Layer 3: rerank for semantic relevance.
     return await rerankSearchResults(query, results);

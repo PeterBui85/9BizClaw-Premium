@@ -992,7 +992,23 @@ async function backfillKnowledgeFromDisk() {
       if (!fs.existsSync(dir)) continue;
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (!entry.isFile()) continue;
-        if (existing.has(entry.name)) continue;
+        if (existing.has(entry.name)) {
+          // File already in DB — check whether its visibility drifted (e.g. CEO moved
+          // the file between subfolders while the watcher was down). Heal only visibility
+          // + filepath; never touch content/summary/word_count.
+          // NOTE: if the same basename somehow exists in two subfolders of one category,
+          // the last-scanned dir wins (dirsToScan order: public → noi-bo → ceo-only →
+          // legacy root). That is acceptable — latest location is most truthful.
+          try {
+            const fp = path.join(dir, entry.name);
+            const row = db.prepare('SELECT visibility, filepath FROM documents WHERE filename = ? AND category = ?').get(entry.name, cat);
+            if (row && row.visibility !== visibility) {
+              db.prepare('UPDATE documents SET visibility = ?, filepath = ? WHERE filename = ? AND category = ?').run(visibility, fp, entry.name, cat);
+              console.log(`[knowledge-backfill] healed visibility: ${entry.name} ${row.visibility}→${visibility}`);
+            }
+          } catch {}
+          continue;
+        }
         const fp = path.join(dir, entry.name);
         let stat;
         try { stat = fs.statSync(fp); } catch { continue; }

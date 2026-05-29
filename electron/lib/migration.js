@@ -322,7 +322,7 @@ function cleanupOldBundledFiles() {
           fs.renameSync(filePath, staleDir);
           console.log('[migration] Renamed to stale:', staleDir);
           // Schedule deletion after app restarts
-          setTimeout(() => {
+          const _t = setTimeout(() => {
             try {
               fs.rmSync(staleDir, { recursive: true, force: true });
               console.log('[migration] Deleted stale dir:', staleDir);
@@ -330,6 +330,7 @@ function cleanupOldBundledFiles() {
               console.warn('[migration] Could not delete stale dir:', staleDir, e.message);
             }
           }, 30000); // Wait 30s before deleting
+          if (_t && _t.unref) _t.unref();
         } catch (renameErr) {
           // If rename fails, file might be in use - just leave it
           console.warn('[migration] Could not rename, leaving:', filePath, renameErr.message);
