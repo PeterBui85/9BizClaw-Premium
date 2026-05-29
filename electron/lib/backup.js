@@ -88,6 +88,7 @@ function collectBackupFiles() {
 
   const wsJsonFiles = [
     'schedules', 'custom-crons', 'active-persona', 'zalo-group-settings',
+    'zalo-user-settings', // internal-user flag (read by inbound.ts __mcReadUserSettings) — back up alongside group settings
     'zalo-blocklist', 'zalo-allowlist', 'zalo-stranger-policy', 'shop-state',
     'fb-config', 'fb-scheduled-posts', 'google-workspace', 'media-library',
     'app-prefs', 'setup-complete', 'follow-up-queue', 'license',
