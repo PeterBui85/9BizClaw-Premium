@@ -310,7 +310,12 @@ function registerExistingMediaFile(absPath, options = {}) {
 }
 
 function listMediaAssets(filters = {}) {
-  const { type, visibility, audience } = filters;
+  const { type, visibility } = filters;
+  // FAIL-CLOSED: normalize any unknown/invalid audience to the most restrictive
+  // tier ('customer'). Previously a value that was neither 'customer' nor
+  // 'internal' (e.g. 'ceo', '', undefined, a typo) fell through BOTH guards and
+  // returned private assets. Now only an explicit, valid 'ceo' sees private.
+  const audience = ['customer', 'internal', 'ceo'].includes(filters.audience) ? filters.audience : 'customer';
   return readIndex().assets.filter(asset => {
     if (type && asset.type !== type) return false;
     if (visibility && asset.visibility !== visibility) return false;

@@ -3676,30 +3676,46 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
     let info, category, filename, filepath;
     try {
       const row = db.prepare('SELECT category, filename, filepath FROM documents WHERE id=?').get(docId);
-      category = row?.category;
-      filename = row?.filename;
-      filepath = row?.filepath;
-      info = db.prepare('UPDATE documents SET visibility=? WHERE id=?').run(visibility, docId);
+      if (!row) return { success: false, error: 'Document not found' };
+      category = row.category; filename = row.filename; filepath = row.filepath;
     } catch (e) {
       return { success: false, error: 'DB error: ' + e.message };
     }
-    if (!info || info.changes === 0) return { success: false, error: 'Document not found' };
 
-    // Move file to matching visibility subfolder
+    // ATOMIC ORDER: move the file to its visibility subfolder FIRST, then write
+    // the DB. If the move fails we abort before touching the DB, so the DB's
+    // visibility never disagrees with the file's folder — which the disk-scan /
+    // backfill / DB-down display paths derive visibility from. If the DB write
+    // fails after a successful move, we roll the file back.
+    let newPath = filepath;
+    let moved = false;
     if (filepath && filename && category) {
-      try {
-        const targetSubDir = VISIBILITY_SUBFOLDERS[visibility] || 'public';
-        const targetDir = path.join(getKnowledgeDir(category), 'files', targetSubDir);
-        fs.mkdirSync(targetDir, { recursive: true });
-        const newPath = path.join(targetDir, filename);
-        if (fs.existsSync(filepath) && filepath !== newPath) {
+      const targetSubDir = VISIBILITY_SUBFOLDERS[visibility] || 'public';
+      const targetDir = path.join(getKnowledgeDir(category), 'files', targetSubDir);
+      const candidate = path.join(targetDir, filename);
+      if (fs.existsSync(filepath) && filepath !== candidate) {
+        try {
+          fs.mkdirSync(targetDir, { recursive: true });
           _watcherSkipPaths.add(filepath);
-          _watcherSkipPaths.add(newPath);
-          fs.renameSync(filepath, newPath);
-          try { moveKnowledgeDocumentState(filepath, newPath); } catch {}
-          db.prepare('UPDATE documents SET filepath=? WHERE id=?').run(newPath, docId);
+          _watcherSkipPaths.add(candidate);
+          fs.renameSync(filepath, candidate);
+          try { moveKnowledgeDocumentState(filepath, candidate); } catch {}
+          newPath = candidate;
+          moved = true;
+        } catch (e) {
+          return { success: false, error: 'Không di chuyển được file sang thư mục ' + targetSubDir + ': ' + e.message };
         }
-      } catch (e) { console.warn('[set-knowledge-visibility] file move error:', e.message); }
+      }
+    }
+    try {
+      info = db.prepare('UPDATE documents SET visibility=?, filepath=? WHERE id=?').run(visibility, newPath, docId);
+    } catch (e) {
+      if (moved) { try { fs.renameSync(newPath, filepath); moveKnowledgeDocumentState(newPath, filepath); } catch {} }
+      return { success: false, error: 'DB error: ' + e.message };
+    }
+    if (!info || info.changes === 0) {
+      if (moved) { try { fs.renameSync(newPath, filepath); moveKnowledgeDocumentState(newPath, filepath); } catch {} }
+      return { success: false, error: 'Document not found' };
     }
 
     try { auditLog('visibility-change', { docId, visibility, ts: Date.now() }); } catch {}
@@ -3709,7 +3725,7 @@ ipcMain.handle('set-knowledge-visibility', async (_event, { docId, visibility })
       purgeAgentSessions('knowledge-visibility');
     }
     try {
-      mediaLibrary.updateKnowledgeMediaAssets({ docId, filename, filepath }, { visibility });
+      mediaLibrary.updateKnowledgeMediaAssets({ docId, filename, filepath: newPath }, { visibility });
     } catch (e) {
       indexWarning = indexWarning || e.message;
     }
@@ -4080,6 +4096,7 @@ ipcMain.handle('search-documents', async (_event, query) => {
         JOIN documents d ON d.filename = f.filename
         WHERE documents_fts MATCH ?
           AND d.enabled = 1
+          AND d.visibility IN ('public')
         ORDER BY rank
         LIMIT 10
       `).all(expandedQuery);
@@ -4092,6 +4109,7 @@ ipcMain.handle('search-documents', async (_event, query) => {
         JOIN documents d ON d.filename = f.filename
         WHERE documents_fts MATCH ?
           AND d.enabled = 1
+          AND d.visibility IN ('public')
         ORDER BY rank
         LIMIT 10
       `).all(query);

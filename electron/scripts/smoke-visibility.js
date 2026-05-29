@@ -212,7 +212,8 @@ function testProductionCallSitesExist() {
   const dashboardIpcJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'dashboard-ipc.js'), 'utf-8');
   const cronApiJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron-api.js'), 'utf-8');
   const preloadJs = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf-8');
-  const combined = knowledgeJs + '\n' + dashboardIpcJs + '\n' + cronApiJs + '\n' + preloadJs;
+  const mediaLibraryJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'media-library.js'), 'utf-8');
+  const combined = knowledgeJs + '\n' + dashboardIpcJs + '\n' + cronApiJs + '\n' + preloadJs + '\n' + mediaLibraryJs;
   const assertions = [
     { name: 'visibility column in CREATE TABLE',
       re: /visibility\s+TEXT\s+NOT\s+NULL\s+DEFAULT\s+'public'/ },
@@ -248,11 +249,47 @@ function testProductionCallSitesExist() {
       re: /setKnowledgeDocumentEnabledState\s*\(\s*row\.filepath,\s*previousEnabled\s*!==\s*0\s*\)/ },
     { name: 'watcher delete clears enabled metadata',
       re: /if\s*\(!exists\)[\s\S]{0,500}removeKnowledgeDocumentState\s*\(\s*filePath\s*\)/ },
+    // --- fail-closed hardening (added after visibility audit) ---
+    { name: 'media-library normalizes audience fail-closed (invalid -> customer)',
+      re: /\['customer',\s*'internal',\s*'ceo'\]\.includes\(filters\.audience\)\s*\?\s*filters\.audience\s*:\s*'customer'/ },
+    { name: 'cron-api media endpoints clamp audience fail-closed',
+      re: /\['customer',\s*'internal',\s*'ceo'\]\.includes\(params\.audience\)\s*\?\s*params\.audience\s*:\s*'customer'/ },
+    { name: 'legacy search-documents filters visibility (fail-closed to public)',
+      re: /ipcMain\.handle\(\s*'search-documents'[\s\S]{0,1800}d\.visibility\s+IN\s*\('public'\)/ },
+    { name: 'file-read infers visibility from path when DB row missing (fail-closed)',
+      re: /const\s+_fileVis\s*=\s*row\s*\?\s*row\.visibility\s*:\s*knowledge\.inferVisibilityFromPath\(\s*abs\s*\)/ },
+    { name: 'set-knowledge-visibility moves file before DB write (atomic) + aborts on move fail',
+      re: /Không di chuyển được file/ },
+    { name: 'set-knowledge-visibility rolls file back if DB write fails',
+      re: /if\s*\(moved\)\s*\{[\s\S]{0,120}renameSync\(newPath,\s*filepath\)/ },
   ];
   for (const a of assertions) {
     if (!a.re.test(combined)) fail(`production call site missing: ${a.name}`);
     ok(`prod call site: ${a.name}`);
   }
+}
+
+// Mirror of media-library.js listMediaAssets() fail-closed filter. Asserts a
+// private/internal media asset is NEVER returned for an invalid/unknown audience
+// (the old code fell through both guards and leaked private for audience='ceo'/''/typo).
+function testMediaAudienceFailClosed() {
+  const visible = (assetVis, rawAudience) => {
+    const audience = ['customer', 'internal', 'ceo'].includes(rawAudience) ? rawAudience : 'customer';
+    if (audience === 'customer' && assetVis !== 'public') return false;
+    if (audience === 'internal' && assetVis === 'private') return false;
+    return true;
+  };
+  for (const bad of ['', ' ', null, undefined, 'all', 'ceeo', 'CEO', 0, false, 'admin']) {
+    if (visible('private', bad)) fail(`media: invalid audience ${JSON.stringify(bad)} leaked PRIVATE asset`);
+    if (visible('internal', bad)) fail(`media: invalid audience ${JSON.stringify(bad)} leaked INTERNAL asset`);
+  }
+  if (visible('private', 'customer')) fail('media: customer saw private');
+  if (visible('internal', 'customer')) fail('media: customer saw internal');
+  if (visible('private', 'internal')) fail('media: internal saw private');
+  if (!visible('internal', 'internal')) fail('media: internal could not see internal');
+  if (!visible('private', 'ceo')) fail('media: ceo could not see private');
+  if (!visible('public', 'customer')) fail('media: customer could not see public');
+  ok('media audience fail-closed — invalid audience -> public only; private requires explicit ceo');
 }
 
 function main() {
@@ -266,6 +303,7 @@ function main() {
     testAlterUpgradePath();
     testIpcEnumValidation();
     testSaveHandlerWhitelist();
+    testMediaAudienceFailClosed();
     testProductionCallSitesExist();
   } finally {
     db.close();

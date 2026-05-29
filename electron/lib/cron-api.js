@@ -1954,11 +1954,16 @@ function startCronApi() {
             try { require('./workspace').auditLog('file_read_disabled_block', { path: abs, channel: chan, source: 'state' }); } catch {}
             return jsonResp(res, 403, { error: 'file disabled for bot use' });
           }
-          if (row && row.visibility !== 'public') {
+          // FAIL-CLOSED: use the DB row's visibility when available, else infer
+          // from the folder path. Previously a missing row (DB down, or a
+          // filename/category lookup miss) skipped this check entirely, so an
+          // untracked non-public file could be read by a non-CEO channel.
+          const _fileVis = row ? row.visibility : knowledge.inferVisibilityFromPath(abs);
+          if (_fileVis && _fileVis !== 'public') {
             const chan = String(req.headers['x-9bizclaw-agent-channel'] || req.headers['x-source-channel'] || '').toLowerCase();
             if (chan !== 'telegram') {
-              try { require('./workspace').auditLog('file_read_visibility_block', { path: abs, visibility: row.visibility, enabled: row.enabled !== 0, channel: chan }); } catch {}
-              return jsonResp(res, 403, { error: 'file visibility restricted - ' + row.visibility });
+              try { require('./workspace').auditLog('file_read_visibility_block', { path: abs, visibility: _fileVis, enabled: row ? row.enabled !== 0 : null, channel: chan, source: row ? 'db' : 'path' }); } catch {}
+              return jsonResp(res, 403, { error: 'file visibility restricted - ' + _fileVis });
             }
           }
         }
@@ -2455,7 +2460,7 @@ function startCronApi() {
         const files = mediaLibrary.listMediaAssets({
           type: params.type || undefined,
           visibility: params.visibility || undefined,
-          audience: params.audience || 'customer',
+          audience: ['customer', 'internal', 'ceo'].includes(params.audience) ? params.audience : 'customer',
         }).map(sanitizeMediaAssetForApi);
         return jsonResp(res, 200, { files });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
@@ -2466,7 +2471,7 @@ function startCronApi() {
         if (!q) return jsonResp(res, 400, { error: 'query required' });
         const results = mediaLibrary.searchMediaAssets(q, {
           type: params.type || undefined,
-          audience: params.audience || 'customer',
+          audience: ['customer', 'internal', 'ceo'].includes(params.audience) ? params.audience : 'customer',
           limit: params.limit || params.max || 5,
         }).map(sanitizeMediaAssetForApi);
         return jsonResp(res, 200, { query: q, results });

@@ -78,7 +78,7 @@ for (const route of ['/api/media/list', '/api/media/search', '/api/media/upload'
   assert(`cron api exposes ${route}`, cronApiSource.includes(route));
 }
 assert('zalo send-media rejects raw file paths', cronApiSource.includes('send-media requires mediaId') && !/filePath\s*\|\|\s*imagePath/.test(cronApiSource));
-assert('media list defaults to customer audience over HTTP', /audience:\s*params\.audience\s*\|\|\s*'customer'/.test(cronApiSource));
+assert('media endpoints fail-closed: invalid audience normalized to customer', /\['customer',\s*'internal',\s*'ceo'\]\.includes\(params\.audience\)\s*\?\s*params\.audience\s*:\s*'customer'/.test(cronApiSource), 'unknown/invalid audience must default to customer, never leak private media');
 assert('media upload returns sanitized asset', /success:\s*true,\s*asset:\s*sanitizeMediaAssetForApi\(asset\)/.test(cronApiSource), 'upload response must not expose absolute media path');
 assert('media describe returns sanitized asset', /success:\s*true,\s*asset:\s*sanitizeMediaAssetForApi\(asset\)/.test(cronApiSource), 'describe response must not expose absolute media path');
 assert('agent cron prompts do not persist live API tokens', !/token='\s*\+\s*_cronApiToken|token=\s*'\s*\+\s*_cronApiToken|token=' \+ _cronApiToken|token=\s*\$\{_cronApiToken\}/.test(cronApiSource), 'custom-crons.json must not receive live API tokens');
