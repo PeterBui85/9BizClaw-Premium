@@ -119,6 +119,19 @@ On boot (idempotent):
 - Lane 2: backfill existing `knowledge/scripts/*.md` (+ root `knowledge/*.md`) into the documents DB + embed.
 - Net: everything the CEO trained before this fix becomes effective after the update, automatically.
 
+## 7.1 Migration risks & conflicts (updating from an old version)
+
+Verified against the code; the plan MUST handle these or the upgrade creates new problems.
+
+1. **(HIGH) Re-seed wipes hand-edited AGENTS.md rules.** On a version bump, `seedWorkspace` backs up the workspace `AGENTS.md` to `.learnings/AGENTS-backup-v<n>-<ts>.md` then **deletes + overwrites it from the template** ([workspace.js:280-306](../../../electron/lib/workspace.js)); the backup is **not auto-re-applied**. So any CEO who "trained" by editing `AGENTS.md` directly loses those rules on upgrade (recoverable only from the backup). Mitigation: training must flow through `/api/ceo-rules/write` (→ Lane-1 files); optionally a one-time migration that extracts the user-added block from the newest `AGENTS-backup-*.md`. Document clearly.
+2. **(HIGH) Lane-1 injector must NOT glob `.learnings/*.md`.** The re-seed dumps `AGENTS-backup-*.md` (and weekly digests) into `.learnings/`. The injector must read **only** `LEARNINGS.md` + `ERRORS.md` by exact name — globbing would inject whole old AGENTS.md backups into the CEO-RULES block (bloat / duplication / garbage).
+3. **(MED) First migration drops oldest rules via the cap.** Existing `sales-playbook.md`/`LEARNINGS.md` may already exceed the 6–8K cap; only newest survive. Document; consider a larger first-run cap or a compaction step.
+4. **(MED) R1 precedence must EXEMPT safety guards.** "CEO rules take precedence" must be scoped to **tone/style only** and explicitly NOT override scope/security/social-engineering rules or the `Người nội bộ` section. Otherwise the LLM may treat a trained rule as licence to break a guard.
+5. **(LOW-MED) Lane-2 migration needs DB + embedder.** On upgrade the better-sqlite3 ABI may be mismatched (auto-fix runs) and the embedder model may not be downloaded yet → scripts index without embeddings (FTS5-only) or fail. Acceptable: FTS5 + disk fallback, idempotent re-run once DB/embedder are ready.
+6. **(MED, cross-cutting) `session.dmScope='per-channel-peer'`** (added this session) changes the session key per Zalo peer → in-flight conversations are "forgotten" once on the upgrade boot. One-time, expected; note it.
+7. **(HIGH, process) AGENTS version stamp lives in 3 places.** Bumping it requires syncing `AGENTS.md` stamp + `workspace.js` `CURRENT_AGENTS_MD_VERSION` + the hardcoded check in `scripts/smoke-skill-runtime.js` (this exact desync broke a build this session). Plan should single-source it or update all three together.
+8. **(known) NSIS same-version skip** — the EXE won't install over an identical version; bump at ship time.
+
 ## 8. Update / Delivery
 - New logic lives in lib (`knowledge.js`, `cron-api.js`, `ceo-memory.js`/`workspace.js`) → requires a **new EXE build**.
 - After shipping, the `CEO-RULES` block self-maintains: regenerated from the user's own trained files every boot + after each `/api/ceo-rules/write`. AGENTS.md template changes reach existing workspaces via the version-stamp re-seed (`CURRENT_AGENTS_MD_VERSION`).
