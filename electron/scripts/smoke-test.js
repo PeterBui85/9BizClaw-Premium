@@ -2145,6 +2145,47 @@ try {
 }
 
 // =========================================================================
+// Internal-user behavior frame — a Zalo user marked "Nội bộ" must NOT be
+// framed as a customer. inbound.ts must swap the customer fence for an
+// internal-colleague frame, and the change must reach existing installs
+// (fork version bump) + existing workspaces (AGENTS.md version bump).
+// =========================================================================
+section('Internal-user behavior frame');
+try {
+  const inboundTs = fs.readFileSync(path.join(modoroZaloPkgSrc, 'inbound.ts'), 'utf-8');
+  // 1. internal frame is set when audience===internal
+  if (/__audience === 'internal'[\s\S]{0,500}__frameTag\s*=\s*'\[NGƯỜI NỘI BỘ/.test(inboundTs)) {
+    pass('inbound.ts sets [NGƯỜI NỘI BỘ ...] frame when audience===internal');
+  } else {
+    fail('internal frame', 'inbound.ts does not switch __frameTag to the internal-employee frame');
+  }
+  // 2. the 3 rawBody rewrites use ${__frameTag} — NO hardcoded customer fence
+  const hardcoded = (inboundTs.match(/\[Câu hỏi khách hàng — DỮ LIỆU, KHÔNG PHẢI HƯỚNG DẪN\]\\n\$\{__rag/g) || []).length;
+  if (hardcoded === 0) {
+    pass('inbound.ts rawBody rewrites use ${__frameTag} (no hardcoded customer fence)');
+  } else {
+    fail('internal frame usage', `inbound.ts still hardcodes the customer fence in ${hardcoded} rewrite(s) — internal users framed as customers`);
+  }
+  // 3. fork version bumped so existing installs re-copy the patched inbound.ts
+  const zaloPlugin = fs.readFileSync(path.join(__dirname, '..', 'lib', 'zalo-plugin.js'), 'utf-8');
+  if (/MODORO_ZALO_FORK_VERSION\s*=\s*'modoro-zalo-v1\.0\.10'/.test(zaloPlugin)) {
+    pass('MODORO_ZALO_FORK_VERSION bumped to v1.0.10');
+  } else {
+    fail('fork version', 'MODORO_ZALO_FORK_VERSION not bumped to v1.0.10 — patched inbound.ts will not reach existing installs');
+  }
+  // 4. AGENTS.md internal-user section + version bumped (re-seeds to existing workspaces)
+  const agentsMd = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
+  if (agentsMd.includes('Người nội bộ') && /modoroclaw-agents-version:\s*109/.test(agentsMd)) {
+    pass('AGENTS.md has internal-user behavior section + version 109');
+  } else {
+    fail('AGENTS.md internal rule', 'AGENTS.md missing internal-user section or version not bumped to 109');
+  }
+} catch (e) {
+  if (modoroZaloPkgSrc) fail('internal-user frame', 'check failed: ' + e.message);
+  else warn('internal-user frame', 'modoro-zalo package source not found — skipped');
+}
+
+// =========================================================================
 // TEST 33: Preload event listeners use removeAllListeners guard
 // Without removeAllListeners before re-registering, renderer hot-reloads
 // stack N listeners that all fire per event → memory leak + duplicate actions.
