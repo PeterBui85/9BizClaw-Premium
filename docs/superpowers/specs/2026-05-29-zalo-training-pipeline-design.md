@@ -55,13 +55,18 @@ Sources: `.learnings/LEARNINGS.md` + `.learnings/ERRORS.md` + `knowledge/sales-p
   ... newest-first, deduped, capped ...
   <!-- CEO-RULES-END -->
   ```
-- Runs **after the template refresh**, next to `ceo-memory.injectMemoryIntoAgentsMd()` ([workspace.js:741-742](../../../electron/lib/workspace.js)) so a version-bump re-seed of AGENTS.md does not wipe it.
+- Runs **after the template refresh**, immediately **after** `ceo-memory.injectMemoryIntoAgentsMd()` ([workspace.js:741-742](../../../electron/lib/workspace.js)), so a version-bump re-seed of AGENTS.md does not wipe it. The two injectors use **distinct, non-overlapping marker pairs** (`MEMORY-CONTEXT` vs `CEO-RULES`) and both do marker-bounded write-if-changed, so they cannot clobber each other; the new one appends its block at end-of-file when its markers are absent (same pattern as the memory injector). Call order is fixed (memory first, rules second) to keep the file deterministic across boots.
+- **Home:** a new small module (or a `workspace.js` helper) — it reads `.learnings/*.md` + `knowledge/sales-playbook.md` (plain files, not CEO-memory DB content), so keep it out of `ceo-memory.js` to avoid coupling unrelated concerns.
 - Because `contextInjection='always'`, this block reaches the agent on **every** Zalo turn.
 - **Budget cap:** block ≤ ~6–8K chars; keep newest entries first; dedupe; trim oldest. Prevents blowing the AGENTS.md bootstrap budget (`AGENTS_MD_BOOTSTRAP_MAX_CHARS = 40000`).
+- **Classifier interaction:** `/api/ceo-rules/write`'s default bucket is `sales-playbook.md`, so any *unclassified* rule (incl. mis-classified factual like a stray price) lands in Lane 1 and gets always-injected rather than RAG-indexed. Acceptable, but the cap above is what keeps that bounded; a future improvement could re-route clearly-factual content to Lane 2.
 
 ### Lane 2 — Factual / scripts (RAG, fixed indexing)
 - Extend `backfillKnowledgeFromDisk()` + the knowledge watcher to also scan/index/embed `knowledge/scripts/*.md` (and any `knowledge/*.md` at root). Dashboard uploads under `knowledge/<cat>/files/` keep working unchanged.
 - `/api/ceo-rules/write`, when it writes a script/factual file, triggers an immediate index+embed of that file (no wait for the next boot backfill).
+- **Visibility (critical):** newly-indexed `knowledge/scripts/*.md` and root `knowledge/*.md` rows MUST be inserted with `visibility='public'` and `enabled=1`. `searchKnowledge` for a `customer` audience restricts to `visibility IN ('public')` + `enabled=1` ([knowledge.js:1417-1418](../../../electron/lib/knowledge.js)); any other value would index the file but keep it invisible to Zalo customers — re-creating the exact bug this fixes.
+- **Idempotency:** reuse the existing `INSERT OR IGNORE` + `(filename, category)` uniqueness guard (`idx_documents_filename_cat`) so re-running backfill every boot does not duplicate rows.
+- **Watcher path checks:** the live watcher currently hard-requires a `knowledge/<cat>/files/` path match (and `filename.includes('files')`). Both checks must be loosened to also accept `knowledge/scripts/` + root `knowledge/*.md`, so live edits (not just boot backfill) get indexed.
 
 ### Responding guarantees (close the loop — context ≠ applied)
 
@@ -69,7 +74,8 @@ These three are the difference between "trained" and "actually behaves different
 
 **R1 — Precedence.** The `CEO-RULES` block header explicitly states it is **authoritative over default behaviour when they conflict, within safety/scope limits**, and "prefer the most recent CEO rule". Resolves the silent conflict between trained rules and baked-in AGENTS.md rules.
 
-**R2 — Honest trainability boundary.** `/api/ceo-rules/write` classifies the rule and detects when it targets something the code layer will **hard-block** (scope expansion the COMMAND-BLOCK / out-of-scope filter rejects, or an output that the output filter strips). In that case it returns a **warning to the CEO** ("rule này sẽ KHÔNG có tác dụng vì bị chặn ở tầng code/scope — …") instead of a misleading "✅ đã lưu". This directly removes the "I trained it and nothing happened" silence.
+**R2 — Honest trainability boundary.** `/api/ceo-rules/write` classifies the rule and detects when it targets something the code layer will **hard-block**, returning a **warning to the CEO** ("rule này sẽ KHÔNG có tác dụng vì bị chặn ở tầng code/scope — …") instead of a misleading "✅ đã lưu". This removes the "I trained it and nothing happened" silence.
+- **Detection mechanism (bounded, conservative):** keep a small curated keyword list extracted from the existing guard sets — the COMMAND-BLOCK / out-of-scope keyword groups in `inbound.ts` (e.g. `viết code`, `dịch thuật`, `viết bài`, `làm marketing`, `giải toán`, cron/admin) and the output-filter Layer K strip patterns in `channels.js`/`send.ts` (e.g. bare process-acks). If the rule text matches a group, warn that that behaviour is enforced at code level and the rule cannot change it. The check is **warn-only** (never blocks the write) and tuned to avoid false positives — when unsure, stay silent. It is a heuristic, not a parser of the live guard regexes (those live in another process); the curated list is kept in sync with the guard sets and covered by a smoke assertion.
 
 **R3 — Output-filter reconciliation.** Document (and, where feasible, detect) which trained behaviours are stripped by the Zalo output filters (`channels.js` Layer K, `_stripZaloProcessText`, `send.ts` Layer K). At minimum, R2 warns when a trained reply pattern matches a strip rule, so the CEO is not surprised.
 
@@ -119,7 +125,7 @@ On boot (idempotent):
 - **NSIS caveat:** installing over an existing same-version install is skipped. If shipping to machines already on the current version, the app version MUST be bumped for the EXE to install (decide at ship time).
 
 ## 9. Testing
-- Smoke/unit: (a) `injectTrainedRulesIntoAgentsMd()` writes a marker-bounded block containing LEARNINGS/playbook content and respects the char cap + dedupe + newest-first; (b) indexer now covers `knowledge/scripts/` (a script file becomes RAG-retrievable in an in-memory DB); (c) migration on boot ingests pre-existing files; (d) `/api/ceo-rules/write` triggers re-inject/index and returns a `warning` for a hard-blocked rule; (e) precedence header text present in the injected block.
+- Smoke/unit: (a) `injectTrainedRulesIntoAgentsMd()` writes a marker-bounded block containing LEARNINGS/playbook content and respects the char cap + dedupe + newest-first; (b) the extended indexer inserts a `knowledge/scripts/*.md` file into `documents` + `documents_chunks_fts` with `visibility='public'`, `enabled=1`, and it is returned by an **FTS5 query** (pure SQLite, no embedder/port-20129 service needed — this is what an in-memory smoke can assert; full semantic `/search` retrieval is verified manually, not in CI); (c) migration on boot ingests pre-existing files (idempotent: a second run inserts 0 new rows); (d) `/api/ceo-rules/write` triggers re-inject/index and returns a `warning` for a hard-blocked rule (and no warning for an in-scope rule); (e) precedence header text present in the injected block.
 - Manual verify: CEO trains "đừng chào mời, trả lời ngắn" → next Zalo customer turn the bot follows it; CEO trains an out-of-scope rule → gets the R2 warning instead of a silent success.
 
 ## 10. Open questions / risks
