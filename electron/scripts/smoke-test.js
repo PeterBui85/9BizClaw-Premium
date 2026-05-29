@@ -2859,6 +2859,14 @@ section('CLI shims (drive/space-safe)');
     } else {
       fail('cli-shims filename', 'win must be .cmd, unix bare');
     }
+
+    // Lock in the Windows PATH-write hardening so a future edit can't silently
+    // drop the guards that prevent PATH corruption.
+    const ps1 = cs._ADD_TO_PATH_PS1 || '';
+    const hardened = ps1.includes('PATH_TOO_LONG') && ps1.includes('VERIFY_FAILED') &&
+      ps1.includes('PATH_OK') && /SetEnvironmentVariable\('Path'[^)]*'User'/.test(ps1);
+    if (hardened) pass('PATH-add ps1 keeps length-guard + verify + PATH_OK + User scope');
+    else fail('cli-shims ps1 hardening', 'PATH-add script missing a safety guard (length/verify/sentinel/User scope)');
   } catch (e) { fail('cli-shims.js', 'failed to load: ' + e.message); }
 
   // main.js must actually wire it at boot

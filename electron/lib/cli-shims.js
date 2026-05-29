@@ -70,8 +70,11 @@ function _findNpmCli(vendor, platform) {
 // PowerShell helper that prepends a dir to the *User* PATH (idempotent,
 // no setx 1024-char truncation — reads/writes via [Environment]) and
 // broadcasts WM_SETTINGCHANGE so newly-opened shells pick it up without
-// a logout. Prepending to User scope does NOT override a machine-wide
-// (System scope) node, so it won't hijack a developer's system Node.
+// a logout. NOTE on `node`/`npm`: prepending to User scope does NOT shadow
+// a System-scope Node (official MSI default), but it CAN shadow a Node that
+// lives on the *User* PATH (nvm-windows / fnm / per-user MSI). That only
+// affects developers; the target users have no Node at all, and `claw-node`/
+// `claw-npm` are always the unambiguous bundled runtime regardless.
 // Prepends $Dir to the *User* PATH. Hardened:
 //  - idempotent (skip if already present),
 //  - refuses to write if the result would approach Windows' ~32767-char PATH
@@ -154,20 +157,23 @@ function _ensurePersistentPathUnix(binDir) {
   const block = `${markerStart}\nexport PATH="${binDir}:$PATH"\n${markerEnd}\n`;
   // zsh login (.zprofile) + zsh interactive (.zshrc) + bash (.bashrc) + POSIX (.profile)
   const rcFiles = ['.zprofile', '.zshrc', '.bashrc', '.profile'].map(f => path.join(home, f));
-  let any = false;
+  let failures = 0;
   for (const rc of rcFiles) {
     try {
       let content = '';
       try { content = fs.readFileSync(rc, 'utf-8'); } catch {}
-      if (content.includes(markerStart)) { any = true; continue; }
+      if (content.includes(markerStart)) continue; // already done — idempotent
       const sep = content && !content.endsWith('\n') ? '\n' : '';
       fs.appendFileSync(rc, `${sep}${block}`, 'utf-8');
-      any = true;
     } catch (e) {
+      failures++;
       console.warn(`[cli-shims] could not update ${rc}:`, e?.message);
     }
   }
-  return any;
+  // Only report success if NOTHING failed — so a partial failure (e.g. one rc
+  // is unwritable) leaves the marker unwritten and retries next boot. The
+  // per-file `includes(markerStart)` guard makes that retry cheap + dup-free.
+  return failures === 0;
 }
 
 // ---------------------------------------------------------------------
@@ -191,6 +197,10 @@ async function ensureCliShims() {
     const ocMjs = path.join(vendor, 'node_modules', 'openclaw', 'openclaw.mjs');
     if (fs.existsSync(ocMjs)) specs.push({ name: 'openclaw', script: ocMjs });
 
+    // NOTE: 9router/cli.js is a SERVER entry (hardcoded port 20128), not a
+    // general CLI. `9router --version`/`--help` work, but bare `9router` starts
+    // a daemon that will EADDRINUSE against the app's running instance. Shipped
+    // as a passthrough for advanced/diagnostic use only.
     const r9 = path.join(vendor, 'node_modules', '9router', 'cli.js');
     if (fs.existsSync(r9)) specs.push({ name: '9router', script: r9 });
 
