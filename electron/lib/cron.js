@@ -7,7 +7,7 @@ const { getWorkspace, DEFAULT_SCHEDULES_JSON, auditLog } = require('./workspace'
 const { findOpenClawCliJs, spawnOpenClawSafe } = require('./boot');
 const { healOpenClawConfigInline, setJournalCronRun } = require('./config');
 const {
-  sendTelegram, sendCeoAlert, sendZaloTo,
+  sendTelegram, sendCeoAlert, sendZaloTo, filterSensitiveOutput,
   isZaloListenerAlive,
   getTelegramConfigWithRecovery, getCeoSessionKey, sendToGatewaySession,
 } = require('./channels');
@@ -266,6 +266,35 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
     } catch {}
     return false;
   }
+}
+
+// Telegram (CEO) parity with deliverCronResultToZalo: strip process-acks and,
+// crucially, DROP a reply that the output filter would block (a raw upstream
+// error/leak). Without this, sendTelegram() substitutes a polite "em đang xác
+// nhận…" ack, so the CEO gets a content-less message at EVERY cron fire when the
+// model errors (the reported bug). A failed cron must produce NO message here —
+// genuine spawn/exit failures are still surfaced via the retry/fatal path.
+async function deliverCronResultToTelegram(replyText, label) {
+  if (!replyText) return true;
+  const cleaned = _stripProcessAcks(String(replyText));
+  if (!cleaned || cleaned.length < 5 || /^\s*DONE\s*[.!]?\s*$/i.test(cleaned)) {
+    console.log(`[cron-agent] Telegram delivery for "${label}" skipped — no CEO-facing content (ack/DONE only)`);
+    return true;
+  }
+  try {
+    const f = filterSensitiveOutput(cleaned);
+    if (f && f.blocked) {
+      console.log(`[cron-agent] Telegram delivery for "${label}" skipped — reply blocked by output filter (${f.pattern})`);
+      try { auditLog('cron_telegram_blocked', { label, pattern: f.pattern }); } catch {}
+      return true;
+    }
+  } catch {}
+  try {
+    await sendTelegram(cleaned);
+  } catch (e) {
+    console.warn(`[cron-agent] Telegram delivery failed:`, e?.message);
+  }
+  return true;
 }
 
 const CRON_PROMPT_MAX_BYTES = 24000;
@@ -534,7 +563,7 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, t
       if (zaloTarget && replyText) {
         zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
       } else if (replyText && !zaloTarget) {
-        try { await sendTelegram(replyText); } catch (e) { console.warn(`[cron-agent] Telegram delivery failed:`, e?.message); }
+        await deliverCronResultToTelegram(replyText, niceLabel);
       }
       journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
       console.log(`[cron-agent] "${niceLabel}" delivered${zaloTarget ? ' (Telegram+zalo)' : ' (Telegram only)'} in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);

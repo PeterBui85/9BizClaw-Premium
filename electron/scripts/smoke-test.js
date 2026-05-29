@@ -2922,6 +2922,30 @@ section('CLI shims (drive/space-safe)');
 }
 
 // =========================================================================
+// Cron Telegram delivery parity — a content-less / filter-blocked cron reply
+// must NOT reach the CEO as a substituted polite ack (reported bug: repeated
+// "em đang xác nhận…" at cron times when the model returned an auth error).
+// =========================================================================
+section('Cron Telegram delivery (no content-less acks)');
+{
+  try {
+    const cronSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron.js'), 'utf-8');
+    if (/function\s+deliverCronResultToTelegram\s*\(/.test(cronSrc)) pass('cron.js has deliverCronResultToTelegram()');
+    else fail('cron telegram delivery', 'deliverCronResultToTelegram() missing');
+
+    const usesHelper = /else if \(replyText && !zaloTarget\)\s*\{[\s\S]{0,160}deliverCronResultToTelegram\(/.test(cronSrc);
+    const bare = /else if \(replyText && !zaloTarget\)\s*\{[\s\S]{0,120}await sendTelegram\(replyText\)/.test(cronSrc);
+    if (usesHelper && !bare) pass('cron Telegram branch routes through deliverCronResultToTelegram (not bare sendTelegram)');
+    else fail('cron telegram delivery', 'Telegram cron branch still sends replyText raw — content-less acks leak to CEO');
+
+    const strips = /deliverCronResultToTelegram[\s\S]{0,400}_stripProcessAcks/.test(cronSrc);
+    const skipsBlocked = /deliverCronResultToTelegram[\s\S]{0,800}filterSensitiveOutput[\s\S]{0,140}blocked/.test(cronSrc);
+    if (strips && skipsBlocked) pass('deliverCronResultToTelegram strips acks + skips filter-blocked replies');
+    else fail('cron telegram delivery', 'deliverCronResultToTelegram missing ack-strip or filter-blocked skip');
+  } catch (e) { fail('cron telegram delivery', 'cron.js read failed: ' + e.message); }
+}
+
+// =========================================================================
 // SUMMARY
 // =========================================================================
 console.log('');
