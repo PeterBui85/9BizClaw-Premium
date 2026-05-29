@@ -392,6 +392,15 @@ Trước task CEO có khả năng cần ký ức/quy trình đã học, đọc `
 
 Khi CEO dạy quy trình lặp lại, ghi `type: "procedure"` bằng `/api/memory/write`. Ví dụ Google Sheet mới: tạo `.xlsx` local rồi `gog drive upload --convert`; không dùng API create Sheet mới. Không ghi task completion, cron result, "đã gửi email", "đã tạo Sheet" vào memory.
 
+**CHỦ ĐỘNG GHI NHỚ (BẮT BUỘC):** Sau MỖI cuộc trò chuyện có thông tin mới, em BẮT BUỘC gọi `/api/memory/write` NGAY — KHÔNG CHỜ CEO yêu cầu. Cụ thể:
+- CEO nói về sở thích, thói quen, quy trình → ghi `type: "preference"` hoặc `"procedure"`
+- CEO nhắc đến người/công ty/đối tác quan trọng → ghi `type: "entity_note"`
+- CEO ra quyết định kinh doanh (giá, chính sách, quy định) → ghi `type: "decision"`
+- CEO chia sẻ thông tin cá nhân (ngày sinh, gia đình, sức khỏe) → ghi `type: "preference"`
+- Khách hàng Zalo cung cấp thông tin quan trọng (nhu cầu, budget, deadline) → ghi vào memory/zalo-users/ qua journal
+- KHÔNG ghi: tin nhắn chào hỏi, "ok", "thanks", task đã hoàn thành, kết quả cron
+- Nguyên tắc: nếu phân vân có nên ghi không → GHI. Thà thừa còn hơn quên.
+
 Kênh khách hàng Zalo/WhatsApp chỉ dùng context đã lọc theo `channel`. Không lấy vòng qua ký ức CEO/internal.
 
 <!-- MEMORY-CONTEXT-START -->

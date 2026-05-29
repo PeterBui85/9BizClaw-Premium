@@ -1439,7 +1439,7 @@ function checkModuleContracts() {
       'buildMorningBriefingPrompt', 'buildEveningSummaryPrompt',
       'buildWeeklyReportPrompt', 'buildMonthlyReportPrompt',
       'scanZaloFollowUpCandidates', 'buildZaloFollowUpPrompt',
-      'buildMeditationPrompt', 'buildMemoryCleanupPrompt',
+      'buildMemoryCleanupPrompt',
       'healCustomCronEntries', 'watchCustomCrons',
       'startCronJobs', 'stopCronJobs', 'restartCronJobs',
       '_withCustomCronLock', '_removeCustomCronById', 'surfaceCronConfigError',

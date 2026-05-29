@@ -20,7 +20,7 @@ let _zaloReady = false;
 let _zaloPluginInFlight = null;
 let _groupHistorySeedInFlight = false;
 let _cachedOpenzcaCliJs = null;
-const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.5';
+const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.9';
 
 // ============================================
 //  GETTERS
@@ -264,12 +264,13 @@ function seedZaloCustomersFromCache() {
             ? new Date(f.lastActionTime).toISOString()
             : new Date().toISOString();
           const statusText = String(f.status || '').trim().replace(/[\r\n]+/g, ' ').slice(0, 200);
+          const zaloGender = typeof f.gender === 'number' ? (f.gender === 0 ? 'M' : f.gender === 1 ? 'F' : 'unknown') : 'unknown';
           const content = `---
 name: ${displayName}
 zaloName: ${zaloName}
 lastSeen: ${lastSeen}
 msgCount: 0
-gender: unknown
+gender: ${zaloGender}
 tags: []
 groups: []
 ---

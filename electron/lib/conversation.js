@@ -575,6 +575,66 @@ async function appendCustomerSummary(channel, senderId, data) {
   } catch (e) { console.error('[memory] append error:', e?.message); }
 }
 
+// ---------------------------------------------------------------------------
+//  POST-IDLE MEMORY EXTRACTION
+//  After 1 hour of CEO inactivity, extract facts from recent conversations
+//  and write to memory via /api/memory/write. Code-level guarantee — does not
+//  depend on LLM deciding to call the memory tool.
+// ---------------------------------------------------------------------------
+
+const IDLE_MEMORY_EXTRACT_MS = 60 * 60 * 1000; // 1 hour
+let _idleMemoryTimer = null;
+let _idleMemoryLastActivity = 0;
+let _idleMemoryInFlight = false;
+let _runCronAgentPromptFn = null;
+
+function setIdleMemoryRunCronAgent(fn) { _runCronAgentPromptFn = fn; }
+
+function touchIdleMemoryTimer() {
+  if (_idleMemoryInFlight) return;
+  _idleMemoryLastActivity = Date.now();
+  if (_idleMemoryTimer) clearTimeout(_idleMemoryTimer);
+  _idleMemoryTimer = setTimeout(_runIdleMemoryExtraction, IDLE_MEMORY_EXTRACT_MS);
+}
+
+async function _runIdleMemoryExtraction() {
+  if (_idleMemoryInFlight) return;
+  if (!_runCronAgentPromptFn) return;
+  const elapsed = Date.now() - _idleMemoryLastActivity;
+  if (elapsed < IDLE_MEMORY_EXTRACT_MS - 5000) return;
+  _idleMemoryInFlight = true;
+  try {
+    const sinceMs = Date.now() - 2 * 60 * 60 * 1000;
+    const history = extractConversationHistory({ sinceMs, maxMessages: 50, channels: ['telegram'], maxPerSender: 0 });
+    if (!history || history.length < 50) {
+      console.log('[idle-memory] no substantial CEO conversation in last 2h — skipping');
+      return;
+    }
+    const prompt =
+      `Hệ thống tự động: phiên CEO idle 1 giờ. Đọc transcript bên dưới và extract MỌI thông tin đáng ghi nhớ.\n\n` +
+      `Với MỖI fact/quyết định/sở thích/quy trình mới, gọi POST /api/memory/write với:\n` +
+      `- type: "preference" | "decision" | "procedure" | "entity_note"\n` +
+      `- content: nội dung ngắn gọn (<200 chars)\n` +
+      `- source: "auto"\n\n` +
+      `KHÔNG ghi: chào hỏi, "ok", task đã xong, kết quả cron, nội dung lặp memory đã có.\n` +
+      `Nếu KHÔNG có gì mới đáng nhớ → trả lời 1 dòng "Không có thông tin mới cần ghi nhớ." và DỪNG.\n` +
+      `KHÔNG gửi message cho CEO. KHÔNG dùng emoji.\n\n` +
+      `--- TRANSCRIPT GẦN ĐÂY ---\n${history}\n--- HẾT ---`;
+    console.log('[idle-memory] extracting memories from CEO idle session...');
+    await _runCronAgentPromptFn(prompt, { label: 'idle-memory-extract' });
+    try { auditLog('idle_memory_extract', { sinceMs, historyLen: history.length }); } catch {}
+    console.log('[idle-memory] extraction complete');
+  } catch (e) {
+    console.warn('[idle-memory] extraction failed:', e?.message);
+  } finally {
+    _idleMemoryInFlight = false;
+  }
+}
+
+function stopIdleMemoryTimer() {
+  if (_idleMemoryTimer) { clearTimeout(_idleMemoryTimer); _idleMemoryTimer = null; }
+}
+
 module.exports = {
   extractConversationHistoryRaw,
   extractConversationHistory,
@@ -585,4 +645,7 @@ module.exports = {
   appendCustomerSummary,
   withMemoryFileLock: _withMemoryFileLock,
   setMemoryWriteNotifyCeo,
+  touchIdleMemoryTimer,
+  stopIdleMemoryTimer,
+  setIdleMemoryRunCronAgent,
 };

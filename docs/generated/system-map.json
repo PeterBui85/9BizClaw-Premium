@@ -3236,7 +3236,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 277123
+      "bytes": 277431
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -3244,7 +3244,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 131274
+      "bytes": 128484
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3264,7 +3264,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 80331
+      "bytes": 80801
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -3272,11 +3272,11 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 56667
+      "bytes": 58385
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 54513
+      "bytes": 54370
     },
     {
       "path": "electron/lib/vendor-patches.js",
@@ -3284,7 +3284,7 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 46152
+      "bytes": 46625
     },
     {
       "path": "electron/lib/skill-manager.js",
@@ -3296,7 +3296,7 @@
     },
     {
       "path": "electron/lib/zalo-plugin.js",
-      "bytes": 43036
+      "bytes": 43173
     },
     {
       "path": "electron/lib/google-api.js",
@@ -3315,12 +3315,12 @@
       "bytes": 31008
     },
     {
-      "path": "electron/ui/brain.js",
-      "bytes": 28661
+      "path": "electron/lib/conversation.js",
+      "bytes": 30777
     },
     {
-      "path": "electron/lib/conversation.js",
-      "bytes": 27820
+      "path": "electron/ui/brain.js",
+      "bytes": 28661
     },
     {
       "path": "electron/ui/splash.html",

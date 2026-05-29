@@ -24,8 +24,7 @@ const DEFAULT_SCHEDULES_JSON = [
   // TODO: remove icon field entirely in next schema version — Dashboard uses lucide icons via SCHEDULE_ICON_MAP, not emoji.
   { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: true, icon: '', description: 'Doanh thu, lịch họp, việc cần xử lý' },
   { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true, icon: '', description: 'Kết quả ngày, vấn đề tồn đọng' },
-  // heartbeat removed — fast watchdog (gateway.js, 20s interval) is strictly superior
-  { id: 'meditation', label: 'Tối ưu ban đêm', time: '01:00', enabled: true, icon: '', description: 'Bot tự review bài học, tối ưu bộ nhớ' },
+  // heartbeat removed — fast watchdog. meditation removed — redundant with ceo-memory + journaling.
   { id: 'weekly', label: 'Báo cáo tuần', time: '08:00', enabled: true, icon: '', description: 'Tổng kết tuần, khách mới, ưu tiên tuần tới' },
   { id: 'monthly', label: 'Báo cáo tháng', time: '08:30', enabled: true, icon: '', description: 'Tổng kết tháng, trend, kế hoạch tháng tới' },
   { id: 'afternoon-nudge', label: 'Gợi ý chiều', time: '14:00', enabled: true, icon: '', description: 'Gợi ý hành động cụ thể + dạy tính năng mới cho CEO' },

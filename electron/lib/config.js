@@ -855,6 +855,28 @@ async function ensureDefaultConfig() {
       config.agents.defaults.blockStreamingDefault = 'off';
       changed = true;
     }
+    if (!config.agents.defaults.heartbeat) config.agents.defaults.heartbeat = {};
+    if (config.agents.defaults.heartbeat.every !== '0') {
+      config.agents.defaults.heartbeat.every = '0';
+      changed = true;
+    }
+    // NOTE: the ninerouter/main -> ninerouter/zalo model switch is NOT done here.
+    // ensureDefaultConfig() runs at boot immediately after start9Router() is fired
+    // (gateway.js), long before 9Router is listening on :20128 AND before the
+    // 'zalo' combo is created (ensure9RouterZaloCombo runs only after the ready
+    // wait). A probe here always failed -> the switch never happened on a cold
+    // boot. The switch now lives in ensureZaloModelDefault(), called from the
+    // post-9Router-ready block in gateway.js.
+    if (!config.session) config.session = {};
+    if (config.session.dmScope !== 'per-channel-peer') {
+      config.session.dmScope = 'per-channel-peer';
+      changed = true;
+      console.log('[config] enabled per-channel-peer DM session isolation');
+    }
+    if (config.agents.defaults.maxConcurrent !== 5) {
+      config.agents.defaults.maxConcurrent = 5;
+      changed = true;
+    }
     // BOOTSTRAP INJECTION MODE: "always" re-injects AGENTS.md + bootstrap files
     // on EVERY turn (~8k tokens overhead). "continuation-skip" only injects on
     // the first message then skips — saves tokens but model loses AGENTS.md rules
@@ -993,7 +1015,7 @@ async function ensureDefaultConfig() {
 
     // Remove any unknown keys that OpenClaw rejects.
     // NOTE: this list must be updated when openclaw adds new top-level config keys.
-    const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'tools', 'messages', 'discovery'];
+    const validKeys = ['plugins', 'meta', 'channels', 'gateway', 'models', 'agents', 'wizard', 'tools', 'messages', 'discovery', 'session', 'env', 'diagnostics', 'logging', '$schema'];
     for (const key of Object.keys(config)) {
       if (!validKeys.includes(key)) { delete config[key]; changed = true; }
     }
@@ -1088,6 +1110,48 @@ async function ensureDefaultConfig() {
   });
 }
 
+// Switch the default agent model from ninerouter/main to ninerouter/zalo once
+// 9Router actually serves the 'zalo' combo. MUST be called AFTER 9Router is
+// ready AND ensure9RouterZaloCombo() has run (gateway.js post-ready block) —
+// running it inside ensureDefaultConfig (boot, pre-9Router) probed a dead port,
+// so the switch never fired on a cold boot. We probe /v1/models rather than
+// trusting the combo write so we never point the agent at an unroutable model
+// (which would 404 every reply); on the boot the combo is first created 9Router
+// may not surface it yet, in which case the switch simply happens on a later run.
+async function ensureZaloModelDefault() {
+  return withOpenClawConfigLock(async () => {
+    const configPath = getOpenClawConfigPath();
+    try {
+      if (!fs.existsSync(configPath)) return false;
+      const config = readOpenclawJsonFile(configPath);
+      if (config?.agents?.defaults?.model !== 'ninerouter/main') return false;
+      const token = config.models?.providers?.ninerouter?.auth?.token || '123456';
+      const res = await new Promise((resolve) => {
+        let req;
+        const totalTimeout = setTimeout(() => { try { req?.destroy(); } catch {} resolve(null); }, 4000);
+        req = require('http').get(
+          'http://127.0.0.1:20128/v1/models',
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 2000 },
+          (r) => {
+            let body = '';
+            r.on('data', (c) => { body += c; });
+            r.on('end', () => { clearTimeout(totalTimeout); try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+          }
+        );
+        req.on('error', () => { clearTimeout(totalTimeout); resolve(null); });
+        req.on('timeout', () => { clearTimeout(totalTimeout); try { req.destroy(); } catch {} resolve(null); });
+      });
+      if (res?.data?.some?.(m => m.id === 'zalo')) {
+        config.agents.defaults.model = 'ninerouter/zalo';
+        const wrote = writeOpenClawConfigIfChanged(configPath, config);
+        if (wrote) console.log('[config] switched default model to ninerouter/zalo (combo serving)');
+        return wrote;
+      }
+    } catch (e) { console.warn('[config] ensureZaloModelDefault error:', e?.message); }
+    return false;
+  });
+}
+
 module.exports = {
   getOpenClawConfigPath,
   parseUnrecognizedKeyErrors,
@@ -1097,6 +1161,7 @@ module.exports = {
   withOpenClawConfigLock,
   writeOpenClawConfigIfChanged,
   ensureDefaultConfig,
+  ensureZaloModelDefault,
   setJournalCronRun,
   applyDynamicContextBudget,
   resolveDynamicContextBudgetTokens,

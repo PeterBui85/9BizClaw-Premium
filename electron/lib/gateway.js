@@ -14,7 +14,7 @@ const {
   getBundledVendorDir, findNodeBin, findOpenClawBin,
   findOpenClawCliJs,
 } = require('./boot');
-const { ensureDefaultConfig } = require('./config');
+const { ensureDefaultConfig, ensureZaloModelDefault } = require('./config');
 const {
   broadcastChannelStatusOnce, sendCeoAlert, sendTelegram,
   findOpenzcaListenerPid, registerTelegramCommands, resetGatewayZaloDiag,
@@ -475,6 +475,10 @@ async function _startOpenClawImpl(opts = {}) {
       console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${Math.round((Date.now() - t0) / 1000)}s), ${nineRouterModelCount} models`);
       try { ensure9RouterApiKeySync(); } catch (e) { console.warn('[boot] post-ready apiKeySync error:', e?.message); }
       try { await ensure9RouterZaloCombo(); } catch (e) { console.warn('[boot] post-ready zaloCombo error:', e?.message); }
+      // Now that 9Router is ready AND the zalo combo exists, switch the default
+      // agent model to ninerouter/zalo if 9Router is actually serving it. (The
+      // probe inside ensureDefaultConfig ran pre-9Router and never fired.)
+      try { await ensureZaloModelDefault(); } catch (e) { console.warn('[boot] post-ready zaloModelDefault error:', e?.message); }
       break;
     } catch {}
   }
@@ -1065,6 +1069,27 @@ async function _startOpenClawImpl(opts = {}) {
   ctx.openclawProcess.stderr.on('data', scanForReadiness);
   ctx.openclawProcess.stdout.on('data', scanForConnectFailure);
   ctx.openclawProcess.stderr.on('data', scanForConnectFailure);
+  try {
+    const { touchIdleMemoryTimer } = require('./conversation');
+    ctx.openclawProcess.stdout.on('data', (chunk) => {
+      const s = chunk.toString();
+      // Re-arm the "session idle" timer on activity.
+      //  - 'telegram inbound:' is openclaw's CEO-message marker (the precise
+      //    signal) but it is logVerbose-gated (globals.shouldLogVerbose), so it
+      //    only prints when verbose/debug logging is enabled.
+      //  - '[session-freeze] prompt CACHE' is an always-on console.log emitted
+      //    on every agent run, so it keeps the timer working regardless of
+      //    verbose. It also fires on cron-driven runs, so the timer effectively
+      //    measures "no agent activity for ~1h" rather than strictly CEO
+      //    inactivity — acceptable: extraction just runs during a quiet window.
+      // NB: the old '[telegram] sendMessage ok' check never matched — openclaw's
+      // real marker is 'telegram sendMessage ok' (no brackets) and is outbound
+      // anyway — so it was removed.
+      if (s.includes('telegram inbound:') || s.includes('[session-freeze] prompt CACHE')) {
+        touchIdleMemoryTimer();
+      }
+    });
+  } catch {}
 
   // POST-BOOT ZALO DIAGNOSTIC: 45s after gateway WS ready, check if openzca
   // started.  If not, read openclaw.log for errors and log a clear diagnostic

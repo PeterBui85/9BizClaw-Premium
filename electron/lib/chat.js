@@ -287,6 +287,7 @@ async function sendChatMessage(text) {
   _chatGenerationAborted = false;
   const enrichedText = await _injectMemoryOsContext(_injectActiveSkills(text), text);
   const args = buildAgentArgs(enrichedText, chatId, true);
+  args.push('--session-id', 'dashboard-chat');
 
   const sendTs = Date.now();
   _appendChatEntry('user', text, sendTs);

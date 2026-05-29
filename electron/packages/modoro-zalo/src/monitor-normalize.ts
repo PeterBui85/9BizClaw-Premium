@@ -445,7 +445,10 @@ export function normalizeOpenzcaInboundPayload(
     senderName:
       (typeof payload.senderName === "string" ? payload.senderName.trim() : "") ||
       (typeof payload.senderDisplayName === "string" ? payload.senderDisplayName.trim() : "") ||
+      (typeof payload.dName === "string" ? payload.dName.trim() : "") ||
+      (typeof payload.fromName === "string" ? payload.fromName.trim() : "") ||
       (typeof metadata?.senderName === "string" ? metadata.senderName.trim() : "") ||
+      (typeof metadata?.dName === "string" ? metadata.dName.trim() : "") ||
       undefined,
     text,
     timestamp: toEpochMs(payload.timestamp ?? payload.ts ?? metadata?.timestamp),

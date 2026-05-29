@@ -99,7 +99,7 @@ const {
 const {
   extractConversationHistoryRaw, extractConversationHistory,
   writeDailyMemoryJournal, appendPerCustomerSummaries, trimZaloMemoryFile,
-  withMemoryFileLock,
+  withMemoryFileLock, touchIdleMemoryTimer, setIdleMemoryRunCronAgent,
 } = require('./conversation');
 const {
   compareVersions, checkForUpdates, downloadUpdate, installDmgUpdate, openGitHubUrl,
@@ -185,7 +185,7 @@ const {
   buildMorningBriefingPrompt, buildEveningSummaryPrompt,
   buildWeeklyReportPrompt, buildMonthlyReportPrompt,
   scanZaloFollowUpCandidates, buildZaloFollowUpPrompt,
-  buildMeditationPrompt, buildMemoryCleanupPrompt,
+  buildMemoryCleanupPrompt,
   healCustomCronEntries, watchCustomCrons,
   startCronJobs, stopCronJobs, restartCronJobs,
   _withCustomCronLock, _removeCustomCronById, surfaceCronConfigError,
@@ -270,15 +270,18 @@ function startZaloConfigWatcher() {
       }
     }
     // Also watch openzca friends cache so new auto-added friends trigger refresh.
+    // Uses a SEPARATE timer from the workspace watcher — otherwise writeLegacyZaloState
+    // (triggered by the seed itself) fires the workspace watcher which cancels this timer.
     let friendSyncInFlight = false;
+    let friendSyncTimer = null;
     try {
       const home = require('os').homedir();
       const friendsDir = path.join(home, '.openzca', 'profiles', 'default', 'cache');
       if (fs.existsSync(friendsDir)) {
         fs.watch(friendsDir, { persistent: false }, (eventType, filename) => {
           if (filename === 'friends.json' || filename === 'groups.json') {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(async () => {
+            clearTimeout(friendSyncTimer);
+            friendSyncTimer = setTimeout(async () => {
               if (filename === 'friends.json' && !friendSyncInFlight) {
                 friendSyncInFlight = true;
                 try { await seedZaloCustomersFromCache(); } catch (e) {
@@ -300,6 +303,8 @@ function startZaloConfigWatcher() {
 function registerAllIpcHandlers() {
 
 registerChatIpc();
+// Wire idle memory extraction — uses runCronViaSessionOrFallback for reliable delivery
+try { setIdleMemoryRunCronAgent(runCronViaSessionOrFallback); } catch {}
 // Start auto-refresh watcher (idempotent: gated by ctx.mainWindow availability).
 try { startZaloConfigWatcher(); } catch (e) { console.warn('[zalo-watcher] init error:', e?.message); }
 
@@ -2756,9 +2761,7 @@ ipcMain.handle('test-cron', async (_event, { type, id }) => {
         const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — evening-summary' });
         return { success: ok, sent: ok };
       } else if (id === 'meditation') {
-        const prompt = buildMeditationPrompt();
-        const ok = await runCronAgentPrompt(prompt, { label: 'TEST — meditation' });
-        return { success: ok, sent: ok };
+        return { success: false, error: 'Meditation cron đã bị xóa.' };
       } else if (id === 'weekly') {
         const prompt = await buildWeeklyReportPrompt();
         const ok = await runCronViaSessionOrFallback(prompt, { label: 'TEST — weekly-report' });

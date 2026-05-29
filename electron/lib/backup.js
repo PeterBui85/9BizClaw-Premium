@@ -72,7 +72,7 @@ function collectBackupFiles() {
   const wsDirs = [
     'memory', 'knowledge', 'skills', 'user-skills', 'prompts', 'tools',
     'docs', 'personas', 'media-assets', 'brand-assets', 'documents',
-    '.learnings', 'config', 'fb-pending',
+    '.learnings', 'config', 'fb-pending', 'zalo-account-settings',
   ];
   for (const d of wsDirs) {
     files.push(..._collectDir(path.join(ws, d), 'workspace/' + d, SKIP_DIRS, SKIP_FILES));

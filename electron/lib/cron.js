@@ -665,7 +665,8 @@ function loadSchedules() {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) throw new Error('schedules.json must be an array');
         const hadHeartbeat = parsed.some(s => s.id === 'heartbeat');
-        let cleaned = parsed.filter(s => s.id !== 'heartbeat');
+        const hadMeditation = parsed.some(s => s.id === 'meditation');
+        let cleaned = parsed.filter(s => s.id !== 'heartbeat' && s.id !== 'meditation');
         // Auto-inject new default schedule entries that existing users don't have
         let injected = false;
         for (const def of DEFAULT_SCHEDULES_JSON) {
@@ -675,9 +676,10 @@ function loadSchedules() {
             console.log(`[schedules] auto-injected new schedule: ${def.id}`);
           }
         }
-        if (hadHeartbeat || injected) {
+        if (hadHeartbeat || hadMeditation || injected) {
           try { writeJsonAtomic(schedulesPath, cleaned); } catch {}
           if (hadHeartbeat) console.log('[schedules] removed legacy heartbeat entry');
+          if (hadMeditation) console.log('[schedules] removed legacy meditation entry');
         }
         return cleaned;
       } catch (parseErr) {
@@ -951,71 +953,82 @@ function buildEveningSummaryPrompt(timeStr) {
 function buildAfternoonNudgePrompt(timeStr) {
   const sinceMs = Date.now() - 8 * 60 * 60 * 1000;
   const history = extractConversationHistory({ sinceMs, maxMessages: 30, maxPerSender: 5 });
-  const historyBlock = history
-    ? `\n\n--- Tin nhắn hôm nay (8h qua) ---\n${history}\n--- Hết ---\n\n`
-    : `\n\n_(Chưa có tin nhắn nào hôm nay.)_\n\n`;
 
+  const signals = [];
   let pendingFollowUps = '';
   let overduePayments = '';
+  let recentCustomers = '';
   try {
     const ws = getWorkspace();
     if (ws) {
-      // Scan follow-up queue
       const fqPath = path.join(ws, 'follow-up-queue.json');
       if (fs.existsSync(fqPath)) {
         try {
           const fq = JSON.parse(fs.readFileSync(fqPath, 'utf-8'));
           const pending = (Array.isArray(fq) ? fq : []).filter(e => !e.firedAt);
           if (pending.length > 0) {
-            pendingFollowUps = `\n\n--- FOLLOW-UP ĐANG CHỜ (${pending.length}) ---\n` +
-              pending.slice(0, 5).map(e => `- ${e.customerName || e.senderId}: ${(e.reason || '').slice(0, 80)}`).join('\n') +
-              `\n--- Hết ---\n\n`;
+            signals.push('follow-up');
+            pendingFollowUps = `\n--- FOLLOW-UP ĐANG CHỜ (${pending.length}) ---\n` +
+              pending.slice(0, 5).map(e => `- ${e.customerName || e.senderId}: ${(e.reason || '').slice(0, 80)}`).join('\n') + '\n--- Hết ---\n';
           }
         } catch {}
       }
-      // Scan cong-no file
       const cnPath = path.join(ws, 'cong-no.md');
       if (fs.existsSync(cnPath)) {
         try {
           const cn = fs.readFileSync(cnPath, 'utf-8');
           const overdueLines = cn.split('\n').filter(l => /quá hạn|overdue|chưa thanh toán/i.test(l));
           if (overdueLines.length > 0) {
-            overduePayments = `\n\n--- CÔNG NỢ CẦN NHẮC ---\n${overdueLines.slice(0, 5).join('\n')}\n--- Hết ---\n\n`;
+            signals.push('cong-no');
+            overduePayments = `\n--- CÔNG NỢ CẦN NHẮC ---\n${overdueLines.slice(0, 5).join('\n')}\n--- Hết ---\n`;
           }
         } catch {}
       }
-      // Scan memory for customers messaged today but no follow-up
       const memDir = path.join(ws, 'memory', 'zalo-users');
       if (fs.existsSync(memDir)) {
-        const todayStr = new Date().toISOString().slice(0, 10);
         const recent = [];
-        for (const f of fs.readdirSync(memDir).filter(f => f.endsWith('.md')).slice(0, 50)) {
+        for (const f of fs.readdirSync(memDir).filter(f => f.endsWith('.md')).slice(0, 100)) {
           try {
             const stat = fs.statSync(path.join(memDir, f));
             if ((Date.now() - stat.mtimeMs) < 8 * 3600000) {
-              const content = fs.readFileSync(path.join(memDir, f), 'utf-8').slice(0, 500);
-              recent.push(`[${f.replace('.md', '')}] ${content.split('\n').filter(l => l.includes(todayStr)).slice(-2).join(' | ')}`);
+              const content = fs.readFileSync(path.join(memDir, f), 'utf-8').slice(0, 300);
+              const nameMatch = content.match(/^name:\s*(.+)$/im);
+              recent.push(nameMatch ? nameMatch[1].trim() : f.replace('.md', ''));
             }
           } catch {}
         }
-        if (recent.length > 0 && !pendingFollowUps) {
-          pendingFollowUps = `\n\n--- KHÁCH TƯƠNG TÁC HÔM NAY ---\n${recent.slice(0, 10).join('\n')}\n--- Hết ---\n\n`;
+        if (recent.length > 0) {
+          signals.push('customers');
+          recentCustomers = `\n--- ${recent.length} KHÁCH TƯƠNG TÁC HÔM NAY ---\n${recent.slice(0, 10).join(', ')}\n--- Hết ---\n`;
         }
       }
     }
   } catch {}
 
-  const template = loadPromptTemplate('afternoon-nudge.md');
-  if (template) {
-    return template
-      .replace('{{time}}', timeStr || '14:00')
-      .replace('{{historyBlock}}', historyBlock)
-      .replace('{{pendingFollowUps}}', pendingFollowUps)
-      .replace('{{overduePayments}}', overduePayments);
-  }
-  return `Bây giờ là ${timeStr || '14:00'} chiều. Gợi ý 1-2 hành động cụ thể cho CEO dựa trên data hôm nay.` +
-    historyBlock + pendingFollowUps + overduePayments +
-    `Tiếng Việt có dấu, không emoji, ngắn gọn, CEO reply 1 từ là em thực hiện.`;
+  if (signals.length === 0 && !history) return null;
+
+  const dayOfWeek = new Date().getDay();
+  const angles = [
+    'Nhắc follow-up khách chưa chốt đơn',
+    'Gợi ý up-sell/cross-sell cho khách đang trao đổi',
+    'Đề xuất nội dung đăng Zalo/Facebook chiều nay',
+    'Review khách mới hôm nay — ai có tiềm năng cao',
+    'Kiểm tra đơn hàng/lịch hẹn cần xử lý trước EOD',
+    'Tổng hợp câu hỏi thường gặp hôm nay — cần bổ sung FAQ?',
+    'Đánh giá tốc độ phản hồi khách hôm nay — cần cải thiện gì?',
+  ];
+  const todayAngle = angles[dayOfWeek % angles.length];
+
+  const historyBlock = history ? `\n--- Tin nhắn hôm nay ---\n${history}\n--- Hết ---\n` : '';
+  return (
+    `${timeStr || '14:00'} chiều. Gợi ý chiều cho CEO.\n\n` +
+    `GÓC NHÌN HÔM NAY: ${todayAngle}\n\n` +
+    `Dựa trên data bên dưới, đưa ra 1-3 hành động CỤ THỂ CEO có thể làm ngay chiều nay.\n` +
+    `Mỗi hành động kèm lý do ngắn (1 câu). CEO reply 1 từ là em thực hiện.\n` +
+    `Nếu data rỗng → gợi ý proactive (tạo content, check inventory, nhắn khách cũ).\n` +
+    `KHÔNG lặp lại gợi ý hôm qua. KHÔNG generic. KHÔNG emoji.\n\n` +
+    historyBlock + pendingFollowUps + overduePayments + recentCustomers
+  );
 }
 
 async function buildWeeklyReportPrompt() {
@@ -1245,54 +1258,7 @@ function collectZaloMemoryStats(ws) {
   return lines.join('\n');
 }
 
-function collectMeditationContext() {
-  const ws = getWorkspace();
-  if (!ws) return 'Workspace chưa sẵn sàng, không có dữ liệu nội bộ để review.';
-
-  const parts = [];
-  const learnings = readTextSnippet(path.join(ws, '.learnings', 'LEARNINGS.md'), 7000)
-    || readTextSnippet(path.join(ws, 'LEARNINGS.md'), 7000);
-  parts.push(`--- LEARNINGS.md GẦN ĐÂY ---\n${learnings || '(Chưa có learning nào.)'}`);
-
-  const memDir = path.join(ws, 'memory');
-  const recentMemoryFiles = listRecentFiles(memDir, name => name.endsWith('.md'), 8);
-  const memoryBlocks = recentMemoryFiles.map(entry => {
-    const content = readTextSnippet(entry.fullPath, 1800);
-    return `### memory/${entry.name}\n${content || '(rỗng)'}`;
-  });
-  parts.push(`--- MEMORY JOURNAL GẦN ĐÂY ---\n${memoryBlocks.length ? memoryBlocks.join('\n\n') : '(Không có journal memory gần đây.)'}`);
-
-  const weeklyFiles = listRecentFiles(memDir, name => /^week-.*-summary\.md$/i.test(name) || /weekly-digest\.md$/i.test(name), 4);
-  const weeklyBlocks = weeklyFiles.map(entry => `### memory/${entry.name}\n${readTextSnippet(entry.fullPath, 1600) || '(rỗng)'}`);
-  if (weeklyBlocks.length) parts.push(`--- WEEKLY DIGEST / SUMMARY ---\n${weeklyBlocks.join('\n\n')}`);
-
-  parts.push(`--- ZALO MEMORY STATS ---\n${collectZaloMemoryStats(ws)}`);
-
-  const cronTail = readTextSnippet(path.join(ws, 'logs', 'cron-runs.jsonl'), 3500);
-  if (cronTail) parts.push(`--- CRON RUN TAIL ---\n${cronTail}`);
-
-  return parts.join('\n\n').slice(0, 18000);
-}
-
-function buildMeditationPrompt() {
-  const contextBlock = collectMeditationContext();
-  return (
-    `Bây giờ là 01:00 sáng. Đây là phiên TỐI ƯU BAN ĐÊM.\n\n` +
-    `Hệ thống đã đọc sẵn dữ liệu cần thiết bên dưới. KHÔNG tự báo thiếu quyền đọc workspace nếu block dữ liệu đã có sẵn.\n` +
-    `Chỉ gọi API /api/workspace/append?path=.learnings/LEARNINGS.md nếu thật sự có learning mới đáng ghi nhận.\n\n` +
-    `Nhiệm vụ:\n` +
-    `1. Đếm ước lượng learning entries đã review từ block LEARNINGS.\n` +
-    `2. Tìm pattern lặp lại/impact cao từ LEARNINGS, memory journal, Zalo memory stats và cron tail.\n` +
-    `3. Nếu có pattern mới đáng ghi nhận: append vào .learnings/LEARNINGS.md với mã L-XXX tiếp theo, nội dung ngắn dưới 2000 bytes.\n` +
-    `4. Gửi CEO báo cáo ngắn bằng tiếng Việt có dấu:\n` +
-    `**TỐI ƯU BAN ĐÊM**\n` +
-    `- Đã review N learning entries\n` +
-    `- Pattern mới phát hiện: [bullet nếu có, hoặc "Không có gì mới"]\n` +
-    `- Điểm cần cải thiện: [1-2 bullet ngắn]\n\n` +
-    `KHÔNG dùng emoji. KHÔNG hỏi lại CEO. KHÔNG sửa AGENTS.md. KHÔNG nói về đường dẫn file trong câu trả lời.\n\n` +
-    `--- DỮ LIỆU NỘI BỘ ĐÃ ĐỌC SẴN ---\n${contextBlock}\n--- HẾT DỮ LIỆU NỘI BỘ ---`
-  );
-}
+// meditation cron removed — redundant with ceo-memory, conversation journaling, weekly digest
 
 function buildMemoryCleanupPrompt() {
   return (
@@ -2075,6 +2041,11 @@ function _startCronJobsInner() {
           global._cronInFlight?.set('afternoon-nudge', true);
           try {
             const prompt = buildAfternoonNudgePrompt(s.time);
+            if (!prompt) {
+              console.log('[cron] Afternoon nudge skipped — no actionable signals today');
+              try { auditLog('cron_skipped', { id: 'afternoon-nudge', reason: 'no_signals' }); } catch {}
+              return;
+            }
             await runCronViaSessionOrFallback(prompt, { label: 'afternoon-nudge' });
             try { auditLog('cron_fired', { id: 'afternoon-nudge', label: s.label || 'Gợi ý chiều' }); } catch {}
           } catch (e) {
@@ -2096,21 +2067,8 @@ function _startCronJobsInner() {
         break;
       }
       case 'meditation': {
-        cronExpr = '0 1 * * *';
-        handler = async () => {
-          console.log('[cron] Meditation triggered at', new Date().toISOString());
-          if (global._cronInFlight?.get('meditation')) return;
-          global._cronInFlight?.set('meditation', true);
-          try {
-            const prompt = buildMeditationPrompt();
-            await runCronAgentPrompt(prompt, { label: 'meditation' });
-            try { auditLog('cron_fired', { id: 'meditation', label: 'Tối ưu ban đêm' }); } catch {}
-          } catch (e) {
-            console.error('[cron] Meditation threw:', e?.message || e);
-            try { auditLog('cron_failed', { id: 'meditation', label: 'Tối ưu ban đêm', error: String(e?.message || e).slice(0, 200) }); } catch {}
-            try { await sendCeoAlert(`Cron "Tối ưu ban đêm" lỗi: ${String(e?.message || e).slice(0, 200)}`); } catch {}
-          } finally { global._cronInFlight?.delete('meditation'); }
-        };
+        cronExpr = null;
+        handler = null;
         break;
       }
       case 'weekly': {
@@ -2619,6 +2577,7 @@ const _OVERVIEW_EVENT_LABELS = {
   zalo_output_blocked: { label: 'Bộ lọc chặn 1 tin Zalo', icon: 'shield', show: true },
   cron_fired: { label: 'Cron đã chạy', icon: 'calendar', show: true },
   cron_failed: { label: 'Cron lỗi', icon: 'alert', show: true },
+  cron_skipped: { label: 'Cron bỏ qua (không có tín hiệu)', icon: 'clock', show: true },
   zalo_owner_set: { label: 'Đã đặt chủ Zalo', icon: 'user', show: true },
   system_resume: { label: 'Mac thức dậy', icon: 'power', show: true },
   system_suspend: { label: 'Mac đang ngủ', icon: 'moon', show: true },
@@ -2818,7 +2777,7 @@ module.exports = {
   buildMorningBriefingPrompt, buildEveningSummaryPrompt,
   buildWeeklyReportPrompt, buildMonthlyReportPrompt,
   scanZaloFollowUpCandidates, buildZaloFollowUpPrompt,
-  buildMeditationPrompt, buildMemoryCleanupPrompt,
+  buildMemoryCleanupPrompt,
   // Cron lifecycle
   healCustomCronEntries, watchCustomCrons,
   startCronJobs, stopCronJobs, restartCronJobs,

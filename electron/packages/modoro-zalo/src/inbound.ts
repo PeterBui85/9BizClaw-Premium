@@ -1265,7 +1265,7 @@ ${__fapPolicy}
     }
   } catch (__fapErr) { /* fail open — other layers still protect */ }
   // === END 9BizClaw FILE-ACCESS-POLICY PATCH v1 ===
-  // === 9BizClaw GENDER-HINT PATCH v1 ===
+  // === 9BizClaw GENDER-HINT PATCH v2 ===
   // Code-level enforcement of Vietnamese honorific rules. LLM rules alone are
   // unreliable — bot guesses anh/chị wrong when name is ambiguous or unchecked.
   // Reads stored gender from customer memory file, infers from name patterns,
@@ -1314,7 +1314,7 @@ ${__fapPolicy}
           }
         } catch {}
       }
-      if (!__ghName) {
+      if (!__ghName || !__ghStoredGender) {
         try {
           const __ghFriendsPath = __ghPath.join(__ghHome, ".openzca", "profiles", "default", "cache", "friends.json");
           if (__ghFs.existsSync(__ghFriendsPath)) {
@@ -1324,7 +1324,10 @@ ${__fapPolicy}
                 String(__f?.userId || __f?.uid || __f?.id || "").trim() === __ghSender,
               );
               if (__ghFriend) {
-                __ghName = __ghSanitize(String(__ghFriend.displayName || __ghFriend.zaloName || __ghFriend.name || ""));
+                if (!__ghName) __ghName = __ghSanitize(String(__ghFriend.displayName || __ghFriend.zaloName || __ghFriend.name || ""));
+                if (!__ghStoredGender && typeof __ghFriend.gender === "number") {
+                  __ghStoredGender = __ghFriend.gender === 0 ? "M" : __ghFriend.gender === 1 ? "F" : null;
+                }
               }
             }
           }
@@ -1347,14 +1350,14 @@ ${__fapPolicy}
             "huong","linh","trang","lan","mai","ngoc","ha","hang","hoa","phuong",
             "thao","nhi","thy","vy","chi","trinh","lien","yen","nhung",
             "van","nga","dao","diem","kieu","quyen","my","tram","suong","hanh",
-            "loan","hien","uyen","giang","ngan","tho","tuyet","cam","thuy",
+            "loan","hien","uyen","giang","ngan","tho","tuyet","cam","thuy","oanh","huyen",
           ]);
           const __ghFamilyNames = new Set([
             "nguyen","tran","le","pham","hoang","huynh","phan","vu","vo","dang",
             "bui","do","ho","ngo","duong","ly","truong","dinh","luong","mai",
           ]);
           for (const __ghPart of __ghParts) {
-            const __ghNorm = __ghPart.toLowerCase().normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "");
+            const __ghNorm = __ghPart.toLowerCase().normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "").replace(/đ/g, "d");
             if (__ghFamilyNames.has(__ghNorm)) continue;
             if (__ghMaleNames.has(__ghNorm)) { __ghGender = "M"; __ghCallName = __ghPart; break; }
             if (__ghFemaleNames.has(__ghNorm)) { __ghGender = "F"; __ghCallName = __ghPart; break; }
@@ -1362,20 +1365,23 @@ ${__fapPolicy}
         }
 
         if (__ghGender === "M") {
-          rawBody = `[XƯNG HÔ: Khách tên "${__ghName}" — NAM. Gọi "anh" + tên gọi (không gọi họ). Tự xưng "em".]\n${rawBody}`;
+          rawBody = `[XƯNG HÔ: Khách tên "${__ghName}" — NAM. Gọi "anh ${__ghCallName}". Tự xưng "em".]\n${rawBody}`;
         } else if (__ghGender === "F") {
-          rawBody = `[XƯNG HÔ: Khách tên "${__ghName}" — NỮ. Gọi "chị" + tên gọi (không gọi họ). Tự xưng "em".]\n${rawBody}`;
+          rawBody = `[XƯNG HÔ: Khách tên "${__ghName}" — NỮ. Gọi "chị ${__ghCallName}". Tự xưng "em".]\n${rawBody}`;
         } else if (message.isGroup) {
           rawBody = `[XƯNG HÔ: Khách tên "${__ghName}" — chưa rõ giới tính. Gọi "anh/chị" + tên. Tự xưng "em". Nếu khách tự xưng thì dùng theo.]\n${rawBody}`;
         } else {
           rawBody = `[XƯNG HÔ: Khách tên "${__ghName}" — CHƯA XÁC ĐỊNH giới tính. BẮT BUỘC hỏi "Em xin phép gọi mình là anh hay chị ạ?" trong reply ĐẦU TIÊN. Tự xưng "em". KHÔNG ĐƯỢC đoán.]\n${rawBody}`;
         }
+        runtime.log?.(`[gender-hint] sender=${__ghSender} senderName="${message.senderName || ""}" resolved="${__ghName}" gender=${__ghGender || "null"} stored=${__ghStoredGender || "null"}`);
+      } else {
+        runtime.log?.(`[gender-hint] sender=${__ghSender} senderName="${message.senderName || ""}" — no name resolved, skipping`);
       }
     }
   } catch (__ghErr) {
     runtime.log?.("modoro-zalo: gender-hint error: " + String(__ghErr));
   }
-  // === END 9BizClaw GENDER-HINT PATCH v1 ===
+  // === END 9BizClaw GENDER-HINT PATCH v2 ===
 
   // === 9BizClaw USER-SKILLS-INJECT PATCH v2 (lazy match) ===
   // Read user-skills/_registry.json, filter active skills by trigger-keyword

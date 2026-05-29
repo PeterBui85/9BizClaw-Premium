@@ -195,7 +195,7 @@ const { cleanupCeoMemoryTimers } = require('./lib/ceo-memory');
 const fbSchedule = require('./lib/fb-schedule');
 const { registerAllIpcHandlers } = require('./lib/dashboard-ipc');
 const { compactAllSessions, compactSession, getAllSessionStats, parseCompactCommand, setAutoCompactTrigger, autoCompactIfNeeded } = require('./lib/compact');
-const { setMemoryWriteNotifyCeo } = require('./lib/conversation');
+const { setMemoryWriteNotifyCeo, stopIdleMemoryTimer } = require('./lib/conversation');
 const { sendMemoryWriteAlert } = require('./lib/channels');
 
 // Wire runCronAgentPrompt into follow-up.js (now imported from cron.js)
@@ -1078,6 +1078,7 @@ function _beforeQuitCleanup() {
   try { cleanupEscalationTimers(); } catch (e2) { console.warn('[before-quit] cleanupEscalationTimers:', e2?.message); }
   try { cleanupNudgeTimers(); } catch (e2) { console.warn('[before-quit] cleanupNudgeTimers:', e2?.message); }
   try { cleanupCeoMemoryTimers(); } catch (e2) { console.warn('[before-quit] cleanupCeoMemoryTimers:', e2?.message); }
+  try { stopIdleMemoryTimer(); } catch (e2) { console.warn('[before-quit] stopIdleMemoryTimer:', e2?.message); }
   try { cleanupKnowledgeServer(); } catch (e2) { console.warn('[before-quit] cleanupKnowledgeServer:', e2?.message); }
   try { stopKnowledgeWatcher(); } catch (e2) { console.warn('[before-quit] stopKnowledgeWatcher:', e2?.message); }
   try { require('./lib/knowledge').closeDocumentsDb(); } catch (e2) { console.warn('[before-quit] closeDocumentsDb:', e2?.message); }
