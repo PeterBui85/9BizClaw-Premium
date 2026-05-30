@@ -2461,6 +2461,36 @@ try {
   fail('fb-schedule load', e.message);
 }
 
+// fb-schedule: one-time postDate → date-pinned cron. Regression guard for the
+// "7 bài đăng dồn 1 ngày" bug — a multi-day plan used to be N recurring
+// schedules, each firing "MM HH * * *" (every day) → all posts on the same day.
+try {
+  const fbSched = require('../lib/fb-schedule');
+  const wsmod = require('../lib/workspace');
+  const fbTmp = path.join(os.tmpdir(), 'modoro-fbsched-smoke-' + Date.now());
+  fs.mkdirSync(fbTmp, { recursive: true });
+  wsmod._setWorkspaceCacheForTest(fbTmp);
+  fs.writeFileSync(path.join(fbTmp, 'fb-scheduled-posts.json'), JSON.stringify([
+    { id: 'one', label: 'one-time', postTime: '09:00', leadMinutes: 60, enabled: true, prompt: 'p', caption: 'c', postDate: '2030-06-15' },
+    { id: 'rec', label: 'recurring', postTime: '09:00', leadMinutes: 60, enabled: true, prompt: 'p', caption: 'c' },
+    { id: 'old', label: 'past', postTime: '09:00', enabled: true, prompt: 'p', caption: 'c', postDate: '2020-01-01' },
+  ], null, 2), 'utf-8');
+  const jobs = {};
+  for (const j of fbSched.getScheduledCronJobs()) jobs[j.id] = j;
+  const okOneTime = jobs['fb-pub-one'] && jobs['fb-pub-one'].cronExpr === '0 9 15 6 *';   // node-cron: min hour day month dow
+  const okRecurring = jobs['fb-pub-rec'] && jobs['fb-pub-rec'].cronExpr === '0 9 * * *';
+  const okPastSkipped = !jobs['fb-pub-old'];
+  if (okOneTime && okRecurring && okPastSkipped) {
+    pass('fb-schedule postDate → date-pinned cron (one-time fires once, recurring daily, past skipped)');
+  } else {
+    fail('fb-schedule postDate cron', `one=${jobs['fb-pub-one']?.cronExpr} rec=${jobs['fb-pub-rec']?.cronExpr} pastSkipped=${okPastSkipped}`);
+  }
+  try { fs.rmSync(fbTmp, { recursive: true, force: true }); } catch {}
+  wsmod.invalidateWorkspaceCache();
+} catch (e) {
+  fail('fb-schedule postDate cron', e.message);
+}
+
 // channels module: sendTelegramPhoto exported
 try {
   const ch = require('../lib/channels');

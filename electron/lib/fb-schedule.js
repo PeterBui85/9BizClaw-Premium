@@ -104,6 +104,78 @@ function timeToCronWithDays(timeStr, daysOfWeek) {
   return `${parsed.minute} ${parsed.hour} * * ${dow}`;
 }
 
+/** Parse "YYYY-MM-DD" → { year, month, day } or null. Rejects impossible dates. */
+function parseDate(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  const day = parseInt(m[3], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  // Round-trip to reject e.g. 2026-02-30.
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
+  return { year, month, day };
+}
+
+/** Shift "YYYY-MM-DD" by deltaDays (calendar math via UTC). Returns "YYYY-MM-DD" or null. */
+function shiftDateStr(dateStr, deltaDays) {
+  const parsed = parseDate(dateStr);
+  if (!parsed) return null;
+  const d = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
+}
+
+/** Convert "HH:MM" + "YYYY-MM-DD" to node-cron "MM HH DD M *" (fires once on that date). */
+function timeToCronOnDate(timeStr, dateStr) {
+  const t = parseTime(timeStr);
+  const d = parseDate(dateStr);
+  if (!t || !d) return null;
+  return `${t.minute} ${t.hour} ${d.day} ${d.month} *`;
+}
+
+const MAX_POSTDATE_AHEAD_DAYS = 730; // ~2 years — fail loud on fat-finger years
+
+/**
+ * Validate a one-time postDate against postTime. Returns { ok, error }.
+ * Rejects: bad format, past dates, dates too far out, and same-day-but-time-passed
+ * (a date-pinned cron for a past time today would silently fire next year).
+ */
+function validatePostDate(postDateStr, postTimeStr) {
+  if (!parseDate(postDateStr)) return { ok: false, error: 'postDate phải có dạng YYYY-MM-DD' };
+  const today = todayStr();
+  if (postDateStr < today) return { ok: false, error: 'postDate không được ở quá khứ (hôm nay: ' + today + ')' };
+  const maxDate = shiftDateStr(today, MAX_POSTDATE_AHEAD_DAYS);
+  if (maxDate && postDateStr > maxDate) return { ok: false, error: 'postDate quá xa (tối đa ~2 năm tới)' };
+  if (postDateStr === today && postTimeStr) {
+    const pt = parseTime(postTimeStr);
+    if (pt) {
+      const ict = nowInICT();
+      if (ict.hour * 60 + ict.minute >= pt.hour * 60 + pt.minute) {
+        return { ok: false, error: 'Giờ đăng hôm nay đã qua — chọn giờ muộn hơn hoặc ngày khác' };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Human-readable summary of which brand assets a post uses. Shown in every CEO
+ * preview so a wrongly-chosen or unwanted asset is caught at the approval gate
+ * (the one human checkpoint before publish — important for scheduled posts).
+ */
+function assetSummaryLine(assetNames) {
+  const names = Array.isArray(assetNames) ? assetNames.filter(Boolean) : [];
+  return names.length > 0
+    ? `Tài sản thương hiệu: ${names.join(', ')}`
+    : `Tài sản thương hiệu: (không dùng)`;
+}
+
 // ─── Data: Schedules ───────────────────────────────────────────────
 
 /**
@@ -148,6 +220,27 @@ function saveSchedules(schedules) {
     return true;
   } catch (e) {
     console.error('[fb-schedule] saveSchedules failed:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Remove a schedule by id (idempotent — no-op if absent).
+ * Used to auto-clean a one-time (postDate) schedule once it has run, so spent
+ * plan entries don't linger. saveSchedules triggers onScheduleChanged → cron restart.
+ */
+function deleteScheduleById(id) {
+  try {
+    const schedules = loadSchedules();
+    const idx = schedules.findIndex(s => s.id === id);
+    if (idx === -1) return false;
+    const removed = schedules.splice(idx, 1)[0];
+    saveSchedules(schedules);
+    auditLog('fb_schedule_autodeleted', { id, label: removed?.label, postDate: removed?.postDate || null });
+    console.log(`[fb-schedule] auto-deleted one-time schedule ${id} (${removed?.label})`);
+    return true;
+  } catch (e) {
+    console.error('[fb-schedule] deleteScheduleById failed:', e.message);
     return false;
   }
 }
@@ -319,7 +412,7 @@ async function _handleGenerateInner(scheduleId) {
 
       if (_sendTelegramPhoto) {
         try {
-          await _sendTelegramPhoto(imagePath, `[FB Auto-post] "${schedule.label}"\n\nCaption:\n${caption}\n\nSẽ tự động đăng lúc ${schedule.postTime}. Trả lời "fb hủy" để hủy.`);
+          await _sendTelegramPhoto(imagePath, `[FB Auto-post] "${schedule.label}"\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nSẽ tự động đăng lúc ${schedule.postTime}. Trả lời "fb hủy" để hủy.`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send auto-post preview:', e.message);
         }
@@ -328,7 +421,7 @@ async function _handleGenerateInner(scheduleId) {
       // Normal mode: send preview and wait for CEO approval
       if (_sendTelegramPhoto) {
         try {
-          await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n\nCaption:\n${caption}\n\nTrả lời:\n• "fb ok" → duyệt đăng\n• "fb sửa caption: <nội dung mới>" → đổi caption\n• "fb ảnh khác" → tạo lại ảnh\n• "fb hủy" → bỏ bài này`);
+          await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nTrả lời:\n• "fb ok" → duyệt đăng\n• "fb sửa caption: <nội dung mới>" → đổi caption\n• "fb ảnh khác" → tạo lại ảnh\n• "fb hủy" → bỏ bài này`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send preview:', e.message);
         }
@@ -360,9 +453,28 @@ async function _handleGenerateInner(scheduleId) {
 
 /**
  * Called by cron at postTime.
- * Checks pending status and either publishes or skips.
+ * Wraps the publish logic so that a one-time (postDate) schedule auto-deletes
+ * after its single publish phase runs — regardless of outcome (published,
+ * skipped, rejected, failed). The cron is date-pinned and fires only once, so
+ * once we reach here the schedule is spent.
  */
 async function handlePublish(scheduleId) {
+  try {
+    await _handlePublishInner(scheduleId);
+  } finally {
+    try {
+      const sch = loadSchedules().find(s => s.id === scheduleId);
+      if (sch && sch.postDate) deleteScheduleById(scheduleId);
+    } catch (e) {
+      console.warn('[fb-schedule] one-time auto-delete (publish) failed:', e?.message);
+    }
+  }
+}
+
+/**
+ * Checks pending status and either publishes or skips.
+ */
+async function _handlePublishInner(scheduleId) {
   const schedules = loadSchedules();
   const schedule = schedules.find(s => s.id === scheduleId);
   if (!schedule) {
@@ -558,6 +670,8 @@ async function approvePending(scheduleId, dateStr) {
       const nowMinutes = ict.hour * 60 + ict.minute;
       if (nowMinutes >= postMinutes) {
         await publishPending(pending, schedule);
+        // One-time post approved+published outside the cron path → auto-delete now.
+        if (schedule.postDate) deleteScheduleById(scheduleId);
         return { success: true, published: true, postId: pending.postId, postUrl: pending.postUrl };
       }
     }
@@ -650,6 +764,42 @@ function getScheduledCronJobs() {
     const genResult = subtractMinutes(schedule.postTime, lead);
     if (!genResult) continue;
 
+    const sid = schedule.id;
+
+    // One-time dated post: fires exactly once on `postDate`, then auto-deletes
+    // after the publish phase. This is how a multi-day plan is expressed — N
+    // one-time schedules, one per calendar date. Without it, a "plan" had to be
+    // N recurring schedules (postTime + daysOfWeek → "MM HH * * *"), every one
+    // of which fired EVERY day → all posts dumped on the same day.
+    if (schedule.postDate) {
+      const pd = parseDate(schedule.postDate);
+      if (!pd) continue;
+      // Skip dates already past — a date-pinned cron ("MM HH DD M *") would
+      // otherwise silently re-fire on the same calendar date next year.
+      if (schedule.postDate < todayStr()) continue;
+      // Generate phase runs the day before when the lead window crosses midnight.
+      const genDate = genResult.prevDay ? shiftDateStr(schedule.postDate, -1) : schedule.postDate;
+      const genCron = timeToCronOnDate(genResult.time, genDate);
+      const pubCron = timeToCronOnDate(schedule.postTime, schedule.postDate);
+      if (!genCron || !pubCron) continue;
+
+      jobs.push({
+        id: `fb-gen-${sid}`,
+        phase: 'generate',
+        scheduleId: sid,
+        cronExpr: genCron,
+        handler: () => handleGenerate(sid),
+      });
+      jobs.push({
+        id: `fb-pub-${sid}`,
+        phase: 'publish',
+        scheduleId: sid,
+        cronExpr: pubCron,
+        handler: () => handlePublish(sid),
+      });
+      continue;
+    }
+
     const daysOfWeek = Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0
       ? schedule.daysOfWeek
       : null;
@@ -667,8 +817,6 @@ function getScheduledCronJobs() {
       : timeToCron(schedule.postTime);
 
     if (!genCron || !pubCron) continue;
-
-    const sid = schedule.id;
 
     jobs.push({
       id: `fb-gen-${sid}`,
@@ -708,7 +856,9 @@ function handleRoute(urlPath, params, jsonResp, res) {
     const schedules = loadSchedules();
     const date = params.date || todayStr();
     const withPending = schedules.map(s => {
-      const pending = loadPending(s.id, date);
+      // One-time posts key their pending file by postDate, not "today".
+      const pendDate = s.postDate || date;
+      const pending = loadPending(s.id, pendDate);
       return { ...s, pending: pending || null };
     });
     jsonResp(res, 200, { success: true, schedules: withPending, date });
@@ -751,6 +901,16 @@ function handleRoute(urlPath, params, jsonResp, res) {
       } catch {}
     }
 
+    // One-time dated post (a single day of a multi-day plan). When set, the post
+    // fires exactly once on this calendar date then auto-deletes. daysOfWeek is
+    // ignored. Must be today or a future date (Asia/Ho_Chi_Minh).
+    let postDate = null;
+    if (params.postDate !== undefined && params.postDate !== null && params.postDate !== '') {
+      const v = validatePostDate(String(params.postDate), postTime);
+      if (!v.ok) { jsonResp(res, 400, { success: false, error: v.error }); return true; }
+      postDate = String(params.postDate);
+    }
+
     const newSchedule = {
       id,
       label: label || 'Bài đăng Facebook',
@@ -762,7 +922,8 @@ function handleRoute(urlPath, params, jsonResp, res) {
       caption: caption || '',
       assetNames,
       imageSize: params.imageSize || '1024x1024',
-      daysOfWeek,
+      daysOfWeek: postDate ? [] : daysOfWeek,
+      postDate,
       createdAt: now,
       updatedAt: now,
     };
@@ -776,17 +937,21 @@ function handleRoute(urlPath, params, jsonResp, res) {
       _sendTelegram(`[FB Schedule] Đã tạo lịch "${newSchedule.label}" ở chế độ tự động đăng (không cần duyệt). Trả lời "tắt autopost ${id}" để bật duyệt thủ công.`).catch(e => console.warn('[fb-schedule] notify error:', e?.message));
     }
 
-    // Nếu giờ đăng còn dưới leadMinutes → generate preview ngay lập tức
+    // Nếu giờ đăng còn dưới leadMinutes → generate preview ngay lập tức.
+    // Chỉ áp dụng cho lịch không có postDate (lặp) hoặc postDate chính là hôm nay —
+    // không generate sớm cho bài one-time ở ngày tương lai.
     try {
-      const postTimeParsed = parseTime(postTime);
-      if (postTimeParsed) {
-        const ict = nowInICT();
-        const postMin = postTimeParsed.hour * 60 + postTimeParsed.minute;
-        const nowMin = ict.hour * 60 + ict.minute;
-        const remaining = postMin - nowMin;
-        if (remaining > 0 && remaining <= leadMinutes) {
-          console.log(`[fb-schedule] postTime trong ${remaining}p (< lead ${leadMinutes}p) — generate preview ngay`);
-          handleGenerate(id).catch(e => console.error('[fb-schedule] immediate generate failed:', e.message));
+      if (!postDate || postDate === todayStr()) {
+        const postTimeParsed = parseTime(postTime);
+        if (postTimeParsed) {
+          const ict = nowInICT();
+          const postMin = postTimeParsed.hour * 60 + postTimeParsed.minute;
+          const nowMin = ict.hour * 60 + ict.minute;
+          const remaining = postMin - nowMin;
+          if (remaining > 0 && remaining <= leadMinutes) {
+            console.log(`[fb-schedule] postTime trong ${remaining}p (< lead ${leadMinutes}p) — generate preview ngay`);
+            handleGenerate(id).catch(e => console.error('[fb-schedule] immediate generate failed:', e.message));
+          }
         }
       }
     } catch (e) { console.warn('[fb-schedule] immediate generate check failed:', e.message); }
@@ -837,6 +1002,17 @@ function handleRoute(urlPath, params, jsonResp, res) {
         const raw = typeof params.daysOfWeek === 'string' ? JSON.parse(params.daysOfWeek) : params.daysOfWeek;
         if (Array.isArray(raw)) existing.daysOfWeek = raw.map(Number).filter(n => n >= 0 && n <= 6);
       } catch {}
+    }
+    if (params.postDate !== undefined) {
+      if (params.postDate === null || params.postDate === '') {
+        // Clear → revert to recurring schedule.
+        delete existing.postDate;
+      } else {
+        const v = validatePostDate(String(params.postDate), existing.postTime);
+        if (!v.ok) { jsonResp(res, 400, { success: false, error: v.error }); return true; }
+        existing.postDate = String(params.postDate);
+        existing.daysOfWeek = [];
+      }
     }
 
     existing.updatedAt = new Date().toISOString();
@@ -985,6 +1161,35 @@ function cleanupOldPending() {
     return removed;
   } catch (e) {
     console.error('[fb-schedule] cleanup failed:', e.message);
+    return 0;
+  }
+}
+
+/**
+ * Delete one-time (postDate) schedules whose date is already past. Without this,
+ * a one-time post missed because the machine slept across its publish window
+ * (App Nap / lid closed) would linger a full year — its date-pinned cron would
+ * re-fire on the same calendar date next year. Called at every cron (re)start.
+ *
+ * Safe to call inside startCronJobs: saveSchedules → onScheduleChanged →
+ * restartCronJobs is suppressed by startCronJobs' _startCronJobsInFlight guard,
+ * so no restart loop. The second pass finds nothing spent and writes nothing.
+ */
+function cleanupSpentOneTimeSchedules() {
+  try {
+    const schedules = loadSchedules();
+    const today = todayStr();
+    const spent = schedules.filter(s => s && s.postDate && s.postDate < today);
+    if (spent.length === 0) return 0;
+    const kept = schedules.filter(s => !(s && s.postDate && s.postDate < today));
+    saveSchedules(kept);
+    for (const s of spent) {
+      auditLog('fb_schedule_onetime_expired', { id: s.id, label: s.label, postDate: s.postDate });
+    }
+    console.log(`[fb-schedule] removed ${spent.length} spent one-time schedule(s) (past postDate)`);
+    return spent.length;
+  } catch (e) {
+    console.error('[fb-schedule] cleanupSpentOneTimeSchedules failed:', e.message);
     return 0;
   }
 }
@@ -1154,6 +1359,7 @@ module.exports = {
   // Data
   loadSchedules,
   saveSchedules,
+  deleteScheduleById,
   loadPending,
   savePending,
 
@@ -1172,6 +1378,7 @@ module.exports = {
 
   // Cron setup helper
   getScheduledCronJobs,
+  assetSummaryLine,
 
   // Telegram integration
   parseTelegramCommand,
@@ -1179,6 +1386,8 @@ module.exports = {
 
   // Cleanup
   cleanupOldPending,
+  cleanupSpentOneTimeSchedules,
+  validatePostDate,
 
   // Telegram FB command poller
   startFbTelegramPoller,

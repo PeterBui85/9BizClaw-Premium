@@ -4,6 +4,24 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-05-30
+
+**FB schedule: one-time dated posts (fix "7 bài đăng dồn 1 ngày")**
+- Root cause: `fb-scheduled-posts.json` only modeled recurring posts (postTime + daysOfWeek → `MM HH * * *`). A multi-day plan became N recurring schedules, each firing every day → all posts dumped on the same day.
+- Added optional `postDate` (YYYY-MM-DD) → date-pinned cron `MM HH DD M *`, fires exactly once (generate phase shifts to prev day on midnight-cross, handles month/year edges), past dates skipped.
+- One-time schedule **auto-deletes** after its publish phase runs (any outcome) + after immediate/late approve.
+- create/update endpoints validate postDate (must be today+); immediate-generate guarded to same-day only.
+- Skill `facebook-post-workflow.md`: "HAI loại lịch" table; multi-day plan = N one-time schedules (never N recurring).
+
+**FB schedule: wrong brand asset guard**
+- Confirmed code does NOT fuzzy-pick (`findMediaAsset` exact-match; `loadAssets` skips on miss) — wrong-asset was an AI decision.
+- Code guard: every CEO preview (normal + autoPost) now echoes `assetSummaryLine(assetNames)` — the asset filename or "(không dùng)" — so a wrong/unwanted asset is caught at the human gate (esp. scheduled posts).
+- Skill hardening: default NO asset; only attach when CEO names one / sends image; exact match or ASK; confirm step echoes exact filename; scheduled posts must not auto-attach.
+- Regression guard added to `smoke-test.js` (postDate cron generation). Local test `electron/scripts/test-fb-postdate.js` (gitignored).
+- Not built/committed/shipped — awaiting CEO.
+
+---
+
 ## 2026-05-28
 
 **v2.4.10 released** (tag b126bbd9)

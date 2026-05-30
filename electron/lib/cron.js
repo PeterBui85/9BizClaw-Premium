@@ -2433,6 +2433,7 @@ function _startCronJobsInner() {
       }
     }
     fbSchedule.cleanupOldPending();
+    if (typeof fbSchedule.cleanupSpentOneTimeSchedules === 'function') fbSchedule.cleanupSpentOneTimeSchedules();
     fbSchedule.startFbTelegramPoller();
   } catch (e) {
     console.error('[cron] FB schedule setup error:', e.message);

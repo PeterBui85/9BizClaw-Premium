@@ -55,12 +55,15 @@ web_fetch url="http://127.0.0.1:20200/api/fb/verify" method=GET
 
 ### Bước 1.1 — Kiểm tra brand assets
 
-CEO nói "dùng logo", "dùng mascot", "dùng ảnh sản phẩm", "theo brand", hoặc CEO gửi kèm ảnh:
+**NGUYÊN TẮC GỐC — MẶC ĐỊNH KHÔNG GẮN ASSET.** Chỉ gắn tài sản thương hiệu khi CEO **nói rõ** ("dùng logo", "dùng mascot", "dùng ảnh sản phẩm", "theo brand") HOẶC **gửi kèm ảnh trong chính lượt này**. CEO không nhắc gì về asset → tạo ảnh KHÔNG asset (`assets` để trống). TUYỆT ĐỐI không tự ý thêm asset vì "cho đẹp".
+
+Khi CEO có yêu cầu asset:
 ```
 web_fetch url="http://127.0.0.1:20200/api/brand-assets/list" method=GET
 ```
-- **Có file**: dùng file phù hợp nhất. Ưu tiên file có tên CEO nhắc (VD: "mascot" → file chứa `mascot`).
-- **Không có file**: nói "Anh chưa upload tài sản thương hiệu nào. Vào Dashboard > Facebook > Tài sản thương hiệu để thêm."
+- **Khớp tên CHÍNH XÁC**: chọn đúng file CEO nhắc. CEO nói "mascot" → chỉ chọn file mà tên chứa `mascot`. KHÔNG đoán, KHÔNG thay bằng file gần giống.
+- **Mơ hồ / nhiều file khớp / không có file nào khớp**: KHÔNG tự chọn. HỎI lại CEO kèm danh sách file hiện có: "Anh muốn dùng file nào ạ: [liệt kê tên file]?" rồi chờ trả lời.
+- **Danh sách rỗng**: nói "Anh chưa upload tài sản thương hiệu nào. Vào Dashboard > Facebook > Tài sản thương hiệu để thêm." — KHÔNG bịa asset.
 - **CEO gửi kèm ảnh reference**: PHẢI lưu ảnh trước qua `POST /api/brand-assets/save` body `{"name":"ceo-reference.png","base64":"<base64>"}`. Nếu chỉ có đường dẫn file ảnh, gọi `/api/brand-assets/import?path=<path>&name=ceo-reference.png`. Sau đó dùng `assets=ceo-reference.png` khi generate. KHÔNG dùng ảnh cũ từ brand-assets khi CEO vừa gửi ảnh mới.
 
 ### Bước 1.2 — Kết nối Fanpage (lần đầu)
@@ -90,11 +93,11 @@ Sau khi có thông tin (caption, mô tả ảnh, có/không brand assets):
 > Em sẽ tạo ảnh đăng Facebook cho anh:
 > - Nội dung: **[caption]**
 > - Mô tả ảnh: **[prompt mô tả]**
-> - Brand assets: **[có / không]**
+> - Tài sản thương hiệu: **[tên file CHÍNH XÁC, vd `mascot-removebg.png` — hoặc "không dùng"]**
 >
 > Anh nhắn **"ok"** để em bắt đầu tạo ảnh nhé.
 
-**CHỜ CEO nói "ok".** Không tạo ảnh trước.
+**CHỜ CEO nói "ok".** Không tạo ảnh trước. **PHẢI ghi rõ tên file asset** (không ghi chung chung "có") để CEO bắt được nếu chọn nhầm.
 
 ### Bước 2.2 — Generate ảnh (blocking)
 
@@ -278,18 +281,36 @@ Tóm tắt: gọi `GET /api/image/skills` → CEO chọn skill hoặc mô tả t
 
 CEO nói: "đăng Facebook mỗi sáng 9h", "tự động đăng bài mỗi ngày", "lịch đăng Facebook"...
 
+### HAI loại lịch — CHỌN ĐÚNG LOẠI
+
+| Loại | Khi nào dùng | Tham số |
+|---|---|---|
+| **Lặp lại** (recurring) | "đăng mỗi sáng 9h", "thứ 2-6 đăng" — lặp vô thời hạn cùng 1 prompt | `postTime` (+ `daysOfWeek` nếu chọn ngày). KHÔNG có `postDate`. |
+| **Một lần** (one-time) | "kế hoạch 7 ngày, mỗi ngày 1 bài KHÁC nhau", "đăng bài này vào ngày 15/6", từng bài trong content plan | `postTime` + `postDate` (YYYY-MM-DD). Đăng đúng 1 lần ngày đó rồi **tự xóa**. |
+
+**CỰC KỲ QUAN TRỌNG — kế hoạch nhiều ngày:** Khi CEO muốn "lên kế hoạch đăng mỗi ngày 1 bài trong N ngày" (mỗi ngày nội dung khác nhau), PHẢI tạo **N lịch one-time riêng**, mỗi lịch một `postDate` khác nhau + caption/prompt riêng. **TUYỆT ĐỐI KHÔNG** tạo N lịch lặp (không `postDate`) — vì lịch lặp ngày nào cũng đăng, N lịch lặp sẽ **dồn cả N bài vào CÙNG một ngày** (và lặp lại mỗi ngày sau). Một lịch lặp = 1 bài tái tạo mỗi ngày, KHÔNG phải N bài khác nhau.
+
 ### Tạo lịch
 
 ```
 web_fetch "http://127.0.0.1:20200/api/fb/schedule/create?postTime=09:00&leadMinutes=60&prompt=<prompt-tạo-ảnh>&caption=<caption>&label=<tên>&imageSize=1024x1024"
 ```
 
+Lịch một lần (1 ngày cụ thể) — thêm `postDate`:
+```
+web_fetch "http://127.0.0.1:20200/api/fb/schedule/create?postTime=09:00&postDate=2026-06-15&prompt=<prompt>&caption=<caption>&label=Bài ngày 15/6"
+```
+
 - `postTime` (BẮT BUỘC): giờ đăng, dạng HH:MM (VD: `09:00`)
+- `postDate` (one-time): ngày đăng, dạng YYYY-MM-DD. Có `postDate` = đăng đúng 1 lần ngày đó rồi tự xóa. Phải là hôm nay hoặc tương lai. Bỏ trống = lịch lặp.
 - `leadMinutes`: gửi preview trước bao nhiêu phút (mặc định 60 = 1 tiếng). HỎI CEO: "Anh muốn nhận preview trước bao lâu? Mặc định 1 tiếng."
 - `prompt`: prompt tạo ảnh (TIẾNG ANH, chi tiết)
 - `caption`: nội dung bài đăng Facebook
-- `assetNames`: brand assets dùng (JSON array, VD: `["mascot-removebg.png"]`)
+- `assetNames`: brand assets dùng (JSON array, VD: `["mascot-removebg.png"]`). **MẶC ĐỊNH để trống.** Chỉ set khi CEO nói rõ asset cho lịch/kế hoạch này, và phải là tên file CHÍNH XÁC (theo quy tắc Bước 1.1). KHÔNG tự gắn asset cho bài scheduled — bài tự động không có người duyệt tại chỗ nên asset sai sẽ lọt thẳng lên Fanpage. Kế hoạch nhiều ngày: chỉ dùng asset CEO đã chỉ định cho cả kế hoạch, không tự thêm khác nhau mỗi ngày.
+- `postDate`: (one-time) ngày đăng YYYY-MM-DD — xem mục "HAI loại lịch".
 - `autoPost`: `true` = tự đăng không cần duyệt (MẶC ĐỊNH: `false`)
+
+**Ví dụ kế hoạch 7 ngày (mỗi ngày 1 bài):** gọi `/create` 7 lần, mỗi lần `postDate` = ngày kế tiếp (D, D+1, ... D+6), caption + prompt riêng cho từng bài. KHÔNG gộp, KHÔNG dùng lịch lặp.
 
 ### Flow tự động
 
