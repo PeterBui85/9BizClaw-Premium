@@ -3244,7 +3244,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 131464
+      "bytes": 131578
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3279,6 +3279,10 @@
       "bytes": 54370
     },
     {
+      "path": "electron/lib/fb-schedule.js",
+      "bytes": 53099
+    },
+    {
       "path": "electron/lib/vendor-patches.js",
       "bytes": 49200
     },
@@ -3289,10 +3293,6 @@
     {
       "path": "electron/lib/skill-manager.js",
       "bytes": 45069
-    },
-    {
-      "path": "electron/lib/fb-schedule.js",
-      "bytes": 43962
     },
     {
       "path": "electron/lib/zalo-plugin.js",

@@ -2172,10 +2172,10 @@ try {
   const zaloPlugin = fs.readFileSync(path.join(__dirname, '..', 'lib', 'zalo-plugin.js'), 'utf-8');
   const forkVerM = zaloPlugin.match(/MODORO_ZALO_FORK_VERSION\s*=\s*'([^']+)'/);
   const forkVerConst = forkVerM ? forkVerM[1] : null;
-  if (forkVerConst === 'modoro-zalo-v1.0.11') {
-    pass('MODORO_ZALO_FORK_VERSION bumped to v1.0.11');
+  if (forkVerConst === 'modoro-zalo-v1.0.12') {
+    pass('MODORO_ZALO_FORK_VERSION bumped to v1.0.12');
   } else {
-    fail('fork version', `MODORO_ZALO_FORK_VERSION is ${forkVerConst} — expected modoro-zalo-v1.0.11 (patched fork will not reach existing installs)`);
+    fail('fork version', `MODORO_ZALO_FORK_VERSION is ${forkVerConst} — expected modoro-zalo-v1.0.12 (patched fork will not reach existing installs)`);
   }
   const forkVerFile = (() => {
     try { return fs.readFileSync(path.join(__dirname, '..', 'packages', 'modoro-zalo', 'src', '.fork-version'), 'utf-8').trim(); }

@@ -183,7 +183,7 @@ Large Source Files
 - electron/ui/dashboard.html: 662733 bytes
 - electron/lib/dashboard-ipc.js: 282462 bytes
 - electron/lib/cron-api.js: 177549 bytes
-- electron/lib/cron.js: 131464 bytes
+- electron/lib/cron.js: 131578 bytes
 - electron/ui/wizard.html: 117791 bytes
 - electron/lib/channels.js: 98615 bytes
 - electron/lib/knowledge.js: 96863 bytes
@@ -192,10 +192,10 @@ Large Source Files
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
 - electron/lib/config.js: 62757 bytes
 - electron/lib/workspace.js: 54370 bytes
+- electron/lib/fb-schedule.js: 53099 bytes
 - electron/lib/vendor-patches.js: 49200 bytes
 - electron/lib/nine-router.js: 46625 bytes
 - electron/lib/skill-manager.js: 45069 bytes
-- electron/lib/fb-schedule.js: 43962 bytes
 - electron/lib/zalo-plugin.js: 43403 bytes
 - electron/lib/google-api.js: 39642 bytes
 - electron/lib/boot.js: 37246 bytes

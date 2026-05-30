@@ -56,8 +56,11 @@ async function graphRequest(method, endpoint, token, body) {
   try {
     return await _graphRequestOnce(method, endpoint, token, body);
   } catch (e) {
-    if (e._httpStatus && e._httpStatus >= 500 && e._httpStatus < 600) {
-      console.warn('[fb-publisher] Graph API 5xx - retrying in 3s:', e.message);
+    // Auto-retry 5xx ONLY for idempotent GET. Retrying a POST (feed/photo) on a
+    // 5xx is unsafe: Facebook may have ACCEPTED the write before returning 5xx →
+    // the retry double-posts. POST callers handle their own verify-then-retry.
+    if (method === 'GET' && e._httpStatus && e._httpStatus >= 500 && e._httpStatus < 600) {
+      console.warn('[fb-publisher] Graph API 5xx (GET) - retrying in 3s:', e.message);
       await new Promise(r => setTimeout(r, 3000));
       return await _graphRequestOnce(method, endpoint, token, body);
     }
@@ -385,6 +388,27 @@ async function getRecentPosts(pageId, token, limit = 5) {
   return data.data || [];
 }
 
+// After an INDETERMINATE post error (timeout/5xx where FB may have accepted the
+// write), check whether a post with this caption already landed — so we recover
+// the real post instead of blindly retrying and double-posting.
+async function findRecentPostByCaption(pageId, token, caption, withinMs = 10 * 60 * 1000) {
+  try {
+    const capKey = String(caption || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (capKey.length < 8) return null; // too short to match reliably
+    const posts = await getRecentPosts(pageId, token, 5);
+    const now = Date.now();
+    for (const p of posts) {
+      const msg = String(p.message || '').replace(/\s+/g, ' ').trim();
+      const t = Date.parse(p.created_time || '');
+      const recent = !withinMs || (Number.isFinite(t) && (now - t) < withinMs);
+      if (recent && msg && msg.slice(0, 40) === capKey) {
+        return { postId: p.id, postUrl: p.permalink_url || formatPostUrl(p.id) };
+      }
+    }
+  } catch (e) { console.warn('[fb-publisher] findRecentPostByCaption failed:', e?.message); }
+  return null;
+}
+
 async function getInsights(pageId, token, opts = {}) {
   if (!pageId) return { valid: false, tokenValid: false, error: 'pageId required' };
   if (!token || !String(token).trim()) {
@@ -457,6 +481,7 @@ module.exports = {
   postText,
   postPhoto,
   getRecentPosts,
+  findRecentPostByCaption,
   getInsights,
   _test: { hasPageCreateContentTask, hasPageInsightsPermission, insightsMetrics: INSIGHTS_METRICS },
 };

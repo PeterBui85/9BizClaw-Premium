@@ -27,6 +27,8 @@ const PENDING_DIR = 'fb-pending';
 const DEFAULT_LEAD_MINUTES = 60;
 const PENDING_TTL_DAYS = 7;
 const _generateInFlight = new Set();
+const _publishInFlight = new Set();
+const _regenPending = new Set();
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -312,12 +314,23 @@ function listPendingForDate(dateStr) {
  */
 async function handleGenerate(scheduleId) {
   if (_generateInFlight.has(scheduleId)) {
-    console.log(`[fb-schedule] handleGenerate: ${scheduleId} already in flight, skipping`);
+    // A regenerate ("fb ảnh khác") arrived while a generate is already running.
+    // Previously this was dropped silently and the CEO got the OLD image. Queue a
+    // single re-run instead — the in-flight generate's finally will pick it up.
+    console.log(`[fb-schedule] handleGenerate: ${scheduleId} already in flight — queuing one re-run`);
+    _regenPending.add(scheduleId);
     return;
   }
   _generateInFlight.add(scheduleId);
   try { await _handleGenerateInner(scheduleId); }
-  finally { _generateInFlight.delete(scheduleId); }
+  finally {
+    _generateInFlight.delete(scheduleId);
+    if (_regenPending.has(scheduleId)) {
+      _regenPending.delete(scheduleId);
+      console.log(`[fb-schedule] re-running queued regenerate for ${scheduleId}`);
+      handleGenerate(scheduleId).catch(e => console.error('[fb-schedule] queued regenerate failed:', e?.message));
+    }
+  }
 }
 
 async function _handleGenerateInner(scheduleId) {
@@ -393,6 +406,19 @@ async function _handleGenerateInner(scheduleId) {
 
     // Re-read pending from disk — CEO may have edited caption during generation
     const freshPending = loadPending(scheduleId, date) || pending;
+    // If the CEO rejected/cancelled this post WHILE the image was generating, do
+    // NOT resurrect it (and definitely don't auto-approve below) — discard the image.
+    if (freshPending.status === 'rejected' || freshPending.status === 'skipped') {
+      console.log(`[fb-schedule] post was ${freshPending.status} mid-generation — discarding new image for ${scheduleId} on ${date}`);
+      return;
+    }
+    // A newer regenerate ("fb ảnh khác") was requested while this generate ran →
+    // this image is stale. Leave status as-is ('regenerating') so the queued
+    // re-run regenerates, and don't send a stale preview.
+    if (_regenPending.has(scheduleId)) {
+      console.log(`[fb-schedule] newer regenerate queued — discarding stale image for ${scheduleId}`);
+      return;
+    }
     freshPending.imagePath = imagePath;
     freshPending.generatedAt = new Date().toISOString();
     if (freshPending.status === 'regenerating') freshPending.status = 'pending';
@@ -423,7 +449,13 @@ async function _handleGenerateInner(scheduleId) {
         try {
           await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nTrả lời:\n• "fb ok" → duyệt đăng\n• "fb sửa caption: <nội dung mới>" → đổi caption\n• "fb ảnh khác" → tạo lại ảnh\n• "fb hủy" → bỏ bài này`);
         } catch (e) {
-          console.warn('[fb-schedule] failed to send preview:', e.message);
+          console.warn('[fb-schedule] failed to send photo preview:', e.message);
+          // Fall back to a text preview — a photo-send hiccup must not silently
+          // strand the post (CEO never sees it → it gets skipped at postTime).
+          if (_sendTelegram) {
+            try { await _sendTelegram(`[FB Preview] "${schedule.label}" — Ảnh đã tạo xong (gửi ảnh lỗi, ${assetSummaryLine(schedule.assetNames)}).\nCaption: ${caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`); }
+            catch (e2) { console.warn('[fb-schedule] text preview fallback also failed:', e2.message); }
+          }
         }
       } else if (_sendTelegram) {
         try {
@@ -464,7 +496,16 @@ async function handlePublish(scheduleId) {
   } finally {
     try {
       const sch = loadSchedules().find(s => s.id === scheduleId);
-      if (sch && sch.postDate) deleteScheduleById(scheduleId);
+      if (sch && sch.postDate) {
+        // Defer the delete (and the cron restart it triggers via onScheduleChanged)
+        // to the next tick — restarting the cron set from INSIDE a live cron handler
+        // could tear down another job scheduled to fire this same minute. The
+        // publish is already done here, so the one-time job has served its purpose.
+        setImmediate(() => {
+          try { deleteScheduleById(scheduleId); }
+          catch (e) { console.warn('[fb-schedule] deferred one-time delete failed:', e?.message); }
+        });
+      }
     } catch (e) {
       console.warn('[fb-schedule] one-time auto-delete (publish) failed:', e?.message);
     }
@@ -487,10 +528,23 @@ async function _handlePublishInner(scheduleId) {
   }
 
   const date = todayStr();
-  const pending = loadPending(scheduleId, date);
+  let pending = loadPending(scheduleId, date);
+
+  if (!pending) {
+    // Cross-midnight: a generate near midnight may have keyed the pending to an
+    // adjacent date. Probe siblings (postDate / tomorrow / yesterday) before giving up.
+    pending = loadPending(scheduleId, schedule.postDate || tomorrowStr())
+      || loadPending(scheduleId, shiftDateStr(date, -1));
+  }
 
   if (!pending) {
     console.log(`[fb-schedule] handlePublish: no pending for ${scheduleId} on ${date}`);
+    // A one-time post with no pending means its generate phase was missed (machine
+    // asleep at generate time) — a permanent miss, so surface it. Recurring
+    // schedules just retry tomorrow, so don't alert daily.
+    if (schedule.postDate && _sendTelegram) {
+      try { await _sendTelegram(`[FB Schedule] Không có bài để đăng cho "${schedule.label}" (ngày ${schedule.postDate}) — có thể máy đã tắt lúc tạo ảnh. Anh tạo lại nếu cần nhé.`); } catch {}
+    }
     return;
   }
 
@@ -533,17 +587,49 @@ async function _handlePublishInner(scheduleId) {
 /**
  * Actually post to Facebook. Used by both handlePublish and immediate approve.
  */
+/**
+ * Publish wrapper — guards against concurrent/duplicate publishing of the same
+ * (scheduleId, date). Two paths can race: the publish cron (handlePublish) and an
+ * immediate "fb ok" (approvePending) at the same minute. Without this, both read
+ * status 'approved' before either writes 'published' → the post goes out TWICE.
+ */
 async function publishPending(pending, schedule) {
+  const key = `${pending.scheduleId}:${pending.date}`;
+  if (_publishInFlight.has(key)) {
+    console.log(`[fb-schedule] publish already in flight for ${key} — skipping duplicate`);
+    return;
+  }
+  // Re-read from disk: another path may have already published it.
+  const fresh = loadPending(pending.scheduleId, pending.date);
+  if (fresh && fresh.status === 'published') {
+    console.log(`[fb-schedule] ${key} already published — skipping`);
+    Object.assign(pending, fresh);
+    return;
+  }
+  _publishInFlight.add(key);
+  try {
+    await _publishPendingImpl(pending, schedule);
+  } finally {
+    _publishInFlight.delete(key);
+  }
+}
+
+async function _publishPendingImpl(pending, schedule) {
   const cfg = readFbConfig();
   if (!cfg || !cfg.accessToken || !cfg.pageId) {
     pending.status = 'skipped';
-    pending.error = !cfg?.pageId ? 'Facebook chưa chọn Fanpage (không có pageId)' : 'Facebook chưa kết nối (không có token)';
+    pending.error = !cfg?.pageId ? 'Facebook chưa chọn Fanpage (không có pageId)'
+      : (cfg?.tokenError === 'decrypt_failed' ? 'Token Facebook không giải mã được — cần kết nối lại Fanpage'
+        : 'Facebook chưa kết nối (không có token)');
     savePending(pending);
 
     auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: pending.error });
 
     if (_sendTelegram) {
-      try { await _sendTelegram(`[FB Schedule] Không đăng được "${schedule?.label || pending.scheduleId}": Facebook chưa kết nối.`); } catch {}
+      const m = cfg?.tokenError === 'decrypt_failed'
+        ? `[FB Schedule] Không đăng được "${schedule?.label || pending.scheduleId}": token Facebook không giải mã được (máy/keychain đã đổi). Vào Dashboard → Facebook → kết nối lại Fanpage.`
+        : `[FB Schedule] Không đăng được "${schedule?.label || pending.scheduleId}": Facebook chưa kết nối.`;
+      try { await _sendTelegram(m); } catch {}
     }
     return;
   }
@@ -554,9 +640,38 @@ async function publishPending(pending, schedule) {
   const imgBuf = (imagePath && fs.existsSync(imagePath)) ? fs.readFileSync(imagePath) : null;
 
   if (!imgBuf && imagePath) {
-    console.warn(`[fb-schedule] image file missing at publish time: ${imagePath}`);
+    // Image was expected (imagePath set) but the file is gone at publish time.
+    // Don't silently downgrade to a text-only post on the public Fanpage — skip +
+    // alert the CEO so they decide, rather than publishing a broken-looking post.
+    console.warn(`[fb-schedule] image file missing at publish time: ${imagePath} — skipping (not posting text-only)`);
+    pending.status = 'skipped';
+    pending.error = 'Ảnh bị mất trước giờ đăng';
+    savePending(pending);
+    auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: 'image_missing' });
     if (_sendTelegram) {
-      try { await _sendTelegram(`[FB Schedule] Ảnh "${schedule?.label}" bị mất. Đăng bài chỉ với caption.`); } catch {}
+      try { await _sendTelegram(`[FB Schedule] Không đăng "${schedule?.label || pending.scheduleId}" — ảnh đã tạo bị mất trước giờ đăng. Anh tạo lại nếu cần nhé.`); } catch {}
+    }
+    return;
+  }
+
+  // Validate the image bytes before upload — reject empty / >8MB / non-image (a
+  // truncated image-gen write or a wrong file) instead of posting garbage or
+  // letting FB reject it (which the retry loop might misclassify).
+  if (imgBuf) {
+    const okMagic = imgBuf.length >= 4 && (
+      (imgBuf[0] === 0xFF && imgBuf[1] === 0xD8) ||                                              // JPEG
+      (imgBuf[0] === 0x89 && imgBuf[1] === 0x50 && imgBuf[2] === 0x4E && imgBuf[3] === 0x47) || // PNG
+      (imgBuf.slice(0, 4).toString('ascii') === 'RIFF') ||                                      // WEBP
+      (imgBuf.slice(0, 3).toString('ascii') === 'GIF')                                          // GIF
+    );
+    if (imgBuf.length === 0 || imgBuf.length > 8 * 1024 * 1024 || !okMagic) {
+      console.warn(`[fb-schedule] invalid image for ${pending.scheduleId}: ${imgBuf.length}B okMagic=${okMagic}`);
+      pending.status = 'skipped';
+      pending.error = imgBuf.length > 8 * 1024 * 1024 ? 'Ảnh quá lớn (>8MB)' : 'Ảnh không hợp lệ / hỏng';
+      savePending(pending);
+      auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: 'invalid_image' });
+      if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Không đăng "${schedule?.label || pending.scheduleId}" — ảnh hỏng hoặc quá lớn. Anh thử "fb ảnh khác" nhé.`); } catch {} }
+      return;
     }
   }
 
@@ -570,6 +685,10 @@ async function publishPending(pending, schedule) {
         result = await fbPub.postPhoto(cfg.pageId, cfg.accessToken, caption, imgBuf, imagePath);
       } else {
         result = await fbPub.postText(cfg.pageId, cfg.accessToken, caption);
+      }
+      if (!result.postId) {
+        // 200 but no post id returned (rare) — try to recover the real post id/url.
+        try { const f = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption); if (f) result = f; } catch {}
       }
 
       pending.status = 'published';
@@ -594,33 +713,74 @@ async function publishPending(pending, schedule) {
       }
       return;
     } catch (err) {
+      const msg = String(err.message || '');
       const isTokenExpired = err._isTokenExpired || err._httpStatus === 401 ||
-        /OAuthException|expired|invalid.*token|session.*invalid/i.test(err.message);
-      const isTransient = !isTokenExpired && (err._httpStatus >= 500 || /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up/i.test(err.message));
+        /OAuthException|expired|invalid.*token|session.*invalid/i.test(msg);
+      const isPermission = !isTokenExpired && (err._httpStatus === 403 ||
+        /permission|requires.*pages_manage_posts|not authorized/i.test(msg));
+      // INDETERMINATE: timeout / 5xx / reset AFTER the body may have been sent — FB
+      // may have accepted the post. Blind retry double-posts → verify first.
+      // NOTE: "connect timeout" is req.setTimeout (whole-socket lifecycle, fires even
+      // if FB got the body but is slow to return headers) and ECONNRESET can be
+      // mid-send → both are indeterminate, NOT safe-to-retry.
+      const isIndeterminate = !isTokenExpired && !isPermission &&
+        (err._httpStatus >= 500 || /response body timeout|post queue timeout|socket hang up|ETIMEDOUT|connect timeout|ECONNRESET/i.test(msg));
+      // CONNECT-PHASE: genuinely never reached FB (DNS / refused) → safe to retry.
+      const isConnect = !isTokenExpired && !isPermission && !isIndeterminate &&
+        /ECONNREFUSED|EAI_AGAIN|ENOTFOUND/i.test(msg);
 
-      if (isTransient && attempt < MAX_RETRIES) {
-        console.warn(`[fb-schedule] transient error on attempt ${attempt + 1}, retrying in ${RETRY_DELAYS[attempt]}ms: ${err.message}`);
+      if (isIndeterminate) {
+        try {
+          const found = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption);
+          if (found) {
+            pending.status = 'published';
+            pending.publishedAt = new Date().toISOString();
+            pending.postId = found.postId;
+            pending.postUrl = found.postUrl;
+            savePending(pending);
+            auditLog('fb_schedule_published', { scheduleId: pending.scheduleId, date: pending.date, postId: found.postId, recovered: true });
+            console.log(`[fb-schedule] recovered published ${pending.scheduleId} after "${msg}": ${found.postUrl}`);
+            if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.scheduleId}" (xác nhận lại sau gián đoạn mạng).\n${found.postUrl || ''}`); } catch {} }
+            return;
+          }
+        } catch {}
+        // Only retry if the caption is long enough for findRecentPostByCaption to
+        // verify on the NEXT attempt (it needs ≥8 normalized chars). If too short,
+        // a blind retry could double-post → stop and let the CEO check.
+        const capNorm = String(caption || '').replace(/\s+/g, ' ').trim();
+        if (capNorm.length >= 8 && attempt < MAX_RETRIES) {
+          console.warn(`[fb-schedule] indeterminate error (post not found), retrying in ${RETRY_DELAYS[attempt]}ms: ${msg}`);
+          await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+          continue;
+        }
+        if (capNorm.length < 8) console.warn(`[fb-schedule] indeterminate error + caption too short to verify — not retrying (avoid double-post): ${msg}`);
+      } else if (isConnect && attempt < MAX_RETRIES) {
+        console.warn(`[fb-schedule] connect-phase error on attempt ${attempt + 1}, retrying in ${RETRY_DELAYS[attempt]}ms: ${msg}`);
         await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
         continue;
       }
 
       pending.status = 'skipped';
-      pending.error = err.message;
+      pending.error = msg;
       savePending(pending);
 
       auditLog('fb_schedule_publish_failed', {
         scheduleId: pending.scheduleId,
         date: pending.date,
-        error: err.message,
+        error: msg,
         tokenExpired: isTokenExpired,
+        permission: isPermission,
         attempt,
       });
-      console.error(`[fb-schedule] publish failed for ${pending.scheduleId} (attempt ${attempt + 1}):`, err.message);
+      console.error(`[fb-schedule] publish failed for ${pending.scheduleId} (attempt ${attempt + 1}):`, msg);
 
       if (_sendTelegram) {
-        const tokenMsg = isTokenExpired ? ' Token Facebook hết hạn — cần paste token mới vào Dashboard.' : '';
+        let hint = '';
+        if (isTokenExpired) hint = ' Token Facebook hết hạn — cần paste token mới vào Dashboard.';
+        else if (isPermission) hint = ' Token thiếu quyền đăng bài (pages_manage_posts) — kết nối lại Fanpage trong Dashboard.';
+        else if (isIndeterminate) hint = ' (Mạng gián đoạn — em chưa chắc đã đăng được hay chưa, anh kiểm tra Fanpage giúp em nhé.)';
         try {
-          await _sendTelegram(`[FB Schedule] Đăng thất bại "${schedule?.label || pending.scheduleId}": ${err.message}${tokenMsg}`);
+          await _sendTelegram(`[FB Schedule] Đăng thất bại "${schedule?.label || pending.scheduleId}": ${msg}${hint}`);
         } catch {}
       }
       return;
@@ -655,6 +815,20 @@ async function approvePending(scheduleId, dateStr) {
   // Check if we should publish immediately (past postTime on the pending's date)
   const schedules = loadSchedules();
   const schedule = schedules.find(s => s.id === scheduleId);
+
+  // The schedule may already be gone — a one-time post that hit postTime
+  // unapproved was skipped and its schedule auto-deleted. The CEO is approving
+  // late; the publish window has passed, so publish directly from the pending
+  // record (it carries caption + imagePath). Without this we'd reply "Đã duyệt"
+  // but nothing would ever post (schedule + cron deleted).
+  if (!schedule) {
+    await publishPending(pending, { label: pending.scheduleId, postDate: pending.date });
+    if (pending.status === 'published') {
+      return { success: true, published: true, postId: pending.postId, postUrl: pending.postUrl };
+    }
+    return { success: false, error: pending.error || 'Không đăng được — lịch đã hết hạn.' };
+  }
+
   const postTime = schedule?.postTime;
   if (postTime) {
     const parsed = parseTime(postTime);
@@ -1184,7 +1358,15 @@ function cleanupSpentOneTimeSchedules() {
     const kept = schedules.filter(s => !(s && s.postDate && s.postDate < today));
     saveSchedules(kept);
     for (const s of spent) {
-      auditLog('fb_schedule_onetime_expired', { id: s.id, label: s.label, postDate: s.postDate });
+      // If the CEO had APPROVED this one-time post but it never published (machine
+      // asleep across the publish window), that's a lost explicit commitment — alert
+      // instead of deleting silently. (We don't auto-publish late: the day is gone.)
+      let pend = null;
+      try { pend = loadPending(s.id, s.postDate); } catch {}
+      if (pend && pend.status === 'approved' && _sendTelegram) {
+        try { _sendTelegram(`[FB Schedule] Bài "${s.label}" (anh đã duyệt cho ngày ${s.postDate}) KHÔNG đăng được vì máy tắt/ngủ qua giờ đăng. Anh tạo lại nếu vẫn cần nhé.`).catch(() => {}); } catch {}
+      }
+      auditLog('fb_schedule_onetime_expired', { id: s.id, label: s.label, postDate: s.postDate, pendingStatus: pend?.status || null });
     }
     console.log(`[fb-schedule] removed ${spent.length} spent one-time schedule(s) (past postDate)`);
     return spent.length;
@@ -1211,36 +1393,54 @@ function cleanupSpentOneTimeSchedules() {
 function parseTelegramCommand(text) {
   if (!text || typeof text !== 'string') return null;
   const t = text.trim();
+  // A trailing FB schedule id (fb_...) targets a specific post when several are
+  // awaiting approval. ONLY an fb_ token counts as an id — so "hủy ngay" cancels
+  // the active post (it doesn't treat "ngay" as an id and silently fail to cancel).
+  const idMatch = t.match(/\b(fb_[0-9a-z_]+)\b/i);
+  // Schedule ids are auto-generated lowercase (fb_<ts>_<rand>); lowercase the
+  // captured token so an uppercased "FB_1" still matches via strict ===.
+  const sid = idMatch ? idMatch[1].toLowerCase() : null;
 
-  // Approve
-  if (/^(ok|đăng đi|duyệt|đăng|post|approve)$/i.test(t)) {
-    return { action: 'approve' };
+  // NOTE: use a lookahead boundary (?=$|\s|[.,:!?]) instead of \b — JS \b is
+  // ASCII-only, so it FAILS after a Vietnamese diacritic char (e.g. "bỏ", "huỷ"
+  // end in non-ASCII) and the keyword would never match → command silently ignored.
+
+  // Approve — prefix match so "ok nhé", "duyệt đi" etc. still work. Bare "đăng"
+  // dropped (matched "đăng ký"/"đăng nhập"); use "đăng đi"/"đăng bài".
+  if (/^(ok|okay|duyệt|duyet|đăng đi|đăng bài|post|approve)(?=$|\s|[.,:!?])/i.test(t)) {
+    return { action: 'approve', scheduleId: sid };
   }
 
-  // Reject with optional id
-  const rejectMatch = t.match(/^hủy(?:\s+(.+))?$/i);
-  if (rejectMatch) {
-    return { action: 'reject', scheduleId: rejectMatch[1]?.trim() || null };
-  }
-
-  // Edit caption
+  // Edit caption (check before reject/regenerate so "sửa caption: hủy ..." works)
   const captionMatch = t.match(/^sửa\s+caption:\s*(.+)$/is);
   if (captionMatch) {
-    return { action: 'editCaption', caption: captionMatch[1].trim() };
+    return { action: 'editCaption', caption: captionMatch[1].trim(), scheduleId: sid };
+  }
+
+  // Reject
+  if (/^(hủy|huỷ|bỏ|cancel|thôi|không đăng|khong dang)(?=$|\s|[.,:!?])/i.test(t)) {
+    return { action: 'reject', scheduleId: sid };
   }
 
   // Regenerate image
-  if (/^(tạo ảnh khác|tạo lại ảnh|ảnh khác|regenerate|regen)$/i.test(t)) {
-    return { action: 'regenerate' };
+  if (/^(tạo ảnh khác|tạo lại ảnh|ảnh khác|đổi ảnh|regenerate|regen)(?=$|\s|[.,:!?])/i.test(t)) {
+    return { action: 'regenerate', scheduleId: sid };
   }
 
   // Disable autoPost
   const autoMatch = t.match(/^tắt\s+autopost\s+(.+)$/i);
   if (autoMatch) {
-    return { action: 'disableAutoPost', scheduleId: autoMatch[1].trim() };
+    return { action: 'disableAutoPost', scheduleId: sid || autoMatch[1].trim() };
   }
 
   return null;
+}
+
+// When several FB posts await approval and the CEO didn't specify which, ask
+// them to disambiguate by id (rather than silently approving the wrong one).
+function _fbDisambig(list, cmdHint) {
+  const lines = list.map(x => `• "${x.schedule.label}" → ${cmdHint} ${x.schedule.id}`).join('\n');
+  return `Đang có ${list.length} bài Facebook chờ duyệt. Anh chỉ rõ bài nào ạ:\n${lines}`;
 }
 
 /**
@@ -1250,62 +1450,81 @@ function parseTelegramCommand(text) {
 async function handleTelegramCommand(cmd) {
   if (!cmd) return { handled: false };
 
-  // Search today AND tomorrow to handle cross-midnight previews.
-  // When postTime is e.g. 01:00 with leadMinutes 120, the preview is generated
-  // at 23:00 Day N and the pending file is written for Day N+1. CEO replies
-  // "fb ok" at 23:05 still on Day N — we must find the Day N+1 pending.
-  const dates = [todayStr(), tomorrowStr()];
+  // Search today, tomorrow, then yesterday — covers cross-midnight previews and a
+  // generate that fired late after a wake. ORDER MATTERS: collectActive() takes the
+  // FIRST date that has an active pending per schedule, so today must come before
+  // yesterday — a fresh today pending must win over a stale yesterday one.
+  const dates = [todayStr(), tomorrowStr(), shiftDateStr(todayStr(), -1)];
   const schedules = loadSchedules();
 
-  function findActivePending(specificId) {
+  // All currently-active pendings (deduped by scheduleId; first date in `dates`
+  // order wins → today preferred over tomorrow over yesterday).
+  function collectActive() {
+    const seen = new Map();
     for (const date of dates) {
-      if (specificId) {
-        const pending = loadPending(specificId, date);
-        const schedule = schedules.find(s => s.id === specificId);
-        if (pending && schedule) return { pending, schedule, date };
-      } else {
-        for (const s of schedules) {
-          const pending = loadPending(s.id, date);
-          if (pending && (pending.status === 'pending' || pending.status === 'approved' || pending.status === 'regenerating')) {
-            return { pending, schedule: s, date };
-          }
+      for (const s of schedules) {
+        const pending = loadPending(s.id, date);
+        if (pending && (pending.status === 'pending' || pending.status === 'approved' || pending.status === 'regenerating')) {
+          if (!seen.has(s.id)) seen.set(s.id, { pending, schedule: s, date });
         }
       }
     }
-    return null;
+    return [...seen.values()];
   }
 
-  if (cmd.action === 'approve') {
-    const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
-    const result = await approvePending(found.pending.scheduleId, found.date);
-    if (!result.success) return { handled: true, response: result.error };
-    if (result.published) {
-      return { handled: true, response: `Đã duyệt và đăng thành công.\n${result.postUrl || ''}` };
+  // Resolve the target. { found } | { notFound } | { ambiguous: [...] }.
+  // When the CEO didn't give an id and >1 post is active, we DON'T auto-pick the
+  // first (that could approve/cancel the WRONG post) — we ask which one.
+  function resolve(specificId) {
+    if (specificId) {
+      for (const date of dates) {
+        const pending = loadPending(specificId, date);
+        const schedule = schedules.find(s => s.id === specificId);
+        if (pending && schedule) return { found: { pending, schedule, date } };
+      }
+      return { notFound: true };
     }
+    const active = collectActive();
+    if (active.length === 0) return { notFound: true };
+    if (active.length === 1) return { found: active[0] };
+    return { ambiguous: active };
+  }
+
+  const NONE = 'Không có bài Facebook nào đang chờ duyệt.';
+
+  if (cmd.action === 'approve') {
+    const r = resolve(cmd.scheduleId);
+    if (r.notFound) return { handled: true, response: NONE };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb ok') };
+    const result = await approvePending(r.found.pending.scheduleId, r.found.date);
+    if (!result.success) return { handled: true, response: result.error };
+    if (result.published) return { handled: true, response: `Đã duyệt và đăng "${r.found.schedule.label}" thành công.\n${result.postUrl || ''}` };
     return { handled: true, response: result.message || 'Đã duyệt.' };
   }
 
   if (cmd.action === 'reject') {
-    const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
-    const result = rejectPending(found.pending.scheduleId, found.date);
+    const r = resolve(cmd.scheduleId);
+    if (r.notFound) return { handled: true, response: NONE };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb hủy') };
+    const result = rejectPending(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
-    return { handled: true, response: `Đã hủy bài "${found.schedule.label}".` };
+    return { handled: true, response: `Đã hủy bài "${r.found.schedule.label}".` };
   }
 
   if (cmd.action === 'editCaption') {
-    const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
-    const result = editCaption(found.pending.scheduleId, cmd.caption, found.date);
+    const r = resolve(cmd.scheduleId);
+    if (r.notFound) return { handled: true, response: NONE };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb sửa caption (kèm mã)') };
+    const result = editCaption(r.found.pending.scheduleId, cmd.caption, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
-    return { handled: true, response: `Đã cập nhật caption:\n${cmd.caption}` };
+    return { handled: true, response: `Đã cập nhật caption cho "${r.found.schedule.label}":\n${cmd.caption}` };
   }
 
   if (cmd.action === 'regenerate') {
-    const found = findActivePending(cmd.scheduleId);
-    if (!found) return { handled: true, response: 'Không có bài Facebook nào đang chờ duyệt.' };
-    const result = await regenerateImage(found.pending.scheduleId, found.date);
+    const r = resolve(cmd.scheduleId);
+    if (r.notFound) return { handled: true, response: NONE };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb ảnh khác') };
+    const result = await regenerateImage(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
     return { handled: true, response: 'Đang tạo ảnh mới. Sẽ gửi preview khi xong.' };
   }

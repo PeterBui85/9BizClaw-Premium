@@ -749,7 +749,7 @@ export async function handleModoroZaloInbound(params: {
     // members; DM does not). Logs which senderId got admin privileges.
     runtime.log?.(`modoro-zalo: command-block bypass for internal DM user ${message.senderId}`);
   }
-  if (rawBody && !__cbIsInternal) {
+  if (rawBody) {
     const __cbOrig = rawBody.toLowerCase();
     // NFKD + zero-width strip + Cyrillic-to-Latin homoglyph normalization
     const __cbZwRe = new RegExp('[\\u200B-\\u200F\\u202A-\\u202E\\uFEFF\\u00AD\\u2060-\\u2064\\u206A-\\u206F\\u0300-\\u036F]', 'g');
@@ -784,6 +784,8 @@ export async function handleModoroZaloInbound(params: {
       /localhost[:/]\s*\d{2,5}/i,
       /\[?::1\]?[:/]\s*\d{2,5}/i,
       /0\.0\.0\.0[:/]\s*\d{2,5}/i,
+      /\b127\.0\.0\.1\b/i,   // bare loopback IP (no port) — a customer never types this
+      /\blocalhost\b/i,      // bare localhost — likewise never legit from a customer
       /0x7f0{0,6}1\b/i,
       /0177\.0+\.0+\.0*1\b/,
       /2130706433\b/,
@@ -877,11 +879,40 @@ export async function handleModoroZaloInbound(params: {
       /[a-zA-Z]:[\\\/]/i,
       /(?:\/(?:home|etc|var|tmp|usr|opt)\/)/i,
     ];
-    const __cbHardHit = __cbHard.some(p => p.test(__cbOrig) || p.test(__cbStripped));
-    const __cbSoftHit = !__cbHardHit && __cbSoft.some(p => p.test(__cbOrig) || p.test(__cbStripped));
-    const __cbSensitiveHit = __cbSoftHit && __cbSensitive.some(p => p.test(__cbOrig) || p.test(__cbStripped));
-    if (__cbHardHit || __cbSensitiveHit) {
-      runtime.log?.(`modoro-zalo: COMMAND-BLOCK from ${message.senderId}${message.isGroup ? ' (group)' : ''}: ${rawBody.slice(0, 120)}`);
+    // CRITICAL subset — blocks EVERYONE incl. trusted internal groups/DMs. These
+    // are the truly-dangerous patterns (exec / API endpoints / secrets / loopback
+    // IP / filesystem / process / dangerous tools) that must NEVER reach the agent
+    // un-rewritten from ANY Zalo sender. (The broader __cbHard capability phrasings
+    // — web_search, google, install, cron-wording — stay gated by !internal so a
+    // trusted team member can still ask for them; their capability path is anyway
+    // meant to be Telegram, but we don't want to silently eat legit internal asks.)
+    const __cbCritical: RegExp[] = [
+      /^exec[:\s]/i,
+      /openzca\s+msg\s+send\b/i,
+      /\/api\/(?:cron|zalo|workspace|auth|file|exec|system|user-skills)\//i,
+      /\b127\.0\.0\.1\b/i, /\blocalhost\b/i, /0\.0\.0\.0[:/]\s*\d{2,5}/i, /\[?::1\]?[:/]\s*\d{2,5}/i,
+      /cron-api-token/i, /bot_token/i,
+      /(?:credentials?\.json|secrets?\.json|\.pem|\.key|\.crt|\.cert|id_rsa|passwd|shadow|authorized_keys|known_hosts)/i,
+      /(?:\.env|\.ssh|\.gnupg|\.aws|\.azure|\.npmrc|\.bashrc)/i,
+      /\b(?:process|spawn|child_process|require|import|eval|Function)\s*\(/i,
+      /\b(?:fs|path|os|child_process)\s*\.\s*(?:read|write|unlink|exec|spawn)/i,
+      /\bapply_patch\b/i,
+      /\b(?:read_file|write_file|read_dir|list_dir|list_files|search_files)\b/i,
+      /\b(?:rm|del|rmdir|chmod|chown|kill|taskkill|regedit|reg\s+add)\b/i,
+      /[a-zA-Z]:[\\\/](?:users|windows|program)/i,
+      /(?:\/(?:home|etc|var|tmp|usr|opt|root)\/)/i,
+    ];
+    const __cbCriticalHit = __cbCritical.some(p => p.test(__cbOrig) || p.test(__cbStripped));
+    // Broad HARD + SOFT/SENSITIVE tiers only apply to NON-internal senders.
+    let __cbHardHit = false;
+    let __cbSensitiveHit = false;
+    if (!__cbIsInternal) {
+      __cbHardHit = __cbHard.some(p => p.test(__cbOrig) || p.test(__cbStripped));
+      const __cbSoftHit = !__cbHardHit && __cbSoft.some(p => p.test(__cbOrig) || p.test(__cbStripped));
+      __cbSensitiveHit = __cbSoftHit && __cbSensitive.some(p => p.test(__cbOrig) || p.test(__cbStripped));
+    }
+    if (__cbCriticalHit || __cbHardHit || __cbSensitiveHit) {
+      runtime.log?.(`modoro-zalo: COMMAND-BLOCK from ${message.senderId}${message.isGroup ? ' (group)' : ''}${__cbIsInternal ? ' [internal/critical]' : ''}: ${rawBody.slice(0, 120)}`);
       rawBody = '[nội dung nội bộ đã được lọc]';
     }
   }

@@ -31,6 +31,18 @@ Daily development log. Each entry records what was shipped, not how.
 - Risk: same-version NSIS install can be skipped on machines already on 2.4.10 → uninstall the old 2.4.10 (or clear Code Cache) before testing.
 - Not pushed/shipped — local build only, awaiting CEO.
 
+**FB + cron hardening (multi-agent review → fix-all)** — 6 adversarial reviewers found gaps in the two critical subsystems; fixed across 8 files in 5 verified batches (smoke 0 failures throughout):
+- **cron.js**: crash-recovery dedup was 100% DEAD (read `e.ts`/`e.meta.id`; auditLog writes `e.t`/`e.id`) → CEO reports could double-fire on restart-within-the-minute — fixed. Missed one-time cron (machine asleep) now alerts CEO instead of silent delete. Builtin cronExpr validated (no silent skip). replayMissedCrons deduped vs scheduled fire. queue-full + filter-blocked + non-JSON agent output now journal/alert instead of silent. Multi-step Zalo cron no longer delivers each step to the group. (Pushed back on the reviewer's "clear in-flight on restart" — would re-introduce double-run.)
+- **fb-schedule.js**: `_publishInFlight` guard + status re-check → no duplicate FB post from approve-vs-cron race. Post-timeout/5xx now verify via `findRecentPostByCaption` before retry (no double-post). Token vs permission errors get distinct CEO messages. Image magic-byte/size validation; image-missing → skip+alert (not text-only). Approval disambiguation when >1 post active (no wrong-post approve); trailing `fb_` id; "hủy ngay" fixed. Late-approve after one-time auto-delete now publishes from pending. Regenerate-during-gen no longer sends stale image; reject-during-gen no longer resurrected. Auto-delete deferred off the cron handler (setImmediate). Preview photo-send failure falls back to text.
+- **fb-publisher.js**: `graphRequest` no longer retries POST on 5xx (double-post); `findRecentPostByCaption` added.
+- **cron-api.js**: `/api/file/write|rename|copy|download` sandboxed (control/exec files blocked, destination contained) — closes the cron-guardrail-bypass. `/api/exec` blocks `openclaw config/gateway/cron` + `agent --deliver`. autoMode FB post restricted to generated images + audited. parseBody stopKeys extended. `/api/zalo/send(-media)` groupName ambiguity → 409.
+- **channels.js**: `sendZaloTo({skipOnBlock})` so blocked content isn't substituted+sent to a group; sticky chatId fail-safe when token unknown.
+- **inbound.ts** (modoro-zalo, fork → **v1.0.12**): COMMAND-BLOCK HARD tier now applies even to internal groups/DMs; bare `127.0.0.1`/`localhost` added.
+- Tests: `test-fb-postdate.js` extended (parse + disambiguation, NODE_ENV=test guard); smoke green.
+- Deferred (justified): verifyToken /me fallback tightening (I9 — risk of breaking connect), cross-process post lockfile (I8 — dir is correct, double-instance rare).
+- **Adversarial-verify workflow (6 agents)** then caught 4 real issues in the fixes, now also fixed: (F1) reject regex `\b` is ASCII-only → "bỏ"/"huỷ" silently ignored → switched to `(?=$|\s|[.,:!?])` lookahead; (F2) `collectActive` date order made oldest-wins → reordered [today,tomorrow,yesterday] so a fresh pending wins; (F3) `connect timeout`/ECONNRESET were treated safe-to-retry → moved to indeterminate (verify-before-retry) to close a double-post window; (F4) cron-api sandbox missed `params.from`/`params.dir` source aliases → copy/rename source now validated (closes a private-key exfil path). Plus (F5) bare "đăng" dropped from approve (matched "đăng ký"), (F6) no blind retry when caption too short to verify. Re-verified.
+- Not built/committed/shipped — awaiting CEO.
+
 ---
 
 ## 2026-05-28

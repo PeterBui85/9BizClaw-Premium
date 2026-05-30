@@ -157,6 +157,12 @@ function loadStickyChatId(token) {
       const fp = _tokenFingerprint(token);
       if (fp !== data.tokenFingerprint) return null;
     }
+    // Fail-safe: a fingerprint was stored but we couldn't get the current token
+    // (e.g. openclaw.json mid-write) → we cannot prove this sticky chatId belongs
+    // to the current bot. Don't trust it (avoids sending a cron to the wrong chat
+    // if the bot token was ever changed). Old sticky files with no fingerprint
+    // still work for single-bot installs.
+    if (!token && data.tokenFingerprint) return null;
     return data.chatId || null;
   } catch { return null; }
 }
@@ -924,6 +930,13 @@ async function sendZaloTo(target, text, opts = {}) {
     const filtered = filterSensitiveOutput(text);
     if (filtered.blocked) {
       console.warn(`[sendZaloTo] output filter blocked (${filtered.pattern})`);
+      // skipOnBlock: callers delivering automated/agent/exec output to a CUSTOMER
+      // group pass this so blocked content is NOT replaced with a polite ack and
+      // pushed to the group (that leaked a stand-in message + reported success).
+      // They should treat blocked as "deliver nothing".
+      if (opts.skipOnBlock) {
+        return { ok: false, blocked: true, error: 'output_blocked: ' + filtered.pattern };
+      }
       text = filtered.text;
     }
   }

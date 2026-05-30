@@ -186,23 +186,34 @@ async function selfTestOpenClawAgent() {
  * @param {string} stdout - Raw stdout from openclaw agent process
  * @returns {{ text: string, mediaUrls: string[] } | null}
  */
+function _extractPayload(parsed) {
+  const payloads = parsed?.result?.payloads || parsed?.payloads || [];
+  if (Array.isArray(payloads) && payloads.length > 0) {
+    const first = payloads[0];
+    return { text: first.text || '', mediaUrls: first.mediaUrls || first.mediaUrl || [] };
+  }
+  if (parsed?.text) return { text: parsed.text, mediaUrls: [] };
+  return null;
+}
+
 function parseAgentJsonOutput(stdout) {
   if (!stdout) return null;
   const trimmed = stdout.trim();
   try {
-    const parsed = JSON.parse(trimmed);
-    // Look for result.payloads[0].text (openclaw's standard response shape)
-    const payloads = parsed?.result?.payloads || parsed?.payloads || [];
-    if (Array.isArray(payloads) && payloads.length > 0) {
-      const first = payloads[0];
-      return { text: first.text || '', mediaUrls: first.mediaUrls || first.mediaUrl || [] };
-    }
-    // Fallback: direct text field
-    if (parsed?.text) return { text: parsed.text, mediaUrls: [] };
-    return null;
+    return _extractPayload(JSON.parse(trimmed));
   } catch {
-    // Not JSON — treat entire stdout as plain text reply
-    return { text: trimmed, mediaUrls: [] };
+    // stdout wasn't pure JSON. The agent runs with --json, so non-JSON means the
+    // process emitted a banner / log / deprecation line around (or instead of) the
+    // JSON. NEVER deliver the raw blob — that leaks internal logs to the CEO or a
+    // customer group. Try to salvage the embedded JSON object; otherwise return
+    // null so the caller treats it as a parse failure (no delivery) instead.
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try { return _extractPayload(JSON.parse(trimmed.slice(start, end + 1))); } catch {}
+    }
+    console.warn('[cron-agent] agent stdout was not valid JSON — not delivering raw output');
+    return null;
   }
 }
 
@@ -276,10 +287,18 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
   const isGroup = target.isGroup === true;
   const targetLabel = target.label || targetId;
   try {
-    const result = await sendZaloTo({ id: String(targetId), isGroup }, cleaned.slice(0, 5000));
+    // skipOnBlock: defense-in-depth — even if channels.js's output filter has a
+    // pattern cron.js's filterSensitiveOutput lacks, a block here returns
+    // {blocked:true} instead of substituting a polite ack into the customer group.
+    const result = await sendZaloTo({ id: String(targetId), isGroup }, cleaned.slice(0, 5000), { skipOnBlock: true });
     if (result && result.ok) {
       console.log(`[cron-agent] Zalo delivery OK → ${isGroup ? 'group' : 'user'} ${targetLabel}`);
       return true;
+    }
+    if (result && result.blocked) {
+      console.log(`[cron-agent] Zalo delivery for "${label}" blocked at transport filter — alerting CEO`);
+      try { await _alertCronBlocked(label, result.error || 'transport-filter', 'nhóm Zalo'); } catch {}
+      return false;
     }
     // sendZaloTo returned {ok:false, error} — try CEO alert as last resort
     console.warn(`[cron-agent] Zalo delivery to "${targetLabel}" failed: ${(result && result.error) || 'unknown'}, alerting CEO instead`);
@@ -302,12 +321,15 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
 // nhận…" ack, so the CEO gets a content-less message at EVERY cron fire when the
 // model errors (the reported bug). A failed cron must produce NO message here —
 // genuine spawn/exit failures are still surfaced via the retry/fatal path.
+// Returns a status string: 'empty' | 'blocked' | 'delivered' | 'error'.
+// (Caller uses this to journal accurately — a filter-blocked fire must not be
+// recorded as 'ok' when nothing reached the CEO.)
 async function deliverCronResultToTelegram(replyText, label) {
-  if (!replyText) return true;
+  if (!replyText) return 'empty';
   const cleaned = _stripProcessAcks(String(replyText));
   if (!cleaned || cleaned.length < 5 || /^\s*DONE\s*[.!]?\s*$/i.test(cleaned)) {
     console.log(`[cron-agent] Telegram delivery for "${label}" skipped — no CEO-facing content (ack/DONE only)`);
-    return true;
+    return 'empty';
   }
   try {
     const f = filterSensitiveOutput(cleaned);
@@ -315,15 +337,16 @@ async function deliverCronResultToTelegram(replyText, label) {
       console.log(`[cron-agent] Telegram delivery for "${label}" skipped — reply blocked by output filter (${f.pattern})`);
       try { auditLog('cron_telegram_blocked', { label, pattern: f.pattern }); } catch {}
       await _alertCronBlocked(label, f.pattern, 'Telegram');
-      return true;
+      return 'blocked';
     }
   } catch {}
   try {
     await sendTelegram(cleaned);
+    return 'delivered';
   } catch (e) {
     console.warn(`[cron-agent] Telegram delivery failed:`, e?.message);
+    return 'error';
   }
-  return true;
 }
 
 const CRON_PROMPT_MAX_BYTES = 24000;
@@ -442,14 +465,15 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   }
   if (targetIds.length === 1) {
     console.log(`[cron-exec] "${label || 'cron'}" rerouted to safe Zalo sender`);
-    const result = await sendZaloTo({ id: targetIds[0], isGroup }, text, { profile });
+    const result = await sendZaloTo({ id: targetIds[0], isGroup }, text, { profile, skipOnBlock: true });
+    if (result && result.blocked) { try { journalCronRun({ phase: 'blocked', label: label || 'cron', mode: 'safe-openzca' }); } catch {} }
     return result && result.ok;
   }
   console.log(`[cron-exec] "${label || 'cron'}" broadcast to ${targetIds.length} targets`);
   let sent = 0;
   for (let t = 0; t < targetIds.length; t++) {
     try {
-      const result = await sendZaloTo({ id: targetIds[t], isGroup }, text, { profile });
+      const result = await sendZaloTo({ id: targetIds[t], isGroup }, text, { profile, skipOnBlock: true });
       if (result && result.ok) sent++;
       else console.warn(`[cron-exec] broadcast target ${targetIds[t]} failed: ${(result && result.error) || 'unknown'}`);
     } catch (e) {
@@ -475,7 +499,11 @@ let _cronAgentQueueDepth = 0;
  */
 async function runCronAgentPrompt(prompt, opts = {}) {
   if (_cronAgentQueueDepth >= 10) {
-    console.warn(`[cron-agent] queue full (depth=${_cronAgentQueueDepth}) — rejecting "${opts?.label || 'cron'}"`);
+    // Don't drop a scheduled job silently — journal + alert the CEO (fail-loud).
+    const lbl = opts?.label || 'cron';
+    console.warn(`[cron-agent] queue full (depth=${_cronAgentQueueDepth}) — rejecting "${lbl}"`);
+    try { journalCronRun({ phase: 'fail', label: lbl, reason: 'queue-full' }); } catch {}
+    try { sendCeoAlert(`*Cron quá tải*\n\nLịch "${lbl}" bị bỏ qua vì hàng đợi đầy (gateway đang chậm). Em sẽ chạy lại lần lịch kế tiếp.`).catch(() => {}); } catch {}
     return false;
   }
   _cronAgentQueueDepth++;
@@ -487,7 +515,7 @@ async function runCronAgentPrompt(prompt, opts = {}) {
   return run;
 }
 
-async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, timeoutMs = CRON_AGENT_TIMEOUT_MS } = {}) {
+async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, suppressDelivery, timeoutMs = CRON_AGENT_TIMEOUT_MS } = {}) {
   const niceLabel = label || 'cron';
 
   // PAUSE CHECK 2026-05-15: if this cron targets Zalo and Zalo channel is
@@ -587,14 +615,28 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, t
       const agentReply = parseAgentJsonOutput(res.stdout || '');
       const replyText = agentReply?.text?.trim();
       console.log(`[cron-agent] "${niceLabel}" done in ${durMs}ms, reply length=${replyText ? replyText.length : 0} chars`);
-      // Deliver to target channel
+      if (!agentReply && (res.stdout || '').trim().length > 20) {
+        // Agent exited 0 but produced unparseable (non-JSON) stdout — nothing
+        // delivered. Surface it in the journal rather than silently dropping.
+        try { journalCronRun({ phase: 'fail', label: niceLabel, reason: 'agent-output-not-json' }); } catch {}
+      }
+      // Deliver to target channel. suppressDelivery: multi-step substeps deliver
+      // NOWHERE (their text is work-in-progress chatter; the real output goes via
+      // tool calls inside the step) — prevents per-step spam to BOTH the Zalo group
+      // and the CEO's Telegram.
       let zaloOk = true;
-      if (zaloTarget && replyText) {
+      let tgStatus = 'n/a';
+      if (suppressDelivery) {
+        // no-op: step chatter is not delivered to any channel
+      } else if (zaloTarget && replyText) {
         zaloOk = await deliverCronResultToZalo(replyText, zaloTarget, niceLabel);
       } else if (replyText && !zaloTarget) {
-        await deliverCronResultToTelegram(replyText, niceLabel);
+        tgStatus = await deliverCronResultToTelegram(replyText, niceLabel);
       }
-      journalCronRun({ phase: 'ok', label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget });
+      // Don't record 'ok' when the result was blocked by the output filter and
+      // nothing reached the CEO — journal it as 'blocked' so it's not invisible.
+      const journalPhase = tgStatus === 'blocked' ? 'blocked' : 'ok';
+      journalCronRun({ phase: journalPhase, label: niceLabel, attempt, durMs, profile: _agentFlagProfile, viaCmdShell: res.viaCmdShell, zaloDelivered: !!zaloTarget, telegram: tgStatus });
       console.log(`[cron-agent] "${niceLabel}" delivered${zaloTarget ? ' (Telegram+zalo)' : ' (Telegram only)'} in ${durMs}ms (viaCmdShell=${res.viaCmdShell})`);
       return zaloOk;
     }
@@ -1385,6 +1427,11 @@ async function runMultiStepCronPrompt(prompt, opts = {}) {
     try {
       const ok = await runCronAgentPrompt(stepPrompt, {
         ...opts,
+        // Per-step text replies are work-in-progress chatter ("Buoc xong…") — they
+        // must NOT be delivered to ANY channel (group OR the CEO's Telegram). The
+        // actual deliverable happens via a tool call inside the relevant step.
+        zaloTarget: undefined,
+        suppressDelivery: true,
         label: `${niceLabel} [${step.stepNum}/${total}]`,
       });
       const dur = Date.now() - t0;
@@ -1983,9 +2030,13 @@ function _seedRecentFiresFromAudit() {
       try {
         const e = JSON.parse(line);
         if (!e || e.event !== 'cron_fired') continue;
-        const ts = e.ts ? Date.parse(e.ts) : 0;
+        // auditLog writes { t, event, pid, ...meta } — timestamp is `t`, and meta
+        // (id/label) is spread at top level. Reading e.ts / e.meta.id (the old
+        // code) always yielded undefined → the entire crash-recovery dedup was a
+        // no-op → CEO reports could double-fire on a restart-within-the-minute.
+        const ts = e.t ? Date.parse(e.t) : 0;
         if (!ts || ts < cutoff) continue;
-        const id = e.meta?.id || e.meta?.label;
+        const id = e.id || e.label;
         if (!id) continue;
         // Mark as in-flight so the next fire (if it happens within 5min) skips.
         // Auto-expire after the remaining grace window.
@@ -1999,6 +2050,20 @@ function _seedRecentFiresFromAudit() {
     }
     if (seeded > 0) console.log(`[cron] seeded ${seeded} recent fire(s) from audit log (crash recovery idempotency)`);
   } catch (e) { console.warn('[cron] _seedRecentFiresFromAudit error:', e?.message); }
+}
+
+// A one-time cron whose fire time already passed (machine asleep / app closed
+// across the scheduled minute). Previously deleted SILENTLY — a missed customer
+// commitment with zero trace. We do NOT auto-fire it late (the moment may be
+// wrong for a time-sensitive customer-group post); instead surface it to the CEO
+// (fail-loud) then remove. Idempotent: removal clears it so the next restart
+// won't re-alert.
+async function _handlePastDueOneTime(c) {
+  try {
+    const when = (() => { try { return new Date(c.oneTimeAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }); } catch { return c.oneTimeAt; } })();
+    await sendCeoAlert(`*Cron một lần bị lỡ*\n\nLịch "${c.label || c.id}" đáng lẽ chạy lúc ${when} nhưng máy đang tắt/ngủ lúc đó. Em không tự chạy trễ để tránh gửi sai thời điểm — anh tạo lại nếu vẫn cần nhé.`);
+  } catch (e) { console.warn('[cron] past-due alert failed:', e?.message); }
+  try { await _removeCustomCronById(c.id); } catch (e) { console.error(`[cron] remove past-due ${c.id} failed:`, e?.message); }
 }
 
 // Late-binding getter for _saveZaloManagerInFlight (lives in dashboard-ipc.js)
@@ -2209,11 +2274,19 @@ function _startCronJobsInner() {
     }
 
     if (cronExpr && handler) {
-      try {
-        const job = cron.schedule(cronExpr, handler, { timezone: 'Asia/Ho_Chi_Minh' });
-        cronJobs.push({ id: s.id, job });
-        console.log(`[cron] Scheduled ${s.id}: ${cronExpr}`);
-      } catch (e) { console.error(`[cron] Failed to schedule ${s.id}:`, e.message); }
+      if (typeof cron.validate === 'function' && !cron.validate(cronExpr)) {
+        // A corrupt time field in schedules.json (e.g. "9:" → "  9 * * *") used to
+        // make cron.schedule throw and the builtin schedule was silently skipped.
+        // Surface it instead of letting a CEO report quietly never fire.
+        console.error(`[cron] builtin ${s.id} has INVALID cronExpr "${cronExpr}" — skipping + alerting`);
+        try { sendCeoAlert(`*Lịch "${s.id}" lỗi cấu hình giờ*\n\nGiờ đặt không hợp lệ (\`${cronExpr}\`) nên lịch này sẽ KHÔNG chạy. Anh kiểm tra lại giờ trong cài đặt nhé.`).catch(() => {}); } catch {}
+      } else {
+        try {
+          const job = cron.schedule(cronExpr, handler, { timezone: 'Asia/Ho_Chi_Minh' });
+          cronJobs.push({ id: s.id, job });
+          console.log(`[cron] Scheduled ${s.id}: ${cronExpr}`);
+        } catch (e) { console.error(`[cron] Failed to schedule ${s.id}:`, e.message); }
+      }
     }
   }
 
@@ -2267,8 +2340,8 @@ function _startCronJobsInner() {
           continue;
         }
         if (delayMs < -60000) {
-          console.log(`[cron] oneTime ${c.id} already past (${c.oneTimeAt}) — removing`);
-          _removeCustomCronById(c.id).catch(e => console.error(`[cron] remove past-due ${c.id} failed:`, e?.message));
+          console.log(`[cron] oneTime ${c.id} already past (${c.oneTimeAt}) — alerting CEO + removing`);
+          _handlePastDueOneTime(c).catch(e => console.error(`[cron] past-due ${c.id} failed:`, e?.message));
           continue;
         }
         const effectiveDelay = Math.max(delayMs, 1000);
@@ -2331,8 +2404,8 @@ function _startCronJobsInner() {
           continue;
         }
         if (delayMs < -60000) {
-          console.log(`[cron] oneTime ${c.id} already past (${c.oneTimeAt}) — removing`);
-          _removeCustomCronById(c.id).catch(e => console.error(`[cron] remove past-due ${c.id} failed:`, e?.message));
+          console.log(`[cron] oneTime ${c.id} already past (${c.oneTimeAt}) — alerting CEO + removing`);
+          _handlePastDueOneTime(c).catch(e => console.error(`[cron] past-due ${c.id} failed:`, e?.message));
           continue;
         }
         const effectiveDelay = Math.max(delayMs, 1000);
@@ -2610,11 +2683,18 @@ async function replayMissedCrons(sinceMs) {
     if (c.isBuiltin) {
       try { await sendCeoAlert(`[Cron resume] Lịch "${c.label}" đáng lẽ chạy lúc ${new Date(lastMatch).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} nhưng máy đang ngủ. Em sẽ chạy lại lúc lịch tiếp theo.`); } catch {}
     } else if (c.prompt) {
+      // Dedup against a near-simultaneous scheduled fire: hold the same
+      // _cronInFlight key the scheduled handler checks, so node-cron firing this
+      // cron while replay is mid-run is skipped (no double-deliver on wake).
+      const niceId = c.id || c.label || 'replay';
+      if (global._cronInFlight && global._cronInFlight.get(niceId)) { skipped++; continue; }
+      if (global._cronInFlight) global._cronInFlight.set(niceId, true);
       try {
         if (c.prompt.startsWith('exec:')) await runCronAgentPrompt(c.prompt, { label: c.label, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
         else await runCronViaSessionOrFallback(c.prompt, { label: c.label, zaloTarget: c.zaloTarget, isOneTime: !!c.oneTimeAt });
         replayed++;
       } catch (e) { console.warn(`[replayMissedCrons] ${c.id} failed:`, e?.message); }
+      finally { if (global._cronInFlight) global._cronInFlight.delete(niceId); }
     }
   }
   console.log(`[replayMissedCrons] done — replayed=${replayed} skipped=${skipped} gapMin=${Math.round(gapMs / 60_000)}`);

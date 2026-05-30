@@ -159,8 +159,12 @@ function readFbConfig() {
           cfg.accessToken = safeStorage.decryptString(Buffer.from(cfg.accessToken, 'base64'));
         }
       } catch (e) {
+        // Keychain changed / profile moved → the encrypted token can't be read.
+        // Mark a distinct error so callers say "reconnect" rather than the
+        // misleading "Facebook not connected" (the token IS there, just unreadable).
         console.error('[fb-config] token decryption failed — token is unusable:', e.message);
         cfg.accessToken = null;
+        cfg.tokenError = 'decrypt_failed';
       }
     }
     return cfg;

@@ -463,6 +463,10 @@ function startCronApi() {
           'filePath', 'isGroup', 'label', 'cronExpr', 'oneTimeAt', 'mode', 'approvalNonce',
           'preview', 'dryRun', 'type', 'visibility', 'audience', 'limit', 'max',
           'caption', 'allowInternalGenerated', 'allowInternal',
+          // Control/path/command params — must terminate a recovered text value so a
+          // recovered value can't swallow (and corrupt) them.
+          'command', 'path', 'newPath', 'to', 'dest', 'saveTo', 'url', 'senderId', 'code',
+          'autoMode', 'auto_mode', 'postDate', 'postTime', 'leadMinutes', 'assetNames', 'id', 'date',
         ];
         for (const key of ['content', 'message', 'text', 'prompt']) {
           const marker = key + '=';
@@ -798,7 +802,6 @@ function startCronApi() {
     // Path sandboxing: block reads/writes to sensitive files regardless of token.
     // Even CEO shouldn't accidentally leak these through bot context.
     if (urlPath.startsWith('/api/file/') || urlPath === '/api/workspace/read') {
-      const reqPath = String(params.path || '').toLowerCase().replace(/\\/g, '/');
       const SENSITIVE_PATTERNS = [
         /credentials\.json/i,
         /\.p12$/i,
@@ -820,14 +823,6 @@ function startCronApi() {
         /soul\.md$/i,
         /openclaw\.json$/i,
       ];
-      if (SENSITIVE_PATTERNS.some(p => p.test(reqPath))) {
-        auditLog('file_api_blocked', { urlPath, path: reqPath, reason: 'sensitive path' });
-        return jsonResp(res, 403, { error: 'SECURITY: access to sensitive file blocked. Path matched security filter.' });
-      }
-
-      // Directory allowlist: resolved path must be inside workspace subdirectories.
-      // This is defense-in-depth on top of the sensitive patterns above.
-      const fileAbs = path.resolve(String(params.path || ''));
       const wsDir = getWorkspace();
       const ALLOWED_DIRS = wsDir ? [
         path.join(wsDir, 'knowledge'),
@@ -836,10 +831,40 @@ function startCronApi() {
         path.join(wsDir, 'logs'),
         wsDir,  // workspace root (last — most general)
       ] : [];
-      const isInAllowedDir = ALLOWED_DIRS.some(dir => fileAbs === dir || fileAbs.startsWith(dir + path.sep));
-      if (!isInAllowedDir) {
-        auditLog('file_api_blocked', { urlPath, path: fileAbs, reason: 'outside workspace allowlist' });
-        return jsonResp(res, 403, { error: 'SECURITY: path must be inside the workspace directory. Access denied.' });
+      // Write-target blocklist: control/executable files that would let a
+      // confused-deputy (a prompt-injection surviving to a CEO-token turn) bypass
+      // ALL the cron/exec guardrails by writing custom-crons.json directly, or drop
+      // a .bat/.js into the workspace. Applied only to WRITE/destination paths.
+      const WRITE_BLOCK = [
+        /\.(js|mjs|cjs|ts|bat|cmd|ps1|sh|exe|dll|vbs)$/i,
+        /custom-crons\.json$/i, /schedules\.json$/i, /fb-scheduled-posts\.json$/i,
+        /-paused\.json$/i, /package(-lock)?\.json$/i, /\.jsonl$/i, /follow-up-queue\.json$/i,
+      ];
+      const isWriteOp = urlPath === '/api/file/write' || urlPath === '/api/file/rename'
+        || urlPath === '/api/file/copy' || urlPath === '/api/file/download'
+        || urlPath === '/api/file/delete';
+      // Every path this request touches — including the DESTINATION of rename/copy/
+      // download (previously unchecked → destination could escape the workspace) AND
+      // the SOURCE aliases `from` (rename/copy: `params.path || params.from`) and
+      // `dir` (search) which were unvalidated → e.g. copy?from=~/.ssh/id_rsa&to=brand-assets/x
+      // would have copied a private key into a readable workspace dir.
+      const pathParams = [params.path, params.from, params.newPath, params.to, params.dest, params.saveTo, params.dir]
+        .filter(v => v != null && v !== '');
+      for (const raw of pathParams) {
+        const lc = String(raw).toLowerCase().replace(/\\/g, '/');
+        if (SENSITIVE_PATTERNS.some(p => p.test(lc))) {
+          auditLog('file_api_blocked', { urlPath, path: lc, reason: 'sensitive path' });
+          return jsonResp(res, 403, { error: 'SECURITY: access to sensitive file blocked. Path matched security filter.' });
+        }
+        const fileAbs = path.resolve(String(raw));
+        if (!ALLOWED_DIRS.some(dir => fileAbs === dir || fileAbs.startsWith(dir + path.sep))) {
+          auditLog('file_api_blocked', { urlPath, path: fileAbs, reason: 'outside workspace allowlist' });
+          return jsonResp(res, 403, { error: 'SECURITY: path must be inside the workspace directory. Access denied.' });
+        }
+        if (isWriteOp && WRITE_BLOCK.some(p => p.test(lc))) {
+          auditLog('file_api_blocked', { urlPath, path: lc, reason: 'write to control/executable file' });
+          return jsonResp(res, 403, { error: 'SECURITY: writing control/executable files is not allowed. Use the dedicated cron/knowledge APIs.' });
+        }
       }
     }
 
@@ -1751,8 +1776,14 @@ function startCronApi() {
       const { groupId, targetId: rawTargetId, groupName, friendName, text, isGroup: isGroupParam } = params;
       let tId = groupId || rawTargetId;
       if (!tId && groupName) {
-        const { byName } = loadGroupsMap();
-        tId = byName[String(groupName).normalize('NFC').toLowerCase()];
+        const { byName, ambiguous } = loadGroupsMap();
+        const norm = String(groupName).normalize('NFC').toLowerCase();
+        // Ambiguity guard (mirrors cron creation — the 2026-05-15 wrong-group
+        // incident): if >1 group shares this name, don't silently pick one.
+        if (ambiguous && ambiguous.has(norm)) {
+          return jsonResp(res, 409, { error: 'Có nhiều nhóm cùng tên "' + groupName + '". Dùng groupId để chỉ rõ nhóm (xem /api/cron/list).' });
+        }
+        tId = byName[norm];
         if (!tId) return jsonResp(res, 400, { error: 'unknown groupName: ' + groupName + '. Check /api/cron/list for available groups.' });
       }
       if (!tId && friendName) {
@@ -1805,8 +1836,14 @@ function startCronApi() {
       const { groupId, targetId: rawTargetId, groupName, friendName, mediaId, caption, isGroup: isGroupParam } = params;
       let tId = groupId || rawTargetId;
       if (!tId && groupName) {
-        const { byName } = loadGroupsMap();
-        tId = byName[String(groupName).normalize('NFC').toLowerCase()];
+        const { byName, ambiguous } = loadGroupsMap();
+        const norm = String(groupName).normalize('NFC').toLowerCase();
+        // Ambiguity guard (mirrors cron creation — the 2026-05-15 wrong-group
+        // incident): if >1 group shares this name, don't silently pick one.
+        if (ambiguous && ambiguous.has(norm)) {
+          return jsonResp(res, 409, { error: 'Có nhiều nhóm cùng tên "' + groupName + '". Dùng groupId để chỉ rõ nhóm (xem /api/cron/list).' });
+        }
+        tId = byName[norm];
         if (!tId) return jsonResp(res, 400, { error: 'unknown groupName: ' + groupName + '. Check /api/cron/list for available groups.' });
       }
       if (!tId && friendName) {
@@ -2221,6 +2258,17 @@ function startCronApi() {
       if (!ALLOWED_PREFIXES.includes(firstToken)) {
         auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'command not in allowlist', firstToken });
         return jsonResp(res, 403, { error: 'SECURITY: command blocked. Only these commands are allowed: ' + ALLOWED_PREFIXES.join(', ') + '. Got: "' + firstToken + '"' });
+      }
+      // Sub-command guard: exec must NOT be a backdoor to the powerful openclaw
+      // subcommands the architecture deliberately removed from the agent — config
+      // (rewrites openclaw.json + restarts gateway), gateway, cron, and
+      // `agent --deliver/--channel` (a one-way-cron / send-to-Zalo bypass).
+      if (firstToken === 'openclaw') {
+        const low = cmdTrimmed.toLowerCase();
+        if (/\b(config|gateway|cron)\b/.test(low) || (/\bagent\b/.test(low) && /(--deliver|--channel|--to)\b/.test(low))) {
+          auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'dangerous openclaw subcommand' });
+          return jsonResp(res, 403, { error: 'SECURITY: openclaw config/gateway/cron and "agent --deliver" are not allowed via exec. Use the dedicated cron/FB APIs.' });
+        }
       }
       // Block shell metacharacters that enable command chaining/injection.
       // Includes \n \r (command separators in both cmd.exe and /bin/sh)
@@ -2846,6 +2894,19 @@ function startCronApi() {
           if (!approval || approval.expiresAt <= Date.now() || approval.fingerprint !== fingerprint) {
             return jsonResp(res, 403, { error: 'Facebook post requires a fresh approvalNonce from /api/fb/post?preview=1 with the exact same message and imagePath.' });
           }
+        } else {
+          // AUTO-MODE skips the preview/nonce gate (pre-approved pipeline). Harden:
+          // an image, if present, MUST be a freshly-generated one — not an arbitrary
+          // workspace file — so a mis-assembled auto-post can't put a stale/unrelated
+          // image on the public Fanpage. Plus audit every auto-post for traceability.
+          if (normalizedImagePath) {
+            const genDir = path.join(getWorkspace(), 'brand-assets', 'generated') + path.sep;
+            if (!absImg.startsWith(genDir)) {
+              auditLog('fb_post_automode_blocked', { reason: 'image not in generated dir', imagePath: normalizedImagePath });
+              return jsonResp(res, 403, { error: 'AUTO-MODE chỉ đăng được ảnh vừa tạo (brand-assets/generated). Ảnh khác cần duyệt qua preview + approvalNonce.' });
+            }
+          }
+          auditLog('fb_post_automode', { pageId: cfg.pageId, hasImage: !!normalizedImagePath, msgPreview: String(fbMessage).slice(0, 80) });
         }
         if (approvalNonce) _fbPostApprovals.delete(String(approvalNonce));
         let result;
