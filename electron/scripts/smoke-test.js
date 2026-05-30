@@ -2491,6 +2491,32 @@ try {
   fail('fb-schedule postDate cron', e.message);
 }
 
+// model-downloader: EXPECTED_SIZES must NOT exceed real file sizes, else the
+// 95% truncation guard flags complete files as truncated → RAG model splash
+// re-appears every boot + "Một số file chưa tải được" never clears.
+// Real sizes from HuggingFace API at the pinned revision (verified on disk).
+try {
+  const md = require('../lib/model-downloader');
+  const REAL = {
+    'tokenizer.json': 17082730,
+    'tokenizer_config.json': 443,
+    'config.json': 658,
+    'special_tokens_map.json': 167,
+    'onnx/model_quantized.onnx': 118308185,
+  };
+  const bad = [];
+  for (const [f, real] of Object.entries(REAL)) {
+    const exp = md.EXPECTED_SIZES[f];
+    // Within 5% BOTH directions: oversized exp → complete file falsely flagged
+    // truncated (the original bug); undersized exp → truncation guard too weak.
+    if (!(exp > 0 && real >= exp * 0.95 && exp >= real * 0.95)) bad.push(`${f}(exp=${exp},real=${real})`);
+  }
+  if (bad.length === 0) pass('model EXPECTED_SIZES match real sizes within 5% (no false-truncate loop, guard stays strong)');
+  else fail('model EXPECTED_SIZES', 'expected size desynced from real (rev bump without size update?): ' + bad.join(', '));
+} catch (e) {
+  fail('model-downloader EXPECTED_SIZES', e.message);
+}
+
 // channels module: sendTelegramPhoto exported
 try {
   const ch = require('../lib/channels');

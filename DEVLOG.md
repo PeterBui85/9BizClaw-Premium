@@ -18,7 +18,18 @@ Daily development log. Each entry records what was shipped, not how.
 - Code guard: every CEO preview (normal + autoPost) now echoes `assetSummaryLine(assetNames)` — the asset filename or "(không dùng)" — so a wrong/unwanted asset is caught at the human gate (esp. scheduled posts).
 - Skill hardening: default NO asset; only attach when CEO names one / sends image; exact match or ASK; confirm step echoes exact filename; scheduled posts must not auto-attach.
 - Regression guard added to `smoke-test.js` (postDate cron generation). Local test `electron/scripts/test-fb-postdate.js` (gitignored).
-- Not built/committed/shipped — awaiting CEO.
+
+**RAG model splash re-appeared every boot ("Một số file chưa tải được")**
+- Root cause: `model-downloader.js` EXPECTED_SIZES were oversized round-number guesses (2KB/5KB/100KB/450MB). The 95% truncation guard (`isModelDownloaded`/`getMissingFiles`) flagged every COMPLETE file as truncated → re-download splash every launch; model was actually fully downloaded. The 450MB guess was the full fp32 model.onnx size, not the quantized file.
+- Fix: EXPECTED_SIZES set to authoritative HF sizes at the pinned revision (17082730 / 443 / 658 / 167 / 118308185); TOTAL_SIZE auto-recomputes (~129MB). Truncation guard preserved (in fact strengthened). Smoke guard + gitignored regression test `test-model-sizes.js`.
+- Follow-up (not done): boot logs "RAG model download complete" + proceeds even on a genuine partial download failure (fail-quiet) — low severity, grep fallback exists.
+
+**Brand-asset upload "không hiện" — diagnosed, no new code**
+- The installed build (May 29 18:08) predates commit a413ee5a (May 29 23:12, audience:ceo). On that build `list-brand-assets` fail-closes to 'customer' so internal brand assets are hidden → upload writes to disk but shows nothing. Already fixed in source; reproduced current-source round-trip OK. Needs rebuild.
+
+**Rebuild as v2.4.10 (no bump, per CEO)** — replaces the deleted 2.4.10 release with the fixed artifact (FB schedule, brand-asset guard, RAG model sizes; + already-in-source audience:ceo). Version intentionally kept at 2.4.10.
+- Risk: same-version NSIS install can be skipped on machines already on 2.4.10 → uninstall the old 2.4.10 (or clear Code Cache) before testing.
+- Not pushed/shipped — local build only, awaiting CEO.
 
 ---
 
