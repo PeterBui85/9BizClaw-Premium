@@ -3240,11 +3240,11 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 177549
+      "bytes": 182104
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 131578
+      "bytes": 137484
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3252,7 +3252,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 98615
+      "bytes": 99474
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -3267,6 +3267,10 @@
       "bytes": 81466
     },
     {
+      "path": "electron/lib/fb-schedule.js",
+      "bytes": 67111
+    },
+    {
       "path": "electron/ui/preview-telegram-redesign.html",
       "bytes": 66621
     },
@@ -3276,11 +3280,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 54370
-    },
-    {
-      "path": "electron/lib/fb-schedule.js",
-      "bytes": 53099
+      "bytes": 54658
     },
     {
       "path": "electron/lib/vendor-patches.js",
