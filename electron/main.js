@@ -1005,6 +1005,17 @@ app.whenReady().then(async () => {
   backfillKnowledgeFromDisk()
     .catch(e => console.error('[knowledge] backfill error:', e.message))
     .then(() => { try { startKnowledgeWatcher(); } catch (e) { console.warn('[knowledge] watcher start error:', e.message); } });
+  // CEO memory maintenance at boot: purge accumulated cron-log task memories.
+  // The deterministic purge (trimOldTaskEntries: DELETE task/source=auto) lived
+  // ONLY inside regenerateCeoMemoryFile, triggered by memory WRITES — which became
+  // rare after the 2026-05-22 notable-only redesign — and the memory-cleanup cron
+  // is disabled by default. So existing installs kept ~99% useless cron-log task
+  // memories forever. Run the purge+regen once per launch (off the boot critical
+  // path) so every install gets cleaned on next open. Idempotent + non-blocking.
+  setTimeout(() => {
+    try { require('./lib/ceo-memory').regenerateCeoMemoryFile(); }
+    catch (e) { console.warn('[ceo-memory] boot maintenance error:', e?.message); }
+  }, 8000);
   // Brain tab: build knowledge graph 15s after boot (non-blocking), then every 30 min
   setTimeout(() => {
     try {

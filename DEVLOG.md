@@ -43,6 +43,11 @@ Daily development log. Each entry records what was shipped, not how.
 - **Adversarial-verify workflow (6 agents)** then caught 4 real issues in the fixes, now also fixed: (F1) reject regex `\b` is ASCII-only → "bỏ"/"huỷ" silently ignored → switched to `(?=$|\s|[.,:!?])` lookahead; (F2) `collectActive` date order made oldest-wins → reordered [today,tomorrow,yesterday] so a fresh pending wins; (F3) `connect timeout`/ECONNRESET were treated safe-to-retry → moved to indeterminate (verify-before-retry) to close a double-post window; (F4) cron-api sandbox missed `params.from`/`params.dir` source aliases → copy/rename source now validated (closes a private-key exfil path). Plus (F5) bare "đăng" dropped from approve (matched "đăng ký"), (F6) no blind retry when caption too short to verify. Re-verified.
 - Not built/committed/shipped — awaiting CEO.
 
+**MemoryOS: old cron-junk task memories never purged on existing installs**
+- CEO report: ~99% of customers' old MemoryOS entries are useless cron logs.
+- Root cause: the deterministic purge `trimOldTaskEntries()` (`DELETE FROM ceo_memories WHERE type='task' AND source='auto'`) only ran inside `regenerateCeoMemoryFile` ← `_scheduleRegeneration`, triggered by memory WRITES — which became rare after the 2026-05-22 notable-only redesign. No boot call (`workspace.js` only injects AGENTS.md, doesn't trim); the `memory-cleanup` cron is `enabled:false` by default and runs an AI prompt, not the deterministic purge. The redesign spec said "No data deleted" → existing installs kept the pile forever.
+- Fix: [main.js](electron/main.js) runs `regenerateCeoMemoryFile()` once per launch (8s post-boot, non-blocking) → purges all auto cron-task memories + prunes events + regenerates CEO-MEMORY.md/AGENTS.md. Reaches every install on next open. Smoke guard added (purge SQL present + boot wired). No change to trim logic.
+
 ---
 
 ## 2026-05-28

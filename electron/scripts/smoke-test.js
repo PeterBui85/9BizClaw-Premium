@@ -2517,6 +2517,22 @@ try {
   fail('model-downloader EXPECTED_SIZES', e.message);
 }
 
+// CEO memory boot maintenance: the cron-junk purge (trimOldTaskEntries, deletes
+// type='task' source='auto') only ran on memory WRITES — rare after the
+// notable-only redesign — and the memory-cleanup cron is disabled by default.
+// Existing installs accumulated ~99% useless cron-log task memories. main.js must
+// run the deterministic purge at boot so it reaches every install on next launch.
+try {
+  const cm = fs.readFileSync(path.join(__dirname, '..', 'lib', 'ceo-memory.js'), 'utf-8');
+  const mj = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+  const purgeExists = /DELETE FROM ceo_memories WHERE type = 'task' AND source = 'auto'/.test(cm);
+  const bootWired = /require\(['"]\.\/lib\/ceo-memory['"]\)\.(regenerateCeoMemoryFile|scheduleRegeneration)\(/.test(mj);
+  if (purgeExists && bootWired) pass('ceo-memory cron-junk purge runs at boot (main.js triggers regenerate)');
+  else fail('ceo-memory boot purge', `purge=${purgeExists} bootWired=${bootWired} — old cron task memories will not be cleaned on existing installs`);
+} catch (e) {
+  fail('ceo-memory boot purge', e.message);
+}
+
 // channels module: sendTelegramPhoto exported
 try {
   const ch = require('../lib/channels');
