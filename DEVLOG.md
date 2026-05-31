@@ -9,6 +9,7 @@ Daily development log. Each entry records what was shipped, not how.
 - **Fix: lịch tự động mặc định không tắt được.** `save-schedules` IPC rejected the array the Dashboard sends (a 2026-05-08 regression), so every disable silently failed and reverted on reload — disabled defaults kept firing. Inverted the guard to require an array. Verified end-to-end by an 8-agent adversarial workflow (UI → save → persist → reload → runtime gate → missed-cron replay).
 - **Hardening (same bug class, found by the workflow):** `add-cron` no longer forces `s.enabled=true` when updating a schedule's time; `save-business-profile` no longer writes all-enabled defaults over a disabled schedule when the on-disk file is unreadable.
 - 3 smoke regression guards added. Rebuilt v2.4.10 (EXE + arm64/intel DMG via Mac CI), updated GitHub release v2.4.10 and the Drive v2.4.10 folder. Version unchanged at 2.4.10.
+- **Fix: reinstalling the same (or any) version now always works.** Switched the Windows installer from the assisted wizard (`oneClick:false`) — which dropped to a Repair/Remove maintenance page on same-version and left app.asar stale — to a one-click installer (`oneClick:true`) that always uninstalls-then-reinstalls. Smoke guard locks it. NSIS same-version trap solved for good. (Auto-updater remains version-gated — separate, not yet done.)
 
 ---
 
