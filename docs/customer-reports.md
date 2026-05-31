@@ -4,6 +4,14 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 
 ---
 
+## 2026-05-31 — Cài đặt/update lỗi "Không tải được Node.js: fetch failed" (máy có proxy / AV chặn HTTPS)
+
+- **Symptom (CEO, ảnh màn hình):** macOS — "Cài đặt gặp lỗi", checklist "Kết nối Internet ✗", chi tiết "Không tải được Node.js: fetch failed" — dù mạng mạnh, web vào bình thường. "Update thôi mà".
+- **Root cause:** runtime installer tải Node qua undici `fetch`, bỏ qua proxy hệ thống + keychain macOS (chỉ tin CA đóng sẵn của Node). Máy sau proxy công ty hoặc phần mềm diệt virus giải mã HTTPS → trình duyệt vào được (tin CA của AV/proxy) nhưng `fetch` không → "fetch failed". `e.cause` (lý do thật) bị vứt bỏ; splash regex gán "fetch failed" → "Kết nối Internet ✗" (đoán mò, KHÔNG test mạng thật). URL + version Node đã verify đúng (không phải 404). "Update" mà phải tải vì mô hình runtime tải Node lần đầu (migrate từ bản cũ / thiếu marker).
+- **Fix (2.4.10):** tải theo thứ tự `fetch → Electron net.fetch (tôn trọng proxy + keychain như trình duyệt) → curl/PowerShell`; surface `e.cause` + hint hành động được; splash thôi đổ lỗi Internet cho "fetch failed". Smoke guard. Build lại EXE + Mac DMG.
+- **Workaround tức thì (không cần bản mới):** bật 4G hotspot điện thoại → Thử lại; hoặc tắt mục quét HTTPS/SSL của phần mềm diệt virus.
+- **Status:** FIXED in 2.4.10 (release + Drive cập nhật).
+
 ## 2026-05-31 — Lịch tự động mặc định không tắt được
 
 - **Symptom (CEO):** "fix gấp lịch tự động mặc định ko tắt đc" — tắt lịch mặc định (báo cáo sáng/tối...) trong Dashboard nhưng nó vẫn chạy / tự bật lại.
