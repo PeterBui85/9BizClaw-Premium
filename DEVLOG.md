@@ -4,6 +4,14 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-05-31
+
+- **Fix: lịch tự động mặc định không tắt được.** `save-schedules` IPC rejected the array the Dashboard sends (a 2026-05-08 regression), so every disable silently failed and reverted on reload — disabled defaults kept firing. Inverted the guard to require an array. Verified end-to-end by an 8-agent adversarial workflow (UI → save → persist → reload → runtime gate → missed-cron replay).
+- **Hardening (same bug class, found by the workflow):** `add-cron` no longer forces `s.enabled=true` when updating a schedule's time; `save-business-profile` no longer writes all-enabled defaults over a disabled schedule when the on-disk file is unreadable.
+- 3 smoke regression guards added. Rebuilt v2.4.10 (EXE + arm64/intel DMG via Mac CI), updated GitHub release v2.4.10 and the Drive v2.4.10 folder. Version unchanged at 2.4.10.
+
+---
+
 ## 2026-05-30
 
 **Release-note verification → 8 gap fixes (adversarial-verified)** — Tested release-note claims via CEO Telegram + multi-agent reachability audit. Found "code exists ≠ works": several claims were overclaims. Latency root-caused (NOT a product bug, and NOT inherent model speed — corrected after a clean re-test): the CEO-observed 33–39 min replies were **machine contention** caused by a concurrent 32-agent verification workflow + heavy tool-call load running on the SAME host during testing (starved 9router/gateway/model) + cold-start. Proof: a warm re-test of the SAME "tóm tắt Zalo" task (3 tool calls, captured live from `agents/main/sessions/*.jsonl`) completed in **74s**, and a 0-tool nudge in **7.3s** — vs 33 min during the incident. An earlier "55–83s/turn" direct 9router measurement was also taken under that contention, so the first "reasoning models are inherently slow" conclusion was WRONG. (Trimming `bootstrapTotalMaxChars` 270K still helps token cost, not latency.) Fixed 8 gaps:

@@ -4,6 +4,13 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 
 ---
 
+## 2026-05-31 — Lịch tự động mặc định không tắt được
+
+- **Symptom (CEO):** "fix gấp lịch tự động mặc định ko tắt đc" — tắt lịch mặc định (báo cáo sáng/tối...) trong Dashboard nhưng nó vẫn chạy / tự bật lại.
+- **Root cause:** `save-schedules` IPC (dashboard-ipc.js) có guard `if (Array.isArray(schedules)) return error` — từ chối array. Nhưng `schedules.json` là array ở mọi nơi (loadSchedules yêu cầu array, get-schedules trả array, UI currentSchedules là array). Mỗi lần tắt → save trả `success:false` không ghi file → `restartCronJobs()` không chạy → reload thì `enabled:false` mất, cron vẫn fire. Regression từ 2026-05-08.
+- **Fix:** đảo guard thành `if (!Array.isArray(schedules)) return error`. Cộng 2 hardening cùng class (add-cron không ép `enabled=true`; save-business-profile không ghi đè all-enabled khi file lỗi). 3 smoke guard. Verified bằng workflow 8 agent.
+- **Status:** FIXED in 2.4.10 (rebuilt EXE + DMG, release + Drive cập nhật).
+
 ## 2026-05-31 — Cron jobs fail: "gateway closed (1006) → falling back to embedded", exit -9
 
 **Reporter:** Customer (Dương Quang Long bot, user Senquocte03)
