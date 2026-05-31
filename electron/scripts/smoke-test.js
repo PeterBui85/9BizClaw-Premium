@@ -2491,6 +2491,53 @@ try {
   fail('fb-schedule postDate cron', e.message);
 }
 
+// schedules.json round-trip: a DISABLED default must persist on reload and
+// must NOT be silently re-enabled. Regression guard for "lịch tự động mặc
+// định không tắt được" — schedules.json is an ARRAY everywhere (loadSchedules
+// requires array, getSchedules returns array, UI currentSchedules is array).
+try {
+  const cron = require('../lib/cron');
+  const wsmod = require('../lib/workspace');
+  const schTmp = path.join(os.tmpdir(), 'modoro-sched-smoke-' + Date.now());
+  fs.mkdirSync(schTmp, { recursive: true });
+  wsmod._setWorkspaceCacheForTest(schTmp);
+  // CEO toggled the default morning briefing OFF.
+  fs.writeFileSync(path.join(schTmp, 'schedules.json'), JSON.stringify([
+    { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: false },
+    { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true },
+  ], null, 2), 'utf-8');
+  const loaded = cron.loadSchedules();
+  const morning = loaded.filter(s => s.id === 'morning');
+  if (morning.length === 1 && morning[0].enabled === false) {
+    pass('schedules: disabled default persists on reload (not re-enabled/duplicated)');
+  } else {
+    fail('schedules disabled-persist', `morning entries=${morning.length} enabled=${morning[0] && morning[0].enabled}`);
+  }
+  try { fs.rmSync(schTmp, { recursive: true, force: true }); } catch {}
+  wsmod.invalidateWorkspaceCache();
+} catch (e) {
+  fail('schedules disabled-persist', e.message);
+}
+
+// save-schedules IPC must ACCEPT arrays (the shape the Dashboard sends) and
+// reject only non-arrays. A regression on 2026-05-08 inverted this — it
+// rejected arrays ("schedules must be an object, not array"), so EVERY
+// toggle/disable silently failed to write → disabled schedules kept firing.
+try {
+  const src = fs.readFileSync(path.join(ROOT, 'lib', 'dashboard-ipc.js'), 'utf-8');
+  const at = src.indexOf("ipcMain.handle('save-schedules'");
+  const handler = at >= 0 ? src.slice(at, at + 700) : '';
+  const rejectsArray = /if\s*\(\s*Array\.isArray\(schedules\)\s*\)\s*return\s*\{\s*success:\s*false/.test(handler);
+  const requiresArray = /if\s*\(\s*!\s*Array\.isArray\(schedules\)\s*\)\s*return\s*\{\s*success:\s*false/.test(handler);
+  if (!rejectsArray && requiresArray) {
+    pass('save-schedules accepts arrays (Dashboard shape), rejects non-arrays');
+  } else {
+    fail('save-schedules array guard', `rejectsArray=${rejectsArray} requiresArray=${requiresArray} — disabling a schedule will not persist`);
+  }
+} catch (e) {
+  fail('save-schedules array guard', e.message);
+}
+
 // model-downloader: EXPECTED_SIZES must NOT exceed real file sizes, else the
 // 95% truncation guard flags complete files as truncated → RAG model splash
 // re-appears every boot + "Một số file chưa tải được" never clears.

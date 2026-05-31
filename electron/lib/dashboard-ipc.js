@@ -2709,8 +2709,11 @@ ipcMain.handle('delete-openclaw-cron', async (_event, jobId) => {
 
 ipcMain.handle('save-schedules', async (_event, schedules) => {
   try {
-    if (!schedules || typeof schedules !== 'object') return { success: false, error: 'invalid schedules data' };
-    if (Array.isArray(schedules)) return { success: false, error: 'schedules must be an object, not array' };
+    // schedules.json is an ARRAY everywhere (loadSchedules requires array,
+    // getSchedules returns array, the Dashboard's currentSchedules is array).
+    // A 2026-05-08 regression rejected arrays here, so every toggle/disable
+    // silently failed to persist and disabled schedules kept firing.
+    if (!Array.isArray(schedules)) return { success: false, error: 'schedules must be an array' };
     writeJsonAtomic(getSchedulesPath(), schedules);
     restartCronJobs(); // Re-schedule with new settings
     return { success: true };
