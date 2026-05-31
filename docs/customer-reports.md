@@ -4,6 +4,34 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 
 ---
 
+## 2026-05-31 — Cron jobs fail: "gateway closed (1006) → falling back to embedded", exit -9
+
+**Reporter:** Customer (Dương Quang Long bot, user Senquocte03)
+**Symptom:** `morning-briefing` completed only 4/7 steps (errors 1,2,4); `afternoon-nudge` (14:30) and `evening-summary` (21:30) failed after 3 retries — `Exit code: -9`, `Gateway agent failed; falling back to embedded: Error: gateway closed (1006 abnormal closure (no close frame))`, `ws://127.0.0.1:18789`, `[session-freeze] bootstrap CACHE MISS — cold`.
+**Root cause (systematic-debugging, from source — could NOT reproduce the customer machine):**
+- `-9` = process killed by a signal (`boot.js:641` reports `-9` when `code===null && sig`). The cron spawn passes no abort signal, so the only killer is the **10-min cron timeout** (`CRON_AGENT_TIMEOUT_MS`, `boot.js:626` SIGTERM→SIGKILL).
+- Chain: cron runs → gateway WS drops (1006) → openclaw falls back to a **cold embedded** run ("CACHE MISS — cold") → slow (cold start + reasoning model) → exceeds 10-min timeout → SIGKILL (-9) → all 3 retries hit the same cold path → fail. Morning's 4/7 = intermittent gateway availability (some steps got through).
+- **Fixable gap (still in current source):** cron does NOT ensure the gateway is warm before running, retries re-spawn the same doomed cold-embedded path, and there were no diagnostics to confirm the cause.
+**Fix (2026-05-31, `electron/lib/cron.js`):**
+1. `ensureGatewayWarmForCron()` at the top of `runCronViaSessionOrFallback` — if `isGatewayAlive(15s)` is false (truly dead; won't false-positive a busy gateway), `startOpenClaw()` first (re-entrant-guarded; no-op if up) so the cron uses the warm gateway instead of cold-embedded.
+2. `isGatewayDropErr()` classifier; on that failure between retries, re-warm the gateway instead of re-spawning the same cold path.
+3. Diagnostics: cron journal + CEO alert now record `gatewayDrop` + an actionable Vietnamese explanation so the next occurrence is confirmable.
+**Status:** Fixed in source 2026-05-31 (smoke 0). **Caveat:** could not reproduce the customer machine, so the exact trigger (gateway dead vs alive-but-busy) is unconfirmed; the fix addresses the most likely cause + adds resilience + makes the next report diagnosable. If "alive-but-busy", the deeper lever is the slow-model latency. Pending rebuild + ship to customer.
+
+---
+
+## 2026-05-30 — Verification audit of prior fixes (several were overclaims)
+
+**Reporter:** CEO (release-note verification request) + multi-agent reachability audit + live Telegram tests
+**Finding:** "Code exists ≠ feature works." Audited prior customer-reported fixes for end-to-end reachability and found gaps that needed real fixes (all fixed 2026-05-30, pending rebuild):
+- **`/approve` leak (v2.4.7 fix was incomplete):** Layer L output-filter patterns were added to `channels.js` (Electron-side) but NOT to the gateway live-reply path. Real Zalo customer replies go through `modoro-zalo/src/send.ts`, which had only Layer K → `/approve`/`Get-Content` could still leak. FIXED: mirrored Layer L into `send.ts` (fork v1.0.13).
+- **Cron ENAMETOOLONG (v2.4.8 description was wrong):** the documented "write to temp file + `--message-file`" was never implemented and is NOT possible — openclaw has no `--message-file`/`--params @file`/stdin input. BOTH the CLI (`--message`) and session-send (`--params`) paths carry the prompt in argv (32KB Windows limit), and the session path was UNCAPPED. FIXED: `capCronPromptBytes()` now applied to both paths; ENAMETOOLONG stays in `isFatalErr` as a safety net. (Very long weekly reports are summarized from the first ~24KB — a platform argv limit, not a crash.)
+- **Cron "Config invalid" (v2.4.8):** static pre-spawn heal did not strip `channels.telegram.messages`, so the first cron run still failed before retry-heal recovered it. FIXED: static heal now removes it (prevents the first failure).
+- **MemoryOS auto-learn never ran:** `ceo_memories` empty for days — idle timer reset by every gateway run. FIXED: periodic watcher. (Not a customer report but CEO-facing.)
+- Latency (CEO-observed ~35 min replies): **CORRECTED root cause** — NOT inherent model speed. A re-test while the machine was idle showed the SAME "tóm tắt Zalo" task (3 tool calls: read skill → exec → read Zalo memory) complete in **74s** (vs 33 min during the incident), and a 0-tool nudge in **7.3s**. The 33–39 min spike was **machine contention** from a concurrent 32-agent verification workflow + heavy tool-call load running on the same host (starved 9router/gateway/model) + cold-start. The earlier "55–83s/turn" direct measurement was also taken under that contention. So latency is NOT a product bug; normal warm replies are ~1 min or faster. (Reducing `bootstrapTotalMaxChars` 270K is still worth it for token cost, but not for latency.)
+
+---
+
 ## 2026-05-22 — Skill creation broken ("ai cũng báo là đang lỗi hết")
 
 **Reporter:** Multiple customers
