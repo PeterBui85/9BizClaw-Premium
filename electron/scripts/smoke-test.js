@@ -2554,6 +2554,22 @@ try {
   fail('add-cron re-enable guard', e.message);
 }
 
+// NSIS must stay a one-click installer. With oneClick:false (assisted wizard),
+// re-running the same-version installer drops into a Repair/Remove maintenance
+// page and does NOT replace app.asar — so customers reinstalling the same (or
+// any) version don't get the new build. oneClick:true always uninstalls-then-
+// reinstalls on every run, so "reinstall any version always works".
+try {
+  const pkg = require('../package.json');
+  if (pkg.build && pkg.build.nsis && pkg.build.nsis.oneClick === true) {
+    pass('NSIS oneClick:true (reinstalling any version always overwrites the app)');
+  } else {
+    fail('nsis oneClick guard', `build.nsis.oneClick=${pkg.build && pkg.build.nsis && pkg.build.nsis.oneClick} — same-version reinstall will skip via maintenance page`);
+  }
+} catch (e) {
+  fail('nsis oneClick guard', e.message);
+}
+
 // model-downloader: EXPECTED_SIZES must NOT exceed real file sizes, else the
 // 95% truncation guard flags complete files as truncated → RAG model splash
 // re-appears every boot + "Một số file chưa tải được" never clears.
