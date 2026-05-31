@@ -795,8 +795,15 @@ async function streamResponseToFile(response, destPath, onProgress) {
   let downloaded = 0;
   const reader = response.body.getReader();
   const ws = fs.createWriteStream(destPath);
+  // Capture write-stream errors (ENOSPC disk-full, EACCES/EBUSY from Defender locking
+  // the file) immediately. Without a listener attached during the loop, a 'error'
+  // event would be unhandled → crash the main process / freeze the splash instead of
+  // being classified and surfaced as a hint.
+  let wsErr = null;
+  ws.on('error', (e) => { wsErr = e; });
   try {
     while (true) {
+      if (wsErr) throw wsErr;
       const { done, value } = await reader.read();
       if (done) break;
       ws.write(Buffer.from(value));
@@ -805,6 +812,7 @@ async function streamResponseToFile(response, destPath, onProgress) {
         onProgress({ percent: Math.floor((downloaded / total) * 100), downloaded, total });
       }
     }
+    if (wsErr) throw wsErr;
     ws.end();
     await new Promise((res, rej) => { ws.on('finish', res); ws.on('error', rej); });
   } catch (streamErr) {
@@ -832,11 +840,16 @@ async function downloadViaFetch(fetchImpl, url, destPath, onProgress) {
 // fetch fails (corporate proxy / HTTPS-scanning antivirus).
 function downloadViaSystemTool(url, destPath, onProgress) {
   const isWin = process.platform === 'win32';
+  // Escape single quotes for PowerShell single-quoted strings (doubling) — a Windows
+  // username with an apostrophe (C:\Users\O'Brien\...) otherwise breaks the command,
+  // on the exact proxy/AV recovery path this stage exists for. Matches the escaping
+  // used for the Expand-Archive command elsewhere in this file.
+  const psQuote = (s) => String(s).replace(/'/g, "''");
   return new Promise((resolve, reject) => {
     if (onProgress) onProgress({ percent: 0, downloaded: 0, total: 0 });
     const client = isWin
       ? spawn('powershell', ['-NoProfile', '-Command',
-          `Invoke-WebRequest -Uri '${url}' -OutFile '${destPath}' -UseBasicParsing -TimeoutSec 600`], { stdio: 'pipe' })
+          `Invoke-WebRequest -Uri '${psQuote(url)}' -OutFile '${psQuote(destPath)}' -UseBasicParsing -TimeoutSec 600`], { stdio: 'pipe' })
       : spawn('curl', ['-fSL', '--connect-timeout', '30', '--max-time', '600', '-o', destPath, url], { stdio: 'pipe' });
     let stderr = '';
     client.stderr?.on('data', (d) => { stderr += String(d); });
