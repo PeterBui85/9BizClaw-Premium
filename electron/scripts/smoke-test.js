@@ -2172,10 +2172,14 @@ try {
   const zaloPlugin = fs.readFileSync(path.join(__dirname, '..', 'lib', 'zalo-plugin.js'), 'utf-8');
   const forkVerM = zaloPlugin.match(/MODORO_ZALO_FORK_VERSION\s*=\s*'([^']+)'/);
   const forkVerConst = forkVerM ? forkVerM[1] : null;
-  if (forkVerConst === 'modoro-zalo-v1.0.13') {
-    pass('MODORO_ZALO_FORK_VERSION bumped to v1.0.13');
+  // Don't pin an exact version (breaks on every routine fork bump). The real bug
+  // this guards — constant != .fork-version file → plugin re-copied every boot — is
+  // covered by the sync sub-check below. Here we only require the constant to be
+  // present and well-formed.
+  if (forkVerConst && /^modoro-zalo-v\d+\.\d+\.\d+$/.test(forkVerConst)) {
+    pass(`MODORO_ZALO_FORK_VERSION present and well-formed (${forkVerConst})`);
   } else {
-    fail('fork version', `MODORO_ZALO_FORK_VERSION is ${forkVerConst} — expected modoro-zalo-v1.0.13 (patched fork will not reach existing installs)`);
+    fail('fork version', `MODORO_ZALO_FORK_VERSION is ${forkVerConst} — expected a modoro-zalo-vX.Y.Z string (patched fork will not reach existing installs)`);
   }
   const forkVerFile = (() => {
     try { return fs.readFileSync(path.join(__dirname, '..', 'packages', 'modoro-zalo', 'src', '.fork-version'), 'utf-8').trim(); }
@@ -2554,6 +2558,44 @@ try {
   fail('add-cron re-enable guard', e.message);
 }
 
+// Behavioral guard for the SAME bug: editing a default schedule's time (the only
+// mutation add-cron performs) must NOT flip a CEO-disabled default back on. We
+// can't invoke the IPC handler in this offline harness, so we exercise the real
+// loadSchedules() reload + the same persistence path (writeJsonAtomic to the
+// schedules.json) the handler uses, replicating its time-only mutation. If a
+// regression ever re-enables a disabled default through this flow, the reloaded
+// entry comes back enabled:true and this assertion fails.
+try {
+  const cron = require('../lib/cron');
+  const wsmod = require('../lib/workspace');
+  const { writeJsonAtomic } = require('../lib/util');
+  const schTmp = path.join(os.tmpdir(), 'modoro-sched-addcron-smoke-' + Date.now());
+  fs.mkdirSync(schTmp, { recursive: true });
+  wsmod._setWorkspaceCacheForTest(schTmp);
+  // CEO toggled the default morning briefing OFF.
+  fs.writeFileSync(path.join(schTmp, 'schedules.json'), JSON.stringify([
+    { id: 'morning', label: 'Báo cáo sáng', time: '07:30', enabled: false },
+    { id: 'evening', label: 'Tóm tắt cuối ngày', time: '21:00', enabled: true },
+  ], null, 2), 'utf-8');
+  // Replicate add-cron's only mutation: update the morning entry's time, persist,
+  // then reload through the real code path.
+  const schedules = cron.loadSchedules();
+  const m = schedules.find(x => x.id === 'morning');
+  if (m) { m.time = '08:15'; } // time-only update; must never touch m.enabled
+  writeJsonAtomic(cron.getSchedulesPath(), schedules);
+  const reloaded = cron.loadSchedules();
+  const morning = reloaded.filter(s => s.id === 'morning');
+  if (morning.length === 1 && morning[0].enabled === false && morning[0].time === '08:15') {
+    pass('schedules: editing a disabled default time does not re-enable it (reload survives)');
+  } else {
+    fail('schedules add-cron re-enable behavioral', `morning entries=${morning.length} enabled=${morning[0] && morning[0].enabled} time=${morning[0] && morning[0].time}`);
+  }
+  try { fs.rmSync(schTmp, { recursive: true, force: true }); } catch {}
+  wsmod.invalidateWorkspaceCache();
+} catch (e) {
+  fail('schedules add-cron re-enable behavioral', e.message);
+}
+
 // NSIS must stay a one-click installer. With oneClick:false (assisted wizard),
 // re-running the same-version installer drops into a Repair/Remove maintenance
 // page and does NOT replace app.asar — so customers reinstalling the same (or
@@ -2568,6 +2610,49 @@ try {
   }
 } catch (e) {
   fail('nsis oneClick guard', e.message);
+}
+
+// runtime-installer error classification MUST unwrap error.cause. Native fetch()
+// throws `TypeError: fetch failed` with the real reason (ENOTFOUND/cert/proxy) in
+// .cause — if classify ignores .cause, every download failure shows no hint and
+// the splash falsely blames "Kết nối Internet". Regression guard for 2026-05-31.
+try {
+  const ri = require('../lib/runtime-installer');
+  const mk = (msg, cause) => { const e = new TypeError(msg); if (cause) e.cause = cause; return e; };
+  const cases = [
+    { label: 'ECONNREFUSED-in-cause', e: mk('fetch failed', { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED' }) },
+    { label: 'cert-in-cause', e: mk('fetch failed', { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', message: 'unable to get local issuer certificate' }) },
+    { label: 'ENOTFOUND-in-cause', e: mk('fetch failed', { code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND nodejs.org' }) },
+    { label: 'bare-fetch-failed', e: mk('fetch failed', null) },
+  ];
+  const bad = [];
+  for (const c of cases) {
+    if (!ri.classifyInstallError(c.e) || !ri.getInstallErrorHint(c.e)) {
+      bad.push(`${c.label}->cls=${ri.classifyInstallError(c.e)},hint=${!!ri.getInstallErrorHint(c.e)}`);
+    }
+  }
+  const descOk = /ECONNREFUSED/.test(ri.describeInstallError(mk('fetch failed', { code: 'ECONNREFUSED' })));
+  if (bad.length === 0 && descOk) {
+    pass('runtime-installer classifies fetch-failed via error.cause (actionable hint, not bare "fetch failed")');
+  } else {
+    fail('install error cause-unwrap', `unclassified=[${bad.join(', ')}] descOk=${descOk}`);
+  }
+} catch (e) {
+  fail('install error cause-unwrap', e.message);
+}
+
+// Node download must NOT be locked to undici fetch (which ignores the OS proxy +
+// keychain). It must fall back to Electron net.fetch / curl so proxy / HTTPS-
+// scanning-antivirus machines can still download. Source guard for 2026-05-31.
+try {
+  const src = fs.readFileSync(path.join(ROOT, 'lib', 'runtime-installer.js'), 'utf-8');
+  if (/net\.fetch/.test(src) && /downloadViaSystemTool/.test(src) && /downloadViaFetch/.test(src)) {
+    pass('downloadFile has net.fetch + system-tool fallback (recovers proxy/AV-MITM machines)');
+  } else {
+    fail('downloader fallback guard', 'runtime-installer.js missing net.fetch / curl fallback in downloadFile');
+  }
+} catch (e) {
+  fail('downloader fallback guard', e.message);
 }
 
 // model-downloader: EXPECTED_SIZES must NOT exceed real file sizes, else the

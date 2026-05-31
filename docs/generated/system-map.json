@@ -3244,7 +3244,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 141075
+      "bytes": 142188
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3259,16 +3259,16 @@
       "bytes": 96863
     },
     {
+      "path": "electron/lib/runtime-installer.js",
+      "bytes": 85388
+    },
+    {
       "path": "electron/lib/gateway.js",
       "bytes": 84305
     },
     {
-      "path": "electron/lib/runtime-installer.js",
-      "bytes": 81466
-    },
-    {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 67724
+      "bytes": 68926
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -3276,7 +3276,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 63425
+      "bytes": 63822
     },
     {
       "path": "electron/lib/workspace.js",
@@ -3324,7 +3324,7 @@
     },
     {
       "path": "electron/ui/splash.html",
-      "bytes": 27816
+      "bytes": 28238
     },
     {
       "path": "electron/lib/google-routes.js",
@@ -3333,6 +3333,10 @@
     {
       "path": "electron/lib/brain-graph.js",
       "bytes": 26223
+    },
+    {
+      "path": "electron/lib/fb-publisher.js",
+      "bytes": 21776
     },
     {
       "path": "electron/lib/migration.js",
