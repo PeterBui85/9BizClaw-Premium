@@ -164,3 +164,7 @@ CEO-MEMORY.md
 active-persona.json
 shop-state.json
 zalo-allowlist.json
+
+# SQLite transient (WAL/SHM)
+*.db-wal
+*.db-shm

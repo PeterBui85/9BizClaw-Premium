@@ -312,6 +312,17 @@ function healOpenClawConfigInline(errStderr) {
         }
       }
     }
+    // Static: strip per-channel `messages` from Telegram. openclaw's Telegram
+    // schema has no `messages` key (debounce belongs at top-level config.messages).
+    // A leftover `channels.telegram.messages` makes EVERY openclaw subcommand exit 1
+    // with "channels.telegram: must NOT have additional properties" (customer: Tro Ly
+    // TC). Removing it statically PREVENTS the first cron failure instead of only
+    // recovering on the retry-heal pass.
+    if (config?.channels?.telegram && 'messages' in config.channels.telegram) {
+      delete config.channels.telegram.messages;
+      removed.push('channels.telegram.messages');
+      changed = true;
+    }
 
     // --- Dynamic removals from openclaw's own error message ---
     if (errStderr) {

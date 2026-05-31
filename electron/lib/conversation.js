@@ -582,36 +582,59 @@ async function appendCustomerSummary(channel, senderId, data) {
 //  depend on LLM deciding to call the memory tool.
 // ---------------------------------------------------------------------------
 
-const IDLE_MEMORY_EXTRACT_MS = 60 * 60 * 1000; // 1 hour
-let _idleMemoryTimer = null;
+// Extraction cadence. The OLD design used a single setTimeout re-armed on every
+// gateway run. Because '[session-freeze] prompt CACHE' fires on EVERY run — incl.
+// Zalo customer traffic — any active bot reset the 1h timer before it elapsed, so
+// extraction NEVER fired and ceo_memories stayed empty for days. The new design is
+// a periodic watcher that fires when the CEO has settled (quiet ≥ QUIET_MS) and
+// there is substantial CEO *Telegram* conversation, throttled to once / MIN_GAP,
+// with a FORCE fallback so even a 24/7-busy bot still extracts periodically.
+const IDLE_MEMORY_QUIET_MS = 20 * 60 * 1000;        // CEO settled ≥20 min
+const IDLE_MEMORY_MIN_GAP_MS = 2 * 60 * 60 * 1000;  // ≥2h between extractions
+const IDLE_MEMORY_FORCE_MS = 6 * 60 * 60 * 1000;    // force at least every 6h
+const IDLE_MEMORY_CHECK_MS = 15 * 60 * 1000;        // watcher tick
 let _idleMemoryLastActivity = 0;
+let _idleMemoryLastExtractAt = 0;
 let _idleMemoryInFlight = false;
+let _idleMemoryWatcher = null;
 let _runCronAgentPromptFn = null;
 
 function setIdleMemoryRunCronAgent(fn) { _runCronAgentPromptFn = fn; }
 
-function touchIdleMemoryTimer() {
-  if (_idleMemoryInFlight) return;
-  _idleMemoryLastActivity = Date.now();
-  if (_idleMemoryTimer) clearTimeout(_idleMemoryTimer);
-  _idleMemoryTimer = setTimeout(_runIdleMemoryExtraction, IDLE_MEMORY_EXTRACT_MS);
+// Records that gateway activity happened (CEO Telegram or Zalo). Only a coarse
+// "something happened recently" signal — actual extraction reads CEO Telegram
+// history directly, so Zalo-only traffic never produces junk memories.
+function touchIdleMemoryTimer() { _idleMemoryLastActivity = Date.now(); }
+
+// Drives extraction on a reliable interval instead of a re-armable timeout.
+function startIdleMemoryWatcher() {
+  if (_idleMemoryWatcher) return;
+  // Avoid an immediate re-extraction right after a restart.
+  _idleMemoryLastExtractAt = Date.now();
+  _idleMemoryWatcher = setInterval(() => { _runIdleMemoryExtraction().catch(() => {}); }, IDLE_MEMORY_CHECK_MS);
+  if (_idleMemoryWatcher.unref) _idleMemoryWatcher.unref();
 }
 
 async function _runIdleMemoryExtraction() {
   if (_idleMemoryInFlight) return;
   if (!_runCronAgentPromptFn) return;
-  const elapsed = Date.now() - _idleMemoryLastActivity;
-  if (elapsed < IDLE_MEMORY_EXTRACT_MS - 5000) return;
+  if (!_idleMemoryLastActivity) return; // nothing has happened yet
+  const now = Date.now();
+  const settled = now - _idleMemoryLastActivity >= IDLE_MEMORY_QUIET_MS;
+  const gap = now - _idleMemoryLastExtractAt;
+  // Fire when CEO has settled and it's been ≥2h, OR force every 6h (busy bot).
+  if (!((settled && gap >= IDLE_MEMORY_MIN_GAP_MS) || gap >= IDLE_MEMORY_FORCE_MS)) return;
   _idleMemoryInFlight = true;
   try {
-    const sinceMs = Date.now() - 2 * 60 * 60 * 1000;
-    const history = extractConversationHistory({ sinceMs, maxMessages: 50, channels: ['telegram'], maxPerSender: 0 });
-    if (!history || history.length < 50) {
-      console.log('[idle-memory] no substantial CEO conversation in last 2h — skipping');
+    const sinceMs = now - 3 * 60 * 60 * 1000;
+    const history = extractConversationHistory({ sinceMs, maxMessages: 80, channels: ['telegram'], maxPerSender: 0 });
+    if (!history || history.length < 120) {
+      // No real CEO conversation (e.g. only Zalo traffic) — skip silently, no cost.
       return;
     }
+    _idleMemoryLastExtractAt = now;
     const prompt =
-      `Hệ thống tự động: phiên CEO idle 1 giờ. Đọc transcript bên dưới và extract MỌI thông tin đáng ghi nhớ.\n\n` +
+      `Hệ thống tự động: rà soát hội thoại CEO gần đây. Đọc transcript bên dưới và extract MỌI thông tin đáng ghi nhớ.\n\n` +
       `Với MỖI fact/quyết định/sở thích/quy trình mới, gọi POST /api/memory/write với:\n` +
       `- type: "preference" | "decision" | "procedure" | "entity_note"\n` +
       `- content: nội dung ngắn gọn (<200 chars)\n` +
@@ -620,9 +643,9 @@ async function _runIdleMemoryExtraction() {
       `Nếu KHÔNG có gì mới đáng nhớ → trả lời 1 dòng "Không có thông tin mới cần ghi nhớ." và DỪNG.\n` +
       `KHÔNG gửi message cho CEO. KHÔNG dùng emoji.\n\n` +
       `--- TRANSCRIPT GẦN ĐÂY ---\n${history}\n--- HẾT ---`;
-    console.log('[idle-memory] extracting memories from CEO idle session...');
+    console.log('[idle-memory] extracting memories from recent CEO conversation...');
     await _runCronAgentPromptFn(prompt, { label: 'idle-memory-extract' });
-    try { auditLog('idle_memory_extract', { sinceMs, historyLen: history.length }); } catch {}
+    try { auditLog('idle_memory_extract', { sinceMs, historyChars: history.length }); } catch {}
     console.log('[idle-memory] extraction complete');
   } catch (e) {
     console.warn('[idle-memory] extraction failed:', e?.message);
@@ -632,7 +655,7 @@ async function _runIdleMemoryExtraction() {
 }
 
 function stopIdleMemoryTimer() {
-  if (_idleMemoryTimer) { clearTimeout(_idleMemoryTimer); _idleMemoryTimer = null; }
+  if (_idleMemoryWatcher) { clearInterval(_idleMemoryWatcher); _idleMemoryWatcher = null; }
 }
 
 module.exports = {
@@ -646,6 +669,7 @@ module.exports = {
   withMemoryFileLock: _withMemoryFileLock,
   setMemoryWriteNotifyCeo,
   touchIdleMemoryTimer,
+  startIdleMemoryWatcher,
   stopIdleMemoryTimer,
   setIdleMemoryRunCronAgent,
 };

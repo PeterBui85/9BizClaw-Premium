@@ -99,7 +99,7 @@ const {
 const {
   extractConversationHistoryRaw, extractConversationHistory,
   writeDailyMemoryJournal, appendPerCustomerSummaries, trimZaloMemoryFile,
-  withMemoryFileLock, touchIdleMemoryTimer, setIdleMemoryRunCronAgent,
+  withMemoryFileLock, touchIdleMemoryTimer, setIdleMemoryRunCronAgent, startIdleMemoryWatcher,
 } = require('./conversation');
 const {
   compareVersions, checkForUpdates, downloadUpdate, installDmgUpdate, openGitHubUrl,
@@ -305,6 +305,9 @@ function registerAllIpcHandlers() {
 registerChatIpc();
 // Wire idle memory extraction — uses runCronViaSessionOrFallback for reliable delivery
 try { setIdleMemoryRunCronAgent(runCronViaSessionOrFallback); } catch {}
+// Start the periodic memory-extraction watcher (replaces the old re-armable
+// timeout that never fired on an active bot — see conversation.js for details).
+try { startIdleMemoryWatcher(); } catch (e) { console.warn('[idle-memory] watcher init error:', e?.message); }
 // Start auto-refresh watcher (idempotent: gated by ctx.mainWindow availability).
 try { startZaloConfigWatcher(); } catch (e) { console.warn('[zalo-watcher] init error:', e?.message); }
 
@@ -1786,7 +1789,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
         ctx.ipcInFlightCount--;
       }
     }
-    if (userBlocklistTouched === true || groupSettings || userSettings || strangerPolicy !== undefined) {
+    if (userBlocklistTouched === true || userAllowlistTouched === true || groupSettings || userSettings || strangerPolicy !== undefined) {
       if (enabled !== false && isZaloChannelEnabled() === false) return booting;
       ctx.ipcInFlightCount++;
       try {

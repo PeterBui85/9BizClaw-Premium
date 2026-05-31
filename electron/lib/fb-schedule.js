@@ -688,7 +688,7 @@ async function _publishPendingImpl(pending, schedule) {
       }
       if (!result.postId) {
         // 200 but no post id returned (rare) — try to recover the real post id/url.
-        try { const f = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption); if (f) result = f; } catch {}
+        try { const f = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption); if (f && f.postId) result = f; } catch {}
       }
 
       pending.status = 'published';
@@ -730,9 +730,12 @@ async function _publishPendingImpl(pending, schedule) {
         /ECONNREFUSED|EAI_AGAIN|ENOTFOUND/i.test(msg);
 
       if (isIndeterminate) {
+        let verifyFailed = false;
         try {
           const found = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption);
-          if (found) {
+          if (found && found.verifyFailed) {
+            verifyFailed = true;
+          } else if (found) {
             pending.status = 'published';
             pending.publishedAt = new Date().toISOString();
             pending.postId = found.postId;
@@ -743,17 +746,24 @@ async function _publishPendingImpl(pending, schedule) {
             if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.scheduleId}" (xác nhận lại sau gián đoạn mạng).\n${found.postUrl || ''}`); } catch {} }
             return;
           }
-        } catch {}
-        // Only retry if the caption is long enough for findRecentPostByCaption to
-        // verify on the NEXT attempt (it needs ≥8 normalized chars). If too short,
-        // a blind retry could double-post → stop and let the CEO check.
-        const capNorm = String(caption || '').replace(/\s+/g, ' ').trim();
-        if (capNorm.length >= 8 && attempt < MAX_RETRIES) {
-          console.warn(`[fb-schedule] indeterminate error (post not found), retrying in ${RETRY_DELAYS[attempt]}ms: ${msg}`);
-          await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
-          continue;
+        } catch { verifyFailed = true; }
+        // If we could NOT verify whether the post landed (getRecentPosts errored),
+        // do NOT blind-retry — FB may already have accepted it → a retry would
+        // double-post. Stop and let the CEO check the page.
+        if (verifyFailed) {
+          console.warn(`[fb-schedule] indeterminate error + could NOT verify post existence — not retrying (avoid double-post): ${msg}`);
+        } else {
+          // Verify succeeded and post was NOT found → safe to retry, but only if the
+          // caption is long enough for findRecentPostByCaption to verify on the NEXT
+          // attempt (needs ≥8 normalized chars). Too short → stop (avoid double-post).
+          const capNorm = String(caption || '').replace(/\s+/g, ' ').trim();
+          if (capNorm.length >= 8 && attempt < MAX_RETRIES) {
+            console.warn(`[fb-schedule] indeterminate error (post not found), retrying in ${RETRY_DELAYS[attempt]}ms: ${msg}`);
+            await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+            continue;
+          }
+          if (capNorm.length < 8) console.warn(`[fb-schedule] indeterminate error + caption too short to verify — not retrying (avoid double-post): ${msg}`);
         }
-        if (capNorm.length < 8) console.warn(`[fb-schedule] indeterminate error + caption too short to verify — not retrying (avoid double-post): ${msg}`);
       } else if (isConnect && attempt < MAX_RETRIES) {
         console.warn(`[fb-schedule] connect-phase error on attempt ${attempt + 1}, retrying in ${RETRY_DELAYS[attempt]}ms: ${msg}`);
         await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));

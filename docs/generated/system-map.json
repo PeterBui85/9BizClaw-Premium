@@ -3232,11 +3232,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 662733
+      "bytes": 663488
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 282462
+      "bytes": 282790
     },
     {
       "path": "electron/lib/cron-api.js",
@@ -3244,7 +3244,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 137484
+      "bytes": 141075
     },
     {
       "path": "electron/ui/wizard.html",
@@ -3268,7 +3268,7 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 67111
+      "bytes": 67724
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -3276,7 +3276,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 62757
+      "bytes": 63425
     },
     {
       "path": "electron/lib/workspace.js",
@@ -3311,12 +3311,12 @@
       "bytes": 36057
     },
     {
-      "path": "electron/lib/media-library.js",
-      "bytes": 31821
+      "path": "electron/lib/conversation.js",
+      "bytes": 32480
     },
     {
-      "path": "electron/lib/conversation.js",
-      "bytes": 30777
+      "path": "electron/lib/media-library.js",
+      "bytes": 31821
     },
     {
       "path": "electron/ui/brain.js",

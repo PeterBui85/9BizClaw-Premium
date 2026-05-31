@@ -351,19 +351,28 @@ async function deliverCronResultToTelegram(replyText, label) {
 
 const CRON_PROMPT_MAX_BYTES = 24000;
 
+/** Cap a prompt to stay within the Windows CreateProcess 32KB argv limit.
+ *  openclaw has NO --message-file / --params @file / stdin input, so BOTH the
+ *  CLI `agent --message` path AND the `gateway call sessions.send --params` path
+ *  carry the whole prompt in argv and hit the same ~32KB limit. This must be
+ *  applied to BOTH paths (previously only the CLI path capped → the session path
+ *  threw ENAMETOOLONG and wasted a spawn before falling back). When capped, a
+ *  note instructs the agent to summarize from the data it received. */
+function capCronPromptBytes(prompt) {
+  const promptBytes = Buffer.byteLength(prompt, 'utf-8');
+  if (promptBytes <= CRON_PROMPT_MAX_BYTES) return prompt;
+  console.warn(`[cron-agent] prompt ${(promptBytes / 1024).toFixed(1)}KB exceeds ${(CRON_PROMPT_MAX_BYTES / 1024).toFixed(0)}KB argv limit — capping (openclaw has no file/stdin input)`);
+  const buf = Buffer.from(prompt, 'utf-8');
+  let end = CRON_PROMPT_MAX_BYTES;
+  while (end > 0 && (buf[end] & 0xC0) === 0x80) end--;
+  return buf.subarray(0, end).toString('utf-8') + '\n\n[... nội dung bị cắt do giới hạn kỹ thuật. Tóm tắt từ dữ liệu có sẵn.]';
+}
+
 /** Build openclaw agent CLI args. Defaults to 'full' profile if self-test hasn't run yet.
  *  Caps prompt at 24KB to stay within Windows CreateProcess 32KB argv limit. */
 function buildAgentArgs(prompt, chatId, useJson = false) {
   const idStr = String(chatId);
-  let safePrompt = prompt;
-  const promptBytes = Buffer.byteLength(prompt, 'utf-8');
-  if (promptBytes > CRON_PROMPT_MAX_BYTES) {
-    console.warn(`[cron-agent] prompt ${(promptBytes / 1024).toFixed(1)}KB exceeds ${(CRON_PROMPT_MAX_BYTES / 1024).toFixed(0)}KB limit — truncating`);
-    const buf = Buffer.from(prompt, 'utf-8');
-    let end = CRON_PROMPT_MAX_BYTES;
-    while (end > 0 && (buf[end] & 0xC0) === 0x80) end--;
-    safePrompt = buf.subarray(0, end).toString('utf-8') + '\n\n[... nội dung bị cắt do giới hạn kỹ thuật. Tóm tắt từ dữ liệu có sẵn.]';
-  }
+  const safePrompt = capCronPromptBytes(prompt);
   const base = ['agent', '--message', safePrompt];
   if (useJson) base.push('--json');
   const profile = _agentFlagProfile || 'full';
@@ -402,6 +411,42 @@ function isFatalErr(stderr, exitCode) {
       || s.includes('e2big')
       || s.includes('arg list too long')
       || (exitCode === 127);
+}
+
+// True when the failure is the openclaw agent losing its gateway connection and
+// (slowly) falling back to a cold embedded run — the class that gets SIGKILLed by
+// the cron timeout (exit -9, "gateway closed (1006 abnormal closure)"). Used to
+// ensure a warm gateway before retrying instead of re-spawning the same cold path.
+function isGatewayDropErr(stderr) {
+  const s = (stderr || '').toLowerCase();
+  return s.includes('falling back to embedded')
+      || s.includes('gateway closed')
+      || s.includes('abnormal closure')
+      || s.includes('1006');
+}
+
+// Ensure the gateway is warm before a cron agent runs. If the gateway is truly
+// unresponsive — isGatewayAlive(15s) will NOT false-positive a busy-but-alive
+// gateway — openclaw would otherwise fall back to a COLD EMBEDDED run that is slow
+// (cold start + reasoning model) and gets SIGKILLed by the cron timeout (exit -9).
+// startOpenClaw is re-entrant-guarded and no-ops if the gateway is actually up, so
+// a responsive gateway is never killed. Returns { aliveAtStart } for diagnostics.
+async function ensureGatewayWarmForCron(label) {
+  let aliveAtStart = true;
+  try {
+    const gw = getGateway();
+    if (typeof gw.isGatewayAlive === 'function') {
+      aliveAtStart = await gw.isGatewayAlive(15000);
+      if (!aliveAtStart) {
+        console.warn(`[cron] gateway not alive before "${label || 'cron'}" — starting to avoid cold-embedded fallback`);
+        try { auditLog('cron_gateway_warm', { label: label || 'cron', aliveAtStart: false, action: 'start' }); } catch {}
+        if (typeof gw.startOpenClaw === 'function') await gw.startOpenClaw({ silent: true });
+      }
+    }
+  } catch (e) {
+    console.warn('[cron] ensureGatewayWarmForCron error:', e?.message);
+  }
+  return { aliveAtStart };
 }
 
 function parseSafeOpenzcaMsgSend(shellCmd) {
@@ -642,7 +687,7 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
     }
     lastCode = res.code;
     lastErr = (res.stderr || res.stdout || '').slice(0, 800);
-    journalCronRun({ phase: 'retry', label: niceLabel, attempt, durMs, code: res.code, err: lastErr.slice(0, 300), viaCmdShell: res.viaCmdShell });
+    journalCronRun({ phase: 'retry', label: niceLabel, attempt, durMs, code: res.code, gatewayDrop: isGatewayDropErr(lastErr), err: lastErr.slice(0, 300), viaCmdShell: res.viaCmdShell });
     console.error(`[cron-agent] "${niceLabel}" attempt ${attempt} failed (code ${res.code}): ${lastErr.slice(0, 200)}`);
 
     if (isFatalErr(lastErr, res.code)) {
@@ -668,14 +713,19 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
     }
 
     if (attempt < CRON_AGENT_MAX_RETRIES) {
+      // If the agent lost the gateway and cold-embedded-failed, warm the gateway
+      // before retrying — otherwise the retry re-spawns the same doomed cold path.
+      if (isGatewayDropErr(lastErr)) { try { await ensureGatewayWarmForCron(niceLabel); } catch {} }
       const backoffMs = isTransientErr(lastErr) ? attempt * CRON_TRANSIENT_BACKOFF_BASE_MS : attempt * CRON_DEFAULT_BACKOFF_BASE_MS;
       await new Promise((r) => setTimeout(r, backoffMs));
     }
   }
 
-  journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, err: lastErr.slice(0, 400) });
+  const gwDrop = isGatewayDropErr(lastErr);
+  journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, gatewayDrop: gwDrop, err: lastErr.slice(0, 400) });
   try {
-    await sendCeoAlert(`*Cron "${niceLabel}" thất bại sau 3 lần*\n\nExit code: \`${lastCode}\`\n\`\`\`\n${lastErr.slice(0, 500)}\n\`\`\``);
+    const diag = gwDrop ? `\n\n_Chẩn đoán: gateway rớt giữa chừng → openclaw chạy embedded (cold) → quá thời gian → bị dừng. Lần sau bot tự khởi động lại gateway trước khi chạy._` : '';
+    await sendCeoAlert(`*Cron "${niceLabel}" thất bại sau 3 lần*\n\nExit code: \`${lastCode}\`\n\`\`\`\n${lastErr.slice(0, 500)}\n\`\`\`${diag}`);
   } catch {}
   return false;
 }
@@ -1462,6 +1512,10 @@ async function runMultiStepCronPrompt(prompt, opts = {}) {
 // ============================================================
 
 async function runCronViaSessionOrFallback(prompt, opts = {}) {
+  // Warm the gateway FIRST so the cron uses the running (fast) gateway instead of
+  // openclaw's slow cold-embedded fallback (which exceeds the cron timeout → SIGKILL
+  // exit -9). Only restarts when the gateway is genuinely dead (see helper).
+  await ensureGatewayWarmForCron(opts.label);
   // Multi-step detection: ONLY for [AUTO-MODE] prompts with numbered steps.
   // Non-AUTO-MODE prompts (evening briefing, morning report) may contain
   // numbered lists as formatting — splitting them destroys context.
@@ -1480,7 +1534,10 @@ async function runCronViaSessionOrFallback(prompt, opts = {}) {
   }
   const sessionKey = await getCeoSessionKey();
   if (sessionKey) {
-    const ok = await sendToGatewaySession(sessionKey, prompt);
+    // Cap before session-send too: sessions.send carries the prompt in --params
+    // argv (same 32KB Windows limit as the CLI path), so an uncapped weekly report
+    // would throw ENAMETOOLONG here and waste a spawn before falling back.
+    const ok = await sendToGatewaySession(sessionKey, capCronPromptBytes(prompt));
     if (ok) {
       journalCronRun({ phase: 'ok', label: opts.label || 'cron', mode: 'session-send' });
       return true;

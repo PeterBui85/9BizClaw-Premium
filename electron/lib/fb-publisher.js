@@ -405,7 +405,13 @@ async function findRecentPostByCaption(pageId, token, caption, withinMs = 10 * 6
         return { postId: p.id, postUrl: p.permalink_url || formatPostUrl(p.id) };
       }
     }
-  } catch (e) { console.warn('[fb-publisher] findRecentPostByCaption failed:', e?.message); }
+  } catch (e) {
+    // getRecentPosts threw — we could NOT determine whether the post landed.
+    // Return a distinct sentinel so the caller does NOT treat this as "not found"
+    // and blind-retry (which would double-post if FB had actually accepted it).
+    console.warn('[fb-publisher] findRecentPostByCaption verify failed:', e?.message);
+    return { verifyFailed: true };
+  }
   return null;
 }
 

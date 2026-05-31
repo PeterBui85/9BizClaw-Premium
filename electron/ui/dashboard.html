@@ -8078,7 +8078,7 @@
     // zero gateway restart needed. Master Zalo on/off auto-saves and restarts
     // gateway immediately — no explicit save button needed.
     let _zaloEnabledSaved = null;
-    function onZaloEnabledToggle() {
+    async function onZaloEnabledToggle() {
       const el = document.getElementById('zalo-mgr-enabled');
       const cur = el.checked;
       if (_zaloEnabledSaved !== null && cur !== _zaloEnabledSaved) {
@@ -8087,13 +8087,29 @@
           el.checked = _zaloEnabledSaved;
           return;
         }
-        // Auto-prompt: when enabling Zalo and 0 groups are active, offer to enable all
-        if (cur && zaloGroups.length > 0) {
-          const gs = zaloMgrConfig.groupSettings || {};
-          const activeCount = Object.values(gs).filter(g => g && g.mode && g.mode !== 'off').length;
-          if (activeCount === 0) {
-            if (confirm('Hiện chưa có nhóm nào được bật.\nBật bot cho tất cả ' + zaloGroups.length + ' nhóm (chế độ @mention)?')) {
-              setAllGroupsMode('mention');
+        // Auto-prompt: when enabling Zalo and 0 groups are active, offer to enable all.
+        if (cur) {
+          // On first page open the group cache may not have finished loading yet
+          // (async). Fetch fresh so the "enable all groups" prompt isn't silently
+          // skipped by a race (zaloGroups still []).
+          if (!zaloGroups || zaloGroups.length === 0) {
+            // Inline timeout (not _zTimeout — that const is scoped inside
+            // loadZaloManagerData and is not visible here).
+            try {
+              const g = await Promise.race([
+                window.claw.listZaloGroups(),
+                new Promise((resolve) => setTimeout(() => resolve(null), 8000)),
+              ]);
+              if (Array.isArray(g)) zaloGroups = g;
+            } catch {}
+          }
+          if (zaloGroups.length > 0) {
+            const gs = zaloMgrConfig.groupSettings || {};
+            const activeCount = Object.values(gs).filter(g => g && g.mode && g.mode !== 'off').length;
+            if (activeCount === 0) {
+              if (confirm('Hiện chưa có nhóm nào được bật.\nBật bot cho tất cả ' + zaloGroups.length + ' nhóm (chế độ @mention)?')) {
+                setAllGroupsMode('mention');
+              }
             }
           }
         }
