@@ -318,6 +318,11 @@ function healOpenClawConfigInline(errStderr) {
     // with "channels.telegram: must NOT have additional properties" (customer: Tro Ly
     // TC). Removing it statically PREVENTS the first cron failure instead of only
     // recovering on the retry-heal pass.
+    // NOTE: deleting channels.telegram.messages rewrites the channels.telegram subtree
+    // -> may hot-restart Telegram (see dashboard-ipc.js which avoids this during live ops,
+    // ~line 3267). Acceptable here only because we reach this path when openclaw would
+    // otherwise hard-reject the config (cron already failing); ensureDefaultConfig removes
+    // it at boot on the happy path.
     if (config?.channels?.telegram && 'messages' in config.channels.telegram) {
       delete config.channels.telegram.messages;
       removed.push('channels.telegram.messages');

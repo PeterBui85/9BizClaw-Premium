@@ -597,6 +597,11 @@ async function publishPending(pending, schedule) {
   const key = `${pending.scheduleId}:${pending.date}`;
   if (_publishInFlight.has(key)) {
     console.log(`[fb-schedule] publish already in flight for ${key} — skipping duplicate`);
+    // Reload from disk so callers (e.g. approvePending) observe the fresh status
+    // written by the in-flight path instead of the stale in-memory 'approved' —
+    // otherwise they'd wrongly report "couldn't post" while the post is going out.
+    const fresh = loadPending(pending.scheduleId, pending.date);
+    if (fresh) Object.assign(pending, fresh);
     return;
   }
   // Re-read from disk: another path may have already published it.
@@ -678,6 +683,12 @@ async function _publishPendingImpl(pending, schedule) {
   const MAX_RETRIES = 3;
   const RETRY_DELAYS = [2000, 4000, 8000];
 
+  // Captured once before the first attempt: any post carrying our caption created
+  // at/after this moment is OURS. Threaded into findRecentPostByCaption so an
+  // indeterminate-error recovery can't mistake an older reused-template post for
+  // this one, and can match leniently (FB may append a hashtag/link to the caption).
+  const sendStartedMs = Date.now();
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       let result;
@@ -688,7 +699,7 @@ async function _publishPendingImpl(pending, schedule) {
       }
       if (!result.postId) {
         // 200 but no post id returned (rare) — try to recover the real post id/url.
-        try { const f = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption); if (f && f.postId) result = f; } catch {}
+        try { const f = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption, undefined, sendStartedMs); if (f && f.postId) result = f; } catch {}
       }
 
       pending.status = 'published';
@@ -732,7 +743,7 @@ async function _publishPendingImpl(pending, schedule) {
       if (isIndeterminate) {
         let verifyFailed = false;
         try {
-          const found = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption);
+          const found = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption, undefined, sendStartedMs);
           if (found && found.verifyFailed) {
             verifyFailed = true;
           } else if (found) {
@@ -854,8 +865,16 @@ async function approvePending(scheduleId, dateStr) {
       const nowMinutes = ict.hour * 60 + ict.minute;
       if (nowMinutes >= postMinutes) {
         await publishPending(pending, schedule);
-        // One-time post approved+published outside the cron path → auto-delete now.
-        if (schedule.postDate) deleteScheduleById(scheduleId);
+        // One-time post approved+published outside the cron path → auto-delete.
+        // Defer the delete (and the cron restart it triggers via onScheduleChanged)
+        // to the next tick — restarting the cron set from here could tear down
+        // another job scheduled to fire this same minute. Mirror handlePublish.
+        if (schedule.postDate) {
+          setImmediate(() => {
+            try { deleteScheduleById(scheduleId); }
+            catch (e) { console.warn('[fb-schedule] deferred one-time delete failed:', e?.message); }
+          });
+        }
         return { success: true, published: true, postId: pending.postId, postUrl: pending.postUrl };
       }
     }

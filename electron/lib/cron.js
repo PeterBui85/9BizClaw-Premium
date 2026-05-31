@@ -233,16 +233,23 @@ const _processStatusLineRe = /^\s*(?:dạ\s+)?em\s+đang\s+(?:xử\s*lý|thực\
 // No match: "Dạ em ghi nhận rồi ạ" (has content after ack)
 const _bareAckLineRe = /^\s*(?:dạ|vâng|dạ vâng)\s*[,.]?\s*(?:ạ\s*[.!]?)?\s*$/i;
 
-function _stripProcessAcks(text) {
-  // Full-message check: if entire text is a process description, strip it all
-  const full = text.trim();
-  if (_processDescRe.test(full)) return '';
+// A process-description line that ALSO carries result data (a colon, digits, or
+// a result token) is a real report — keep it. Only strip a process-description
+// line when it is pure process narration with no data payload. This prevents the
+// whole-message wipe that erased legitimate CEO cron reports starting with
+// phrases like "Em kiểm tra theo yêu cầu rồi: doanh thu...".
+const _resultBearingRe = /[:0-9]|kết\s*quả|doanh|đơn|triệu/i;
 
+function _stripProcessAcks(text) {
   const lines = text.split('\n');
   const cleaned = lines.filter(line => {
     const t = line.trim();
     if (!t) return true;
-    return !_processAckLineRe.test(t) && !_processStatusLineRe.test(t) && !_bareAckLineRe.test(t);
+    if (_processAckLineRe.test(t) || _processStatusLineRe.test(t) || _bareAckLineRe.test(t)) return false;
+    // Per-line process-description strip — but never wipe a line that carries
+    // actual data (digits, a colon, or a result token).
+    if (_processDescRe.test(t) && !_resultBearingRe.test(t)) return false;
+    return true;
   });
   return cleaned.join('\n').trim();
 }
@@ -644,7 +651,11 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
     finalPrompt += '\n\n[Kết quả của task này sẽ được gửi trực tiếp đến Zalo. CHỈ output nội dung cuối cùng dành cho người nhận. TUYỆT ĐỐI KHÔNG mô tả quy trình, bước làm, workflow, hay giải thích cách em xử lý. Nếu đã hoàn thành qua tool call và không cần gửi thêm gì, chỉ output: DONE]';
   }
   const args = buildAgentArgs(finalPrompt, chatId, true);
-  const promptHasNewline = prompt.includes('\n');
+  // Guard against cmd.exe truncation must be computed from what is ACTUALLY
+  // spawned (finalPrompt), not the original prompt. finalPrompt always begins
+  // with "[AUTO-MODE]\n", so it always contains a newline → the cmd-shell
+  // fallback (which truncates multi-line argv) must never be allowed here.
+  const promptHasNewline = finalPrompt.includes('\n');
   let lastErr = '';
   let lastCode = -1;
   for (let attempt = 1; attempt <= CRON_AGENT_MAX_RETRIES; attempt++) {
@@ -663,7 +674,11 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
       if (!agentReply && (res.stdout || '').trim().length > 20) {
         // Agent exited 0 but produced unparseable (non-JSON) stdout — nothing
         // delivered. Surface it in the journal rather than silently dropping.
+        // Return here so the same fire is NOT double-journaled as 'ok' below
+        // (replyText is falsy, so no delivery would run anyway — but the trailing
+        // ok journal would still fire without this early return).
         try { journalCronRun({ phase: 'fail', label: niceLabel, reason: 'agent-output-not-json' }); } catch {}
+        return false;
       }
       // Deliver to target channel. suppressDelivery: multi-step substeps deliver
       // NOWHERE (their text is work-in-progress chatter; the real output goes via

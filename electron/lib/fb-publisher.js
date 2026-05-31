@@ -389,21 +389,68 @@ async function getRecentPosts(pageId, token, limit = 5) {
 }
 
 // After an INDETERMINATE post error (timeout/5xx where FB may have accepted the
-// write), check whether a post with this caption already landed — so we recover
-// the real post instead of blindly retrying and double-posting.
-async function findRecentPostByCaption(pageId, token, caption, withinMs = 10 * 60 * 1000) {
+// write), check whether a post with this caption already landed — so we recover the
+// real post instead of blindly retrying and double-posting. The hard problem is
+// telling OUR post apart from a reused template caption on an earlier/other post:
+//   1. TIME is the decisive signal. When the caller threads `sendStartedAt` (captured
+//      before the publish POST), our post — if it landed — was created in
+//      [sendStartedAt − 60s skew, sendStartedAt + max publish latency]. Bounding on
+//      sendStartedAt (NOT `now`) means a slow publish stall (recovery running minutes
+//      later) still recovers our own post, while a post created outside that window
+//      (an earlier schedule, or an unrelated later post) is excluded.
+//   2. CAPTION confirms identity: normalized exact, OR a SUBSTANTIAL containment match
+//      (one string is a substring of the other, the shorter is ≥12 chars AND ≥50% of
+//      the longer) — tolerates FB whitespace/edge normalization without matching a
+//      short reused-template prefix of a longer caption.
+//   3. AMBIGUITY fails closed: if >1 post matches in the window we cannot tell which is
+//      ours, so return a verify-failed sentinel (caller will not blind-retry).
+//   4. WITHOUT a timestamp gate we fall back to STRICT matching (exact, or ≥80-char
+//      prefix for long captions) within `withinMs`, to avoid recovering a reused caption.
+// NOTE: FB returns `message` ~verbatim (whitespace aside); it does not strip leading
+// emoji / truncate to a few chars, so those theoretical mutations are out of scope.
+const PUBLISH_MAX_LATENCY_MS = 15 * 60 * 1000; // FB post-queue timeout ceiling
+async function findRecentPostByCaption(pageId, token, caption, withinMs = 3 * 60 * 1000, sendStartedAt = null) {
   try {
-    const capKey = String(caption || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-    if (capKey.length < 8) return null; // too short to match reliably
+    const capNorm = String(caption || '').replace(/\s+/g, ' ').trim();
+    if (capNorm.length < 8) return null; // too short to match reliably
+    const minPrefix = Math.min(capNorm.length, 80);
+    const capKey = capNorm.slice(0, minPrefix);
+    const gated = typeof sendStartedAt === 'number' && Number.isFinite(sendStartedAt);
+    const minCreatedMs = gated ? sendStartedAt - 60 * 1000 : null;
+    const maxCreatedMs = gated ? sendStartedAt + PUBLISH_MAX_LATENCY_MS : null;
     const posts = await getRecentPosts(pageId, token, 5);
     const now = Date.now();
+    const matches = [];
     for (const p of posts) {
       const msg = String(p.message || '').replace(/\s+/g, ' ').trim();
       const t = Date.parse(p.created_time || '');
-      const recent = !withinMs || (Number.isFinite(t) && (now - t) < withinMs);
-      if (recent && msg && msg.slice(0, 40) === capKey) {
-        return { postId: p.id, postUrl: p.permalink_url || formatPostUrl(p.id) };
+      // gated → created in [sendStartedAt−skew, sendStartedAt+maxLatency] (bounded on
+      // sendStartedAt so a slow stall still recovers our own post and a later unrelated
+      // post is excluded); ungated → within `withinMs` of now.
+      const inWindow = gated
+        ? (Number.isFinite(t) && t >= minCreatedMs && t <= maxCreatedMs)
+        : (!withinMs || (Number.isFinite(t) && (now - t) < withinMs));
+      if (!inWindow || !msg) continue;
+      let captionMatch;
+      if (gated) {
+        const shorter = msg.length <= capNorm.length ? msg : capNorm;
+        const longer = msg.length <= capNorm.length ? capNorm : msg;
+        captionMatch = msg === capNorm ||
+          (longer.includes(shorter) && shorter.length >= 12 && shorter.length * 2 >= longer.length);
+      } else {
+        captionMatch = msg === capNorm || (capNorm.length >= 80 && msg.slice(0, minPrefix) === capKey);
       }
+      if (captionMatch) {
+        matches.push({ postId: p.id, postUrl: p.permalink_url || formatPostUrl(p.id) });
+      }
+    }
+    // Exactly one match → recover it. >1 → ambiguous (e.g. an external post reused the
+    // template caption inside our window) → fail closed: do NOT record a possibly-wrong
+    // URL and do NOT let the caller blind-retry. The caller marks it for the CEO.
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      console.warn(`[fb-publisher] findRecentPostByCaption: ${matches.length} posts match this caption in window — ambiguous, not recovering`);
+      return { verifyFailed: true };
     }
   } catch (e) {
     // getRecentPosts threw — we could NOT determine whether the post landed.

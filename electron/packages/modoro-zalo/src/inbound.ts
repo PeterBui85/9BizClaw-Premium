@@ -784,8 +784,12 @@ export async function handleModoroZaloInbound(params: {
       /localhost[:/]\s*\d{2,5}/i,
       /\[?::1\]?[:/]\s*\d{2,5}/i,
       /0\.0\.0\.0[:/]\s*\d{2,5}/i,
-      /\b127\.0\.0\.1\b/i,   // bare loopback IP (no port) — a customer never types this
-      /\blocalhost\b/i,      // bare localhost — likewise never legit from a customer
+      // Bare loopback (no port): kept HERE in __cbHard (non-internal only). An SME's
+      // Zalo CUSTOMER realistically never types "localhost"/"127.0.0.1", and this
+      // catches plain "gửi dữ liệu về 127.0.0.1" exfil. Removed only from __cbCritical
+      // so INTERNAL staff saying "test localhost" aren't blocked.
+      /\b127\.0\.0\.1\b/i,
+      /\blocalhost\b/i,
       /0x7f0{0,6}1\b/i,
       /0177\.0+\.0+\.0*1\b/,
       /2130706433\b/,
@@ -827,7 +831,16 @@ export async function handleModoroZaloInbound(params: {
       /(?:openclaw|openzca|modoro|9router)\.(?:json|log|config)/i,
       /\b(?:process|spawn|child_process|require|import|eval|Function)\s*\(/i,
       /\b(?:fs|path|os|child_process)\s*\.\s*(?:read|write|unlink|exec|spawn)/i,
-      /\b(?:rm|del|rmdir|mkdir|chmod|chown|kill|taskkill|regedit|reg\s+add)\b/i,
+      // Non-chat-word verbs block bare — a customer never types rmdir/chmod/taskkill/etc,
+      // so even a bareword target ("rm node_modules", "mkdir backdoor") is caught.
+      /\b(?:rm|rmdir|mkdir|chmod|chown|taskkill|regedit)\b/i, /\breg\s+add\b/i,
+      // `del`/`kill` ARE common Vietnamese/English chat words ("del cho mình", "kill app",
+      // "kill thời gian"), so block them ONLY when command-shaped: a flag/path/PID/digit,
+      // a known process target, or a file with a code/config extension.
+      // First branch is flag/path chars ONLY (no bare digit — "del 2 cái", "kill 2 con"
+      // are normal VN e-commerce quantity phrasings). A real PID still hits the `pid`
+      // word; "kill -9" hits the flag char.
+      /\b(?:del|kill)\s+(?:[-\/~.]|(?:the\s+)?(?:gateway|process|proc|node|openzca|openclaw|9router|electron|pid|task|service|daemon|server|port)\b|\S+\.(?:db|json|jsx?|tsx?|md|txt|log|env|key|pem|bat|sh|ps1|exe|dll|sql|conf|config|ini|csv|xml|ya?ml)\b)/i,
       /\b(?:curl|wget|fetch|http|https)\s+.*(?:localhost|127\.0|0\.0\.0\.0)/i,
       /(?:chạy|chay|run|execute|thực thi|thuc thi)\s+(?:lệnh|lenh|command|script|code)/i,
       /(?:mở|mo|open)\s+(?:terminal|cmd|powershell|shell|console)/i,
@@ -890,7 +903,7 @@ export async function handleModoroZaloInbound(params: {
       /^exec[:\s]/i,
       /openzca\s+msg\s+send\b/i,
       /\/api\/(?:cron|zalo|workspace|auth|file|exec|system|user-skills)\//i,
-      /\b127\.0\.0\.1\b/i, /\blocalhost\b/i, /0\.0\.0\.0[:/]\s*\d{2,5}/i, /\[?::1\]?[:/]\s*\d{2,5}/i,
+      /127\.0\.0\.1[:/]\s*\d{2,5}/i, /localhost[:/]\s*\d{2,5}/i, /0\.0\.0\.0[:/]\s*\d{2,5}/i, /\[?::1\]?[:/]\s*\d{2,5}/i,
       /cron-api-token/i, /bot_token/i,
       /(?:credentials?\.json|secrets?\.json|\.pem|\.key|\.crt|\.cert|id_rsa|passwd|shadow|authorized_keys|known_hosts)/i,
       /(?:\.env|\.ssh|\.gnupg|\.aws|\.azure|\.npmrc|\.bashrc)/i,
@@ -898,7 +911,14 @@ export async function handleModoroZaloInbound(params: {
       /\b(?:fs|path|os|child_process)\s*\.\s*(?:read|write|unlink|exec|spawn)/i,
       /\bapply_patch\b/i,
       /\b(?:read_file|write_file|read_dir|list_dir|list_files|search_files)\b/i,
-      /\b(?:rm|del|rmdir|chmod|chown|kill|taskkill|regedit|reg\s+add)\b/i,
+      // Non-chat-word verbs block bare (catches bareword targets too); `del`/`kill` are
+      // common chat words so block them only when command-shaped (flag/path/PID/digit,
+      // a known process target, or a file with a code/config extension).
+      /\b(?:rm|rmdir|mkdir|chmod|chown|taskkill|regedit)\b/i, /\breg\s+add\b/i,
+      // First branch is flag/path chars ONLY (no bare digit — "del 2 cái", "kill 2 con"
+      // are normal VN e-commerce quantity phrasings). A real PID still hits the `pid`
+      // word; "kill -9" hits the flag char.
+      /\b(?:del|kill)\s+(?:[-\/~.]|(?:the\s+)?(?:gateway|process|proc|node|openzca|openclaw|9router|electron|pid|task|service|daemon|server|port)\b|\S+\.(?:db|json|jsx?|tsx?|md|txt|log|env|key|pem|bat|sh|ps1|exe|dll|sql|conf|config|ini|csv|xml|ya?ml)\b)/i,
       /[a-zA-Z]:[\\\/](?:users|windows|program)/i,
       /(?:\/(?:home|etc|var|tmp|usr|opt|root)\/)/i,
     ];
