@@ -2307,17 +2307,28 @@ ipcMain.handle('save-business-profile', async (_event, payload) => {
     // 2. Update schedules.json — set morning cron = workStart, evening cron = workEnd
     const schedPath = path.join(ws, 'schedules.json');
     let schedules = DEFAULT_SCHEDULES_JSON.map(s => ({ ...s }));
+    let schedReadOk = true;
     if (fs.existsSync(schedPath)) {
-      try { schedules = JSON.parse(fs.readFileSync(schedPath, 'utf-8')); } catch {}
+      // File exists → it owns the source of truth (incl. CEO-disabled defaults).
+      // If it's unreadable, SKIP the write — never clobber disabled state with
+      // all-enabled defaults. Only seed defaults when the file is truly missing.
+      try {
+        const parsed = JSON.parse(fs.readFileSync(schedPath, 'utf-8'));
+        if (Array.isArray(parsed)) schedules = parsed; else schedReadOk = false;
+      } catch { schedReadOk = false; }
     }
-    let schedChanged = false;
-    for (const s of schedules) {
-      if (s.id === 'morning' && s.time !== wStart) { s.time = wStart; schedChanged = true; }
-      if (s.id === 'evening' && s.time !== wEnd) { s.time = wEnd; schedChanged = true; }
-    }
-    if (schedChanged) {
-      writeJsonAtomic(schedPath, schedules);
-      console.log('[save-business-profile] schedules.json updated: morning=' + wStart + ' evening=' + wEnd);
+    if (schedReadOk) {
+      let schedChanged = false;
+      for (const s of schedules) {
+        if (s.id === 'morning' && s.time !== wStart) { s.time = wStart; schedChanged = true; }
+        if (s.id === 'evening' && s.time !== wEnd) { s.time = wEnd; schedChanged = true; }
+      }
+      if (schedChanged) {
+        writeJsonAtomic(schedPath, schedules);
+        console.log('[save-business-profile] schedules.json updated: morning=' + wStart + ' evening=' + wEnd);
+      }
+    } else {
+      console.warn('[save-business-profile] schedules.json unreadable — skipping schedule write to preserve disabled state');
     }
 
     // 3. Write business goals to memory/projects/business-goals.md
@@ -2582,10 +2593,10 @@ ipcMain.handle('add-cron', async (_event, { name, cron, tz, message, channel }) 
       // Map cron name to schedule ID
       if (name && name.toLowerCase().includes('sang') || name && name.toLowerCase().includes('morning')) {
         const s = schedules.find(x => x.id === 'morning');
-        if (s) { s.time = time; s.enabled = true; }
+        if (s) { s.time = time; } // only update time; never re-enable a CEO-disabled default
       } else if (name && name.toLowerCase().includes('toi') || name && name.toLowerCase().includes('evening')) {
         const s = schedules.find(x => x.id === 'evening');
-        if (s) { s.time = time; s.enabled = true; }
+        if (s) { s.time = time; } // only update time; never re-enable a CEO-disabled default
       }
       writeJsonAtomic(getSchedulesPath(), schedules);
       restartCronJobs();

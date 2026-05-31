@@ -2538,6 +2538,22 @@ try {
   fail('save-schedules array guard', e.message);
 }
 
+// add-cron must NOT re-enable a disabled default. It only updates the .time of
+// an existing morning/evening schedule — forcing s.enabled=true there would
+// resurrect a CEO-disabled default (same bug class as the array-guard regression).
+try {
+  const src = fs.readFileSync(path.join(ROOT, 'lib', 'dashboard-ipc.js'), 'utf-8');
+  const at = src.indexOf("ipcMain.handle('add-cron'");
+  const handler = at >= 0 ? src.slice(at, at + 900) : '';
+  if (handler && !/s\.enabled\s*=\s*true/.test(handler)) {
+    pass('add-cron updates schedule time only (does not re-enable a disabled default)');
+  } else {
+    fail('add-cron re-enable guard', 'add-cron sets s.enabled=true — would resurrect a CEO-disabled default');
+  }
+} catch (e) {
+  fail('add-cron re-enable guard', e.message);
+}
+
 // model-downloader: EXPECTED_SIZES must NOT exceed real file sizes, else the
 // 95% truncation guard flags complete files as truncated → RAG model splash
 // re-appears every boot + "Một số file chưa tải được" never clears.
