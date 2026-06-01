@@ -313,24 +313,90 @@ async function verifyToken(token) {
   try {
     const data = await graphRequest('GET', '/me/accounts?fields=id,name,access_token,tasks&limit=25', token);
     if (data.data && data.data.length > 0) {
-      const page = data.data.find(p => p && p.access_token && hasPageCreateContentTask(p.tasks));
-      if (!page) {
+      const pages = data.data
+        .filter(p => p && p.access_token && hasPageCreateContentTask(p.tasks))
+        .map(p => ({ pageId: p.id, pageName: p.name, pageToken: p.access_token }));
+      if (pages.length === 0) {
         return { valid: false, error: 'Không tìm thấy Fanpage có quyền tạo nội dung. ' + requiredMsg };
       }
-      return { valid: true, pageId: page.id, pageName: page.name, pageToken: page.access_token };
+      return { valid: true, pages };
     }
     return { valid: false, error: 'Không tìm thấy Fanpage nào. ' + requiredMsg };
   } catch (accountsErr) {
     try {
-      const page = await graphRequest('GET', '/me?fields=id,name,category', token);
-      if (page.id && page.category !== undefined) {
-        return { valid: true, pageId: page.id, pageName: page.name, pageToken: token };
+      const meData = await graphRequest('GET', '/me?fields=id,name,category', token);
+      if (meData.id && meData.category !== undefined) {
+        return { valid: true, pages: [{ pageId: meData.id, pageName: meData.name, pageToken: token }] };
       }
       return { valid: false, error: requiredMsg };
     } catch (pageErr) {
       return { valid: false, error: accountsErr.message || pageErr.message || requiredMsg };
     }
   }
+}
+
+async function connectToken(userToken) {
+  const meResp = await graphRequest('GET', '/me?fields=name', userToken);
+  const accountsResp = await graphRequest('GET', '/me/accounts?fields=id,name,access_token,tasks,category,picture{url}&limit=25', userToken);
+  if (!accountsResp.data || !Array.isArray(accountsResp.data)) {
+    return { userName: meResp.name || 'Unknown', pages: [] };
+  }
+  const pages = accountsResp.data
+    .filter(p => p && p.access_token && hasPageCreateContentTask(p.tasks))
+    .map(p => ({
+      pageId: p.id,
+      pageName: p.name,
+      pageAccessToken: p.access_token,
+      category: p.category || null,
+      avatarUrl: p.picture && p.picture.data ? p.picture.data.url : null,
+    }));
+  return { userName: meResp.name || 'Unknown', pages };
+}
+
+function resolvePageByName(query) {
+  const { readFbConfig } = require('./workspace');
+  const cfg = readFbConfig();
+  if (!cfg || !cfg.pages || cfg.pages.length === 0) {
+    return { page: null, reason: 'not_found' };
+  }
+
+  const q = query.trim().toLowerCase();
+  const enabledPages = cfg.pages.filter(p => p.enabled);
+
+  // 1. Exact shortName match (case-insensitive)
+  const shortNameMatch = enabledPages.filter(p => p.shortName && p.shortName.toLowerCase() === q);
+  if (shortNameMatch.length === 1) return { page: shortNameMatch[0], reason: 'found' };
+  if (shortNameMatch.length > 1) return { page: null, matches: shortNameMatch, reason: 'ambiguous' };
+
+  // 2. Substring pageName match (case-insensitive)
+  const nameMatch = enabledPages.filter(p => p.pageName && p.pageName.toLowerCase().includes(q));
+  if (nameMatch.length === 1) return { page: nameMatch[0], reason: 'found' };
+  if (nameMatch.length > 1) return { page: null, matches: nameMatch, reason: 'ambiguous' };
+
+  // 3. Check disabled pages for better error message
+  const allPages = cfg.pages;
+  const disabledMatch = allPages.filter(p => !p.enabled && (
+    (p.shortName && p.shortName.toLowerCase() === q) ||
+    (p.pageName && p.pageName.toLowerCase().includes(q))
+  ));
+  if (disabledMatch.length > 0) return { page: disabledMatch[0], reason: 'disabled' };
+
+  return { page: null, reason: 'not_found' };
+}
+
+function listPages() {
+  const { readFbConfig } = require('./workspace');
+  const cfg = readFbConfig();
+  if (!cfg || !cfg.pages) return [];
+  return cfg.pages.map(p => ({
+    id: p.id,
+    pageId: p.pageId,
+    pageName: p.pageName,
+    shortName: p.shortName || null,
+    enabled: p.enabled,
+    tokenId: p.tokenId,
+    tokenStatus: (!p.pageAccessToken || p.tokenExpired) ? (p.tokenExpired ? 'expired' : 'missing') : 'ok',
+  }));
 }
 
 async function enforcePostInterval() {
@@ -531,6 +597,9 @@ async function getInsights(pageId, token, opts = {}) {
 
 module.exports = {
   verifyToken,
+  connectToken,
+  resolvePageByName,
+  listPages,
   postText,
   postPhoto,
   getRecentPosts,

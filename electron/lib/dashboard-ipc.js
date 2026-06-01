@@ -3462,10 +3462,11 @@ ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
     const fbPub = require('./fb-publisher');
     const result = await fbPub.verifyToken(accessToken);
     if (!result.valid) return { success: false, error: result.error };
+    const page = result.pages[0];
     const cfg = {
-      pageId: result.pageId,
-      pageName: result.pageName,
-      accessToken: result.pageToken || accessToken,
+      pageId: page.pageId,
+      pageName: page.pageName,
+      accessToken: page.pageToken || accessToken,
       connectedAt: new Date().toISOString()
     };
     writeFbConfig(cfg);
@@ -3478,8 +3479,10 @@ ipcMain.handle('verify-fb-token', async () => {
   if (!cfg || !cfg.accessToken) return { valid: false, error: 'Chưa kết nối Facebook' };
   const fbPub = require('./fb-publisher');
   const result = await fbPub.verifyToken(cfg.accessToken);
-  const { pageToken, ...safe } = result;
-  return safe;
+  if (!result.valid) return result;
+  // Strip pageToken from each page before sending to renderer
+  const pages = (result.pages || []).map(({ pageToken, ...rest }) => rest);
+  return { valid: true, pages };
 });
 
 ipcMain.handle('get-fb-recent-posts', async () => {
