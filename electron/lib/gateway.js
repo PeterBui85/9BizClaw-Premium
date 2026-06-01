@@ -64,6 +64,28 @@ const GATEWAY_READY_DEADLINE_MS = 240000;
 const WATCHDOG_BOOT_GRACE_MS = 360000;
 
 // ============================================
+//  LAUNCHD AGENT CLEANUP (macOS)
+// ============================================
+// openclaw gateway may auto-register as a macOS Launch Agent
+// (ai.openclaw.gateway.plist). This conflicts with Electron's own gateway
+// lifecycle management — launchd keeps restarting the gateway after we kill it,
+// and the orphan detection loop kills Electron itself. Unload + remove the
+// plist on every cold boot so Electron is the sole gateway manager.
+function unloadOpenClawLaunchAgent() {
+  if (process.platform !== 'darwin') return;
+  try {
+    const { execSync } = require('child_process');
+    const os = require('os');
+    const plistPath = path.join(os.homedir(), 'Library', 'LaunchAgents', 'ai.openclaw.gateway.plist');
+    if (!fs.existsSync(plistPath)) return;
+    console.log('[boot] found openclaw Launch Agent — unloading to prevent gateway conflict');
+    const uid = process.getuid ? process.getuid() : 501;
+    try { execSync(`launchctl bootout gui/${uid} ${JSON.stringify(plistPath)}`, { stdio: 'ignore', timeout: 5000 }); } catch {}
+    try { fs.unlinkSync(plistPath); console.log('[boot] removed', plistPath); } catch {}
+  } catch (e) { console.warn('[boot] launchd cleanup error:', e?.message); }
+}
+
+// ============================================
 //  KILL HELPERS
 // ============================================
 
@@ -78,9 +100,13 @@ function killPort(port) {
     } else {
       const out = execSync(`lsof -ti :${port}`, { encoding: 'utf-8', timeout: 3000 });
       const pids = out.trim().split('\n').filter(p => p && /^\d+$/.test(p.trim()));
-      // SIGKILL — SIGTERM can be ignored by Node processes holding the port
+      const myPid = process.pid;
       for (const pid of pids) {
         const p = parseInt(pid.trim());
+        if (p === myPid) {
+          console.log(`[killPort] skipping own PID ${p} on :${port}`);
+          continue;
+        }
         try { process.kill(p, 'SIGKILL'); } catch {}
       }
     }
@@ -352,6 +378,11 @@ async function _startOpenClawImpl(opts = {}) {
     }
   } catch (e) { console.error('Memory DB rebuild sync error:', e.message); }
 
+  // Unload any openclaw Launch Agent BEFORE orphan detection — launchd
+  // auto-restarts the gateway faster than we can kill it, creating an
+  // infinite crash loop on macOS.
+  unloadOpenClawLaunchAgent();
+
   // CRIT #12: On cold boot (first call per Electron session), NEVER adopt an
   // orphan gateway. The orphan may have been spawned by a previous crashed
   // Electron, with stale in-memory config predating our latest patches — all
@@ -586,6 +617,12 @@ async function _startOpenClawImpl(opts = {}) {
   // when mDNS watchdog sees its own stale record. openclaw 2026.4.14 official
   // env var (verified at vendor server.impl-BbJvXoPb.js:20261).
   enrichedEnv.OPENCLAW_DISABLE_BONJOUR = "1";
+  // Prevent openclaw from registering as a macOS Launch Agent. Without this,
+  // `gateway run` creates ~/Library/LaunchAgents/ai.openclaw.gateway.plist →
+  // launchd keeps restarting the gateway after Electron kills it → infinite
+  // crash loop. Electron manages the gateway lifecycle; launchd must not.
+  enrichedEnv.OPENCLAW_NO_DAEMON = "1";
+  enrichedEnv.OPENCLAW_NO_LAUNCH_AGENT = "1";
   try {
     const npmBinDirs = [];
     // HIGHEST PRIORITY: bundled vendor node dir. On packaged Windows installs,

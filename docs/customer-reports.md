@@ -4,6 +4,22 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 
 ---
 
+## 2026-06-01 — Mac: app không bật lên (bị kill ngay sau boot)
+
+- **Symptom (khách Mac arm64):** Cài bản mới nhất (2.4.10), mở app → cửa sổ không hiện. Terminal chạy trực tiếp → boot log bình thường cho đến `[boot] cold-start: killing stale gateway on :18789` → `zsh: killed`. `pkill -9` tất cả processes cũng vô ích — chúng lập tức tái xuất.
+- **Root cause (2 lớp):**
+  1. **`openclaw gateway run` tự đăng ký macOS Launch Agent** (`~/Library/LaunchAgents/ai.openclaw.gateway.plist`) → `launchd` giữ gateway sống vĩnh viễn. Mỗi lần Electron kill → launchd restart ngay → orphan gateway luôn tồn tại trên :18789.
+  2. **`killPort()` self-kill bug**: `lsof -ti :18789` trả về **mọi PID** có connection tới port, bao gồm cả Electron process (vì `isGatewayAlive()` vừa tạo HTTP client socket). `process.kill(ownPid, 'SIGKILL')` → app tự giết mình.
+  - Kết hợp: launchd tạo orphan bất tử + killPort tự sát = crash loop vô tận.
+- **Fix (3 lớp, `electron/lib/gateway.js`):**
+  1. `unloadOpenClawLaunchAgent()` — cold boot detect + `launchctl bootout` + xóa plist. Gọi TRƯỚC orphan detection.
+  2. `killPort()` exclude `process.pid` khỏi kill list (defense-in-depth).
+  3. Gateway spawn set `OPENCLAW_NO_DAEMON=1` + `OPENCLAW_NO_LAUNCH_AGENT=1` env vars để ngăn openclaw tạo lại plist.
+- **Workaround tức thì:** `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist && pkill -9 -f openclaw && pkill -9 -f 9router` rồi mở lại app.
+- **Status:** Fixed in source. Pending rebuild + ship. Verified: khách chạy workaround → app boot thành công, gateway ready 7s, cron OK, Zalo listener running.
+
+---
+
 ## 2026-05-31 — Cài đặt/update lỗi "Không tải được Node.js: fetch failed" (máy có proxy / AV chặn HTTPS)
 
 - **Symptom (CEO, ảnh màn hình):** macOS — "Cài đặt gặp lỗi", checklist "Kết nối Internet ✗", chi tiết "Không tải được Node.js: fetch failed" — dù mạng mạnh, web vào bình thường. "Update thôi mà".
