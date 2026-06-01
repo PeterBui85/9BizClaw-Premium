@@ -305,6 +305,10 @@ contextBridge.exposeInMainWorld('claw', {
     ipcRenderer.removeAllListeners('update-available');
     ipcRenderer.on('update-available', (_event, data) => cb(data));
   },
+  onUpdateCleared: (cb) => {
+    ipcRenderer.removeAllListeners('update-cleared');
+    ipcRenderer.on('update-cleared', () => cb());
+  },
   onUpdateDownloadProgress: (cb) => {
     ipcRenderer.removeAllListeners('update-download-progress');
     ipcRenderer.on('update-download-progress', (_event, data) => cb(data));

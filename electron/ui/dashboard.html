@@ -52,7 +52,6 @@
     .rail-toggle-btn { width:56px; padding:4px 0; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text-muted); font-size:9px; font-weight:500; cursor:pointer; transition:all .15s; text-align:center; letter-spacing:0.2px; opacity:0.7; }
     .rail-toggle-btn:hover { background:var(--surface-hover); color:var(--text); border-color:var(--text-muted); opacity:1; }
     .rail-toggle-btn.running { border-color:rgba(34,197,94,0.3); color:var(--text-muted); background:transparent; }
-    .rail-update-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--warning, #f59e0b); cursor:pointer; animation:pulse-update 2s ease-in-out infinite; }
     .rail-item { display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 4px; border-radius:12px; width:68px; cursor:pointer; transition:background .15s, color .15s; position:relative; color:var(--text-muted); margin:2px 0; }
     .rail-item:hover { background:var(--surface-hover, rgba(0,0,0,0.04)); color:var(--text); }
     .rail-item.active { background:var(--accent-soft, rgba(229,57,53,0.1)); color:var(--accent); }
@@ -71,6 +70,9 @@
     .rail-theme-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
     .rail-version { font-size:11px; color:var(--text-muted); opacity:0.7; font-weight:600; letter-spacing:0.2px; cursor:pointer; padding:3px 8px; border-radius:6px; transition:all .15s; }
     .rail-version:hover { opacity:1; background:var(--surface-hover, rgba(0,0,0,0.04)); }
+    .rail-version.update-available { color: var(--warning, #f59e0b); opacity: 1; background: rgba(245, 158, 11, 0.10); border: 1px solid rgba(245, 158, 11, 0.20); }
+    .rail-version.update-available:hover { background: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.30); }
+    .rail-version.update-busy { cursor: default; }
 
     /* === Content sub-tabs === */
     .content-tabs { display:flex; border-bottom:1px solid var(--border); padding:0 36px; flex-shrink:0; background:var(--bg); gap:2px; }
@@ -474,6 +476,26 @@
     .modal-box img { width:240px; height:240px; border-radius:12px; background:white; margin-bottom:12px; }
     .modal-box .btn { margin:4px; }
     .modal-success { color:var(--success); font-weight:600; font-size:14px; }
+    /* Product batch upload modal */
+    .product-batch-modal { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:0; max-width:500px; width:92%; box-shadow:var(--shadow-lg, 0 20px 60px rgba(0,0,0,.5)); overflow:hidden; text-align:left; }
+    .product-batch-head { display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border); }
+    .product-batch-head h3 { margin:0; font-size:17px; font-weight:700; letter-spacing:-0.3px; color:var(--text); }
+    .product-batch-body { padding:18px 20px; max-height:58vh; overflow-y:auto; }
+    .product-batch-field { margin-bottom:14px; }
+    .product-batch-field label { display:block; font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:5px; line-height:1.4; }
+    .product-batch-field input, .product-batch-field textarea { width:100%; box-sizing:border-box; padding:9px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; font-family:inherit; outline:none; }
+    .product-batch-field input:focus, .product-batch-field textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft, rgba(200,167,90,.14)); }
+    .product-batch-field textarea { resize:vertical; min-height:64px; }
+    .product-batch-hint { font-size:11px; color:var(--text-muted); margin-top:4px; line-height:1.4; }
+    .product-batch-queue { display:flex; flex-direction:column; gap:6px; margin-top:6px; max-height:200px; overflow-y:auto; }
+    .product-batch-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); }
+    .product-batch-item img { width:40px; height:40px; border-radius:6px; object-fit:cover; flex-shrink:0; background:var(--surface); }
+    .product-batch-item-name { font-size:12px; font-weight:600; color:var(--text); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .product-batch-item-size { font-size:11px; color:var(--text-muted); flex-shrink:0; }
+    .product-batch-footer { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-top:1px solid var(--border); gap:8px; }
+    .product-batch-count { font-size:12px; color:var(--text-muted); }
+    .product-batch-actions { display:flex; gap:8px; }
+
     /* Cron detail modal */
     .cron-detail-box { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px; max-width:420px; width:90%; text-align:left; }
     .cron-detail-box h3 { margin:0 0 12px; display:flex; align-items:center; gap:8px; }
@@ -844,7 +866,6 @@
     .ready-dot[data-state="not-ready"] { background:#ef4444; box-shadow:0 0 0 2px var(--surface), 0 0 6px rgba(239,68,68,0.6); }
     .ready-dot[data-state="checking"] { background:#94a3b8; animation:pulse-dot 1.4s ease-in-out infinite; }
     @keyframes pulse-dot { 0%,100%{opacity:0.5} 50%{opacity:1} }
-    @keyframes pulse-update { 0%,100%{transform:scale(1)} 50%{transform:scale(1.02)} }
     /* Inline status pill in channel page headers — explicit text for CEO */
     .ready-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:500; line-height:1; }
     .ready-pill[data-state="ready"] { background:rgba(34,197,94,0.12); color:#16a34a; border:1px solid rgba(34,197,94,0.3); }
@@ -2653,10 +2674,6 @@
         </div>
         <span id="status-text" style="display:none">Đang kiểm tra...</span>
         <button id="toggle-btn" class="rail-toggle-btn" onclick="toggleBot()">Khởi động</button>
-        <div id="update-banner" style="display:none" onclick="startUpdate()" title="Cập nhật có sẵn">
-          <span class="rail-update-dot"></span>
-          <span id="update-banner-text" style="display:none"></span>
-        </div>
       </div>
 
       <div class="rail-item active" data-rail="overview" onclick="switchToRail('overview')" title="Trang chủ tổng quan">
@@ -3742,10 +3759,10 @@
           <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
               <div>
-                <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Hình sản phẩm cho Zalo</h3>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh public để bot tự tìm và gửi đúng hình khi khách hỏi sản phẩm.</div>
+                <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Hình ảnh sản phẩm</h3>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh public để bot tự tìm và gửi đúng hình khi khách hỏi (Zalo/WhatsApp/Telegram...).</div>
               </div>
-              <button class="btn btn-primary btn-small" onclick="uploadProductImages(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload sản phẩm</button>
+                <button class="btn btn-primary btn-small" onclick="uploadProductImages(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
             </div>
             <div id="product-media-grid" style="display:flex;flex-wrap:wrap;gap:12px">
               <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có hình sản phẩm.</div>
@@ -4450,6 +4467,47 @@
   <!-- Cron detail modal -->
   <div class="modal-overlay" id="cron-detail-modal" onclick="if(event.target===this)closeCronDetail()">
     <div class="cron-detail-box" id="cron-detail-content"></div>
+  </div>
+
+  <!-- Product images batch upload modal -->
+  <div class="modal-overlay" id="product-batch-modal" onclick="if(event.target===this)closeProductBatchModal()">
+    <div class="product-batch-modal">
+      <div class="product-batch-head">
+        <h3>Upload hình ảnh sản phẩm</h3>
+        <button class="btn btn-secondary btn-small" onclick="closeProductBatchModal()">Đóng</button>
+      </div>
+      <div class="product-batch-body">
+        <!-- Description field -->
+        <div class="product-batch-field">
+          <label>Mô tả chung (tùy chọn)</label>
+          <textarea id="pbm-description" placeholder="VD: Áo thun nam cổ tròn, vải cotton 100%, nhiều màu sắc. Mô tả này được ghi cho tất cả ảnh trong lần upload này."></textarea>
+          <div class="product-batch-hint">AI sẽ đọc từng ảnh để bổ sung mô tả riêng. Ô này là nội dung gốc chung cho cả batch.</div>
+        </div>
+        <!-- Tags / aliases -->
+        <div class="product-batch-field">
+          <label>Từ khóa / tên gọi thay thế</label>
+          <input type="text" id="pbm-aliases" placeholder="VD: áo thun, tshirt, cotton, summer2026">
+          <div class="product-batch-hint">Các từ khóa này giúp bot tìm đúng hình khi khách hỏi. Áp dụng cho tất cả ảnh trong lần upload này.</div>
+        </div>
+        <!-- Channel usage note -->
+        <div style="padding:10px 12px;background:var(--surface-alt, var(--bg));border:1px solid var(--border);border-radius:8px;margin-bottom:4px">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">Dùng trên nhiều kênh</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.5">Ảnh <strong style="color:var(--text)">Hình ảnh sản phẩm</strong> được bot tự dùng khi khách hỏi qua <strong style="color:var(--text)">Zalo</strong>, <strong style="color:var(--text)">WhatsApp</strong>, <strong style="color:var(--text)">Telegram</strong> và các kênh khác. Không cần chỉ định kênh — bot tự chọn ảnh phù hợp với câu hỏi.</div>
+        </div>
+        <!-- File queue -->
+        <div class="product-batch-field" style="margin-bottom:0">
+          <label id="pbm-queue-label">0 ảnh đã chọn</label>
+          <div class="product-batch-queue" id="pbm-queue"></div>
+        </div>
+      </div>
+      <div class="product-batch-footer">
+        <span class="product-batch-count" id="pbm-count">Chưa chọn ảnh</span>
+        <div class="product-batch-actions">
+          <button class="btn btn-secondary btn-small" onclick="addMoreProductImages()">+ Thêm ảnh</button>
+          <button class="btn btn-primary btn-small" id="pbm-submit" onclick="submitProductBatch()" disabled>Upload 0 ảnh</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Zalo per-user memory modal -->
@@ -5981,23 +6039,122 @@
       }
     }
 
-    async function uploadProductImages(button) {
-      await withMediaButtonLoading(button, async function() {
-        var paths = await window.claw.pickMediaAssetFile();
-        if (!paths || !paths.length) return;
-        var failed = 0;
-        for (var i = 0; i < paths.length; i++) {
-          var fp = paths[i];
-          var name = fp.split(/[\\\/]/).pop();
-          var res = await window.claw.uploadMediaAsset({ filePath: fp, type: 'product', title: name, visibility: 'public' });
-          if (!res.success) {
-            failed++;
-            showToast('Không tải lên được "' + name + '": ' + (res.error || 'Lỗi không xác định.'), 'error', 6000);
-          }
-        }
-        showToast(failed ? 'Tải lên xong, có ' + failed + ' ảnh lỗi' : 'Đã tải lên hình sản phẩm', failed ? 'warning' : 'success');
-        await loadImageAssetsTab();
+    var _pbmFiles = [];   // [{path, name, size, thumb?}]
+
+    function showProductBatchModal(filePaths) {
+      _pbmFiles = (filePaths || []).map(function(fp) {
+        var name = fp.split(/[\\\/]/).pop();
+        return { path: fp, name: name, size: 0, thumb: null };
       });
+      renderPbmQueue();
+      document.getElementById('pbm-description').value = '';
+      document.getElementById('pbm-aliases').value = '';
+      document.getElementById('product-batch-modal').classList.add('show');
+      document.getElementById('pbm-submit').disabled = _pbmFiles.length === 0;
+    }
+
+    function closeProductBatchModal() {
+      document.getElementById('product-batch-modal').classList.remove('show');
+    }
+
+    function renderPbmQueue() {
+      var label = document.getElementById('pbm-queue-label');
+      var countEl = document.getElementById('pbm-count');
+      var submitEl = document.getElementById('pbm-submit');
+      var queue = document.getElementById('pbm-queue');
+      var n = _pbmFiles.length;
+      label.textContent = (n === 0 ? 'Chưa chọn ảnh nào' : n + ' ảnh đã chọn');
+      countEl.textContent = n === 0 ? 'Chưa chọn ảnh' : n + ' ảnh sản phẩm';
+      submitEl.textContent = 'Upload ' + n + ' ảnh';
+      submitEl.disabled = n === 0;
+      if (n === 0) {
+        queue.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">Chưa chọn ảnh nào. Bấm "Thêm ảnh" để chọn thêm.</div>';
+        return;
+      }
+      queue.innerHTML = _pbmFiles.map(function(f, i) {
+        return '<div class="product-batch-item">' +
+          '<div style="width:40px;height:40px;border-radius:6px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text-muted);font-size:11px;text-align:center;line-height:1.2" id="pbm-thumb-' + i + '">' + f.name.split('.').pop().toUpperCase() + '</div>' +
+          '<span class="product-batch-item-name">' + escHtml(f.name) + '</span>' +
+          '<button class="btn btn-secondary btn-small" style="font-size:10px;padding:2px 7px;flex-shrink:0" onclick="removePbmFile(' + i + ')">✕</button>' +
+        '</div>';
+      }).join('');
+      // load thumbnails
+      _pbmFiles.forEach(function(f, i) {
+        loadPbmThumb(f.path, i);
+      });
+    }
+
+    function loadPbmThumb(filePath, index) {
+      var el = document.getElementById('pbm-thumb-' + index);
+      if (!el) return;
+      var ext = filePath.split('.').pop().toLowerCase();
+      var imgExts = ['png','jpg','jpeg','webp','gif','bmp'];
+      if (!imgExts.includes(ext)) return;
+      // Use native img load — works on file:// for local files in Electron renderer
+      var img = new Image();
+      img.onload = function() {
+        if (el) el.innerHTML = '<img src="file://' + filePath.replace(/\\/g, '/') + '" style="width:40px;height:40px;border-radius:6px;object-fit:cover;display:block">';
+      };
+      img.onerror = function() { /* keep fallback */ };
+      img.src = 'file://' + filePath.replace(/\\/g, '/');
+    }
+
+    function removePbmFile(index) {
+      _pbmFiles.splice(index, 1);
+      renderPbmQueue();
+    }
+
+    async function addMoreProductImages() {
+      var paths = await window.claw.pickMediaAssetFile();
+      if (!paths || !paths.length) return;
+      paths.forEach(function(fp) {
+        var name = fp.split(/[\\\/]/).pop();
+        _pbmFiles.push({ path: fp, name: name, size: 0, thumb: null });
+      });
+      renderPbmQueue();
+    }
+
+    async function submitProductBatch() {
+      if (!_pbmFiles.length) return;
+      var submitBtn = document.getElementById('pbm-submit');
+      var aliasesRaw = document.getElementById('pbm-aliases').value.trim();
+      var sharedAliases = aliasesRaw ? aliasesRaw.split(/[,;]/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
+      var sharedDesc = document.getElementById('pbm-description').value.trim();
+      setBtnLoading(submitBtn, true, 'Đang tải lên…');
+      var failed = 0;
+      var done = 0;
+      for (var i = 0; i < _pbmFiles.length; i++) {
+        var fp = _pbmFiles[i].path;
+        var name = _pbmFiles[i].name;
+        // Merge shared metadata with per-file title
+        var res = await window.claw.uploadMediaAsset({
+          filePath: fp,
+          type: 'product',
+          title: name,
+          visibility: 'public',
+          aliases: sharedAliases,
+          description: sharedDesc,
+        });
+        if (!res.success) {
+          failed++;
+          showToast('Lỗi "' + name + '": ' + (res.error || ''), 'error', 6000);
+        }
+        done++;
+        submitBtn.textContent = 'Đang tải ' + done + '/' + _pbmFiles.length + '…';
+      }
+      setBtnLoading(submitBtn, false, 'Upload ' + _pbmFiles.length + ' ảnh');
+      closeProductBatchModal();
+      if (_pbmFiles.length > 0) {
+        showToast(failed ? 'Đã tải lên, ' + failed + ' ảnh lỗi' : 'Đã tải lên ' + _pbmFiles.length + ' hình sản phẩm', failed ? 'warning' : 'success');
+      }
+      _pbmFiles = [];
+      await loadImageAssetsTab();
+    }
+
+    async function uploadProductImages(button) {
+      var paths = await window.claw.pickMediaAssetFile();
+      if (!paths || !paths.length) return;
+      showProductBatchModal(paths);
     }
 
     async function uploadKnowledgeFromMediaTab() {
@@ -9194,116 +9351,121 @@
 
     // Auto-update UI
     let _pendingUpdate = null;
-    function showUpdateBanner(info) {
-      _pendingUpdate = info;
-      const banner = document.getElementById('update-banner');
-      const text = document.getElementById('update-banner-text');
-      if (!banner || !text) return;
-      text.innerHTML = 'v' + esc(info.version) + ' &mdash; Nhấn để cập nhật';
-      banner.style.display = 'block';
-      showToast('Bản mới v' + info.version + ' — nhấn chấm cam trên icon rail để cập nhật', 'success', 8000);
+    let _updateUiState = { mode: 'idle' }; // idle | available | downloading | installing | error
+
+    function _setUpdateLabelIdle() {
+      const label = document.getElementById('check-update-btn');
+      if (!label) return;
+      label.classList.remove('update-available', 'update-busy');
+      label.textContent = label._versionLabel || 'v—';
+      label.title = 'Phiên bản hiện tại';
+      _updateUiState = { mode: 'idle' };
     }
+
+    function _setUpdateLabelAvailable(info) {
+      _pendingUpdate = info;
+      const label = document.getElementById('check-update-btn');
+      if (!label) return;
+      label.classList.add('update-available');
+      label.classList.remove('update-busy');
+      label.textContent = 'Cập nhật v' + esc(info.version);
+      label.title = 'Nhấn để cập nhật lên v' + esc(info.version);
+      _updateUiState = { mode: 'available', version: info.version };
+    }
+
     async function startUpdate() {
       if (!_pendingUpdate) return;
-      const banner = document.getElementById('update-banner');
-      const text = document.getElementById('update-banner-text');
-      if (text) text.textContent = 'Đang tải... 0%';
-      if (banner) banner.style.animation = 'none';
-      showToast('Bắt đầu tải bản cập nhật...', 'info', 3000);
+      const label = document.getElementById('check-update-btn');
+      if (label) {
+        label.classList.add('update-busy');
+        label.textContent = 'Đang tải... 0%';
+        label.title = 'Đang tải bản cập nhật';
+      }
+      _updateUiState = { mode: 'downloading', version: _pendingUpdate.version };
+
       try {
         const r = await window.claw.downloadAndInstallUpdate();
         if (r && r.method === 'browser') {
-          if (text) text.textContent = 'Đã mở trang tải về';
-          showToast('Đã mở trang tải về trong trình duyệt', 'success', 5000);
+          if (label) {
+            label.textContent = 'Đã mở trang tải';
+            label.title = 'Đã mở trang tải về trong trình duyệt';
+          }
+          _updateUiState = { mode: 'idle' };
         } else if (r && r.method === 'installer') {
-          if (text) text.textContent = 'Đang cài... Đợi khởi động lại';
-          showToast('Installer đang chạy — app sẽ tự tắt', 'success', 10000);
+          if (label) {
+            label.textContent = 'Đang cài...';
+            label.title = 'Installer đang chạy — app sẽ tự tắt';
+          }
+          _updateUiState = { mode: 'installing' };
         } else if (r && r.method === 'dmg-install') {
-          if (text) text.innerHTML = 'Khởi động lại...';
-          showToast('Cập nhật thành công — đang khởi động lại', 'success', 10000);
+          if (label) {
+            label.textContent = 'Khởi động lại...';
+            label.title = 'Cập nhật thành công — đang khởi động lại';
+          }
+          _updateUiState = { mode: 'installing' };
         } else if (r && !r.success) {
           const errMsg = r.error || '';
-          const fallbackNote = r.fallback === 'browser' ? ' (đã mở trang tải về)' : '';
-          if (text) text.textContent = 'Lỗi: ' + errMsg + fallbackNote;
-          showToast('Cập nhật thất bại: ' + errMsg + (r.fallback === 'browser' ? ' — đã mở trang tải về' : ''), 'error', 6000);
-          setTimeout(() => { if (banner) banner.style.display = 'none'; }, 6000);
+          if (label) {
+            label.textContent = 'Lỗi cập nhật';
+            label.title = errMsg ? ('Cập nhật thất bại: ' + errMsg) : 'Cập nhật thất bại';
+            label.classList.remove('update-busy');
+          }
+          _updateUiState = { mode: 'error', error: errMsg };
         }
       } catch (e) {
-        if (text) text.textContent = 'Lỗi: ' + e.message;
-        showToast('Lỗi: ' + e.message, 'error', 5000);
-        setTimeout(() => { if (banner) banner.style.display = 'none'; }, 5000);
-      }
-    }
-    async function manualCheckUpdate() {
-      const label = document.getElementById('check-update-btn');
-      if (label) {
-        label.textContent = 'Đang kiểm tra';
-        label.title = 'Đang kiểm tra cập nhật';
-      }
-      try {
-        const r = await window.claw.checkForUpdates();
-        if (r && r.available) {
-          if (label) {
-            label.textContent = 'Có bản mới';
-            label.title = 'Đang tải bản v' + r.version;
-          }
-          _pendingUpdate = r;
-          const banner = document.getElementById('update-banner');
-          const text = document.getElementById('update-banner-text');
-          if (banner && text) {
-            text.textContent = 'v' + r.version + ' — đang tải...';
-            banner.style.display = 'block';
-          }
-          await startUpdate();
-        } else {
-          if (label) {
-            label.textContent = 'Đã mới nhất';
-            label.title = 'Không có bản cập nhật mới';
-          }
-          setTimeout(() => {
-            if (label) {
-              label.textContent = label._versionLabel || 'v—';
-              label.title = 'Kiểm tra cập nhật';
-            }
-          }, 3000);
-        }
-      } catch {
         if (label) {
           label.textContent = 'Lỗi cập nhật';
-          label.title = 'Không kiểm tra được cập nhật';
+          label.title = 'Lỗi: ' + (e?.message || 'Không rõ');
+          label.classList.remove('update-busy');
         }
-        setTimeout(() => {
-          if (label) {
-            label.textContent = label._versionLabel || 'v—';
-            label.title = 'Kiểm tra cập nhật';
-          }
-        }, 3000);
+        _updateUiState = { mode: 'error', error: e?.message };
       }
     }
+
+    async function _confirmAndStartUpdate() {
+      if (!_pendingUpdate) return;
+      const ok = confirm('Bạn có muốn cập nhật lên v' + _pendingUpdate.version + ' không?');
+      if (!ok) return;
+      await startUpdate();
+    }
+
+    async function manualCheckUpdate() {
+      // Repurposed: click rail-version acts as "update" when available.
+      if (_updateUiState.mode === 'available') {
+        return await _confirmAndStartUpdate();
+      }
+      // Otherwise: do nothing (no manual check needed).
+    }
+
     // Listen for auto-check result from main process
     if (window.claw.onUpdateAvailable) {
-      window.claw.onUpdateAvailable((info) => showUpdateBanner(info));
+      window.claw.onUpdateAvailable((info) => {
+        if (info && info.version) _setUpdateLabelAvailable(info);
+      });
     }
+    if (window.claw.onUpdateCleared) {
+      window.claw.onUpdateCleared(() => _setUpdateLabelIdle());
+    }
+
     // Download progress
     if (window.claw.onUpdateDownloadProgress) {
       window.claw.onUpdateDownloadProgress((p) => {
-        const text = document.getElementById('update-banner-text');
-        if (text && p) text.textContent = 'Đang tải... ' + (p.percent || 0) + '%';
         const label = document.getElementById('check-update-btn');
         if (label && p) {
-          label.textContent = 'Đang tải';
+          label.classList.add('update-busy');
+          label.textContent = 'Đang tải... ' + (p.percent || 0) + '%';
           label.title = 'Đang tải cập nhật ' + (p.percent || 0) + '%';
         }
       });
     }
+
     // Install status (Mac DMG install phases)
     if (window.claw.onUpdateInstallStatus) {
       window.claw.onUpdateInstallStatus((data) => {
-        const text = document.getElementById('update-banner-text');
-        if (text && data && data.status) text.textContent = data.status;
         const label = document.getElementById('check-update-btn');
         if (label && data && data.status) {
-          label.textContent = 'Cài cập nhật';
+          label.classList.add('update-busy');
+          label.textContent = 'Đang cài...';
           label.title = data.status;
         }
       });

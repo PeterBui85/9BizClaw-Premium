@@ -126,7 +126,7 @@ const {
 const {
   stop9Router, setKillPort,
 } = require('./lib/nine-router');
-const { checkForUpdates } = require('./lib/updates');
+const { checkForUpdates, startUpdatePoller, stopUpdatePoller } = require('./lib/updates');
 const {
   setChannelPermanentPause, setZaloChannelEnabled,
   pauseChannel, sendCeoAlert,
@@ -192,6 +192,7 @@ const {
 
 const { startCronApi, cleanupCronApi } = require('./lib/cron-api');
 const { startCeoMessageWatcher, startNudgeTimer, cleanupNudgeTimers } = require('./lib/ceo-nudge');
+const { startOnboardingNudgeTimer, cleanupOnboardingNudgeTimers } = require('./lib/onboarding-nudge');
 const { cleanupCeoMemoryTimers } = require('./lib/ceo-memory');
 const fbSchedule = require('./lib/fb-schedule');
 const { registerAllIpcHandlers } = require('./lib/dashboard-ipc');
@@ -402,6 +403,7 @@ function startRuntimeSidecars(source) {
   try { startAppointmentDispatcher(); } catch (e) { console.error(prefix, 'startAppointmentDispatcher error:', e?.message || e); }
   try { startCeoMessageWatcher(); } catch (e) { console.error(prefix, 'startCeoMessageWatcher error:', e?.message || e); }
   try { startNudgeTimer(); } catch (e) { console.error(prefix, 'startNudgeTimer error:', e?.message || e); }
+  try { startOnboardingNudgeTimer(); } catch (e) { console.error(prefix, 'startOnboardingNudgeTimer error:', e?.message || e); }
   // Auto-compact fires inside Zalo inbound handler (triggerAutoCompact in inbound.ts)
   // triggered before every LLM call — no separate interval needed
 }
@@ -1070,6 +1072,8 @@ app.whenReady().then(async () => {
   setTimeout(() => {
     checkForUpdates().catch(e => console.warn('[update] boot check failed:', e?.message));
   }, 15000);
+  // Poll update availability every 2 hours (long-running installs)
+  startUpdatePoller(2 * 60 * 60 * 1000);
   // Fast self-heal watchdog — 20s interval, separate from cron heartbeat.
   // Goal: <30s downtime on any component failure.
   // Gateway: 1st fail → 3s recheck → 2nd fail → immediate restart (~25s total)
@@ -1095,11 +1099,14 @@ function _beforeQuitCleanup() {
   try { cleanupGatewayTimers(); } catch (e2) { console.warn('[before-quit] cleanupGatewayTimers:', e2?.message); }
   try { cleanupEscalationTimers(); } catch (e2) { console.warn('[before-quit] cleanupEscalationTimers:', e2?.message); }
   try { cleanupNudgeTimers(); } catch (e2) { console.warn('[before-quit] cleanupNudgeTimers:', e2?.message); }
+  try { cleanupOnboardingNudgeTimers(); } catch (e2) { console.warn('[before-quit] cleanupOnboardingNudgeTimers:', e2?.message); }
   try { cleanupCeoMemoryTimers(); } catch (e2) { console.warn('[before-quit] cleanupCeoMemoryTimers:', e2?.message); }
   try { stopIdleMemoryTimer(); } catch (e2) { console.warn('[before-quit] stopIdleMemoryTimer:', e2?.message); }
   try { cleanupKnowledgeServer(); } catch (e2) { console.warn('[before-quit] cleanupKnowledgeServer:', e2?.message); }
   try { stopKnowledgeWatcher(); } catch (e2) { console.warn('[before-quit] stopKnowledgeWatcher:', e2?.message); }
   try { require('./lib/knowledge').closeDocumentsDb(); } catch (e2) { console.warn('[before-quit] closeDocumentsDb:', e2?.message); }
+
+  try { stopUpdatePoller(); } catch (e2) { console.warn('[before-quit] stopUpdatePoller:', e2?.message); }
 
   // (2) Stop all cron jobs + watchers + pollers
   try { cleanupCronTimers(); } catch (e2) { console.warn('[before-quit] cleanupCronTimers:', e2?.message); }

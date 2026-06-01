@@ -12,6 +12,8 @@ let _latestRelease = null; // cached { version, body, html_url, assets } — no 
 /** Concurrency guard preventing double-download when user clicks "Update" rapidly */
 let _updateDownloadInFlight = false;
 
+let _updatePollTimer = null;
+
 function compareVersions(a, b) {
   // Returns >0 if a > b, <0 if a < b, 0 if equal
   const pa = String(a || '0').replace(/^v/, '').split('.').map(Number);
@@ -56,6 +58,12 @@ async function _checkForUpdatesOnce() {
         try {
           if (res.statusCode !== 200) {
             console.log('[update] GitHub API status', res.statusCode);
+            // Only clear if we previously announced an update.
+            const hadStaleUpdate = !!_latestRelease;
+            _latestRelease = null;
+            if (hadStaleUpdate && ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+              ctx.mainWindow.webContents.send('update-cleared');
+            }
             return resolve(null);
           }
           const release = JSON.parse(data);
@@ -80,15 +88,31 @@ async function _checkForUpdatesOnce() {
             return resolve(_latestRelease);
           }
           console.log('[update] up to date:', current);
+          if (_latestRelease) {
+            _latestRelease = null;
+            if (ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+              ctx.mainWindow.webContents.send('update-cleared');
+            }
+          }
           resolve(null);
         } catch (e) {
           console.warn('[update] parse error:', e.message);
+          const hadStaleUpdate = !!_latestRelease;
+          _latestRelease = null;
+          if (hadStaleUpdate && ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+            ctx.mainWindow.webContents.send('update-cleared');
+          }
           resolve(null);
         }
       });
     });
     req.on('error', (e) => {
       console.warn('[update] check failed:', e.message);
+      const hadStaleUpdate = !!_latestRelease;
+      _latestRelease = null;
+      if (hadStaleUpdate && ctx.mainWindow && !ctx.mainWindow.isDestroyed()) {
+        ctx.mainWindow.webContents.send('update-cleared');
+      }
       resolve(null);
     });
     req.on('timeout', () => { req.destroy(); resolve(null); });
@@ -311,7 +335,25 @@ function getLatestRelease() { return _latestRelease; }
 function getUpdateDownloadInFlight() { return _updateDownloadInFlight; }
 function setUpdateDownloadInFlight(v) { _updateDownloadInFlight = v; }
 
+function startUpdatePoller(intervalMs = 2 * 60 * 60 * 1000) {
+  try {
+    if (_updatePollTimer) return _updatePollTimer;
+    _updatePollTimer = setInterval(() => { checkForUpdates().catch(() => {}); }, intervalMs);
+    if (_updatePollTimer.unref) _updatePollTimer.unref();
+    return _updatePollTimer;
+  } catch {
+    return null;
+  }
+}
+
+function stopUpdatePoller() {
+  try {
+    if (_updatePollTimer) { clearInterval(_updatePollTimer); _updatePollTimer = null; }
+  } catch {}
+}
+
 module.exports = {
   compareVersions, checkForUpdates, downloadUpdate, installDmgUpdate, openGitHubUrl,
   getLatestRelease, getUpdateDownloadInFlight, setUpdateDownloadInFlight,
+  startUpdatePoller, stopUpdatePoller,
 };
