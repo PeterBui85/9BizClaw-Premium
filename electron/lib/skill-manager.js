@@ -1018,7 +1018,10 @@ async function toggleUserSkill(id, enabled) {
 }
 
 function listUserSkills() {
-  return readRegistry().skills;
+  // Shipped domain skills are seeded into the registry (so they can be toggled/
+  // matched) but they are surfaced under the SHIPPED category via listShippedSkills.
+  // Excluding them here prevents a duplicate, content-less entry under "Tùy chỉnh".
+  return readRegistry().skills.filter(s => !s.shipped);
 }
 
 function getUserSkillContent(id) {
@@ -1090,6 +1093,7 @@ function listShippedSkills() {
     operations: 'Vận hành',
     marketing: 'Marketing',
     'image-templates': 'Mẫu hình ảnh',
+    shipped: 'Quy tắc hệ thống',
   };
 
   function _parseSkillName(filePath, defaultName) {

@@ -3847,8 +3847,8 @@
                 <button class="btn btn-primary btn-small" onclick="uploadProductImages(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
               </div>
               <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
-                <input type="text" id="product-search-input" placeholder="Tìm ảnh sản phẩm..." style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text)" onkeydown="if(event.key==='Enter')searchProductImages()">
-                <button class="btn btn-secondary btn-small" onclick="searchProductImages()" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><span data-icon="search" data-icon-size="13"></span>Tìm</button>
+                <input type="text" id="product-search-input" placeholder="Tìm ảnh sản phẩm..." style="flex:1;height:36px;padding:0 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);box-sizing:border-box;margin:0" onkeydown="if(event.key==='Enter')searchProductImages()">
+                <button class="btn btn-secondary btn-small" onclick="searchProductImages()" style="height:36px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;box-sizing:border-box;margin:0"><span data-icon="search" data-icon-size="13"></span>Tìm</button>
               </div>
               <div id="product-search-results" style="margin-bottom:12px;display:none">
                 <div id="product-search-results-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
@@ -5960,10 +5960,13 @@
       loadFbRecentPosts();
     }
 
-    function _fbTokenStatusBadge(status) {
-      if (status === 'expired') return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:color-mix(in srgb, var(--danger) 14%, transparent);color:var(--danger);font-weight:500">Token hết hạn</span>';
-      if (status === 'missing') return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:color-mix(in srgb, var(--warning,#b45309) 16%, transparent);color:var(--warning,#b45309);font-weight:500">Thiếu token</span>';
-      return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);font-weight:500">Hoạt động</span>';
+    function _fbStatusBadge(p) {
+      const base = 'font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500;white-space:nowrap';
+      // Disabled state takes priority — this is what the "Bật" toggle controls.
+      if (!p.enabled) return '<span style="' + base + ';background:color-mix(in srgb, var(--text-muted) 16%, transparent);color:var(--text-muted)">Đã tắt</span>';
+      if (p.tokenStatus === 'expired') return '<span style="' + base + ';background:color-mix(in srgb, var(--danger) 14%, transparent);color:var(--danger)">Token hết hạn</span>';
+      if (p.tokenStatus === 'missing') return '<span style="' + base + ';background:color-mix(in srgb, var(--warning,#b45309) 16%, transparent);color:var(--warning,#b45309)">Thiếu token</span>';
+      return '<span style="' + base + ';background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success)">Hoạt động</span>';
     }
 
     async function loadFbConfig() {
@@ -5982,19 +5985,24 @@
           '</div>';
         html += '<div style="display:flex;flex-direction:column;gap:8px">';
         for (const p of pages) {
-          const dim = p.enabled ? '' : 'opacity:0.55;';
-          html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);' + dim + '">' +
+          const dim = p.enabled ? '' : 'opacity:0.6;';
+          html += '<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);' + dim + '">' +
             '<div style="flex:1;min-width:0">' +
-              '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.pageName || '(không tên)') + '</span>' + _fbTokenStatusBadge(p.tokenStatus) + '</div>' +
-              '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
-                '<label style="font-size:11px;color:var(--text-muted);flex-shrink:0">Tên ngắn:</label>' +
-                '<input type="text" value="' + escAttr(p.shortName || '') + '" placeholder="vd: cafe" onchange="updateFbPageShortName(\'' + escAttr(p.id) + '\', this.value)" style="font-size:12px;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);width:120px;height:26px;box-sizing:border-box">' +
-                '<span style="font-size:11px;color:var(--text-muted)" title="ID nội bộ Facebook page">· ' + esc(p.pageId || '') + '</span>' +
+              // Line 1: page name + status badge + page id (muted suffix)
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;min-width:0">' +
+                '<span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.pageName || '(không tên)') + '</span>' +
+                _fbStatusBadge(p) +
+                '<span style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="ID Facebook page">#' + esc(p.pageId || '') + '</span>' +
+              '</div>' +
+              // Line 2: short-name label + input (aligned)
+              '<div style="display:flex;align-items:center;gap:8px">' +
+                '<label style="font-size:11px;color:var(--text-muted);flex-shrink:0">Tên ngắn</label>' +
+                '<input type="text" value="' + escAttr(p.shortName || '') + '" placeholder="vd: cafe" onchange="updateFbPageShortName(\'' + escAttr(p.id) + '\', this.value)" style="font-size:12px;line-height:1.4;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);width:140px;box-sizing:border-box;margin:0">' +
               '</div>' +
             '</div>' +
-            '<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">' +
-              '<input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="toggleFbPage(\'' + escAttr(p.id) + '\', this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent)">' +
-              '<span style="font-size:11px;color:var(--text-secondary)">Bật</span>' +
+            '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0">' +
+              '<input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="toggleFbPage(\'' + escAttr(p.id) + '\', this.checked)" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);margin:0">' +
+              '<span style="font-size:12px;color:var(--text-secondary)">Bật</span>' +
             '</label>' +
           '</div>';
         }
@@ -6741,21 +6749,21 @@
           card.style.display = 'none';
           return;
         }
-        document.getElementById('ov-onboarding-day').textContent = status.currentDay;
+        document.getElementById('ov-onboarding-day').textContent = status.day;
         document.getElementById('ov-onboarding-title').textContent = status.title || '';
         document.getElementById('ov-onboarding-body').textContent = status.body || '';
         const ctaBtn = document.getElementById('ov-onboarding-cta-btn');
-        // CTA button links to the relevant tab based on day
-        var ctaTarget = '';
-        var ctaLabel = '';
-        if (status.currentDay === 2) { ctaTarget = 'switchPage(\'facebook\')'; ctaLabel = 'Mở Facebook'; }
-        else if (status.currentDay === 3) { ctaTarget = 'switchPage(\'knowledge\')'; ctaLabel = 'Upload tài liệu'; }
-        else if (status.currentDay === 4) { ctaTarget = 'switchPage(\'schedules\')'; ctaLabel = 'Mở Lịch tự động'; }
-        else if (status.currentDay === 5) { ctaTarget = 'switchPage(\'facebook\')'; ctaLabel = 'Tạo plan marketing'; }
-        else if (status.currentDay === 6) { ctaTarget = 'switchPage(\'schedules\')'; ctaLabel = 'Mở Lịch tự động'; }
-        else { ctaTarget = 'switchPage(\'schedules\')'; ctaLabel = 'Khám phá thêm'; }
+        // CTA button links to the relevant tab based on day.
+        // Call switchPage directly — eval() is blocked by the page CSP (no unsafe-eval).
+        var ctaPage = 'schedules';
+        var ctaLabel = 'Khám phá thêm';
+        if (status.day === 2) { ctaPage = 'facebook'; ctaLabel = 'Mở Facebook'; }
+        else if (status.day === 3) { ctaPage = 'knowledge'; ctaLabel = 'Upload tài liệu'; }
+        else if (status.day === 4) { ctaPage = 'schedules'; ctaLabel = 'Mở Lịch tự động'; }
+        else if (status.day === 5) { ctaPage = 'facebook'; ctaLabel = 'Tạo plan marketing'; }
+        else if (status.day === 6) { ctaPage = 'schedules'; ctaLabel = 'Mở Lịch tự động'; }
         ctaBtn.textContent = ctaLabel;
-        ctaBtn.onclick = function() { eval(ctaTarget); };
+        ctaBtn.onclick = function() { switchPage(ctaPage); };
         card.style.display = '';
       } catch (e) {
         console.error('[overview] onboarding card error', e);

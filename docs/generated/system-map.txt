@@ -205,4 +205,4 @@ Large Source Files
 - electron/lib/migration.js: 20682 bytes
 - electron/lib/nine-router.js: 46717 bytes
 - electron/lib/runtime-installer.js: 86366 bytes
-- electron/lib/skill-manager.js: 50712 bytes
+- electron/lib/skill-manager.js: 51030 bytes

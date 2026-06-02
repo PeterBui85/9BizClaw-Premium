@@ -3407,7 +3407,7 @@
     },
     {
       "path": "electron/lib/skill-manager.js",
-      "bytes": 50712
+      "bytes": 51030
     },
     {
       "path": "electron/lib/vendor-patches.js",
@@ -3427,7 +3427,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 689419
+      "bytes": 689852
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
