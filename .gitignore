@@ -95,6 +95,31 @@ screenshot-*.png
 !electron/ui/9bizclaw-mascot.png
 *.xlsx
 *.dmp
+
+# Dev scratch / scratch artifacts (root only) — never commit
+/.test-*
+/.tmp-*
+/.run-tests.*
+/.commit-msg.txt
+/.git-commit-msg.txt
+/.python-binary.txt
+/temp-*.js
+/temp-*.ps1
+/test-api.*
+/test-*-node.js
+/test-50-bot.ps1
+/session.txt
+/Hierarchical-Memory-System.txt
+/audit.jsonl
+/brain-graph.json
+/system-architecture.html
+/system-architecture.md
+/llms.txt
+/HANDOFF*.md
+/HANDOVER.md
+/handoff-*.md
+/demo-*.docx
+/demo-*.pptx
 *.py
 
 # Temp/test files — may contain credentials
