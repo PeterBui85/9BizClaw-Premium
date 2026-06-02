@@ -3250,11 +3250,11 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 668603
+      "bytes": 668965
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 286223
+      "bytes": 286781
     },
     {
       "path": "electron/lib/cron-api.js",

@@ -3487,18 +3487,21 @@ ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
         pageId: v.pageId,
         pageAccessToken: v.pageToken,
         pageName: v.pageName,
-        pageAvatarUrl: prev.pageAvatarUrl || null,
-        shortName: prev.shortName || null,
-        category: prev.category || null,
+        shortName: prev.shortName ?? null,
         enabled: prev.enabled !== undefined ? prev.enabled : true,
         connectedAt: prev.connectedAt || connectedAt,
       };
     });
+    // Pages that existed before but the new token no longer grants — they vanish
+    // from config, so surface the names to the CEO instead of dropping silently.
+    const newIds = new Set(pages.map(p => p.id));
+    const removed = (existing && Array.isArray(existing.pages) ? existing.pages : [])
+      .filter(p => !newIds.has(p.id))
+      .map(p => p.pageName || p.pageId);
     const cfg = {
       tokens: [{
         id: tokenId,
         userToken: null,
-        userName: 'Facebook',
         isLegacy: false,
         pageIds: pages.map(p => p.id),
         connectedAt,
@@ -3507,7 +3510,7 @@ ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
       connectedAt,
     };
     writeFbConfig(cfg);
-    return { success: true, count: pages.length, pages: pages.map(p => ({ id: p.id, pageName: p.pageName })) };
+    return { success: true, count: pages.length, removed, pages: pages.map(p => ({ id: p.id, pageName: p.pageName })) };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
@@ -3539,12 +3542,15 @@ ipcMain.handle('verify-fb-token', async () => {
 
 ipcMain.handle('get-fb-recent-posts', async () => {
   const cfg = readFbConfig();
+  // Shows the first enabled page's posts — the UI labels which page so the CEO
+  // isn't misled into thinking these are from a different connected fanpage.
   const page = cfg && Array.isArray(cfg.pages) ? cfg.pages.find(p => p.enabled && p.pageAccessToken) : null;
-  if (!page) return [];
+  if (!page) return { pageName: null, posts: [] };
   try {
     const fbPub = require('./fb-publisher');
-    return await fbPub.getRecentPosts(page.pageId, page.pageAccessToken, 5);
-  } catch { return []; }
+    const posts = await fbPub.getRecentPosts(page.pageId, page.pageAccessToken, 5);
+    return { pageName: page.pageName, posts: posts || [] };
+  } catch { return { pageName: page.pageName, posts: [] }; }
 });
 
 

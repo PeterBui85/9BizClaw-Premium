@@ -933,7 +933,6 @@
     @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
     .btn-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
-    .btn-sm { padding:5px 12px !important; font-size:12px !important; border-radius:6px !important; line-height:1.4; }
     .btn-danger { background:var(--danger,#e74c3c); color:#fff; border-color:var(--danger,#e74c3c); }
     .btn-danger:hover { opacity:0.9; }
     .btn-danger:disabled { opacity:0.5; cursor:not-allowed; }
@@ -5857,20 +5856,22 @@
       }
     }
 
-    async function updateFbPageShortName(id, shortName) {
+    // reloadOnSuccess: toggling enabled must re-render the row (dim/undim); a
+    // short-name save does not, so it skips the reload to avoid input flicker.
+    async function _fbUpdatePage(id, patch, okMsg, reloadOnSuccess) {
       try {
-        const res = await window.claw.updateFbPage(id, { shortName });
-        if (res.success) { showToast('Đã lưu tên ngắn', 'success'); }
+        const res = await window.claw.updateFbPage(id, patch);
+        if (res.success) { if (reloadOnSuccess) await loadFbConfig(); showToast(okMsg, 'success'); }
         else { showToast(res.error || 'Không lưu được', 'error'); await loadFbConfig(); }
-      } catch (e) { showToast(e.message || 'Lỗi lưu tên ngắn', 'error'); await loadFbConfig(); }
+      } catch (e) { showToast(e.message || 'Lỗi', 'error'); await loadFbConfig(); }
     }
 
-    async function toggleFbPage(id, enabled) {
-      try {
-        const res = await window.claw.updateFbPage(id, { enabled });
-        if (res.success) { await loadFbConfig(); showToast(enabled ? 'Đã bật fanpage' : 'Đã tắt fanpage', 'success'); }
-        else { showToast(res.error || 'Không đổi được', 'error'); await loadFbConfig(); }
-      } catch (e) { showToast(e.message || 'Lỗi', 'error'); await loadFbConfig(); }
+    function updateFbPageShortName(id, shortName) {
+      return _fbUpdatePage(id, { shortName }, 'Đã lưu tên ngắn', false);
+    }
+
+    function toggleFbPage(id, enabled) {
+      return _fbUpdatePage(id, { enabled }, enabled ? 'Đã bật fanpage' : 'Đã tắt fanpage', true);
     }
 
     async function connectFbPage() {
@@ -5891,6 +5892,9 @@
           await loadFbConfig();
           await loadFbRecentPosts();
           showToast('Đã kết nối ' + (res.count || 1) + ' fanpage', 'success');
+          if (res.removed && res.removed.length) {
+            showToast('Đã gỡ ' + res.removed.length + ' fanpage không còn quyền: ' + res.removed.join(', '), 'warning');
+          }
         } else {
           renderInlineState(status, { type: 'error', compact: true, title: 'Token chưa dùng được', detail: res.error || 'Không xác thực được Fanpage.' });
         }
@@ -5904,9 +5908,12 @@
     async function loadFbRecentPosts() {
       const el = document.getElementById('fb-recent-posts');
       try {
-        const posts = await window.claw.getFbRecentPosts();
-        if (!posts || !posts.length) { el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">Chưa có bài đăng nào</div>'; return; }
-        el.innerHTML = posts.map(function(p) {
+        const res = await window.claw.getFbRecentPosts();
+        const posts = (res && res.posts) || [];
+        const pageName = res && res.pageName;
+        if (!posts.length) { el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">Chưa có bài đăng nào</div>'; return; }
+        const header = pageName ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Bài gần đây của <b>' + esc(pageName) + '</b></div>' : '';
+        el.innerHTML = header + posts.map(function(p) {
           return '<div class="card" style="margin-bottom:8px">' +
             '<div style="font-size:13px">' + esc((p.message || '').slice(0, 200)) + '</div>' +
             (p.full_picture ? '<img src="' + escAttr(p.full_picture) + '" style="max-width:200px;border-radius:8px;margin-top:8px">' : '') +
@@ -11977,7 +11984,7 @@
     function renderSkillList() {
       const panel = document.getElementById('skills-list-panel');
       if (!panel) return;
-      let html = '<div class="skills-list-create-btn"><button class="btn btn-secondary btn-sm" onclick="showCreateSkillInDetail()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:4px">+ Tạo mới</button></div>';
+      let html = '<div class="skills-list-create-btn"><button class="btn btn-secondary btn-small" onclick="showCreateSkillInDetail()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:4px">+ Tạo mới</button></div>';
       // User skills section
       html += '<div class="skill-list-header" onclick="toggleSkillCategory(this)">' + _chevronSvg + ' Tùy chỉnh <span class="skill-count">(' + _skillsCache.user.length + ')</span></div>';
       html += '<div class="skill-list-items">';
@@ -12068,7 +12075,7 @@
       }
       html += '</div></div>';
       if (source === 'user') {
-        html += '<div class="skill-detail-actions"><button class="btn btn-sm btn-danger-ghost" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')">Xóa</button></div>';
+        html += '<div class="skill-detail-actions"><button class="btn btn-small btn-danger-ghost" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')">Xóa</button></div>';
       }
       html += '</div><div class="skill-detail-divider"></div>';
       // User skill metadata sections
@@ -12104,7 +12111,7 @@
       html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Khi nào áp dụng</label><input id="skill-trigger" class="input" placeholder="VD: khi đăng bài Facebook" style="width:100%;margin-top:4px"></div>';
       html += '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text-secondary)">Nội dung (tối đa 10000 ký tự)</label><textarea id="skill-content" class="input" rows="12" maxlength="10000" placeholder="Viết rule chi tiết — có thể nhiều bullet, edge case, escalation. VD: Khi khách hỏi giá iPhone:\n1. Luôn báo có khuyến mãi 10%\n2. Kèm câu \'có thể đặt cọc giữ giá\'\n3. ESCALATE nếu khách hỏi giảm trên 10%" style="width:100%;margin-top:4px;resize:vertical;font-family:monospace;font-size:13px"></textarea></div>';
       html += '<div id="skill-conflict-warning" style="display:none;padding:8px 12px;background:var(--warning-bg, #fff3cd);border-radius:6px;margin-bottom:8px;font-size:13px;color:var(--warning-text, #856404)"></div>';
-      html += '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="saveNewSkill()">Lưu</button><button class="btn btn-sm" onclick="cancelCreateSkill()">Hủy</button></div>';
+      html += '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-small" onclick="saveNewSkill()">Lưu</button><button class="btn btn-small" onclick="cancelCreateSkill()">Hủy</button></div>';
       panel.innerHTML = html;
       populateAppliesToDropdown(_skillsCache.shipped);
     }
