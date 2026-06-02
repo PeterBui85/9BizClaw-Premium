@@ -53,9 +53,9 @@ const MIN_PREMIUM_CONTEXT_TOKENS = 200000;
 const GPT_54_CONTEXT_TOKENS = 272000;
 const ANTHROPIC_CONTEXT_1M_TOKENS = 1048576;
 const BOOTSTRAP_CHARS_PER_TOKEN = 3;
-const BOOTSTRAP_PER_FILE_RATIO = 0.10;
+const BOOTSTRAP_PER_FILE_RATIO = 0.20;  // 20% of context window — gives AGENTS.md 120K effective budget at 200K tokens
 const BOOTSTRAP_TOTAL_RATIO = 0.45;
-const BOOTSTRAP_MAX_CHARS_CAP = 120000;
+const BOOTSTRAP_MAX_CHARS_CAP = 200000;  // raised from 120K — AGENTS.md growth headroom
 const BOOTSTRAP_TOTAL_MAX_CHARS_CAP = 800000;
 
 function normalizePositiveInt(value) {
@@ -543,8 +543,10 @@ function writeOpenClawConfigIfChanged(configPath, config) {
     }
     if (fs.existsSync(configPath)) {
       let existing = fs.readFileSync(configPath, 'utf-8');
-      // Strip UTF-8 BOM if present (Notepad/PowerShell can add it)
-      if (existing.charCodeAt(0) === 0xFEFF) existing = existing.slice(1);
+      // Strip UTF-8 BOM if present (Notepad/PowerShell can add it).
+      // Guard against empty file: charCodeAt(0) returns NaN for '' which === NaN, so the
+      // condition safely short-circuits and skips the slice.
+      if (existing.length > 0 && existing.charCodeAt(0) === 0xFEFF) existing = existing.slice(1);
       // Exact byte match — skip
       if (existing === serialized) return false;
       // Trailing-newline-only diff — also skip. Current file may have been
@@ -1202,8 +1204,8 @@ async function ensureZaloModelDefault() {
             r.on('end', () => { clearTimeout(totalTimeout); try { resolve(JSON.parse(body)); } catch { resolve(null); } });
           }
         );
-        req.on('error', () => { clearTimeout(totalTimeout); resolve(null); });
-        req.on('timeout', () => { clearTimeout(totalTimeout); try { req.destroy(); } catch {} resolve(null); });
+      req.on('error', () => { try { req?.destroy(); } catch {} resolve(null); });
+      req.on('timeout', () => { try { req?.destroy(); } catch {} resolve(null); });
       });
       if (res?.data?.some?.(m => m.id === 'zalo')) {
         config.agents.defaults.model = 'ninerouter/zalo';

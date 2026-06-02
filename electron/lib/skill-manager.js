@@ -15,7 +15,7 @@ function getRegistryPath() {
   return dir ? path.join(dir, '_registry.json') : null;
 }
 
-const _idRe = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const _idRe = /^[a-z0-9][a-z0-9/-]{0,79}$/;
 
 // 2026-05-15: skill library consolidation — old `appliesTo` paths from
 // user-created skills map to the new merged shipped skill paths. Migration
@@ -133,6 +133,83 @@ const _LEGACY_SHIPPED_SKILL_PATHS = new Set([
   'pptx-generator',
 ]);
 
+// Shipped domain rules — always enabled, never editable by CEO.
+// Content lives in skills/shipped/{id}.md. Read by getSkillContent().
+// Triggers in the `trigger` field drive lazy-match keyword injection.
+// appliesTo: [] means standalone — fires on every scope (CEO Telegram + Zalo inbound).
+const SHIPPED_DOMAIN_SKILLS = [
+  {
+    id: 'shipped/auto-mode-rules',
+    name: 'Quy tắc AUTO-MODE',
+    type: 'rule',
+    appliesTo: [],
+    trigger: 'khi prompt có tag [AUTO-MODE]',
+    summary: 'Quy tắc khi chạy cron/workflow tự động: không confirm, reply discipline, disambiguation, thứ tự tool, image gen timeout, content pack output.',
+    enabled: true,
+    shipped: true,
+  },
+  {
+    id: 'shipped/zalo-behavior',
+    name: 'Quy tắc hành vi Zalo',
+    type: 'rule',
+    appliesTo: [],
+    trigger: 'khi nhắn về kênh Zalo, tin nhắn khách Zalo',
+    summary: 'Phạm vi bot, phòng thủ, format, giọng văn, nhóm, memory, escalate, checklist, follow-up.',
+    enabled: true,
+    shipped: true,
+  },
+  {
+    id: 'shipped/telegram-behavior',
+    name: 'Quy tắc hành vi Telegram CEO',
+    type: 'rule',
+    appliesTo: [],
+    trigger: 'khi nhắn về kênh Telegram CEO',
+    summary: 'Tư duy cố vấn, gửi Zalo từ Telegram, quản lý Zalo, task dài multi-step.',
+    enabled: true,
+    shipped: true,
+  },
+  {
+    id: 'shipped/knowledge-routing',
+    name: 'Quy tắc Knowledge routing',
+    type: 'rule',
+    appliesTo: [],
+    trigger: 'khi hỏi về nguồn tri thức, knowledge',
+    summary: 'Tra knowledge trước khi trả lời, phạm vi knowledge, fallback strategy, topic không có category riêng.',
+    enabled: true,
+    shipped: true,
+  },
+];
+
+// Seed the registry with shipped domain skills. Called at boot.
+// Shipped skills are always enabled. Updates in-place so content stays current.
+function registerShippedSkills() {
+  const registry = readRegistry();
+  if (!registry || !Array.isArray(registry.skills)) {
+    console.warn('[skill-manager] registerShippedSkills: no registry, skipping');
+    return;
+  }
+  for (const skill of SHIPPED_DOMAIN_SKILLS) {
+    const exists = registry.skills.some(s => s && s.id === skill.id);
+    if (!exists) {
+      registry.skills.push(skill);
+    } else {
+      const idx = registry.skills.findIndex(s => s && s.id === skill.id);
+      if (idx >= 0) {
+        registry.skills[idx] = { ...registry.skills[idx], ...skill, shipped: true, enabled: true };
+      }
+    }
+  }
+  // Sanity check: warn if any shipped skill file exceeds the injection cap.
+  // This catches template authoring errors before they silently truncate rules.
+  for (const skill of SHIPPED_DOMAIN_SKILLS) {
+    const content = getSkillContent(skill);
+    if (content && content.length > 20000) {
+      console.warn(`[skill-manager] shipped skill "${skill.id}" content exceeds 20KB cap (${content.length} chars) — will be truncated at injection time`);
+    }
+  }
+  writeRegistry(registry);
+}
+
 function _canonicalShippedSkillPath(relPath) {
   return _APPLIESTO_PATH_MIGRATIONS[relPath] || relPath;
 }
@@ -180,6 +257,8 @@ function _sanitizeRegistry(raw) {
       createdVia: typeof s.createdVia === 'string' ? s.createdVia : 'unknown',
       layout: s.layout === 'folder' ? 'folder' : 'flat',
       scripts,
+      // Preserve shipped flag — needed by getSkillContent() for content resolution.
+      shipped: !!s.shipped,
     });
   }
   return { version: 1, skills: clean };
@@ -353,8 +432,6 @@ function matchActiveSkills(rawBody, opts = {}) {
 
   const matched = [];
   for (const skill of active) {
-    // Scope filter — only apply if caller passed a scope. Skills with empty
-    // appliesTo are standalone and match every scope.
     if (scope) {
       const at = Array.isArray(skill.appliesTo) ? skill.appliesTo : [];
       if (at.length > 0 && !at.includes(scope)) continue;
@@ -365,18 +442,45 @@ function matchActiveSkills(rawBody, opts = {}) {
 }
 
 // Read full skill content from disk for an entry. Supports both flat
-// `<id>.md` (legacy) and `<id>/SKILL.md` (Anthropic folder layout).
-// For Anthropic SKILL.md: strip frontmatter, return whole body.
-// For legacy flat .md: extract "## Nội dung" section.
+// Resolves content for both user skills and shipped domain rules.
+// Shipped skills (skill.shipped === true): reads skills/shipped/<basename>.md from
+// the workspace template. Strips YAML frontmatter. Falls back to skill.summary.
+// User skills: reads user-skills/<id>.md (legacy flat) or user-skills/<id>/SKILL.md
+// (Anthropic folder layout). For SKILL.md: strips frontmatter. For flat .md: extracts
+// "## Nội dung" section.
 function getSkillContent(skill) {
   if (!skill || !skill.id) return '';
+
+  // Shipped domain skills — always read from skills/shipped/ (workspace template).
+  // Check this BEFORE resolveUserSkillContentPath to avoid false-positives from
+  // user-skills/shipped/ that may exist on some installs.
+  if (skill.shipped) {
+    const { getWorkspace } = require('./workspace');
+    const ws = getWorkspace();
+    if (ws) {
+      const basename = skill.id.replace(/^shipped\//, '');
+      const shippedPath = path.join(ws, 'skills', 'shipped', basename + '.md');
+      if (fs.existsSync(shippedPath)) {
+        try {
+          const raw = fs.readFileSync(shippedPath, 'utf-8');
+          // Shipped skills use YAML frontmatter (--- ... ---). Strip it for injection.
+          // Use \r?\n to handle both Unix LF and Windows CRLF line endings.
+          const m = raw.match(/^---\r?\n[\s\S]+?\r?\n---\r?\n([\s\S]+)$/);
+          return (m ? m[1] : raw).trim();
+        } catch { return skill.summary || ''; }
+      }
+    }
+    return skill.summary || '';
+  }
+
   const skillPath = resolveUserSkillContentPath(skill.id);
   if (!skillPath) return skill.summary || '';
   try {
     const raw = fs.readFileSync(skillPath, 'utf-8');
     // Anthropic SKILL.md: skip YAML frontmatter (--- ... ---), return body
+    // Use \r?\n to handle both Unix LF and Windows CRLF line endings.
     if (skillPath.endsWith('SKILL.md')) {
-      const m = raw.match(/^---\n[\s\S]+?\n---\n([\s\S]+)$/);
+      const m = raw.match(/^---\r?\n[\s\S]+?\r?\n---\r?\n([\s\S]+)$/);
       return (m ? m[1] : raw).trim();
     }
     // Legacy flat .md: extract "## Nội dung" section
@@ -396,8 +500,10 @@ function buildSkillInjectionBlock(rawBody, opts) {
     return `[${skill.name}] (khi: ${trigger})\n${content}`;
   });
   let block = blocks.join('\n\n');
-  if (block && block.length > 5000) {
-    block = block.slice(0, 5000) + '\n[... skill content truncated at 5KB]';
+  // 20KB cap — generous for shipped rule skills (each 5-15KB). Prevents
+  // silent truncation when 2-3 domain rules fire simultaneously on one message.
+  if (block && block.length > 20000) {
+    block = block.slice(0, 20000) + '\n[... skill content truncated at 20KB]';
   }
   return block;
 }
@@ -954,6 +1060,23 @@ function checkConflict({ content, appliesTo, trigger }) {
     }
     if (reasons.length > 0) conflicts.push({ skillId: skill.id, skillName: skill.name, reasons });
   }
+
+  // Also flag overlap with shipped skills (warning only, does not block creation).
+  for (const shipped of SHIPPED_DOMAIN_SKILLS) {
+    const shippedWords = new Set((shipped.summary + ' ' + shipped.trigger).toLowerCase().split(/\s+/).filter(w => w.length > 2));
+    const common = [...newWords].filter(w => shippedWords.has(w));
+    if (common.length >= 3) {
+      conflicts.push({
+        skillId: shipped.id,
+        skillName: shipped.name,
+        reasons: [`User skill overlaps with shipped rule — keywords: ${common.slice(0, 5).join(', ')}`],
+        reason: 'overlaps_with_shipped',
+        warning: `Skill overlaps with shipped rule "${shipped.name}" (${common.slice(0, 5).join(', ')}).`,
+        shippedSkill: shipped.id,
+      });
+    }
+  }
+
   return conflicts;
 }
 
@@ -1032,6 +1155,17 @@ function getShippedSkillContent(relPath) {
   const { getWorkspace } = require('./workspace');
   const ws = getWorkspace();
   if (!ws) return null;
+
+  // Handle new shipped/ prefix (shipped domain rules): shipped/zalo-behavior → skills/shipped/zalo-behavior.md
+  if (relPath.startsWith('shipped/')) {
+    const basename = relPath.replace(/^shipped\//, '');
+    const shippedPath = path.join(ws, 'skills', 'shipped', basename + '.md');
+    if (fs.existsSync(shippedPath)) {
+      try { return fs.readFileSync(shippedPath, 'utf-8'); } catch {}
+    }
+    return null;
+  }
+
   relPath = _canonicalShippedSkillPath(relPath);
   const skillsDir = path.join(ws, 'skills');
   // Try Anthropic folder layout first: `skills/<relPath>/SKILL.md`
@@ -1055,5 +1189,6 @@ module.exports = {
   restoreUserSkill,
   matchActiveSkills, buildSkillInjectionBlock, getSkillContent,
   persistAppliesToMigrationIfNeeded,
+  registerShippedSkills, SHIPPED_DOMAIN_SKILLS,
   _safeRegenInline,
 };

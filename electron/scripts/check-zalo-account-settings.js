@@ -20,7 +20,8 @@ function writeJson(file, value) {
 }
 
 function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (e) { throw new Error(`readJson: failed to parse ${file}: ${e.message}`); }
 }
 
 function legacyState(workspace) {

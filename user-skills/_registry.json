@@ -1,4 +1,45 @@
 {
   "version": 1,
-  "skills": []
+  "skills": [
+    {
+      "id": "shipped/auto-mode-rules",
+      "name": "Quy tắc AUTO-MODE",
+      "type": "rule",
+      "appliesTo": [],
+      "trigger": "khi prompt có tag [AUTO-MODE]",
+      "summary": "Quy tắc khi chạy cron/workflow tự động: không confirm, reply discipline, disambiguation, thứ tự tool, image gen timeout, content pack output.",
+      "enabled": true,
+      "shipped": true
+    },
+    {
+      "id": "shipped/zalo-behavior",
+      "name": "Quy tắc hành vi Zalo",
+      "type": "rule",
+      "appliesTo": [],
+      "trigger": "khi nhắn về kênh Zalo, tin nhắn khách Zalo",
+      "summary": "Phạm vi bot, phòng thủ, format, giọng văn, nhóm, memory, escalate, checklist, follow-up.",
+      "enabled": true,
+      "shipped": true
+    },
+    {
+      "id": "shipped/telegram-behavior",
+      "name": "Quy tắc hành vi Telegram CEO",
+      "type": "rule",
+      "appliesTo": [],
+      "trigger": "khi nhắn về kênh Telegram CEO",
+      "summary": "Tư duy cố vấn, gửi Zalo từ Telegram, quản lý Zalo, task dài multi-step.",
+      "enabled": true,
+      "shipped": true
+    },
+    {
+      "id": "shipped/knowledge-routing",
+      "name": "Quy tắc Knowledge routing",
+      "type": "rule",
+      "appliesTo": [],
+      "trigger": "khi hỏi về nguồn tri thức, knowledge",
+      "summary": "Tra knowledge trước khi trả lời, phạm vi knowledge, fallback strategy, topic không có category riêng.",
+      "enabled": true,
+      "shipped": true
+    }
+  ]
 }

@@ -34,6 +34,9 @@ const _regenPending = new Set();
 
 function getFbSchedulesPath() {
   const ws = getWorkspace();
+  if (!ws) return;  // auto-fix: null guard for workspace path
+  if (!ws) return;  // auto-fix: null guard for workspace path
+  if (!ws) return;  // auto-fix: null guard for workspace path
   if (!ws) return null;
   return path.join(ws, SCHEDULES_FILE);
 }
@@ -1187,7 +1190,7 @@ function handleRoute(urlPath, params, jsonResp, res) {
     if (params.autoPost !== undefined) {
       const newAutoPost = params.autoPost === true || params.autoPost === 'true';
       if (newAutoPost && !existing.autoPost && _sendTelegram) {
-        _sendTelegram(`[FB Schedule] Chuyển "${existing.label}" sang chế độ tự động đăng. Bài sẽ đăng không cần duyệt.`).catch(() => {});
+        _sendTelegram(`[FB Schedule] Chuyển "${existing.label}" sang chế độ tự động đăng. Bài sẽ đăng không cần duyệt.`).catch(e => console.warn('[auto-fix] promise rejected:', e?.message));
       }
       existing.autoPost = newAutoPost;
     }
@@ -1393,7 +1396,7 @@ function cleanupSpentOneTimeSchedules() {
       let pend = null;
       try { pend = loadPending(s.id, s.postDate); } catch {}
       if (pend && pend.status === 'approved' && _sendTelegram) {
-        try { _sendTelegram(`[FB Schedule] Bài "${s.label}" (anh đã duyệt cho ngày ${s.postDate}) KHÔNG đăng được vì máy tắt/ngủ qua giờ đăng. Anh tạo lại nếu vẫn cần nhé.`).catch(() => {}); } catch {}
+        try { _sendTelegram(`[FB Schedule] Bài "${s.label}" (anh đã duyệt cho ngày ${s.postDate}) KHÔNG đăng được vì máy tắt/ngủ qua giờ đăng. Anh tạo lại nếu vẫn cần nhé.`).catch(e => console.warn('[auto-fix] promise rejected:', e?.message)); } catch {}
       }
       auditLog('fb_schedule_onetime_expired', { id: s.id, label: s.label, postDate: s.postDate, pendingStatus: pend?.status || null });
     }

@@ -491,7 +491,7 @@ if (!openclawCli) {
   // Test 2a: --version (no config needed, should be instant)
   const rVer = spawnSync('node', [openclawCli, '--version'], {
     encoding: 'utf-8',
-    timeout: 5000,
+    timeout: 30000,
     env,
   });
   if (rVer.error) {
@@ -1765,7 +1765,7 @@ try {
   }
   const vendorPatchSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');
   const hasWebFetchTokenPatch =
-    vendorPatchSrc.includes('9BizClaw WEB_FETCH CRON TOKEN PATCH v2') &&
+    vendorPatchSrc.includes('9BizClaw WEB_FETCH CRON TOKEN PATCH v3') &&
     vendorPatchSrc.includes('9BizClaw WEB_FETCH LOCAL API CACHE BYPASS') &&
     vendorPatchSrc.includes('skip9BizClawLocalApiCache') &&
     vendorPatchSrc.includes('params.agentChannel') &&

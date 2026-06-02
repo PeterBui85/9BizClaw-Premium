@@ -816,7 +816,13 @@ function regenerateCeoMemoryFile() {
 
   const filePath = path.join(ws, 'CEO-MEMORY.md');
   const current = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '';
-  if (md.trim() !== current.trim()) {
+  // Count "- " bullet lines in each file (fact lines). If new content has more facts
+  // than current, always write (even if the _norm collapse makes strings equal — e.g.
+  // "fact1\nfact2" vs "fact1\nfact2\nfact3" both collapse to single-line strings).
+  const countLines = s => ((s || '').match(/^(\s*)-\s/gm) || []).length;
+  const currentFacts = countLines(current);
+  const newFacts = countLines(md);
+  if (newFacts !== currentFacts || md.trim() !== current.trim()) {
     fs.writeFileSync(filePath, md, 'utf-8');
     console.log('[ceo-memory] CEO-MEMORY.md regenerated (' + totalChars + ' chars, ' + allRows.length + ' active memories)');
   }
@@ -893,7 +899,7 @@ function injectMemoryIntoAgentsMd() {
     // Threshold mirrors AGENTS_MD_BOOTSTRAP_MAX_CHARS in electron/lib/config.js.
     // Warn-only: never throws, never blocks, never modifies the write outcome.
     try {
-      const AGENTS_MD_BOOTSTRAP_MAX_CHARS = 40000; // keep in sync with config.js
+      const AGENTS_MD_BOOTSTRAP_MAX_CHARS = 80000;  // warn at 80K — effective budget is now 120K (0.20 ratio)
       const byteSize = Buffer.byteLength(agents, 'utf-8');
       if (byteSize > AGENTS_MD_BOOTSTRAP_MAX_CHARS) {
         console.warn(

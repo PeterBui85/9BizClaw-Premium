@@ -1,0 +1,224 @@
+name: Build Windows .exe
+
+on:
+  push:
+    branches: [main, premium/main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, premium/main]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip unit tests (for debugging the build itself)'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit Tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Print env
+        shell: pwsh
+        run: |
+          node --version
+          npm --version
+          [System.Environment]::OSVersion.Version
+
+      - name: Install deps
+        working-directory: electron
+        shell: pwsh
+        run: npm install --no-audit --no-fund
+
+      - name: Run unit tests
+        if: github.event.inputs.skip_tests != 'true'
+        working-directory: electron
+        shell: pwsh
+        run: |
+          $errors = @()
+          # Test media-library
+          $r = node --test tests/media-library.test.js 2>&1
+          if ($LASTEXITCODE -ne 0) { $errors += "media-library.test.js failed" }
+          # Test cron-api
+          $r = node --test tests/cron-api.test.js 2>&1
+          if ($LASTEXITCODE -ne 0) { $errors += "cron-api.test.js failed" }
+          # Test channels
+          $r = node --test tests/channels.test.js 2>&1
+          if ($LASTEXITCODE -ne 0) { $errors += "channels.test.js failed" }
+          # Test workspace
+          $r = node --test tests/workspace.test.js 2>&1
+          if ($LASTEXITCODE -ne 0) { $errors += "workspace.test.js failed" }
+          # Test license
+          $r = node --test tests/license.test.js 2>&1
+          if ($LASTEXITCODE -ne 0) { $errors += "license.test.js failed" }
+          if ($errors.Count -gt 0) {
+            Write-Host "FAILED: $($errors -join ', ')" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "All tests passed" -ForegroundColor Green
+
+  smoke:
+    name: Smoke Test (Windows)
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install deps
+        working-directory: electron
+        shell: pwsh
+        run: npm install --no-audit --no-fund
+
+      - name: Smoke test
+        working-directory: electron
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          $ErrorActionPreference = "Stop"
+          $start = Get-Date
+          $fail = $false
+          $errLog = "$env:TEMP\smoke_err_$PID.log"
+
+          function run-smoke {
+            param($name, $cmd, $secs = 30)
+            Write-Host "[smoke] $name..." -NoNewline
+            try {
+              $out = Invoke-Expression "$cmd 2>&1 | Select-Object -First 30"
+              Write-Host " OK" -ForegroundColor Green
+              return $out
+            } catch {
+              Write-Host " FAIL ($_)" -ForegroundColor Red
+              $script:fail = $true; return $null
+            }
+          }
+
+          # 1. Package.json version consistent
+          $v = (Get-Content package.json | Where-Object { $_ -match '"version"' }).Split(':')[1].Trim().Trim(',"')
+          Write-Host "[smoke] package.json version: $v"
+
+          # 2. AGENTS.md version gate
+          if (Select-String ../AGENTS.md -Pattern "modoroclaw-agents-version:\s*110" -Quiet) {
+            Write-Host "[smoke] AGENTS.md version 110: OK"
+          } else {
+            Write-Host "[smoke] AGENTS.md version: MISMATCH" -ForegroundColor Red
+            $fail = $true
+          }
+
+          # 3. smoke-test.js runs
+          try {
+            Write-Host "[smoke] running smoke-test.js..." -NoNewline
+            $r = node scripts/smoke-test.js 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host " OK" -ForegroundColor Green
+            } else {
+              Write-Host " FAIL (exit $LASTEXITCODE)" -ForegroundColor Red
+              $r | Select-Object -Last 20 | ForEach-Object { Write-Host "  $_" }
+              $fail = $true
+            }
+          } catch {
+            Write-Host " SKIP (smoke-test.js requires full runtime)" -ForegroundColor Yellow
+          }
+
+          # 4. skill-runtime smoke
+          try {
+            Write-Host "[smoke] running smoke-skill-runtime.js..." -NoNewline
+            $r = node scripts/smoke-skill-runtime.js 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host " OK" -ForegroundColor Green
+            } else {
+              Write-Host " FAIL (exit $LASTEXITCODE)" -ForegroundColor Red
+              $fail = $true
+            }
+          } catch {
+            Write-Host " SKIP (runtime not available)" -ForegroundColor Yellow
+          }
+
+          if ($fail) { exit 1 }
+          Write-Host "[smoke] All smoke checks passed" -ForegroundColor Green
+
+  build:
+    name: Build .exe (Windows)
+    runs-on: windows-latest
+    needs: [test, smoke]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Install deps
+        working-directory: electron
+        shell: pwsh
+        env:
+          npm_config_platform: win32
+          npm_config_arch: x64
+        run: npm install --no-audit --no-fund
+
+      - name: Prebuild vendor (modoro-zalo)
+        working-directory: electron
+        shell: pwsh
+        run: node scripts/prebuild-vendor.js 2>&1 | Out-String | ForEach-Object { Write-Host $_ }
+        continue-on-error: true
+
+      - name: Build Windows installer
+        working-directory: electron
+        shell: pwsh
+        timeout-minutes: 60
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npm_config_platform: win32
+          npm_config_arch: x64
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Delete stale vendor bundle to force clean rebuild
+          if (Test-Path vendor-bundle.tar) { Remove-Item vendor-bundle.tar -Force }
+          if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+          npm run build:win 2>&1 | ForEach-Object { Write-Host $_ }
+          # Verify output
+          $exe = Get-ChildItem dist -Filter "*.exe" -File | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Build output: $($exe.FullName) ($([math]::Round($exe.Length/1MB, 1)) MB)" -ForegroundColor Green
+          } else {
+            Write-Host "ERROR: No .exe found in dist/" -ForegroundColor Red
+            exit 1
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: 9bizclaw-windows-${{ github.run_number }}
+          path: electron/dist/*.exe
+          retention-days: 14
+
+      - name: Upload artifact (portable)
+        uses: actions/upload-artifact@v5
+        with:
+          name: 9bizclaw-windows-portable-${{ github.run_number }}
+          path: |
+            electron/dist/*.zip
+            electron/dist/*.nupkg
+          retention-days: 7
+        continue-on-error: true

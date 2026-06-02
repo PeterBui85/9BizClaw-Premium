@@ -1,9 +1,9 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 143,
-    "ipcHandlers": 207,
-    "preloadBridges": 200,
+    "apiRoutes": 148,
+    "ipcHandlers": 212,
+    "preloadBridges": 205,
     "dashboardPages": 18,
     "capabilityContracts": 5
   },
@@ -1044,6 +1044,51 @@
       ]
     },
     {
+      "path": "/api/onboarding",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/onboarding/advance",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/onboarding/dismiss",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/onboarding/status",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/onboarding/tick",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/order/create",
       "sources": [
         "electron/lib/cron-api.js"
@@ -1850,6 +1895,18 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "onboarding:advance",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "onboarding:dismiss",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "onboarding:status",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "open-backup-file-dialog",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -2002,11 +2059,19 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "search-media-assets",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "seed-group-history-all",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
       "channel": "seed-group-history-now",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "select-fb-page",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -2135,6 +2200,11 @@
     {
       "name": "addCron",
       "channel": "add-cron",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "advanceOnboarding",
+      "channel": "onboarding:advance",
       "source": "electron/preload.js"
     },
     {
@@ -2313,6 +2383,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "dismissOnboarding",
+      "channel": "onboarding:dismiss",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "downloadAndInstallUpdate",
       "channel": "download-and-install-update",
       "source": "electron/preload.js"
@@ -2435,6 +2510,11 @@
     {
       "name": "getLicenseStatus",
       "channel": "get-license-status",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "getOnboardingStatus",
+      "channel": "onboarding:status",
       "source": "electron/preload.js"
     },
     {
@@ -2978,8 +3058,18 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "searchMediaAssets",
+      "channel": "search-media-assets",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "seedGroupHistoryNow",
       "channel": "seed-group-history-now",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "selectFbPage",
+      "channel": "select-fb-page",
       "source": "electron/preload.js"
     },
     {
@@ -3231,116 +3321,116 @@
   ],
   "largeSourceFiles": [
     {
-      "path": "electron/ui/dashboard.html",
-      "bytes": 672465
-    },
-    {
-      "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 284349
-    },
-    {
-      "path": "electron/lib/cron-api.js",
-      "bytes": 182768
-    },
-    {
-      "path": "electron/lib/cron.js",
-      "bytes": 142188
-    },
-    {
-      "path": "electron/ui/wizard.html",
-      "bytes": 117791
-    },
-    {
-      "path": "electron/lib/channels.js",
-      "bytes": 99474
-    },
-    {
-      "path": "electron/lib/knowledge.js",
-      "bytes": 96863
-    },
-    {
-      "path": "electron/lib/gateway.js",
-      "bytes": 86262
-    },
-    {
-      "path": "electron/lib/runtime-installer.js",
-      "bytes": 86209
-    },
-    {
-      "path": "electron/lib/fb-schedule.js",
-      "bytes": 68926
-    },
-    {
-      "path": "electron/ui/preview-telegram-redesign.html",
-      "bytes": 66621
-    },
-    {
-      "path": "electron/lib/config.js",
-      "bytes": 63822
-    },
-    {
-      "path": "electron/lib/workspace.js",
-      "bytes": 54658
-    },
-    {
-      "path": "electron/lib/vendor-patches.js",
-      "bytes": 49200
-    },
-    {
-      "path": "electron/lib/nine-router.js",
-      "bytes": 46625
-    },
-    {
-      "path": "electron/lib/skill-manager.js",
-      "bytes": 45069
-    },
-    {
-      "path": "electron/lib/zalo-plugin.js",
-      "bytes": 43403
-    },
-    {
-      "path": "electron/lib/google-api.js",
-      "bytes": 39642
-    },
-    {
       "path": "electron/lib/boot.js",
       "bytes": 37246
-    },
-    {
-      "path": "electron/lib/ceo-memory.js",
-      "bytes": 36057
-    },
-    {
-      "path": "electron/lib/media-library.js",
-      "bytes": 34646
-    },
-    {
-      "path": "electron/lib/conversation.js",
-      "bytes": 32480
-    },
-    {
-      "path": "electron/ui/brain.js",
-      "bytes": 28661
-    },
-    {
-      "path": "electron/ui/splash.html",
-      "bytes": 28238
-    },
-    {
-      "path": "electron/lib/google-routes.js",
-      "bytes": 26715
     },
     {
       "path": "electron/lib/brain-graph.js",
       "bytes": 26223
     },
     {
+      "path": "electron/lib/ceo-memory.js",
+      "bytes": 36528
+    },
+    {
+      "path": "electron/lib/channels.js",
+      "bytes": 99822
+    },
+    {
+      "path": "electron/lib/config.js",
+      "bytes": 64106
+    },
+    {
+      "path": "electron/lib/conversation.js",
+      "bytes": 32431
+    },
+    {
+      "path": "electron/lib/cron-api.js",
+      "bytes": 185930
+    },
+    {
+      "path": "electron/lib/cron.js",
+      "bytes": 142294
+    },
+    {
+      "path": "electron/lib/dashboard-ipc.js",
+      "bytes": 287594
+    },
+    {
       "path": "electron/lib/fb-publisher.js",
-      "bytes": 21776
+      "bytes": 21954
+    },
+    {
+      "path": "electron/lib/fb-schedule.js",
+      "bytes": 69221
+    },
+    {
+      "path": "electron/lib/gateway.js",
+      "bytes": 87849
+    },
+    {
+      "path": "electron/lib/google-api.js",
+      "bytes": 39708
+    },
+    {
+      "path": "electron/lib/google-routes.js",
+      "bytes": 26715
+    },
+    {
+      "path": "electron/lib/knowledge.js",
+      "bytes": 96863
+    },
+    {
+      "path": "electron/lib/media-library.js",
+      "bytes": 38494
     },
     {
       "path": "electron/lib/migration.js",
-      "bytes": 20613
+      "bytes": 20682
+    },
+    {
+      "path": "electron/lib/nine-router.js",
+      "bytes": 46717
+    },
+    {
+      "path": "electron/lib/runtime-installer.js",
+      "bytes": 86366
+    },
+    {
+      "path": "electron/lib/skill-manager.js",
+      "bytes": 50712
+    },
+    {
+      "path": "electron/lib/vendor-patches.js",
+      "bytes": 49328
+    },
+    {
+      "path": "electron/lib/workspace.js",
+      "bytes": 56067
+    },
+    {
+      "path": "electron/lib/zalo-plugin.js",
+      "bytes": 43403
+    },
+    {
+      "path": "electron/ui/brain.js",
+      "bytes": 28661
+    },
+    {
+      "path": "electron/ui/dashboard.html",
+      "bytes": 687785
+    },
+    {
+      "path": "electron/ui/preview-telegram-redesign.html",
+      "bytes": 66621
+    },
+    {
+      "path": "electron/ui/splash.html",
+      "bytes": 28238
+    },
+    {
+      "path": "electron/ui/wizard.html",
+      "bytes": 117016
     }
   ]
 }

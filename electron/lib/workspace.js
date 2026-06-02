@@ -148,41 +148,80 @@ function getMediaAssetsDir() { return path.join(getWorkspace(), 'media-assets');
 // ─── Facebook Config ────────────────────────────────────────────
 function getFbConfigPath() { return path.join(getWorkspace(), 'fb-config.json'); }
 
+function _decryptToken(encrypted) {
+  try {
+    const { safeStorage } = require('electron');
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+    }
+  } catch (e) {
+    console.error('[fb-config] token decryption failed:', e.message);
+  }
+  return null;
+}
+
 function readFbConfig() {
   try {
     const raw = fs.readFileSync(getFbConfigPath(), 'utf-8');
     const cfg = JSON.parse(raw);
-    if (cfg.accessToken) {
-      try {
-        const { safeStorage } = require('electron');
-        if (safeStorage.isEncryptionAvailable()) {
-          cfg.accessToken = safeStorage.decryptString(Buffer.from(cfg.accessToken, 'base64'));
+    // Migrate old single-page format → pages array
+    if (!cfg.pages && cfg.pageId) {
+      cfg.pages = [{ id: cfg.pageId, name: cfg.pageName, accessToken: cfg.accessToken }];
+      cfg.selectedPageId = cfg.pageId;
+    }
+    // Decrypt each page token
+    if (cfg.pages) {
+      for (const p of cfg.pages) {
+        if (p.accessToken) {
+          const decrypted = _decryptToken(p.accessToken);
+          if (decrypted) { p.accessToken = decrypted; }
+          else { p.accessToken = null; p.tokenError = 'decrypt_failed'; }
         }
-      } catch (e) {
-        // Keychain changed / profile moved → the encrypted token can't be read.
-        // Mark a distinct error so callers say "reconnect" rather than the
-        // misleading "Facebook not connected" (the token IS there, just unreadable).
-        console.error('[fb-config] token decryption failed — token is unusable:', e.message);
-        cfg.accessToken = null;
-        cfg.tokenError = 'decrypt_failed';
       }
+    }
+    // Backward compat: set top-level pageId/pageName/accessToken from selected page
+    const sel = cfg.pages && cfg.pages.find(p => p.id === cfg.selectedPageId);
+    if (sel) {
+      cfg.pageId = sel.id;
+      cfg.pageName = sel.name;
+      cfg.accessToken = sel.accessToken;
+      cfg.tokenError = sel.tokenError || undefined;
+    } else if (cfg.pages && cfg.pages.length) {
+      cfg.selectedPageId = cfg.pages[0].id;
+      cfg.pageId = cfg.pages[0].id;
+      cfg.pageName = cfg.pages[0].name;
+      cfg.accessToken = cfg.pages[0].accessToken;
+      cfg.tokenError = cfg.pages[0].tokenError || undefined;
     }
     return cfg;
   } catch { return null; }
 }
 
+function _encryptToken(plaintext) {
+  try {
+    const { safeStorage } = require('electron');
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.encryptString(plaintext).toString('base64');
+    }
+    console.warn('[fb-config] safeStorage unavailable — storing token in plaintext');
+  } catch {}
+  return plaintext;
+}
+
 function writeFbConfig(cfg) {
   const toWrite = { ...cfg };
-  if (toWrite.accessToken) {
-    try {
-      const { safeStorage } = require('electron');
-      if (safeStorage.isEncryptionAvailable()) {
-        toWrite.accessToken = safeStorage.encryptString(toWrite.accessToken).toString('base64');
-      } else {
-        console.warn('[fb-config] safeStorage unavailable — storing token in plaintext');
-      }
-    } catch {}
+  // Encrypt each page token
+  if (toWrite.pages) {
+    toWrite.pages = toWrite.pages.map(p => ({
+      ...p,
+      accessToken: p.accessToken ? _encryptToken(p.accessToken) : null,
+    }));
   }
+  // Remove legacy top-level token fields (stored per-page now)
+  delete toWrite.accessToken;
+  delete toWrite.pageId;
+  delete toWrite.pageName;
+  delete toWrite.tokenError;
   fs.writeFileSync(getFbConfigPath(), JSON.stringify(toWrite, null, 2), 'utf-8');
 }
 
@@ -380,7 +419,7 @@ function seedWorkspace() {
           if (dirName === 'skills') {
             // Whitelist of subdirs known to have been SHIPPED in past versions.
             // Cleanup runs ONLY in these dirs. Anything else = CEO-owned, preserved.
-            const cleanupSubdirs = ['operations', 'marketing', 'content', 'finance', 'strategy', 'advisory', 'growth', 'hr', 'sales'];
+            const cleanupSubdirs = ['operations', 'marketing', 'content', 'finance', 'strategy', 'advisory', 'growth', 'hr', 'sales', 'shipped'];
             let purged = 0;
             const purgeOrphans = (rel) => {
               const srcDir = path.join(tmplDir, rel);
@@ -509,6 +548,10 @@ function seedWorkspace() {
   // on-disk registry matches current shipped skill paths (G-I2 fix 2026-05-15).
   try { require('./skill-manager').persistAppliesToMigrationIfNeeded(); } catch (e) {
     console.warn('[seedWorkspace] appliesTo migration persist skipped:', e?.message);
+  }
+  // Register shipped domain skills (auto-mode, zalo-behavior, telegram-behavior, knowledge-routing).
+  try { require('./skill-manager').registerShippedSkills(); } catch (e) {
+    console.warn('[seedWorkspace] registerShippedSkills skipped:', e?.message);
   }
 
   // Seed CEO-MEMORY.md (hot tier for Hermes-style memory)

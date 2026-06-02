@@ -1636,6 +1636,7 @@ async function ensureModoroZaloPlugin(onProgress) {
   if (onProgress) onProgress({ step: 'plugin', percent: 0, message: 'Đang cài plugin Zalo...', subStep: 'modoro-zalo' });
 
   const srcPath = getBundledModoroZaloPath();
+  if (!srcPath) return;  // auto-fix: null guard for workspace path
   const destPath = path.join(getRuntimeNodeModulesDir(), 'modoro-zalo');
 
   if (!fs.existsSync(srcPath)) {
@@ -1687,6 +1688,7 @@ async function checkInstallation() {
   const nodeStatus = await detectNodeInstallation();
   const installedPackages = await getInstalledPackages();
   const runtimeVersion = getInstalledVersion();
+  if (!runtimeVersion) return { ready: false, filesReady: false, runtimeVersion: null };
   const zaloReady = checkModoroZaloReady();
   const pythonReady = checkPythonRuntimeReady();
 

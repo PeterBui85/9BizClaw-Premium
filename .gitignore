@@ -168,3 +168,14 @@ zalo-allowlist.json
 # SQLite transient (WAL/SHM)
 *.db-wal
 *.db-shm
+
+# Generated bug-sweep artifacts (autonomous-bug-sweep.js output)
+bug-sweep-*.json
+bug-sweep-*.md
+
+# Editor state
+.cursor/
+
+# Runtime media/brand data (lives in %APPDATA% at runtime, not source)
+/brand-assets/
+/media-assets/

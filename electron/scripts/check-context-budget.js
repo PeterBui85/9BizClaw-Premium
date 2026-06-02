@@ -86,4 +86,22 @@ testOneMillionContextIsNotCappedDown();
 testIdempotentWhenAlreadyApplied();
 testSmokeGuardNoHard20kBudget();
 
+function testAgentsMdSizeGuard() {
+  // AGENTS.md size guard — fail smoke if template exceeds the effective bootstrapMaxChars
+  // floor. Prevents silent truncation from creeping in across releases without warning.
+  // (bootstrapMaxChars is computed; size check uses the premium 200K floor.)
+  const agentsPath = path.join(root, '..', 'AGENTS.md');
+  const agentsSize = fs.statSync(agentsPath).size;
+  const maxChars = resolveBootstrapMaxCharsForContext(200000);
+  if (agentsSize > maxChars) {
+    throw new Error(
+      `[check-context-budget] AGENTS.md is ${agentsSize} chars — exceeds bootstrapMaxChars floor (${maxChars}). ` +
+      `Grow BOOTSTRAP_MAX_CHARS_CAP in config.js or split AGENTS.md into topic files.`
+    );
+  }
+  console.log(`  [AGENTS.md size guard] ${agentsSize} / ${maxChars} chars — OK`);
+}
+
+testAgentsMdSizeGuard();
+
 console.log('[check-context-budget] PASS');

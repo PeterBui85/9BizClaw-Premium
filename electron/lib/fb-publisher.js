@@ -313,18 +313,20 @@ async function verifyToken(token) {
   try {
     const data = await graphRequest('GET', '/me/accounts?fields=id,name,access_token,tasks&limit=25', token);
     if (data.data && data.data.length > 0) {
-      const page = data.data.find(p => p && p.access_token && hasPageCreateContentTask(p.tasks));
-      if (!page) {
+      const pages = data.data
+        .filter(p => p && p.access_token && hasPageCreateContentTask(p.tasks))
+        .map(p => ({ id: p.id, name: p.name, accessToken: p.access_token }));
+      if (!pages.length) {
         return { valid: false, error: 'Không tìm thấy Fanpage có quyền tạo nội dung. ' + requiredMsg };
       }
-      return { valid: true, pageId: page.id, pageName: page.name, pageToken: page.access_token };
+      return { valid: true, pages, pageId: pages[0].id, pageName: pages[0].name, pageToken: pages[0].accessToken };
     }
     return { valid: false, error: 'Không tìm thấy Fanpage nào. ' + requiredMsg };
   } catch (accountsErr) {
     try {
       const page = await graphRequest('GET', '/me?fields=id,name,category', token);
       if (page.id && page.category !== undefined) {
-        return { valid: true, pageId: page.id, pageName: page.name, pageToken: token };
+        return { valid: true, pages: [{ id: page.id, name: page.name, accessToken: token }], pageId: page.id, pageName: page.name, pageToken: token };
       }
       return { valid: false, error: requiredMsg };
     } catch (pageErr) {

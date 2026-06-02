@@ -126,7 +126,7 @@ function collectLargeSourceFiles() {
     let bytes = 0;
     try { bytes = Buffer.byteLength(readText(rel).replace(/\r\n/g, '\n'), 'utf8'); } catch {}
     return { path: rel, bytes };
-  }).filter(f => f.bytes >= 20000).sort((a, b) => b.bytes - a.bytes);
+  }).filter(f => f.bytes >= 20000).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 function collectApiRefsFromText(rel, text) {

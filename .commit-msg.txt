@@ -1,7 +1,11 @@
-fix: add untracked files missing from CI — backup.js, brain-graph, prompts
+chore(agents): trim AGENTS.md 35k to 30k + bump version 109 to 110
 
-backup.js, brain-graph.js, brain-layout-worker.js, brain.js, and prompt/skill
-reference files existed locally but were never committed. CI smoke test fails
-on backup module require because the file is absent in the repo.
+Dedup + skill-offload: moved doc-creation detail, Zalo internal-person,
+image-tra-ảnh rules out to skill files. AGENTS.md: 35,024 to 30,244 chars.
+CEO-memory budget: from 2,000 (floored) to 4,756 chars.
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Version bump triggers seedWorkspace() re-seed on next launch for all
+existing installs. Bumped in 4 places: AGENTS.md, workspace.js,
+smoke-skill-runtime.js, smoke-test.js.
+
+Auto-regenerated system-map.

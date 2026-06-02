@@ -555,7 +555,7 @@ async function runCronAgentPrompt(prompt, opts = {}) {
     const lbl = opts?.label || 'cron';
     console.warn(`[cron-agent] queue full (depth=${_cronAgentQueueDepth}) — rejecting "${lbl}"`);
     try { journalCronRun({ phase: 'fail', label: lbl, reason: 'queue-full' }); } catch {}
-    try { sendCeoAlert(`*Cron quá tải*\n\nLịch "${lbl}" bị bỏ qua vì hàng đợi đầy (gateway đang chậm). Em sẽ chạy lại lần lịch kế tiếp.`).catch(() => {}); } catch {}
+    try { sendCeoAlert(`*Cron quá tải*\n\nLịch "${lbl}" bị bỏ qua vì hàng đợi đầy (gateway đang chậm). Em sẽ chạy lại lần lịch kế tiếp.`).catch(e => console.warn('[auto-fix] promise rejected:', e?.message)); } catch {}
     return false;
   }
   _cronAgentQueueDepth++;
@@ -2351,7 +2351,7 @@ function _startCronJobsInner() {
         // make cron.schedule throw and the builtin schedule was silently skipped.
         // Surface it instead of letting a CEO report quietly never fire.
         console.error(`[cron] builtin ${s.id} has INVALID cronExpr "${cronExpr}" — skipping + alerting`);
-        try { sendCeoAlert(`*Lịch "${s.id}" lỗi cấu hình giờ*\n\nGiờ đặt không hợp lệ (\`${cronExpr}\`) nên lịch này sẽ KHÔNG chạy. Anh kiểm tra lại giờ trong cài đặt nhé.`).catch(() => {}); } catch {}
+        try { sendCeoAlert(`*Lịch "${s.id}" lỗi cấu hình giờ*\n\nGiờ đặt không hợp lệ (\`${cronExpr}\`) nên lịch này sẽ KHÔNG chạy. Anh kiểm tra lại giờ trong cài đặt nhé.`).catch(e => console.warn('[auto-fix] promise rejected:', e?.message)); } catch {}
       } else {
         try {
           const job = cron.schedule(cronExpr, handler, { timezone: 'Asia/Ho_Chi_Minh' });

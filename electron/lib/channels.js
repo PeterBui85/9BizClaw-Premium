@@ -758,11 +758,16 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
             // 401/403: token revoked or bot blocked — log to missed-alerts
             if (code === 401 || code === 403) {
               console.error('[sendTelegram] token invalid/blocked:', desc);
-              try {
-                const logPath = path.join(getWorkspace(), 'logs', 'ceo-alerts-missed.log');
-                fs.mkdirSync(path.dirname(logPath), { recursive: true });
-                fs.appendFileSync(logPath, `${new Date().toISOString()}\tTELEGRAM-${code}\t${desc}\t${text.slice(0, 200)}\n`);
-              } catch {}
+              const _ws = getWorkspace();
+              if (_ws) {
+                try {
+                  const logPath = path.join(_ws, 'logs', 'ceo-alerts-missed.log');
+                  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+                  fs.appendFileSync(logPath, `${new Date().toISOString()}\tTELEGRAM-${code}\t${desc}\t${text.slice(0, 200)}\n`);
+                } catch (e) { console.warn('[sendTelegram] missed-alert disk log failed:', e?.message); }
+              } else {
+                console.warn('[sendTelegram] no workspace — missed alert not written to disk');
+              }
               resolve(null);
               return;
             }
@@ -1107,6 +1112,7 @@ function readZaloMediaPolicy() {
 
 function resolveAllowedMediaRoots(extraRoots = []) {
   const ws = getWorkspace();
+  if (!ws) return [];  // No workspace — no allowed media roots
   const roots = [
     path.join(ws, 'media-assets'),
     path.join(ws, 'brand-assets'),

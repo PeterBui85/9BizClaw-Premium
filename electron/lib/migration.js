@@ -204,6 +204,7 @@ function createBackup() {
   console.log('[migration] Creating backup...');
 
   const userData = getUserDataDir();
+  if (!userData) return;  // auto-fix: null guard for workspace path
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupDir = path.join(getBackupDir(), `backup-${timestamp}`);
 

@@ -1459,11 +1459,12 @@ ${__fapPolicy}
   }
   // === END 9BizClaw GENDER-HINT PATCH v2 ===
 
-  // === 9BizClaw USER-SKILLS-INJECT PATCH v2 (lazy match) ===
-  // Read user-skills/_registry.json, filter active skills by trigger-keyword
-  // match against rawBody, inject ONLY matching skills' content. Replaces v1
-  // which eagerly merged ALL active skills into INLINE.md. v2 saves context
-  // budget (typical turn: 0-2 matched skills instead of 20-50 always loaded).
+  // === 9BizClaw USER-SKILLS-INJECT PATCH v3 (unified with skill-manager.js) ===
+  // v3: Replaced inline trigger matching with call to buildSkillInjectionBlock()
+  // from skill-manager.js. Single source of truth for all skill matching (CEO
+  // Telegram via chat.js + Zalo inbound via inbound.ts). Stop words, bigrams,
+  // scope filter, and injection caps are all handled by skill-manager.js.
+  // Shipped domain skills now fire on BOTH CEO Telegram and Zalo inbound.
   try {
     const __usFs = require("node:fs");
     const __usPath = require("node:path");
@@ -1489,129 +1490,29 @@ ${__fapPolicy}
 
     let __usWsDir: string | null = null;
     for (const __c of __usWsCandidates) {
-      if (__usFs.existsSync(__usPath.join(__c, "user-skills", "_registry.json"))) { __usWsDir = __c; break; }
+      if (__usFs.existsSync(__usPath.join(__c, "electron", "lib", "skill-manager.js"))) { __usWsDir = __c; break; }
     }
 
     if (__usWsDir) {
-      const __usReg = JSON.parse(__usFs.readFileSync(__usPath.join(__usWsDir, "user-skills", "_registry.json"), "utf-8"));
-      const __usActive: any[] = Array.isArray(__usReg?.skills) ? __usReg.skills.filter((s: any) => s && s.enabled !== false) : [];
-
-      if (__usActive.length > 0) {
-        // Normalize: lowercase + strip diacritics + đ→d for diacritic-insensitive matching.
-        const __usNorm = (s: string) => String(s || "").toLowerCase()
-          .normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "")
-          .replace(/đ/g, "d");
-        // Stop words: pronouns, particles, conditionals, fillers — avoid false positives.
-        const __usStop = new Set([
-          'khi','neu','la','va','co','khong','thi','cua','cho','vao','voi','tu','den','ma','rat','qua',
-          'toi','con','anh','em','chi','minh','ban','no','ho','ta','may','tao',
-          'ay','do','ne','nha','ah','oi','nhi','sao','vay','the','day','kia','thoi','nua','them','gi','nao','ca','hay','cung',
-          'luc','tren','duoi','trong','ngoai','sau','truoc','roi','ra','di','lai','xuong','len','ve',
-          'cac','mot','de','duoc','lam','muon','can',
-          'hom','nay','gio',
-        ]);
-        const __usTokenize = (s: string): string[] => __usNorm(s).split(/[^\w]+/).filter(Boolean).filter(w => !__usStop.has(w));
-
-        // Precompute body tokens + bigrams once.
-        const __usBodyArr = __usTokenize(__usOriginalRawBody);
-        const __usBodyTokens = new Set(__usBodyArr);
-        const __usBodyBigrams = new Set<string>();
-        for (let i = 0; i < __usBodyArr.length - 1; i++) {
-          __usBodyBigrams.add(__usBodyArr[i] + ' ' + __usBodyArr[i + 1]);
-        }
-
-        // Scope filter for Zalo channel — only skills standalone or scoped to
-        // these shipped IDs apply on Zalo customer messages. Without this,
-        // a skill the CEO scoped to "operations/telegram-ceo" or "marketing/..."
-        // would also inject on Zalo customer turns (G-C1 fix 2026-05-15).
-        const __usScopes = new Set<string>([
-          "operations/zalo",
-          "operations/knowledge-base",
-          "operations/follow-up",
-          "operations/veteran-behavior",
-          "operations/zalo-customer-care", // legacy alias pre-consolidation
-          "operations/zalo-reply-rules",   // legacy alias
-          "operations/zalo-group",          // legacy alias
-        ]);
-        const __usMatched: any[] = [];
-        for (const __sk of __usActive) {
-          // appliesTo filter: standalone (empty) applies everywhere; scoped
-          // entries must include a Zalo-relevant target.
-          const __at: string[] = Array.isArray(__sk.appliesTo) ? __sk.appliesTo : [];
-          if (__at.length > 0 && !__at.some(s => __usScopes.has(s))) continue;
-          const __trig = __usNorm(__sk.trigger || "").trim();
-          let __apply = false;
-          if (!__trig) {
-            __apply = true;
-          } else if (/^(luon|always|moi)\b/.test(__trig)) {
-            __apply = true;
-          } else {
-            const __trigTokens = __usTokenize(__trig);
-            if (__trigTokens.length === 0) {
-              __apply = true; // all stops → universal
-            } else {
-              // Specific token match (word boundary, length >= 4)
-              for (const __tw of __trigTokens) {
-                if (__tw.length >= 4 && __usBodyTokens.has(__tw)) { __apply = true; break; }
-              }
-              // Bigram match for Vietnamese compounds ("báo cáo", "tồn kho")
-              if (!__apply) {
-                for (let i = 0; i < __trigTokens.length - 1; i++) {
-                  const __bg = __trigTokens[i] + ' ' + __trigTokens[i + 1];
-                  if (__usBodyBigrams.has(__bg)) { __apply = true; break; }
-                }
-              }
-            }
-          }
-          if (__apply) __usMatched.push(__sk);
-        }
-
-        if (__usMatched.length > 0) {
-          const __usBlocks: string[] = [];
-          for (const __sk of __usMatched) {
-            if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(__sk.id)) continue;
-            let __content = "";
-            try {
-              // 2026-05-15: support BOTH layouts.
-              //   - Anthropic folder skill: user-skills/<id>/SKILL.md  (frontmatter + body)
-              //   - Legacy flat skill:     user-skills/<id>.md         ("## Nội dung" section)
-              // Previously this read only the flat path → folder skills silently
-              // degraded to the 120-char registry summary on Zalo channel.
-              const __folderSkillMd = __usPath.join(__usWsDir, "user-skills", __sk.id, "SKILL.md");
-              const __flatSkillMd = __usPath.join(__usWsDir, "user-skills", __sk.id + ".md");
-              if (__usFs.existsSync(__folderSkillMd)) {
-                const __raw = __usFs.readFileSync(__folderSkillMd, "utf-8");
-                // Strip YAML frontmatter (---...---) then take whole body as content.
-                const __fm = __raw.match(/^---\n[\s\S]+?\n---\n([\s\S]+)$/);
-                __content = (__fm ? __fm[1] : __raw).trim();
-              } else if (__usFs.existsSync(__flatSkillMd)) {
-                const __raw = __usFs.readFileSync(__flatSkillMd, "utf-8");
-                const __m = __raw.match(/## Nội dung\s*\n([\s\S]+?)(?:\n##|\n*$)/);
-                __content = __m ? __m[1].trim() : (__sk.summary || "");
-              } else {
-                __content = __sk.summary || "";
-              }
-            } catch { __content = __sk.summary || ""; }
-            const __trigLabel = (__sk.trigger || "").trim() || "luôn luôn";
-            __usBlocks.push(`[${__sk.name}] (khi: ${__trigLabel})\n${__content}`);
-          }
-          let __usTotalLen = 0;
-          const __usCapped: string[] = [];
-          for (const __b of __usBlocks) {
-            if (__usCapped.length > 0 && __usTotalLen + __b.length > 3000) break;
-            __usCapped.push(__b);
-            __usTotalLen += __b.length;
-          }
-          const __block = __usCapped.join("\n\n");
-          rawBody = `<active-user-skills>\n${__block}\n</active-user-skills>\n\n${rawBody}`;
-          runtime.log?.(`modoro-zalo: injected ${__usCapped.length}/${__usActive.length} user-skills (lazy match, ${__usTotalLen} chars) for sender=${message.senderId}`);
-        }
+      const __usSmPath = __usPath.join(__usWsDir, "electron", "lib", "skill-manager.js");
+      // Suppress require warnings from skill-manager's own lazy workspace require.
+      const __usSm = require(__usSmPath);
+      // Call the shared injection function. Scope: Zalo inbound = operations/zalo.
+      const __usBlock = __usSm.buildSkillInjectionBlock(
+        String(__usOriginalRawBody || ''),
+        { scope: 'operations/zalo' }
+      );
+      if (__usBlock) {
+        rawBody = `<active-user-skills>\n${__usBlock}\n</active-user-skills>\n\n${rawBody}`;
+        runtime.log?.(`modoro-zalo: injected user-skills via skill-manager.js for sender=${message.senderId}`);
       }
+    } else {
+      runtime.log?.(`modoro-zalo: skill-manager.js not found, skipping skill injection`);
     }
   } catch (__usErr) {
     runtime.log?.("modoro-zalo: user-skills inject error: " + String(__usErr));
   }
-  // === END 9BizClaw USER-SKILLS-INJECT PATCH v2 ===
+  // === END 9BizClaw USER-SKILLS-INJECT PATCH v3 ===
 
 
 

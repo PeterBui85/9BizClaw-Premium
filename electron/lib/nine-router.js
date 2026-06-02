@@ -665,6 +665,7 @@ function nineRouterApi(method, path, body = null, timeoutMs = 5000) {
         let buf = '';
         res.setEncoding('utf8');
         res.on('data', (c) => { buf += c; });
+        res.on('error', () => resolve({ success: false, error: 'Response stream error' }));
         res.on('end', () => {
           let parsed = null;
           try { parsed = buf ? JSON.parse(buf) : {}; }

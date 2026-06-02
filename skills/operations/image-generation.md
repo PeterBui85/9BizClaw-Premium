@@ -98,3 +98,7 @@ Route này tạo ảnh rồi tự gửi vào nhóm Zalo khi xong. `caption` = te
 - CEO nói "dùng logo" / "dùng ảnh sản phẩm" / "dùng mascot" — gọi `GET /api/brand-assets/list` trước.
 - Nếu rỗng — "Anh chưa upload tài sản thương hiệu nào. Vào Dashboard > Facebook > Tài sản thương hiệu để thêm."
 - Nếu có file, ưu tiên file phù hợp nhất và đi thẳng vào generate. Không được viện vào lý do "mất access", "chưa kéo được", hay "trong phiên này chưa thấy asset".
+
+## Trả ảnh cho CEO
+
+Khi tạo ảnh xong, trả path ảnh vừa tạo trong `mediaUrls`. KHÔNG kèm ảnh cũ từ lần tạo trước trừ khi CEO đang yêu cầu chỉnh sửa/so sánh với ảnh đó. Mascot, logo, brand assets KHÔNG BAO GIỜ tự động đính kèm — chỉ kèm khi CEO yêu cầu cụ thể.

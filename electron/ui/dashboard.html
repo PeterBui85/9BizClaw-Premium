@@ -476,6 +476,14 @@
     .modal-box img { width:240px; height:240px; border-radius:12px; background:white; margin-bottom:12px; }
     .modal-box .btn { margin:4px; }
     .modal-success { color:var(--success); font-weight:600; font-size:14px; }
+    /* === Image assets page tab bar === */
+    .img-tabs { display:flex; gap:2px; padding:0 24px; border-bottom:1px solid var(--border); margin-bottom:0; background:var(--bg); }
+    .img-tab { padding:10px 18px; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-muted); border:none; background:none; border-bottom:2px solid transparent; transition:color 0.15s, border-color 0.15s; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; border-radius:6px 6px 0 0; }
+    .img-tab:hover { color:var(--text); background:var(--surface-hover, rgba(0,0,0,0.03)); }
+    .img-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+    .img-tab-panel { display:none; padding-top:20px; }
+    .img-tab-panel.active { display:block; }
+
     /* Product batch upload modal */
     .product-batch-modal { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:0; max-width:500px; width:92%; box-shadow:var(--shadow-lg, 0 20px 60px rgba(0,0,0,.5)); overflow:hidden; text-align:left; }
     .product-batch-head { display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border); }
@@ -900,13 +908,17 @@
     .skill-list-item .skill-dot.shipped { border:1.5px solid var(--text-muted); background:transparent; }
     .skill-list-item.active .skill-dot.shipped { border-color:#fff; }
     .skill-detail-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text-muted); font-size:14px; gap:12px; }
-    .skill-detail-name { font-size:18px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .skill-detail-meta { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+    .skill-detail-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .skill-detail-header-left { min-width:0; flex:1; }
+    .skill-detail-name { font-size:17px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.4; }
+    .skill-detail-meta { font-size:12px; color:var(--text-secondary); margin-top:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .skill-detail-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; padding-top:2px; }
     .skill-detail-divider { height:1px; background:var(--border); margin:16px 0; }
-    .skill-detail-section-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+    .skill-detail-section-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; font-weight:500; }
     .skill-detail-section { margin-bottom:16px; }
-    .skill-detail-section-value { font-size:14px; color:var(--text-primary); padding-left:2px; }
-    .skill-detail-content { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code','Consolas',monospace; line-height:1.6; color:var(--text-primary); max-height:60vh; overflow-y:auto; }
+    .skill-detail-section-value { font-size:14px; color:var(--text-primary); padding-left:2px; line-height:1.5; }
+    .skill-detail-content { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:12.5px; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code','Consolas',monospace; line-height:1.6; color:var(--text-primary); max-height:60vh; overflow-y:auto; }
+    .skill-type-badge { display:inline-flex; align-items:center; padding:1px 7px; border-radius:4px; font-size:10.5px; font-weight:500; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); letter-spacing:0.2px; }
     .skills-list-create-btn { display:flex; align-items:center; gap:6px; padding:8px 16px; margin-bottom:8px; }
     .skill-list-empty { padding:16px; text-align:center; color:var(--text-muted); font-size:13px; }
     /* Page system */
@@ -950,9 +962,12 @@
     @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
     .btn-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
+    .btn-sm { padding:5px 12px !important; font-size:12px !important; border-radius:6px !important; line-height:1.4; }
     .btn-danger { background:var(--danger,#e74c3c); color:#fff; border-color:var(--danger,#e74c3c); }
     .btn-danger:hover { opacity:0.9; }
     .btn-danger:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-danger-ghost { background:transparent; color:var(--danger,#e74c3c); border:1px solid color-mix(in srgb, var(--danger,#e74c3c) 40%, transparent); }
+    .btn-danger-ghost:hover { background:color-mix(in srgb, var(--danger,#e74c3c) 10%, transparent); }
     .spinner { width:18px; height:18px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
     .ux-inline-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; width:100%; min-height:96px; padding:18px; text-align:center; color:var(--text-muted); border:1px solid var(--border); border-radius:10px; background:var(--surface); box-sizing:border-box; }
     .ux-inline-state.compact { min-height:0; padding:12px; align-items:flex-start; text-align:left; }
@@ -1229,6 +1244,40 @@
       transition: all 0.15s;
     }
     .ov-card-action:hover { color: var(--text); border-color: var(--text-muted); }
+
+    /* Premium Onboarding Card */
+    .ov-card--premium {
+      border-color: rgba(234, 179, 8, 0.35);
+      background: linear-gradient(135deg, rgba(234,179,8,0.04) 0%, rgba(234,179,8,0.01) 100%);
+    }
+    .ov-card--premium .ov-card-head { margin-bottom: 10px; }
+    .ov-onboarding-badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #ca8a04;
+      background: rgba(234, 179, 8, 0.12);
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    .ov-onboarding-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      line-height: 1.3;
+    }
+    .ov-onboarding-body {
+      font-size: 13px;
+      color: var(--text-secondary, var(--text-muted));
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .ov-onboarding-actions { display: flex; gap: 8px; align-items: center; }
+    #ov-onboarding-dismiss-btn { opacity: 0.5; }
+    #ov-onboarding-dismiss-btn:hover { opacity: 1; }
 
     .ov-list { display: flex; flex-direction: column; gap: 2px; }
     .ov-list-empty {
@@ -2774,6 +2823,20 @@
           </div>
         </div>
 
+        <!-- Premium Onboarding card — shown on days 1-7 -->
+        <div id="ov-onboarding-card" class="ov-card ov-card--premium" style="display:none;margin-bottom:16px">
+          <div class="ov-card-head">
+            <div class="ov-onboarding-badge" id="ov-onboarding-badge">Premium — Ngày <span id="ov-onboarding-day">1</span>/7</div>
+            <button class="ov-card-action" id="ov-onboarding-dismiss-btn" title="Ẩn thông báo" style="margin-left:auto"><span data-icon="x" data-icon-size="14"></span></button>
+          </div>
+          <div class="ov-onboarding-title" id="ov-onboarding-title"></div>
+          <div class="ov-onboarding-body" id="ov-onboarding-body"></div>
+          <div class="ov-onboarding-actions">
+            <button class="btn btn-primary btn-small" id="ov-onboarding-cta-btn"></button>
+            <button class="btn btn-ghost btn-small" id="ov-onboarding-skip-btn">Đã làm xong</button>
+          </div>
+        </div>
+
         <!-- Memory list -->
         <div class="ov-card" style="margin-bottom:16px">
           <div class="ov-card-head">
@@ -3736,52 +3799,82 @@
         </div>
       </div>
 
-      <!-- PAGE: Facebook + Brand Assets -->
+      <!-- PAGE: Tài sản hình ảnh (Brand / Product / Knowledge Images) -->
       <div class="page" id="page-image-assets">
         <div class="page-header">
           <span class="page-icon" data-icon="image" data-icon-size="26"></span>
           <div><h2>Tài sản hình ảnh</h2><div class="page-sub">Logo, mascot, ảnh sản phẩm, ảnh AI và hình đã đọc vào Knowledge</div></div>
         </div>
-        <div style="padding:0 24px 24px;display:grid;gap:20px">
-          <div class="card">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
-              <div>
-                <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Tài sản thương hiệu</h3>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Logo, mascot và style reference dùng khi tạo ảnh hoặc đăng Facebook. Mặc định không tự gửi cho khách Zalo.</div>
+
+        <!-- Tab bar -->
+        <div class="img-tabs" id="img-asset-tabs">
+          <button class="img-tab active" data-tab="brand" onclick="switchImgAssetTab('brand')">
+            <span data-icon="star" data-icon-size="14"></span> Tài sản thương hiệu
+          </button>
+          <button class="img-tab" data-tab="product" onclick="switchImgAssetTab('product')">
+            <span data-icon="shopping-bag" data-icon-size="14"></span> Hình ảnh sản phẩm
+          </button>
+          <button class="img-tab" data-tab="knowledge" onclick="switchImgAssetTab('knowledge')">
+            <span data-icon="cpu" data-icon-size="14"></span> Ảnh AI &amp; Knowledge
+          </button>
+        </div>
+
+        <div style="padding:0 24px 24px">
+          <!-- Tab: Brand Assets -->
+          <div class="img-tab-panel active" id="img-tab-brand">
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+                <div>
+                  <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Tài sản thương hiệu</h3>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Logo, mascot và style reference dùng khi tạo ảnh hoặc đăng Facebook. Mặc định không tự gửi cho khách.</div>
+                </div>
+                <button class="btn btn-primary btn-small" onclick="uploadBrandAssets(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
               </div>
-              <button class="btn btn-primary btn-small" onclick="uploadBrandAssets(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
-            </div>
-            <div id="brand-assets-grid" style="display:flex;flex-wrap:wrap;gap:12px">
-              <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có tài sản thương hiệu.</div>
+              <div id="brand-assets-grid" style="display:flex;flex-wrap:wrap;gap:12px">
+                <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có tài sản thương hiệu.</div>
+              </div>
             </div>
           </div>
 
-          <div class="card">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
-              <div>
-                <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Hình ảnh sản phẩm</h3>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh public để bot tự tìm và gửi đúng hình khi khách hỏi (Zalo/WhatsApp/Telegram...).</div>
-              </div>
+          <!-- Tab: Product Images -->
+          <div class="img-tab-panel" id="img-tab-product">
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+                <div>
+                  <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Hình ảnh sản phẩm</h3>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh public để bot tự tìm và gửi đúng hình khi khách hỏi (Zalo/WhatsApp/Telegram...).</div>
+                </div>
                 <button class="btn btn-primary btn-small" onclick="uploadProductImages(event.currentTarget)" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload</button>
-            </div>
-            <div id="product-media-grid" style="display:flex;flex-wrap:wrap;gap:12px">
-              <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có hình sản phẩm.</div>
+              </div>
+              <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
+                <input type="text" id="product-search-input" placeholder="Tìm ảnh sản phẩm..." style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text)" onkeydown="if(event.key==='Enter')searchProductImages()">
+                <button class="btn btn-secondary btn-small" onclick="searchProductImages()" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap"><span data-icon="search" data-icon-size="13"></span>Tìm</button>
+              </div>
+              <div id="product-search-results" style="margin-bottom:12px;display:none">
+                <div id="product-search-results-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+              </div>
+              <div id="product-media-grid" style="display:flex;flex-wrap:wrap;gap:12px">
+                <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có hình sản phẩm.</div>
+              </div>
             </div>
           </div>
 
-          <div class="card">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
-              <div>
-                <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Ảnh AI và Knowledge hình ảnh</h3>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh đã tạo, ảnh upload vào Knowledge và từng trang PDF scan đã được vision đọc.</div>
+          <!-- Tab: AI & Knowledge Images -->
+          <div class="img-tab-panel" id="img-tab-knowledge">
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+                <div>
+                  <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">Ảnh AI và Knowledge hình ảnh</h3>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh đã tạo, ảnh upload vào Knowledge và từng trang PDF scan đã được vision đọc.</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <button class="btn btn-secondary btn-small" onclick="uploadKnowledgeFromMediaTab()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload PDF/ảnh</button>
+                  <button class="btn btn-secondary btn-small" onclick="loadImageAssetsTab()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Làm mới</button>
+                </div>
               </div>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button class="btn btn-secondary btn-small" onclick="uploadKnowledgeFromMediaTab()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload PDF/ảnh</button>
-                <button class="btn btn-secondary btn-small" onclick="loadImageAssetsTab()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Làm mới</button>
+              <div id="knowledge-media-grid" style="display:flex;flex-wrap:wrap;gap:12px">
+                <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có ảnh Knowledge.</div>
               </div>
-            </div>
-            <div id="knowledge-media-grid" style="display:flex;flex-wrap:wrap;gap:12px">
-              <div style="color:var(--text-muted);padding:30px;text-align:center;width:100%">Chưa có ảnh Knowledge.</div>
             </div>
           </div>
         </div>
@@ -4488,6 +4581,12 @@
           <label>Từ khóa / tên gọi thay thế</label>
           <input type="text" id="pbm-aliases" placeholder="VD: áo thun, tshirt, cotton, summer2026">
           <div class="product-batch-hint">Các từ khóa này giúp bot tìm đúng hình khi khách hỏi. Áp dụng cho tất cả ảnh trong lần upload này.</div>
+        </div>
+        <!-- SKU prefix -->
+        <div class="product-batch-field">
+          <label>SKU prefix (tùy chọn)</label>
+          <input type="text" id="pbm-sku" placeholder="VD: TSHIRT-2026">
+          <div class="product-batch-hint">Mã sản phẩm sẽ được ghép: SKU-prefix + tên file. VD: TSHIRT-2026/ao-thun-den.jpg</div>
         </div>
         <!-- Channel usage note -->
         <div style="padding:10px 12px;background:var(--surface-alt, var(--bg));border:1px solid var(--border);border-radius:8px;margin-bottom:4px">
@@ -5865,10 +5964,34 @@
       const el = document.getElementById('fb-status');
       try {
         const cfg = await window.claw.getFbConfig();
-        if (cfg && cfg.pageName) {
+        if (cfg && cfg.pages && cfg.pages.length > 0) {
+          let html = '<div class="card" style="border-color:var(--success);margin-bottom:0">';
+          if (cfg.pages.length === 1) {
+            html += '<div style="display:flex;align-items:center;gap:8px">' +
+              '<span style="color:var(--success);font-size:16px">●</span>' +
+              '<div><strong>' + esc(cfg.pages[0].name) + '</strong><div style="font-size:12px;color:var(--text-muted)">Kết nối lúc ' + new Date(cfg.connectedAt).toLocaleString('vi-VN') + '</div></div>' +
+              '</div>';
+          } else {
+            html += '<div style="margin-bottom:10px;font-size:13px;font-weight:600;color:var(--text)">Fanpage đã kết nối (' + cfg.pages.length + ')</div>';
+            html += '<div style="display:flex;flex-direction:column;gap:6px">';
+            for (const p of cfg.pages) {
+              const isSel = p.id === cfg.selectedPageId;
+              html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid ' + (isSel ? 'var(--accent)' : 'var(--border)') + ';background:' + (isSel ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'var(--bg)') + ';cursor:pointer;transition:border-color 0.15s,background 0.15s" onclick="selectFbPage(\'' + escAttr(p.id) + '\')">' +
+                '<span style="color:' + (isSel ? 'var(--accent)' : 'var(--text-muted)') + ';font-size:14px">' + (isSel ? '●' : '○') + '</span>' +
+                '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:' + (isSel ? '600' : '400') + ';color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.name) + '</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">ID: ' + esc(p.id) + '</div></div>' +
+                (isSel ? '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent);font-weight:500">Đang dùng</span>' : '') +
+                '</div>';
+            }
+            html += '</div>';
+            html += '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Kết nối lúc ' + new Date(cfg.connectedAt).toLocaleString('vi-VN') + '</div>';
+          }
+          html += '</div>';
+          el.innerHTML = html;
+        } else if (cfg && cfg.pageName) {
           el.innerHTML = '<div class="card" style="border-color:var(--success);margin-bottom:0">' +
             '<div style="display:flex;align-items:center;gap:8px">' +
-            '<span style="color:var(--success);font-size:20px">●</span>' +
+            '<span style="color:var(--success);font-size:16px">●</span>' +
             '<div><strong>' + esc(cfg.pageName) + '</strong><div style="font-size:12px;color:var(--text-muted)">Kết nối lúc ' + new Date(cfg.connectedAt).toLocaleString('vi-VN') + '</div></div>' +
             '</div></div>';
         } else {
@@ -5876,6 +5999,20 @@
         }
       } catch (e) {
         renderInlineState(el, { type: 'error', compact: true, title: 'Không đọc được trạng thái Facebook', detail: e.message || 'Lỗi không xác định' });
+      }
+    }
+
+    async function selectFbPage(pageId) {
+      try {
+        const res = await window.claw.selectFbPage(pageId);
+        if (res.success) {
+          await loadFbConfig();
+          showToast('Đã chọn Fanpage: ' + res.pageName, 'success');
+        } else {
+          showToast(res.error || 'Không thể chọn page', 'error');
+        }
+      } catch (e) {
+        showToast(e.message || 'Lỗi chọn page', 'error');
       }
     }
 
@@ -5940,14 +6077,17 @@
           var thumbHtml = a.thumbDataUrl
             ? '<img src="' + escAttr(a.thumbDataUrl) + '" style="width:100%;height:100%;object-fit:cover" />'
             : '<span data-icon="image" data-icon-size="32" style="color:var(--text-muted)"></span>';
+          var statusLabel = a.status === 'ready' ? 'Sẵn sàng' : 'Đang mô tả';
+          var statusCls = a.status === 'ready' ? 'media-status-ready' : 'media-status-processing';
+          var descText = a.description ? esc(a.description) : esc(a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+' MB' : Math.round(a.size/1024)+' KB');
           return '<div class="media-card">' +
             '<div class="media-card-thumb">' + thumbHtml + '</div>' +
             '<div class="media-card-title" title="' + escAttr(a.name) + '">' + esc(a.name) + '</div>' +
             '<div class="media-badges">' +
               '<span class="media-badge internal">Nội bộ</span>' +
-              '<span class="media-badge media-status-ready">Sẵn sàng</span>' +
+              '<span class="media-badge ' + statusCls + '">' + statusLabel + '</span>' +
             '</div>' +
-            '<div class="media-card-desc">' + esc(a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+' MB' : Math.round(a.size/1024)+' KB') + '</div>' +
+            '<div class="media-card-desc">' + descText + '</div>' +
             '<button class="btn btn-danger btn-small" data-delete-asset="' + escAttr(a.name) + '" style="margin-top:auto;align-self:flex-start;font-size:10px;padding:3px 8px">Xóa</button>' +
           '</div>';
         }).join('');
@@ -6024,18 +6164,74 @@
       mountIcons();
     }
 
+    function switchImgAssetTab(tab) {
+      document.querySelectorAll('.img-tab').forEach(function(t) {
+        t.classList.toggle('active', t.dataset.tab === tab);
+      });
+      document.querySelectorAll('.img-tab-panel').forEach(function(p) {
+        p.classList.toggle('active', p.id === 'img-tab-' + tab);
+      });
+      // Mount icons in newly active tab
+      document.querySelectorAll('#img-tab-' + tab + ' [data-icon]').forEach(function(el) {
+        var name = el.getAttribute('data-icon');
+        var size = parseInt(el.getAttribute('data-icon-size') || '18', 10);
+        el.innerHTML = icon(name, size);
+      });
+      // Load content for the active tab
+      if (tab === 'brand') loadBrandAssets();
+      else if (tab === 'product') loadProductGrid();
+      else if (tab === 'knowledge') loadKnowledgeGrid();
+    }
+
     async function loadImageAssetsTab() {
+      // Load all three grids when switching to the image-assets page
       try {
         await loadBrandAssets();
+        await loadProductGrid();
+        await loadKnowledgeGrid();
+      } catch (e) {
+        showToast('Không tải được tài sản hình ảnh: ' + e.message, 'error');
+      }
+    }
+
+    async function loadProductGrid() {
+      try {
         var products = await window.claw.listMediaAssets({ type: 'product' });
+        renderMediaGrid(document.getElementById('product-media-grid'), products || [], 'Chưa có hình sản phẩm.');
+      } catch (e) {
+        showToast('Không tải được hình sản phẩm: ' + e.message, 'error');
+      }
+    }
+
+    async function loadKnowledgeGrid() {
+      try {
         var all = await window.claw.listMediaAssets({});
         var knowledgeImages = (all || []).filter(function(a) {
           return a.type === 'knowledge_image' || a.type === 'pdf_page' || a.type === 'generated';
         });
-        renderMediaGrid(document.getElementById('product-media-grid'), products || [], 'Chưa có hình sản phẩm.');
         renderMediaGrid(document.getElementById('knowledge-media-grid'), knowledgeImages || [], 'Chưa có ảnh Knowledge.');
       } catch (e) {
-        showToast('Không tải được tài sản hình ảnh: ' + e.message, 'error');
+        showToast('Không tải được ảnh Knowledge: ' + e.message, 'error');
+      }
+    }
+
+    async function searchProductImages() {
+      var query = (document.getElementById('product-search-input') || {}).value || '';
+      if (!query.trim()) {
+        document.getElementById('product-search-results').style.display = 'none';
+        document.getElementById('product-media-grid').style.display = '';
+        return;
+      }
+      var results = await window.claw.searchMediaAssets({ query: query.trim(), type: 'product', limit: 20 });
+      var container = document.getElementById('product-search-results');
+      var list = document.getElementById('product-search-results-list');
+      if (!results || !results.length) {
+        container.style.display = '';
+        list.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;width:100%">Không tìm thấy ảnh phù hợp với "' + escHtml(query) + '". Thử từ khóa khác.</div>';
+      } else {
+        container.style.display = '';
+        document.getElementById('product-media-grid').style.display = 'none';
+        renderMediaGrid(list, results, '');
       }
     }
 
@@ -6049,6 +6245,7 @@
       renderPbmQueue();
       document.getElementById('pbm-description').value = '';
       document.getElementById('pbm-aliases').value = '';
+      document.getElementById('pbm-sku').value = '';
       document.getElementById('product-batch-modal').classList.add('show');
       document.getElementById('pbm-submit').disabled = _pbmFiles.length === 0;
     }
@@ -6120,12 +6317,16 @@
       var aliasesRaw = document.getElementById('pbm-aliases').value.trim();
       var sharedAliases = aliasesRaw ? aliasesRaw.split(/[,;]/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
       var sharedDesc = document.getElementById('pbm-description').value.trim();
+      var skuPrefix = document.getElementById('pbm-sku').value.trim();
       setBtnLoading(submitBtn, true, 'Đang tải lên…');
       var failed = 0;
       var done = 0;
       for (var i = 0; i < _pbmFiles.length; i++) {
         var fp = _pbmFiles[i].path;
         var name = _pbmFiles[i].name;
+        // Build SKU: prefix + sanitized filename (no extension)
+        var baseName = name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_\-+]/g, '-');
+        var sku = skuPrefix ? (skuPrefix + '/' + baseName) : baseName;
         // Merge shared metadata with per-file title
         var res = await window.claw.uploadMediaAsset({
           filePath: fp,
@@ -6134,6 +6335,7 @@
           visibility: 'public',
           aliases: sharedAliases,
           description: sharedDesc,
+          sku: sku,
         });
         if (!res.success) {
           failed++;
@@ -6468,6 +6670,9 @@
           heroEl.style.display = 'none';
         }
 
+        // === PREMIUM ONBOARDING CARD (days 1-7) ===
+        await loadOnboardingCard();
+
         // === MEMORY LIST (inline on overview) ===
         loadOverviewMemories();
 
@@ -6510,6 +6715,54 @@
         if (el) el.innerHTML = '<div style="padding:2rem;color:var(--text-secondary);text-align:center">Không tải được dữ liệu tổng quan</div>';
       }
     }
+
+    // ── Premium Onboarding Card ──────────────────────────────────────────────────
+    async function loadOnboardingCard() {
+      const card = document.getElementById('ov-onboarding-card');
+      if (!card) return;
+      try {
+        const status = await window.claw.getOnboardingStatus();
+        if (!status || !status.active) {
+          card.style.display = 'none';
+          return;
+        }
+        document.getElementById('ov-onboarding-day').textContent = status.currentDay;
+        document.getElementById('ov-onboarding-title').textContent = status.title || '';
+        document.getElementById('ov-onboarding-body').textContent = status.body || '';
+        const ctaBtn = document.getElementById('ov-onboarding-cta-btn');
+        // CTA button links to the relevant tab based on day
+        var ctaTarget = '';
+        var ctaLabel = '';
+        if (status.currentDay === 2) { ctaTarget = 'switchPage(\'facebook\')'; ctaLabel = 'Mở Facebook'; }
+        else if (status.currentDay === 3) { ctaTarget = 'switchPage(\'knowledge\')'; ctaLabel = 'Upload tài liệu'; }
+        else if (status.currentDay === 4) { ctaTarget = 'switchPage(\'schedules\')'; ctaLabel = 'Mở Lịch tự động'; }
+        else if (status.currentDay === 5) { ctaTarget = 'switchPage(\'facebook\')'; ctaLabel = 'Tạo plan marketing'; }
+        else if (status.currentDay === 6) { ctaTarget = 'switchPage(\'schedules\')'; ctaLabel = 'Mở Lịch tự động'; }
+        else { ctaTarget = 'switchPage(\'schedules\')'; ctaLabel = 'Khám phá thêm'; }
+        ctaBtn.textContent = ctaLabel;
+        ctaBtn.onclick = function() { eval(ctaTarget); };
+        card.style.display = '';
+      } catch (e) {
+        console.error('[overview] onboarding card error', e);
+        card.style.display = 'none';
+      }
+    }
+
+    // Wire dismiss + advance handlers via event delegation (so they work after any re-render)
+    document.addEventListener('click', function(e) {
+      if (e.target.closest('#ov-onboarding-dismiss-btn')) {
+        window.claw.dismissOnboarding().then(function() {
+          var card = document.getElementById('ov-onboarding-card');
+          if (card) card.style.display = 'none';
+        });
+      }
+      if (e.target.closest('#ov-onboarding-skip-btn')) {
+        window.claw.dismissOnboarding().then(function() {
+          var card = document.getElementById('ov-onboarding-card');
+          if (card) card.style.display = 'none';
+        });
+      }
+    });
 
     function _esc(s) {
       return String(s == null ? '' : s)
@@ -12087,7 +12340,7 @@
     function renderSkillList() {
       const panel = document.getElementById('skills-list-panel');
       if (!panel) return;
-      let html = '<div class="skills-list-create-btn"><button class="btn btn-sm" onclick="showCreateSkillInDetail()" style="font-size:13px;width:100%">+ Tạo mới</button></div>';
+      let html = '<div class="skills-list-create-btn"><button class="btn btn-secondary btn-sm" onclick="showCreateSkillInDetail()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:4px">+ Tạo mới</button></div>';
       // User skills section
       html += '<div class="skill-list-header" onclick="toggleSkillCategory(this)">' + _chevronSvg + ' Tùy chỉnh <span class="skill-count">(' + _skillsCache.user.length + ')</span></div>';
       html += '<div class="skill-list-items">';
@@ -12168,19 +12421,25 @@
     function renderSkillDetail(meta, content, source) {
       const panel = document.getElementById('skills-detail-panel');
       if (!panel) return;
-      let html = '<div style="display:flex;align-items:flex-start;justify-content:space-between">';
-      html += '<div><div class="skill-detail-name">' + esc(meta.name) + '</div>';
+      let html = '<div class="skill-detail-header">';
+      html += '<div class="skill-detail-header-left"><div class="skill-detail-name">' + esc(meta.name) + '</div>';
       html += '<div class="skill-detail-meta">';
       if (source === 'user') {
-        html += '<span style="padding:2px 6px;border-radius:4px;background:var(--badge-bg, #e8e8e8);font-size:11px">' + esc(meta.type || 'rule') + '</span> · tùy chỉnh';
+        html += '<span class="skill-type-badge">' + esc(meta.type || 'rule') + '</span><span style="color:var(--text-muted)">tùy chỉnh</span>';
       } else {
-        html += esc(meta.category || '') + ' · hệ thống';
+        html += '<span style="color:var(--text-muted)">' + esc(meta.category || '') + '</span><span style="color:var(--text-muted)">hệ thống</span>';
       }
       html += '</div></div>';
-      if (source === 'user') {
-        html += '<button class="btn btn-sm btn-danger" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')" style="font-size:12px;flex-shrink:0">Xóa</button>';
+      html += '<div class="skill-detail-actions">';
+      if (source !== 'user') {
+        html += '<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer">' +
+          '<input type="checkbox" id="shipped-skill-toggle" ' + (meta.enabled !== false ? 'checked' : '') + ' onchange="toggleSkill(\'' + escAttr(meta.id) + '\', this.checked)" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)" />' +
+          '<span style="font-size:11px;color:var(--text-secondary)">bật</span></label>';
       }
-      html += '</div><div class="skill-detail-divider"></div>';
+      if (source === 'user') {
+        html += '<button class="btn btn-sm btn-danger-ghost" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')">Xóa</button>';
+      }
+      html += '</div></div><div class="skill-detail-divider"></div>';
       // User skill metadata sections
       if (source === 'user') {
         if (meta.trigger) {
@@ -12193,10 +12452,10 @@
       }
       // Content
       html += '<div class="skill-detail-section"><div class="skill-detail-section-label">Nội dung</div>';
-      if (content != null) {
+      if (content != null && content.trim()) {
         html += '<div class="skill-detail-content">' + esc(content) + '</div>';
       } else {
-        html += '<div style="color:var(--text-muted);font-size:13px">Không đọc được nội dung skill</div>';
+        html += '<div style="color:var(--text-muted);font-size:13px;padding:12px 0">Skill chưa có nội dung hoặc file không tìm thấy</div>';
       }
       html += '</div>';
       panel.innerHTML = html;

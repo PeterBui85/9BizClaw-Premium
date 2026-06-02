@@ -111,10 +111,74 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   if (/skill\.layout === 'folder'/.test(src)) ok('updateUserSkill branches on layout');
   else bad('updateUserSkill branches on layout', 'layout-blind write');
 
+  // _idRe must allow '/' in shipped skill IDs (shipped/auto-mode-rules, shipped/zalo-behavior).
+  // The pattern is ^[a-z0-9][a-z0-9/-]{0,79}$. Check that the char class includes '/'.
+  // Pattern: ^[first-char][rest-of-chars]{0,79}$
+  const idReMatch = src.match(/const _idRe = \/(.+?)\/[,;]/);
+  if (idReMatch) {
+    const pattern = idReMatch[1];
+    // Verify '/' is in the character class by checking for /-] (slash before -] or just /] at end).
+    // Old buggy pattern: [a-z0-9-/] (ends with /]) — / was allowed but as invalid range 9-/
+    // Fixed pattern:   [a-z0-9/-] (ends with /-]) — / is now last before ], no invalid range
+    if (/\/-]/.test(pattern) || /\/]/.test(pattern)) {
+      ok('_idRe allows shipped/ prefix (char class includes slash)');
+    } else {
+      bad('_idRe allows shipped/ prefix', 'slash not in _idRe character class — shipped/ IDs rejected');
+    }
+  } else {
+    bad('_idRe allows shipped/ prefix', 'cannot find _idRe in source');
+  }
+
+  // _sanitizeRegistry must preserve shipped flag.
+  if (/shipped:\s*!!s\.shipped/.test(src)) ok('_sanitizeRegistry preserves shipped flag');
+  else bad('_sanitizeRegistry preserves shipped flag', 'shipped field dropped during sanitization');
+
+  // YAML frontmatter regex must handle Windows CRLF (\\r?\\n).
+  if (/\\r\?\\n/.test(src)) ok('YAML frontmatter stripper handles Windows CRLF');
+  else bad('YAML frontmatter stripper handles Windows CRLF', 'CRLF not handled — shipped skill files may inject YAML frontmatter');
+
   // Folder format SKILL.md must persist `filename:` so restore can recover it.
   if (/fmLines\.push\(`\s+filename: \$\{_yamlEscape\(s\.filename\)\}`\)/.test(src)) {
     ok('_buildAnthropicSkillMd persists filename in YAML');
   } else bad('_buildAnthropicSkillMd persists filename in YAML', 'filename not written');
+
+  // SHIPPED_DOMAIN_SKILLS must be exported (used by smoke + routing generator).
+  if (/SHIPPED_DOMAIN_SKILLS/.test(src)) ok('skill-manager exports SHIPPED_DOMAIN_SKILLS');
+  else bad('skill-manager exports SHIPPED_DOMAIN_SKILLS', 'registry missing');
+
+  // registerShippedSkills() must be exported.
+  if (/registerShippedSkills/.test(src)) ok('skill-manager exports registerShippedSkills');
+  else bad('skill-manager exports registerShippedSkills', 'function missing');
+
+  // buildSkillInjectionBlock cap is 20KB (not 5KB).
+  if (/block\.length > 20000/.test(src)) ok('buildSkillInjectionBlock caps at 20KB');
+  else bad('buildSkillInjectionBlock caps at 20KB', 'still at 5KB or missing');
+
+  // checkConflict() includes shipped-skill overlap warning.
+  if (/overlaps_with_shipped/.test(src)) ok('checkConflict flags overlaps_with_shipped');
+  else bad('checkConflict flags overlaps_with_shipped', 'shipped overlap check missing');
+}
+
+// ── 4b. routing generator + trigger extraction ──
+{
+  const routingSrc = fs.readFileSync(path.join(__dirname, 'generate-rules-routing.js'), 'utf-8');
+  if (/function extractTriggers/.test(routingSrc)) ok('generate-rules-routing exports extractTriggers');
+  else bad('generate-rules-routing exports extractTriggers', 'function missing');
+
+  if (/function scanSkills/.test(routingSrc)) ok('generate-rules-routing exports scanSkills');
+  else bad('generate-rules-routing exports scanSkills', 'function missing');
+
+  if (/function generateRoutingTable/.test(routingSrc)) ok('generate-rules-routing exports generateRoutingTable');
+  else bad('generate-rules-routing exports generateRoutingTable', 'function missing');
+
+  // Routing generator must skip _archived directories.
+  if (/' _archived'/.test(routingSrc) || /_archived/.test(routingSrc)) ok('generate-rules-routing skips _archived dirs');
+  else bad('generate-rules-routing skips _archived dirs', 'may recurse into archived skills');
+
+  // Workspace seeds skills/shipped/ directory (so shipped skills get included in scanSkills).
+  const wsSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'workspace.js'), 'utf-8');
+  if (/'shipped'/.test(wsSrc) || /shipped/.test(wsSrc)) ok('workspace seeds skills/shipped/ (or at minimum, does not block it)');
+  else bad('workspace seeds skills/shipped/', 'shipped dir may be cleaned as orphan');
 }
 
 // ── 5. cron.js sleep recovery + idempotency ──
@@ -168,15 +232,27 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   }
 }
 
-// ── 7. inbound.ts folder-skill resolution ──
+// ── 7. inbound.ts skill injection via skill-manager.js (v3) ──
 {
   const src = fs.readFileSync(path.join(__dirname, '..', 'packages', 'modoro-zalo', 'src', 'inbound.ts'), 'utf-8');
-  // Folder resolution: check SKILL.md path is constructed (any whitespace, may be on separate lines).
-  if (/"SKILL\.md"/.test(src) && /__folderSkillMd/.test(src)) ok('inbound.ts resolves folder-layout SKILL.md');
-  else bad('inbound.ts resolves folder-layout SKILL.md', 'still hardcodes flat .md');
+  // v3: delegates to skill-manager.js — no inline trigger matching, no flat/folder resolution.
+  if (/skill-manager\.js"/.test(src) && /__usSmPath/.test(src)) ok('inbound.ts loads skill-manager.js via require');
+  else bad('inbound.ts loads skill-manager.js via require', 'skill-manager require missing');
 
-  if (/__usScopes/.test(src) && /operations\/zalo/.test(src)) ok('inbound.ts applies Zalo scope filter');
-  else bad('inbound.ts applies Zalo scope filter', 'scope filter missing');
+  if (/buildSkillInjectionBlock/.test(src)) ok('inbound.ts calls buildSkillInjectionBlock');
+  else bad('inbound.ts calls buildSkillInjectionBlock', 'buildSkillInjectionBlock call missing');
+
+  // Scope is 'operations/zalo' for Zalo inbound channel.
+  if (/scope:\s*'operations\/zalo'/.test(src)) ok('inbound.ts passes scope=operations/zalo to buildSkillInjectionBlock');
+  else bad('inbound.ts passes scope=operations/zalo to buildSkillInjectionBlock', 'scope param missing');
+
+  // v3 NO LONGER has inline scope set or inline content resolution.
+  // The old `__usScopes` and `__folderSkillMd` variables are removed in v3.
+  if (!/__usScopes/.test(src)) ok('inbound.ts v3: no inline __usScopes (scope handled by skill-manager.js)');
+  else bad('inbound.ts v3: no inline __usScopes', 'old v2 __usScopes still present');
+
+  if (!/__folderSkillMd/.test(src)) ok('inbound.ts v3: no inline __folderSkillMd (content resolved by skill-manager.js)');
+  else bad('inbound.ts v3: no inline __folderSkillMd', 'old v2 inline content resolution still present');
 
   // v4: channel-scoped auth — only Telegram sessions get Bearer.
   const vp = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');

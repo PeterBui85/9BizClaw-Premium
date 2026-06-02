@@ -744,7 +744,16 @@ async function _startOpenClawImpl(opts = {}) {
   ctx.openclawProcess = spawn(gwSpawnCmd, gwSpawnArgs, {
     cwd: getWorkspace(),
     env: enrichedEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    // stdin=ignore: don't wait for keyboard input
+    // stdout=pipe: captured via logStream (openclaw.log)
+    // stderr=file FD: bypasses Node pipe buffer (~64KB) which can deadlock
+    //   on Windows when gateway writes a lot at startup. OS-level redirect
+    //   is non-blocking regardless of how much the child writes.
+    stdio: [
+      'ignore',
+      'pipe',
+      fs.openSync(path.join(ctx.userDataDir, 'logs', 'openclaw-stderr.log'), 'a'),
+    ],
     shell: gwSpawnShell,
     windowsHide: true,
   });
@@ -820,6 +829,7 @@ async function _startOpenClawImpl(opts = {}) {
     }, 3000);
   } else {
     console.log(`[startOpenClaw] gateway WS still not responding after 240s (${probeAttempts} probes). Spawning background monitor.`);
+    for (const l of readStderrTail(20)) console.warn('  [openclaw stderr] ', l.slice(0, 300));
     auditLog('gateway_slow_start', { probeAttempts });
     // Background monitor: keep probing every 5s for up to 10 more minutes.
     // When gateway finally comes up, log + emit audit so dashboard dot updates.
@@ -842,6 +852,7 @@ async function _startOpenClawImpl(opts = {}) {
         } catch {}
       }
       console.warn('[startOpenClaw] gateway never came up after 10min — may need manual restart');
+      for (const l of readStderrTail(20)) console.warn('  [openclaw stderr] ', l.slice(0, 300));
     })();
   }
 
@@ -882,16 +893,39 @@ async function _startOpenClawImpl(opts = {}) {
 
   const logsDir = path.join(ctx.userDataDir, 'logs');
   if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
-  const logStream = fs.createWriteStream(path.join(logsDir, 'openclaw.log'), { flags: 'a' });
+  const gwStdoutLog = path.join(logsDir, 'openclaw.log');
+  const gwStderrLog = path.join(logsDir, 'openclaw-stderr.log');
+  const logStream = fs.createWriteStream(gwStdoutLog, { flags: 'a' });
   let lastError = '';
+  let stderrLines = [];
   // Swallow pipe errors (they occur when process exits abruptly)
   logStream.on('error', (e) => console.error('[openclaw.log] write error:', e.message));
   ctx.openclawProcess.stdout.on('error', (e) => console.error('[openclaw stdout] pipe error:', e.message));
-  ctx.openclawProcess.stderr.on('error', (e) => console.error('[openclaw stderr] pipe error:', e.message));
-  ctx.openclawProcess.on('error', (e) => console.error('[openclaw spawn] error:', e.message));
+  ctx.openclawProcess.on('error', (e) => {
+    lastError = e && e.message ? e.message : String(e);
+    console.error('[openclaw spawn] error:', lastError);
+  });
   ctx.openclawProcess.stdout.pipe(logStream).on('error', () => {});
-  ctx.openclawProcess.stderr.pipe(logStream).on('error', () => {});
-  ctx.openclawProcess.stderr.on('data', (d) => { lastError = d.toString().trim().slice(-300); });
+  // stderr is a file FD (set in stdio above) — we read it from disk when needed.
+  // This avoids Node pipe buffer deadlock on Windows when the gateway writes a
+  // lot at startup (>64KB causes the pipe to block with no reader).
+  function readStderrTail(n = 20) {
+    try {
+      const buf = Buffer.alloc(128 * 1024);
+      const fd = fs.openSync(gwStderrLog, 'r');
+      const len = fs.readSync(fd, buf, 0, buf.length, 0);
+      fs.closeSync(fd);
+      const lines = buf.slice(0, len).toString('utf8').split('\n').filter(Boolean);
+      return lines.slice(-n);
+    } catch { return []; }
+  }
+  // Log if the gateway process dies unexpectedly during boot
+  ctx.openclawProcess.on('exit', (code, signal) => {
+    const tail = readStderrTail(20);
+    console.error(`[gateway] process exited unexpectedly during boot — code=${code} signal=${signal}`);
+    for (const l of tail) console.error('  [openclaw stderr] ', l.slice(0, 300));
+    auditLog('gateway_died_during_boot', { code, signal });
+  });
 
   // REAL READINESS NOTIFICATIONS
   // CEO rule: "nếu thông báo là nhấn phải có reply thật sự" — don't send
@@ -1618,7 +1652,7 @@ async function fastWatchdogTick() {
                 if (_now - _lastAlert > 30 * 60 * 1000) {
                   global._zaloDownAlertSentAt = _now;
                   console.warn('[fast-watchdog] Zalo listener dead 6 checks but restart rate-limited/in-flight — alerting CEO');
-                  sendCeoAlert('Kênh Zalo đang tạm dừng (listener không chạy) và đã chạm giới hạn tự khởi động lại. Bot Telegram vẫn hoạt động. Vui lòng mở lại app để khôi phục Zalo.').catch(() => {});
+                  sendCeoAlert('Kênh Zalo đang tạm dừng (listener không chạy) và đã chạm giới hạn tự khởi động lại. Bot Telegram vẫn hoạt động. Vui lòng mở lại app để khôi phục Zalo.').catch(e => console.warn('[auto-fix] promise rejected:', e?.message));
                 } else {
                   console.warn('[fast-watchdog] Zalo listener dead 6 checks — rate-limited, CEO already alerted recently');
                 }

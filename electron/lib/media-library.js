@@ -14,7 +14,43 @@ const MEDIA_VISIBILITIES = ['public', 'internal', 'private'];
 const MEDIA_IMAGE_FORMATS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'];
 const MEDIA_MAX_SIZE = 100 * 1024 * 1024;
 const MEDIA_INDEX_VERSION = 1;
-const PDF_RENDER_ERROR_VI = 'Không thể render PDF scan bằng engine hiện tại';
+const PDF_RENDER_ERROR_VI = 'Không thể render PDF thành ảnh';
+// Vietnamese stop-words for tag extraction — keep product keywords meaningful in context
+const TAG_STOP_WORDS = new Set([
+  'và', 'của', 'là', 'có', 'được', 'trong', 'với', 'cho', 'không', 'một',
+  'các', 'này', 'đó', 'những', 'từ', 'ra', 'về', 'hay', 'cũng', 'sẽ',
+  'đang', 'đã', 'còn', 'nên', 'hoặc', 'như', 'để', 'khi', 'thì', 'nếu',
+  'rất', 'lắm', 'quá', 'hơn', 'nhất', 'vô', 'bị', 'do', 'bởi', 'nào',
+  'nọ', 'kia', 'kìa', 'bên', 'trên', 'dưới', 'trong', 'ngoài', 'sau',
+  'trước', 'giữa', 'qua', 'vào', 'ra', 'lên', 'xuống', 'đi', 'lại',
+  'mà', 'vì', 'nên', 'nhưng', 'song', 'tuy', 'thế', 'vậy', 'kia',
+  'hết', 'mọi', 'ai', 'gì', 'đâu', 'sao', 'bao', 'nhiêu', 'mấy',
+  'cứ', 'chỉ', 'thôi', 'đi', 'thôi', 'vậy', 'à', 'ạ', 'ồ', 'ôi',
+  'vâng', 'dạ', 'ạ', 'vâng', 'ừ', 'ờ', 'ở', 'nè', 'đấy', 'hả',
+  'chứ', 'mấy', 'nhiều', 'ít', 'hơn', 'kém', 'ngang', 'bằng',
+  'mới', 'cũ', 'đỏ', 'xanh', 'vàng', 'trắng', 'đen', 'tím', 'hồng',
+  'xám', 'nâu', 'cam', 'hà', 'tôi', 'bạn', 'anh', 'chị', 'em',
+  'ông', 'bà', 'cô', 'chú', 'cậu', 'mình', 'tao', 'bay', 'họ',
+  // Common noise words in descriptions
+  'phẩm', 'sản', 'hàng', 'loại', 'món', 'cái', 'chiếc', 'cặp',
+  'bộ', 'set', 'gói', 'lô', 'lần', 'cái', 'mẫu', 'kiểu',
+]);
+
+function autoGenerateTagsFromDescription(description) {
+  if (!description || description.length < 5) return [];
+  const normalized = normalizeSearchText(description);
+  const words = normalized.split(/\s+/).filter(w => w.length >= 2);
+  const tags = [];
+  const seen = new Set();
+  for (const word of words) {
+    if (TAG_STOP_WORDS.has(word)) continue;
+    if (seen.has(word)) continue;
+    seen.add(word);
+    tags.push(word);
+    if (tags.length >= 12) break;
+  }
+  return tags;
+}
 
 const DEFAULT_VISIBILITY = {
   brand: 'internal',
@@ -477,9 +513,78 @@ function scoreAsset(queryTerms, asset) {
     }
   }
   if (!matched) return 0;
+  const titleText = normalizeSearchText(asset.title || '');
+  const aliasText = normalizeSearchText([...(asset.aliases || []), ...(asset.tags || [])].join(' '));
+  const descText = normalizeSearchText(asset.description || '');
+  for (const term of queryTerms) {
+    if (!term) continue;
+    if (titleText.includes(term)) score += 2;
+    if (aliasText.includes(term)) score += 2;
+    if (descText.includes(term)) score += 1;
+  }
   if (asset.type === 'product') score += 0.25;
   if (asset.status === 'ready') score += 0.25;
   return score;
+}
+
+// plan v2.4.11 §Task 5 — confidence scoring + disambiguation
+// Normalized score: raw score / REF_MAX gives confidence in [0, 1].
+// Thresholds:
+//   confidence < 0.4  → no-match  (text reply + "có thể chuyển sếp")
+//   0.4 ≤ c < 0.7   → ambiguous (ask 1 clarifying question)
+//   c ≥ 0.7         → confident (send top 5)
+const CONFIDENCE_REF_MAX = 20; // reference raw score for a well-matched product image
+
+function resolveMediaMatch(query, options = {}) {
+  const limit = Math.min(Math.max(parseInt(options.limit || 5, 10), 1), 5);
+  const results = searchMediaAssets(query, { ...options, limit });
+
+  if (results.length === 0) {
+    return {
+      decision: 'no_match',
+      confidence: 0,
+      confidenceNormalized: 0,
+      results: [],
+      clarificationQuestion: null,
+      fallbackText: 'Xin lỗi, em chưa tìm thấy hình ảnh phù hợp. Em sẽ chuyển cho sếp hỗ trợ thêm ạ.',
+    };
+  }
+
+  // Normalize: divide raw score by reference max, clamp to [0, 1]
+  const topRaw = results[0].score || 0;
+  const topConfidence = Math.min(topRaw / CONFIDENCE_REF_MAX, 1);
+
+  if (topConfidence < 0.4) {
+    return {
+      decision: 'no_match',
+      confidence: topRaw,
+      confidenceNormalized: topConfidence,
+      results,
+      clarificationQuestion: null,
+      fallbackText: 'Em chưa chắc chắn lắm về hình phù hợp — em sẽ chuyển sếp hỗ trợ thêm ạ.',
+    };
+  }
+
+  if (topConfidence < 0.7) {
+    return {
+      decision: 'ambiguous',
+      confidence: topRaw,
+      confidenceNormalized: topConfidence,
+      results,
+      clarificationQuestion: 'Anh/chị có thể mô tả thêm một chút không ạ? Ví dụ: màu sắc, kích thước, hoặc mục đích sử dụng?',
+      fallbackText: null,
+    };
+  }
+
+  // confidence >= 0.7 — confident match, send top 5
+  return {
+    decision: 'confident',
+    confidence: topRaw,
+    confidenceNormalized: topConfidence,
+    results: results.slice(0, limit),
+    clarificationQuestion: null,
+    fallbackText: null,
+  };
 }
 
 function searchMediaAssets(query, options = {}) {
@@ -487,9 +592,14 @@ function searchMediaAssets(query, options = {}) {
   if (!normalized || normalized.length < 2) return [];
   const terms = Array.from(new Set(normalized.split(' ').filter(t => t.length > 1)));
   const limit = Math.min(Math.max(parseInt(options.limit || 5, 10) || 5, 1), 20);
+  const minScore = Number.isFinite(Number(options.minScore)) ? Number(options.minScore) : 0;
+  // HARD RULE: brand assets are NEVER returned from media search.
+  // Brand assets are internal reference images for AI image generation (logo, mascot).
+  // They must not appear in customer-facing search results regardless of audience level.
   return listMediaAssets(options)
+    .filter(a => a.type !== 'brand')
     .map(asset => ({ ...asset, score: scoreAsset(terms, asset) }))
-    .filter(asset => asset.score > 0)
+    .filter(asset => asset.score > minScore)
     .sort((a, b) => b.score - a.score || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
     .slice(0, limit);
 }
@@ -603,13 +713,41 @@ async function describeMediaAsset(idOrAsset, options = {}) {
   if (!asset) throw new Error('media asset not found');
   if (!asset.path || !fs.existsSync(asset.path)) throw new Error('media file not found');
   await updateMediaAssetSafe(asset.id, { status: 'processing', error: '' });
-  const prompt = options.prompt || [
-    'Bạn là hệ thống đọc tài sản hình ảnh cho trợ lý bán hàng Việt Nam.',
-    'Hãy mô tả chính xác nội dung ảnh bằng tiếng Việt có dấu.',
-    'Nếu là ảnh sản phẩm, nêu loại sản phẩm, màu sắc, chữ/giá/nhãn nhìn thấy, cách khách có thể hỏi về ảnh này.',
-    'Nếu là logo/mascot/tài sản thương hiệu, mô tả để hệ thống dùng làm reference tạo ảnh, không bịa thông tin ngoài ảnh.',
-    'Trả lời 250-500 từ, chỉ nội dung mô tả.'
+
+  // ── Prompt by asset type (plan v2.4.11 spec) ───────────────────────────
+
+  // BRAND: reference-only — no keyword stuffing, just visual identity markers
+  const BRAND_PROMPT = [
+    'Mô tả tài sản thương hiệu này để làm REFERENCE khi tạo ảnh:',
+    'màu sắc chính, typography, bố cục, phong cách, đặc điểm nhận diện.',
+    'Không bịa thông tin. Trả lời 50-150 từ tiếng Việt có dấu.',
+    'Chỉ mô tả những gì thực sự nhìn thấy được trong ảnh.',
   ].join('\n');
+
+  // PRODUCT: siêu kỹ — structured, search-friendly, Vietnamese customer queries
+  const PRODUCT_PROMPT = [
+    'Mô tả SẢN PHẨM này rất chi tiết: đặc tính kỹ thuật, giá nhìn thấy trên ảnh,',
+    'màu sắc, biến thể, bao bì, góc chụp, đối tượng hỏi (ai mua?),',
+    'và VIẾT 3-5 CỤM TỪ mà khách hàng hay dùng để hỏi về sản phẩm này.',
+    'Trả lời bằng tiếng Việt có dấu. 200-400 từ.',
+  ].join('\n');
+
+  // KNOWLEDGE_IMAGE / PDF_PAGE: lightweight description only
+  const KNOWLEDGE_PROMPT = [
+    'Mô tả ngắn nội dung chính của hình ảnh/tài liệu này.',
+    'Ghi rõ những thông tin quan trọng có thể dùng để tìm kiếm.',
+    'Trả lời 50-100 từ tiếng Việt có dấu.',
+  ].join('\n');
+
+  let prompt;
+  if (asset.type === 'brand' || asset.type === 'generated') {
+    prompt = BRAND_PROMPT;
+  } else if (asset.type === 'product') {
+    prompt = PRODUCT_PROMPT;
+  } else {
+    prompt = KNOWLEDGE_PROMPT;
+  }
+
   let description = '';
   try {
     description = await call9RouterVision(asset.path, prompt, {
@@ -631,11 +769,29 @@ async function describeMediaAsset(idOrAsset, options = {}) {
       error: 'Vision provider unavailable or returned empty result',
     });
   }
-  return updateMediaAssetSafe(asset.id, {
+  // Auto-generate tags/aliases from description for product/knowledge assets
+  let newTags = [];
+  let newAliases = [];
+  if (asset.type === 'product' && description && description.length > 20) {
+    const generatedTags = autoGenerateTagsFromDescription(description);
+    const existingTags = new Set((asset.tags || []).map(t => normalizeSearchText(t)));
+    const existingAliases = new Set((asset.aliases || []).map(a => normalizeSearchText(a)));
+    for (const t of generatedTags) {
+      if (!existingTags.has(t)) newTags.push(t);
+    }
+    // First 3 new tags also seed aliases (short phrasal queries)
+    newAliases = newTags.slice(0, 3);
+  }
+
+  const patch = {
     description: String(description).trim(),
     status: 'ready',
     error: '',
-  });
+  };
+  if (newTags.length > 0) patch.tags = [...(asset.tags || []), ...newTags].slice(0, 30);
+  if (newAliases.length > 0) patch.aliases = [...(asset.aliases || []), ...newAliases].slice(0, 30);
+
+  return updateMediaAssetSafe(asset.id, patch);
 }
 
 async function renderPdfPagesToMedia(pdfPath, options = {}) {
@@ -810,6 +966,7 @@ module.exports = {
   registerExistingMediaFile,
   listMediaAssets,
   searchMediaAssets,
+  resolveMediaMatch,
   findMediaAsset,
   updateMediaAsset,
   upsertAssetSafe,

@@ -279,12 +279,14 @@ contextBridge.exposeInMainWorld('claw', {
   listMediaAssets: (filters) => ipcRenderer.invoke('list-media-assets', filters || {}),
   uploadMediaAsset: (opts) => ipcRenderer.invoke('upload-media-asset', opts || {}),
   describeMediaAsset: (id) => ipcRenderer.invoke('describe-media-asset', id),
+  searchMediaAssets: (opts) => ipcRenderer.invoke('search-media-assets', opts || {}),
   deleteMediaAsset: (id) => ipcRenderer.invoke('delete-media-asset', id),
   pickMediaAssetFile: () => ipcRenderer.invoke('pick-media-asset-file'),
 
   // Facebook
   getFbConfig: () => ipcRenderer.invoke('get-fb-config'),
   saveFbConfig: (accessToken) => ipcRenderer.invoke('save-fb-config', { accessToken }),
+  selectFbPage: (pageId) => ipcRenderer.invoke('select-fb-page', { pageId }),
   verifyFbToken: () => ipcRenderer.invoke('verify-fb-token'),
   getFbRecentPosts: () => ipcRenderer.invoke('get-fb-recent-posts'),
 
@@ -332,4 +334,9 @@ contextBridge.exposeInMainWorld('claw', {
   channelPause: (ch, minutes) => ipcRenderer.invoke('channel:pause', { ch, minutes }),
   channelResume: (ch) => ipcRenderer.invoke('channel:resume', { ch }),
   channelPauseStatus: (ch) => ipcRenderer.invoke('channel:pause-status', { ch }),
+
+  // Premium Onboarding 7 Ngày
+  getOnboardingStatus: () => ipcRenderer.invoke('onboarding:status'),
+  dismissOnboarding: () => ipcRenderer.invoke('onboarding:dismiss'),
+  advanceOnboarding: () => ipcRenderer.invoke('onboarding:advance'),
 });

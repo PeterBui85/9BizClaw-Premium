@@ -308,8 +308,12 @@ function parseZaloUserMemoryMeta(content) {
 // === Zalo group memory ===
 function getZaloGroupsDir() {
   const agentWs = getOpenclawAgentWorkspace();
+  if (!agentWs) return;  // auto-fix: null guard for workspace path
   if (agentWs) return path.join(agentWs, 'memory', 'zalo-groups');
   const ws = getWorkspace();
+  if (!ws) return;  // auto-fix: null guard for workspace path
+  if (!ws) return;  // auto-fix: null guard for workspace path
+  if (!ws) return;  // auto-fix: null guard for workspace path
   if (!ws) return null;
   return path.join(ws, 'memory', 'zalo-groups');
 }

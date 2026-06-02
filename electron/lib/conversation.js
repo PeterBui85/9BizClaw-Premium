@@ -4,6 +4,8 @@ const path = require('path');
 const ctx = require('./context');
 const { getWorkspace, auditLog } = require('./workspace');
 const { call9Router } = require('./nine-router');
+const ceoMem = require('./ceo-memory');
+const { captureAndStore } = require('./ceo-memory-capture');
 
 // Wire point: set by main.js so conversation.js can fire CEO Telegram alerts
 // when customer memory is written (except routine daily cron summaries).
@@ -318,10 +320,9 @@ async function writeDailyMemoryJournal({ date = new Date() } = {}) {
         const allMsgs = [];
         for (const msgs of bySender.values()) allMsgs.push(...msgs);
         const cleanedForDedup = allMsgs.join(' ').replace(/\[\d{2}:\d{2}\]/g, '').replace(/\d{4}-\d{2}-\d{2}/g, '').slice(0, 800);
-        const { searchMemory, writeMemory } = require('./ceo-memory');
+        const { searchMemory, writeMemory } = ceoMem;
         const existing = await searchMemory(cleanedForDedup, { limit: 1, bumpRelevance: false });
         if (existing.length > 0 && existing[0].score > 0.85) {
-          const ceoMem = require('./ceo-memory');
           const db = ceoMem.getMemoryDb();
           if (db) {
             db.prepare('UPDATE ceo_memories SET relevance_score = MIN(relevance_score + 0.1, 5.0), updated_at = ? WHERE id = ?').run(new Date().toISOString(), existing[0].id);
@@ -597,9 +598,6 @@ let _idleMemoryLastActivity = 0;
 let _idleMemoryLastExtractAt = 0;
 let _idleMemoryInFlight = false;
 let _idleMemoryWatcher = null;
-let _runCronAgentPromptFn = null;
-
-function setIdleMemoryRunCronAgent(fn) { _runCronAgentPromptFn = fn; }
 
 // Records that gateway activity happened (CEO Telegram or Zalo). Only a coarse
 // "something happened recently" signal — actual extraction reads CEO Telegram
@@ -617,7 +615,6 @@ function startIdleMemoryWatcher() {
 
 async function _runIdleMemoryExtraction() {
   if (_idleMemoryInFlight) return;
-  if (!_runCronAgentPromptFn) return;
   if (!_idleMemoryLastActivity) return; // nothing has happened yet
   const now = Date.now();
   const settled = now - _idleMemoryLastActivity >= IDLE_MEMORY_QUIET_MS;
@@ -633,19 +630,25 @@ async function _runIdleMemoryExtraction() {
       return;
     }
     _idleMemoryLastExtractAt = now;
-    const prompt =
-      `Hệ thống tự động: rà soát hội thoại CEO gần đây. Đọc transcript bên dưới và extract MỌI thông tin đáng ghi nhớ.\n\n` +
-      `Với MỖI fact/quyết định/sở thích/quy trình mới, gọi POST /api/memory/write với:\n` +
-      `- type: "preference" | "decision" | "procedure" | "entity_note"\n` +
-      `- content: nội dung ngắn gọn (<200 chars)\n` +
-      `- source: "auto"\n\n` +
-      `KHÔNG ghi: chào hỏi, "ok", task đã xong, kết quả cron, nội dung lặp memory đã có.\n` +
-      `Nếu KHÔNG có gì mới đáng nhớ → trả lời 1 dòng "Không có thông tin mới cần ghi nhớ." và DỪNG.\n` +
-      `KHÔNG gửi message cho CEO. KHÔNG dùng emoji.\n\n` +
-      `--- TRANSCRIPT GẦN ĐÂY ---\n${history}\n--- HẾT ---`;
+    const { writeMemory, searchMemory } = ceoMem;
     console.log('[idle-memory] extracting memories from recent CEO conversation...');
-    await _runCronAgentPromptFn(prompt, { label: 'idle-memory-extract' });
-    try { auditLog('idle_memory_extract', { sinceMs, historyChars: history.length }); } catch {}
+    const res = await captureAndStore(history, {
+      modelCall: call9Router,
+      readExistingMemories: async () => { try { return fs.readFileSync(path.join(getWorkspace(), 'CEO-MEMORY.md'), 'utf-8'); } catch { return ''; } },
+      searchMemory: (q, opts) => searchMemory(q, opts),
+      writeMemory: opts => writeMemory(opts),
+      onMissed: (m) => {
+        try {
+          const logDir = path.join(getWorkspace(), 'logs');
+          if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+          fs.appendFileSync(path.join(logDir, 'memory-missed.log'), JSON.stringify({ t: new Date().toISOString(), ...m }) + '\n');
+        } catch (e) {
+          console.warn('[idle-memory] onMissed log failed:', e?.message);
+        }
+      },
+    });
+    console.log('[idle-memory] captured', res.written, 'written,', res.deduped, 'deduped,', res.skipped, 'skipped');
+    try { auditLog('idle_memory_extract', { written: res.written, deduped: res.deduped, skipped: res.skipped, sinceMs, historyChars: history.length }); } catch {}
     console.log('[idle-memory] extraction complete');
   } catch (e) {
     console.warn('[idle-memory] extraction failed:', e?.message);
@@ -671,5 +674,4 @@ module.exports = {
   touchIdleMemoryTimer,
   startIdleMemoryWatcher,
   stopIdleMemoryTimer,
-  setIdleMemoryRunCronAgent,
 };

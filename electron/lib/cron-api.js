@@ -777,6 +777,33 @@ function startCronApi() {
       } catch (e) {
         return jsonResp(res, 500, { error: 'Failed to load capabilities: ' + e.message });
       }
+    // ─── Premium Onboarding 7 Ngày ─────────────────────────────────────
+    } else if (urlPath.startsWith('/api/onboarding/')) {
+      const onboarding = require('./onboarding-nudge');
+
+      if (urlPath === '/api/onboarding/status' && req.method === 'GET') {
+        const status = onboarding.getOnboardingStatus();
+        if (!status) return jsonResp(res, 200, { active: false });
+        return jsonResp(res, 200, { active: true, ...status });
+
+      } else if (urlPath === '/api/onboarding/dismiss' && req.method === 'POST') {
+        onboarding.dismissOnboarding();
+        return jsonResp(res, 200, { success: true });
+
+      } else if (urlPath === '/api/onboarding/advance' && req.method === 'POST') {
+        onboarding.advanceOnboardingDay();
+        return jsonResp(res, 200, { success: true });
+
+      } else if (urlPath === '/api/onboarding/tick' && req.method === 'POST') {
+        // Force a nudge tick (for testing)
+        onboarding.forceTickOnboarding().catch(e =>
+          console.warn('[cron-api] onboarding tick error:', e?.message)
+        );
+        return jsonResp(res, 200, { success: true });
+
+      } else {
+        return jsonResp(res, 404, { error: 'Unknown onboarding endpoint' });
+      }
     } else if (urlPath === '/api/attachments/analyze') {
       const id = String(params.id || '').trim();
       if (!id) return jsonResp(res, 400, { error: 'id required' });
@@ -1545,7 +1572,7 @@ function startCronApi() {
           senderId,
           action: 'append-via-api',
           details: { file: senderId + '.md', source: 'workspace-api' },
-        }).catch(() => {});
+        }).catch(e => console.warn('[cron-api] sendMemoryWriteAlert failed:', e?.message));
 
         return jsonResp(res, 200, { success: true, senderId, bytes: byteLen });
       } catch (e) {
@@ -1658,7 +1685,7 @@ function startCronApi() {
         const shortContent = safeContent.slice(0, 120) + (safeContent.length > 120 ? '...' : '');
         sendCeoAlert(
           `✅ Đã lưu rule vào *${destFile}*\n\n"${shortContent}"`,
-        ).catch(() => {});
+        ).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
 
         return jsonResp(res, 200, { success: true, file: destFile, chars: safeContent.length });
       } catch (e) {
@@ -1892,6 +1919,14 @@ function startCronApi() {
         asset = mediaLibrary.findMediaAsset(String(mediaId));
       }
       if (!asset) return jsonResp(res, 404, { error: 'media asset not found' });
+      // HARD GUARD (plan v2.4.11 §Task 4): brand assets must NEVER be sent to customers.
+      if (asset.type === 'brand') {
+        auditLog('zalo_send_media_blocked', { mediaId, reason: 'brand_asset_forbidden' });
+        return jsonResp(res, 403, {
+          error: 'Brand assets (type=brand) are never sent to customers.',
+          hint: 'Use /api/media/search to find product or knowledge images for customers.',
+        });
+      }
       const allowInternalGenerated = ['true', '1', 'yes'].includes(String(params.allowInternalGenerated || params.allowInternal || '').toLowerCase());
       if (asset.visibility !== 'public' && !((allowInternalGenerated || recoveredGeneratedPath) && asset.type === 'generated' && asset.visibility === 'internal')) {
         return jsonResp(res, 403, { error: 'media asset is not public' });
@@ -2505,10 +2540,13 @@ function startCronApi() {
     } else if (urlPath === '/api/media/list') {
       try {
         mediaLibrary.backfillLegacyBrandAssets();
+        const audience = ['customer', 'internal', 'ceo'].includes(params.audience) ? params.audience : 'customer';
+        const requestedType = params.type && params.type !== 'brand' ? params.type : undefined;
+        const effectiveType = audience === 'customer' ? 'product' : requestedType;
         const files = mediaLibrary.listMediaAssets({
-          type: params.type || undefined,
+          type: effectiveType,
           visibility: params.visibility || undefined,
-          audience: ['customer', 'internal', 'ceo'].includes(params.audience) ? params.audience : 'customer',
+          audience,
         }).map(sanitizeMediaAssetForApi);
         return jsonResp(res, 200, { files });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
@@ -2517,10 +2555,17 @@ function startCronApi() {
       try {
         const q = String(params.q || params.query || '').trim();
         if (!q) return jsonResp(res, 400, { error: 'query required' });
+        const audience = ['customer', 'internal', 'ceo'].includes(params.audience) ? params.audience : 'customer';
+        // Customer-facing search is product-only. Internal/CEO callers may request
+        // other non-brand media types, but brand assets remain excluded by
+        // searchMediaAssets() itself as a final guard.
+        let effectiveType = params.type && params.type !== 'brand' ? params.type : undefined;
+        if (audience === 'customer') effectiveType = 'product';
         const results = mediaLibrary.searchMediaAssets(q, {
-          type: params.type || undefined,
-          audience: ['customer', 'internal', 'ceo'].includes(params.audience) ? params.audience : 'customer',
+          type: effectiveType,
+          audience,
           limit: params.limit || params.max || 5,
+          minScore: audience === 'customer' ? 3 : 0,
         }).map(sanitizeMediaAssetForApi);
         return jsonResp(res, 200, { query: q, results });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
@@ -2544,7 +2589,7 @@ function startCronApi() {
           sku: params.sku,
           description: params.description,
         });
-        const shouldDescribe = params.describe !== 'false' && !asset.description;
+        const shouldDescribe = params.describe !== 'false' && (asset.type === 'product' || !asset.description);
         if (shouldDescribe) {
           mediaLibrary.describeMediaAsset(asset.id).catch(e => {
             console.error('[media] async describe failed:', e.message);
@@ -2617,7 +2662,7 @@ function startCronApi() {
       const result = await Promise.race([jobDone, timeout]);
 
       if (result.status === 'gen_failed') {
-        sendCeoAlert('[Tạo ảnh/Zalo] Thất bại: ' + result.error).catch(() => {});
+        sendCeoAlert('[Tạo ảnh/Zalo] Thất bại: ' + result.error).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
         return jsonResp(res, 502, { success: false, jobId, status: 'gen_failed', error: result.error });
       }
       if (result.status === 'timeout') {
@@ -2639,9 +2684,9 @@ function startCronApi() {
         : 'done_not_delivered';
 
       if (result.zaloDelivered) {
-        sendCeoAlert(`[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào ${delivery.type === 'group' ? 'nhóm' : 'Zalo cá nhân'} "${deliveryLabel}".`).catch(() => {});
+        sendCeoAlert(`[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào ${delivery.type === 'group' ? 'nhóm' : 'Zalo cá nhân'} "${deliveryLabel}".`).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
       } else {
-        sendCeoAlert(`[Tạo ảnh/Zalo] Ảnh tạo xong nhưng gửi vào "${deliveryLabel}" thất bại. jobId: ${jobId}. Lỗi: ${result.zaloError || 'unknown'}`).catch(() => {});
+        sendCeoAlert(`[Tạo ảnh/Zalo] Ảnh tạo xong nhưng gửi vào "${deliveryLabel}" thất bại. jobId: ${jobId}. Lỗi: ${result.zaloError || 'unknown'}`).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
       }
 
       return jsonResp(res, 200, {
@@ -2705,7 +2750,7 @@ function startCronApi() {
 
         if (result.status === 'failed') {
           earlyFailureHandled = true;
-          sendCeoAlert('[Tạo ảnh/Zalo] Thất bại: ' + (result.error || result.deliveryError || 'lỗi không rõ')).catch(() => {});
+          sendCeoAlert('[Tạo ảnh/Zalo] Thất bại: ' + (result.error || result.deliveryError || 'lỗi không rõ')).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
           return jsonResp(res, 502, { jobId, status: 'failed', error: result.error || result.deliveryError || 'image generation or Zalo delivery failed' });
         }
         if (result.status === 'timeout') {
@@ -2722,9 +2767,9 @@ function startCronApi() {
         // Image generated and delivered (or delivery failed but image is done)
         console.log(`[image-gen] zalo delivery result: ${result.deliveryOk ? 'OK' : 'FAILED'} for job ${jobId}`);
         if (result.deliveryOk) {
-          sendCeoAlert('[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào nhóm Zalo thành công.').catch(() => {});
+          sendCeoAlert('[Tạo ảnh/Zalo] Đã tạo ảnh và gửi vào nhóm Zalo thành công.').catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
         } else {
-          sendCeoAlert('[Tạo ảnh/Zalo] Ảnh đã tạo xong nhưng gửi vào nhóm Zalo thất bại. jobId: ' + jobId + (result.deliveryError ? ' — ' + result.deliveryError : '')).catch(() => {});
+          sendCeoAlert('[Tạo ảnh/Zalo] Ảnh đã tạo xong nhưng gửi vào nhóm Zalo thất bại. jobId: ' + jobId + (result.deliveryError ? ' — ' + result.deliveryError : '')).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
         }
         return jsonResp(res, 200, {
           jobId,
@@ -2756,7 +2801,7 @@ function startCronApi() {
             if (shouldAutoSend) {
               sendTelegramPhoto(imgPath, '').then(ok => {
                 console.log(`[image-gen] auto-send Telegram: ${ok ? 'OK' : 'FAILED'} for ${jobId}`);
-              }).catch(() => {});
+              }).catch(e => console.warn('[image-gen] auto-send Telegram failed:', e?.message));
             }
             resolveJob({ status: 'done', imagePath: imgPath });
           });
@@ -2804,10 +2849,10 @@ function startCronApi() {
           if (shouldAutoSend && !err && imgPath) {
             sendTelegramPhoto(imgPath, '').then(ok => {
               console.log(`[image-gen] auto-send Telegram: ${ok ? 'OK' : 'FAILED'} for ${jobId}`);
-              if (!ok) sendCeoAlert(`[Tạo ảnh] Ảnh tạo xong nhưng gửi Telegram thất bại. jobId: ${jobId}`).catch(() => {});
-            }).catch(() => {});
+              if (!ok) sendCeoAlert(`[Tạo ảnh] Ảnh tạo xong nhưng gửi Telegram thất bại. jobId: ${jobId}`).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
+            }).catch(e => console.warn('[image-gen] auto-send Telegram failed:', e?.message));
           } else if (shouldAutoSend && err) {
-            sendCeoAlert(`[Tạo ảnh] Thất bại: ${err.message}`).catch(() => {});
+            sendCeoAlert(`[Tạo ảnh] Thất bại: ${err.message}`).catch(e => console.warn('[cron-api] sendCeoAlert failed:', e?.message));
           }
         });
       } catch (e) {
@@ -2979,8 +3024,16 @@ function startCronApi() {
           const mediaLibrary = require('./media-library');
           const asset = mediaLibrary.findMediaAsset(String(mediaId));
           if (!asset) return jsonResp(res, 404, { error: 'media asset not found' });
+          // HARD GUARD (plan v2.4.11 §Task 4): brand assets must NEVER be sent to customers.
+          if (asset.type === 'brand') {
+            auditLog('agent_deliver_zalo_blocked', { mediaId, reason: 'brand_asset_forbidden' });
+            return jsonResp(res, 403, {
+              error: 'Brand assets (type=brand) are never sent to customers.',
+              hint: 'Use product or knowledge images for customer delivery.',
+            });
+          }
           if (asset.visibility === 'private') {
-            auditLog('agent_deliver_zalo_blocked', { mediaId, reason: 'private asset' });
+            auditLog('agent_deliver_zalo_blocked', { mediaId, reason: 'private_asset' });
             return jsonResp(res, 403, { error: 'SECURITY: cannot deliver private media asset via Zalo.' });
           }
           auditLog('agent_deliver_zalo', { targetId: tId, isGroup: !!isGroup, mediaId, hasCaption: !!caption });
@@ -3049,7 +3102,7 @@ function startCronApi() {
           if (process.env.NODE_ENV !== 'test' && !process.env._9BIZ_SUPPRESS_TG) {
             const ch = require('./channels');
             ch.sendTelegram(`✓ Đã tạo skill "${entry.name}" (id: ${entry.id}). Mở Dashboard > Skills để xem chi tiết.`, { skipFilter: true, skipPauseCheck: true })
-              .catch(() => {});
+              .catch(e => console.warn('[cron-api] sendTelegram failed:', e?.message));
           }
         } catch {}
         try { _broadcastSkillUpdated(); } catch {}
@@ -3095,7 +3148,7 @@ function startCronApi() {
         try {
           if (process.env.NODE_ENV !== 'test' && !process.env._9BIZ_SUPPRESS_TG) {
             const ch = require('./channels');
-            ch.sendTelegram(`✓ Đã xóa skill "${id}". Có thể khôi phục trong 20 lần xóa gần nhất.`, { skipFilter: true, skipPauseCheck: true }).catch(() => {});
+            ch.sendTelegram(`✓ Đã xóa skill "${id}". Có thể khôi phục trong 20 lần xóa gần nhất.`, { skipFilter: true, skipPauseCheck: true }).catch(e => console.warn('[auto-fix] promise rejected:', e?.message));
           }
         } catch {}
         return jsonResp(res, 200, { success: true, ...result });
@@ -3486,11 +3539,14 @@ function startCronApi() {
   });
 
   function tryListen(port, retries) {
-    server.listen(port, '127.0.0.1', () => {
+    const onceListening = () => {
+      if (_cronApiServer !== server) return; // stale — a newer server is active
       _cronApiServer = server;
       _cronApiPort = server.address().port;
       console.log('[cron-api] listening on http://127.0.0.1:' + _cronApiPort);
-    });
+    };
+    server.once('listening', onceListening);
+    server.listen(port, '127.0.0.1');
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE' && retries > 0) {
         console.warn('[cron-api] port ' + port + ' in use, trying ' + (port + 1));

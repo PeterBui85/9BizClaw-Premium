@@ -127,12 +127,14 @@ async function main() {
   const existingLicenses = await sbFetch('licenses?select=key_hash', 'GET');
   let existingHashes = [];
   if (existingLicenses.status === 200) {
-    try { existingHashes = JSON.parse(existingLicenses.body).map(r => r.key_hash); } catch {}
+    try { existingHashes = JSON.parse(existingLicenses.body).map(r => r.key_hash); }
+    catch (e) { console.warn('[migrate] Could not parse existing licenses from Supabase:', e.message); }
   }
   const existingRevoked = await sbFetch('revoked_keys?select=key_hash', 'GET');
   let existingRevokedHashes = [];
   if (existingRevoked.status === 200) {
-    try { existingRevokedHashes = JSON.parse(existingRevoked.body).map(r => r.key_hash); } catch {}
+    try { existingRevokedHashes = JSON.parse(existingRevoked.body).map(r => r.key_hash); }
+    catch (e) { console.warn('[migrate] Could not parse revoked keys from Supabase:', e.message); }
   }
   console.log(`Supabase licenses: ${existingHashes.length} existing`);
   console.log(`Supabase revoked:  ${existingRevokedHashes.length} existing`);

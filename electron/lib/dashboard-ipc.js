@@ -99,7 +99,7 @@ const {
 const {
   extractConversationHistoryRaw, extractConversationHistory,
   writeDailyMemoryJournal, appendPerCustomerSummaries, trimZaloMemoryFile,
-  withMemoryFileLock, touchIdleMemoryTimer, setIdleMemoryRunCronAgent, startIdleMemoryWatcher,
+  withMemoryFileLock, touchIdleMemoryTimer, startIdleMemoryWatcher,
 } = require('./conversation');
 const {
   compareVersions, checkForUpdates, downloadUpdate, installDmgUpdate, openGitHubUrl,
@@ -195,6 +195,7 @@ const {
   getAgentFlagProfile, getAgentCliHealthy,
 } = require('./cron');
 const { startCronApi, getCronApiToken, getCronApiPort } = require('./cron-api');
+const { startOnboardingNudgeTimer, resetOnboardingState, getOnboardingStatus, dismissOnboarding, advanceOnboardingDay } = require('./onboarding-nudge');
 const { registerChatIpc } = require('./chat');
 
 // ============================================
@@ -218,6 +219,7 @@ function startRuntimeSidecars(source) {
   try { watchCustomCrons(); } catch (e) { console.error(prefix, 'watchCustomCrons error:', e?.message || e); }
   try { startZaloCacheAutoRefresh(); } catch (e) { console.error(prefix, 'startZaloCacheAutoRefresh error:', e?.message || e); }
   try { startAppointmentDispatcher(); } catch (e) { console.error(prefix, 'startAppointmentDispatcher error:', e?.message || e); }
+  try { startOnboardingNudgeTimer(); } catch (e) { console.error(prefix, 'startOnboardingNudgeTimer error:', e?.message || e); }
 }
 
 // v2.4.10 fix: fs.watch on Zalo config files so Dashboard auto-refreshes when
@@ -303,8 +305,6 @@ function startZaloConfigWatcher() {
 function registerAllIpcHandlers() {
 
 registerChatIpc();
-// Wire idle memory extraction — uses runCronViaSessionOrFallback for reliable delivery
-try { setIdleMemoryRunCronAgent(runCronViaSessionOrFallback); } catch {}
 // Start the periodic memory-extraction watcher (replaces the old re-armable
 // timeout that never fired on an active bot — see conversation.js for details).
 try { startIdleMemoryWatcher(); } catch (e) { console.warn('[idle-memory] watcher init error:', e?.message); }
@@ -1579,6 +1579,9 @@ ipcMain.handle('get-zalo-manager-config', async () => {
     }
     let allowlist = [];
     const ap = getZaloAllowlistPath();
+  if (!ap) return;  // auto-fix: null guard for workspace path
+  if (!ap) return;  // auto-fix: null guard for workspace path
+  if (!ap) return;  // auto-fix: null guard for workspace path
     if (ap && fs.existsSync(ap)) {
       try { allowlist = JSON.parse(fs.readFileSync(ap, 'utf-8')); } catch (e) { console.warn('[zalo-manager] allowlist parse error:', e?.message); }
     }
@@ -1674,6 +1677,8 @@ function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, use
   // Allowlist (v2.4.4+): explicit list of friends CEO turned ON
   if (userAllowlistTouched) {
     const ap = getZaloAllowlistPath();
+  if (!ap) return;  // auto-fix: null guard for workspace path
+  if (!ap) return;  // auto-fix: null guard for workspace path
     if (ap) {
       const al = Array.isArray(userAllowlist) ? userAllowlist.map(x => String(x || '').trim()).filter(Boolean) : [];
       writeJsonAtomic(ap, al);
@@ -3322,7 +3327,7 @@ ipcMain.handle('list-brand-assets', async () => {
           thumbDataUrl = `data:${mime};base64,${buf.toString('base64')}`;
         }
       } catch {}
-      return { id: asset.id, name: asset.filename, title: asset.title, size: stat.size, thumbDataUrl };
+      return { id: asset.id, name: asset.filename, title: asset.title, size: stat.size, thumbDataUrl, description: asset.description || '', status: asset.status || 'indexed' };
     }).filter(Boolean);
   } catch { return []; }
 });
@@ -3340,12 +3345,18 @@ ipcMain.handle('upload-brand-asset', async (_event, filePath, name) => {
     const dst = path.join(dir, safeName);
     fs.writeFileSync(dst, buf);
     try {
-      mediaLibrary.registerExistingMediaFile(dst, {
+      const asset = mediaLibrary.registerExistingMediaFile(dst, {
         type: 'brand',
         visibility: 'internal',
         source: 'dashboard-brand-upload',
         status: 'indexed',
       });
+      // Fire-and-forget: generate description async so bot can use asset immediately
+      if (asset && asset.id) {
+        mediaLibrary.describeMediaAsset(asset.id).catch(e =>
+          console.warn('[media] brand describe failed:', e?.message)
+        );
+      }
     } catch (e) { console.warn('[media] brand upload register failed:', e.message); }
     return { success: true, name: safeName };
   } catch (e) { return { success: false, error: e.message }; }
@@ -3373,7 +3384,10 @@ ipcMain.handle('pick-brand-asset-file', async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
-ipcMain.handle('list-media-assets', async (_event, filters = {}) => {
+// ─── Premium Onboarding 7 Ngày IPC ────────────────────────────────
+
+// ─── Media Assets ─────────────────────────────────────────────────
+ipcMain.handle('list-media-assets', async (_event, filters) => {
   try {
     mediaLibrary.backfillLegacyBrandAssets();
     // Default audience:'ceo' — the Media tab is the CEO's own Dashboard, so it
@@ -3384,10 +3398,10 @@ ipcMain.handle('list-media-assets', async (_event, filters = {}) => {
   } catch { return []; }
 });
 
-ipcMain.handle('upload-media-asset', async (_event, { filePath, type = 'product', title = '', tags = '', visibility } = {}) => {
+ipcMain.handle('upload-media-asset', async (_event, { filePath, type = 'product', title = '', tags = '', aliases = '', description = '', visibility } = {}) => {
   try {
-    const asset = mediaLibrary.importMediaFile(filePath, { type, title, tags, visibility });
-    if (!asset.description) {
+    const asset = mediaLibrary.importMediaFile(filePath, { type, title, tags, aliases, description, visibility });
+    if (!asset.description || asset.type === 'product') {
       mediaLibrary.describeMediaAsset(asset.id).catch(e => {
         console.warn('[media] async describe failed:', e.message);
       });
@@ -3401,6 +3415,18 @@ ipcMain.handle('describe-media-asset', async (_event, id) => {
     const asset = await mediaLibrary.describeMediaAsset(id);
     return { success: true, asset };
   } catch (e) { return { success: false, error: mediaLibrary.localizeMediaError(e) }; }
+});
+
+ipcMain.handle('search-media-assets', async (_event, { query, type = 'product', limit = 10 } = {}) => {
+  try {
+    if (!query || query.trim().length < 2) return [];
+    return mediaLibrary.searchMediaAssets(query.trim(), {
+      type: type && type !== 'brand' ? type : undefined,
+      limit: Math.min(Number(limit) || 10, 20),
+      audience: 'customer',
+      minScore: 2,
+    });
+  } catch (e) { return []; }
 });
 
 ipcMain.handle('delete-media-asset', async (_event, id) => {
@@ -3454,7 +3480,8 @@ ipcMain.handle('toggle-fb-schedule', async (_event, { id, enabled }) => {
 ipcMain.handle('get-fb-config', async () => {
   const cfg = readFbConfig();
   if (!cfg) return null;
-  return { pageId: cfg.pageId, pageName: cfg.pageName, connectedAt: cfg.connectedAt };
+  const pages = (cfg.pages || []).map(p => ({ id: p.id, name: p.name }));
+  return { pageId: cfg.pageId, pageName: cfg.pageName, pages, selectedPageId: cfg.selectedPageId, connectedAt: cfg.connectedAt };
 });
 
 ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
@@ -3462,14 +3489,26 @@ ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
     const fbPub = require('./fb-publisher');
     const result = await fbPub.verifyToken(accessToken);
     if (!result.valid) return { success: false, error: result.error };
+    const pages = (result.pages || [{ id: result.pageId, name: result.pageName, accessToken: result.pageToken || accessToken }]);
     const cfg = {
-      pageId: result.pageId,
-      pageName: result.pageName,
-      accessToken: result.pageToken || accessToken,
+      pages,
+      selectedPageId: pages[0].id,
       connectedAt: new Date().toISOString()
     };
     writeFbConfig(cfg);
-    return { success: true, pageId: cfg.pageId, pageName: cfg.pageName };
+    return { success: true, pageId: pages[0].id, pageName: pages[0].name, pages: pages.map(p => ({ id: p.id, name: p.name })) };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('select-fb-page', async (_event, { pageId }) => {
+  try {
+    const cfg = readFbConfig();
+    if (!cfg || !cfg.pages) return { success: false, error: 'Chưa kết nối Facebook' };
+    const page = cfg.pages.find(p => p.id === pageId);
+    if (!page) return { success: false, error: 'Không tìm thấy trang này' };
+    cfg.selectedPageId = pageId;
+    writeFbConfig(cfg);
+    return { success: true, pageId: page.id, pageName: page.name };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
@@ -4231,6 +4270,9 @@ ipcMain.handle('delete-document', async (_event, filename) => {
   try {
     if (!filename || /[\/\\]/.test(filename) || filename.includes('..')) return { success: false, error: 'Invalid filename' };
     const db = getDocumentsDb();
+  if (!db) return;  // auto-fix: null guard for workspace path
+  if (!db) return;  // auto-fix: null guard for workspace path
+  if (!db) return;  // auto-fix: null guard for workspace path
     if (db) {
       const row = db.prepare('SELECT id FROM documents WHERE filename = ?').get(filename);
       if (row) { try { db.prepare('DELETE FROM documents_chunks WHERE document_id = ?').run(row.id); } catch {} }
@@ -4650,6 +4692,7 @@ ipcMain.handle('wizard-complete', async () => {
   // Fresh install: seed workspace files with defaults
   try { seedWorkspace(); } catch (e) { console.error('[wizard-complete seed] error:', e.message); }
   try { markOnboardingComplete('wizard-complete'); } catch {}
+  // Start Premium Onboarding 7-day tracking — reset handled in IIFE below
   // Navigate to dashboard IMMEDIATELY (perf: save up to 3s from credential
   // poll + RAG prefill). Credential poll + cleanup + RAG prefill moved to
   // fire-and-forget IIFE below. Channel status broadcast picks up Zalo state.
@@ -4717,6 +4760,13 @@ ipcMain.handle('wizard-complete', async () => {
         }
       }
     } catch (e) { console.error('[welcome] failed:', e?.message); }
+
+    // Premium onboarding nudge: reset 7-day state + start timer at wizard-complete
+    if (ctx.appIsQuitting) { console.log('[wizard-iife] aborting — app quitting (pre-onboarding-nudge)'); return; }
+    try {
+      resetOnboardingState();  // resets startedAt to now, clears sentDays
+      startOnboardingNudgeTimer();
+    } catch (e) { console.error('[wizard-iife onboarding-nudge] error:', e?.message); }
     } finally { ctx.wizardCompleteInFlight = false; }
   })();
   return { success: true };
@@ -6239,6 +6289,36 @@ ipcMain.handle('download-and-install-update', async () => {
       const { getChannelPauseStatus } = require('./channels');
       return getChannelPauseStatus(ch);
     } catch { return { paused: false }; }
+  });
+
+  // ── Premium Onboarding 7 Ngày ─────────────────────────────────────────
+  ipcMain.handle('onboarding:status', async () => {
+    try {
+      return getOnboardingStatus() || { active: false };
+    } catch (e) {
+      console.error('[onboarding:status]', e?.message);
+      return { active: false, error: e?.message };
+    }
+  });
+
+  ipcMain.handle('onboarding:dismiss', async () => {
+    try {
+      dismissOnboarding();
+      return { success: true };
+    } catch (e) {
+      console.error('[onboarding:dismiss]', e?.message);
+      return { success: false, error: e?.message };
+    }
+  });
+
+  ipcMain.handle('onboarding:advance', async () => {
+    try {
+      advanceOnboardingDay();
+      return { success: true };
+    } catch (e) {
+      console.error('[onboarding:advance]', e?.message);
+      return { success: false, error: e?.message };
+    }
   });
 
 } // end registerAllIpcHandlers
