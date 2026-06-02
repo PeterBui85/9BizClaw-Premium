@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isPathSafe, writeJsonAtomic } = require('./util');
-const { getWorkspace, getBrandAssetsDir, readFbConfig, purgeAgentSessions, auditLog, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE } = require('./workspace');
+const { getWorkspace, getBrandAssetsDir, readFbConfig, getFbPageToken, purgeAgentSessions, auditLog, BRAND_ASSET_FORMATS, BRAND_ASSET_MAX_SIZE } = require('./workspace');
 const { _withCustomCronLock, _withKnowledgeLock, loadCustomCrons, getCustomCronsPath, restartCronJobs } = require('./cron');
 const { sendCeoAlert, sendZaloTo, sendZaloMediaTo, sendTelegram, sendTelegramPhoto, probeZaloReady } = require('./channels');
 const { getZcaCacheDir, sanitizeZaloUserId } = require('./zalo-memory');
@@ -2899,8 +2899,15 @@ function startCronApi() {
       const { message: fbMessage, imagePath: relImgPath, approvalNonce } = params;
       if (!fbMessage) return jsonResp(res, 400, { error: 'message required' });
       if (String(fbMessage).length > 63206) return jsonResp(res, 400, { error: 'message too long (max 63206 chars)' });
+      if (!params.pageId) return jsonResp(res, 400, { error: 'pageId is required' });
       const cfg = readFbConfig();
-      if (!cfg || !cfg.accessToken) return jsonResp(res, 400, { error: 'Facebook chưa kết nối. Paste token vào Dashboard.' });
+      let pageInfo;
+      try {
+        pageInfo = getFbPageToken(cfg, String(params.pageId));
+      } catch (e) {
+        return jsonResp(res, 400, { error: e.message });
+      }
+      const { pageId: fbPageId, token: fbPageToken, pageName: fbPageName } = pageInfo;
       const fbPub = require('./fb-publisher');
       try {
         cleanupFbPostApprovals();
@@ -2913,7 +2920,7 @@ function startCronApi() {
           if (!fs.existsSync(absImg)) return jsonResp(res, 400, { error: 'image not found' });
         }
         const fingerprint = JSON.stringify({
-          pageId: cfg.pageId || '',
+          pageId: fbPageId || '',
           message: String(fbMessage).replace(/\s+/g, ' ').trim(),
           imagePath: normalizedImagePath,
         });
@@ -2928,8 +2935,8 @@ function startCronApi() {
             preview: true,
             approvalNonce: nonce,
             expiresAt: new Date(expiresAt).toISOString(),
-            pageId: cfg.pageId,
-            pageName: cfg.pageName,
+            pageId: fbPageId,
+            pageName: fbPageName,
             hasImage: !!normalizedImagePath,
           });
         }
@@ -2951,15 +2958,15 @@ function startCronApi() {
               return jsonResp(res, 403, { error: 'AUTO-MODE chỉ đăng được ảnh vừa tạo (brand-assets/generated). Ảnh khác cần duyệt qua preview + approvalNonce.' });
             }
           }
-          auditLog('fb_post_automode', { pageId: cfg.pageId, hasImage: !!normalizedImagePath, msgPreview: String(fbMessage).slice(0, 80) });
+          auditLog('fb_post_automode', { pageId: fbPageId, hasImage: !!normalizedImagePath, msgPreview: String(fbMessage).slice(0, 80) });
         }
         if (approvalNonce) _fbPostApprovals.delete(String(approvalNonce));
         let result;
         if (normalizedImagePath) {
           const imgBuf = fs.readFileSync(absImg);
-          result = await fbPub.postPhoto(cfg.pageId, cfg.accessToken, String(fbMessage), imgBuf, absImg);
+          result = await fbPub.postPhoto(fbPageId, fbPageToken, String(fbMessage), imgBuf, absImg);
         } else {
-          result = await fbPub.postText(cfg.pageId, cfg.accessToken, String(fbMessage));
+          result = await fbPub.postText(fbPageId, fbPageToken, String(fbMessage));
         }
         return jsonResp(res, 200, result);
       } catch (e) {
@@ -2970,16 +2977,20 @@ function startCronApi() {
       }
 
     } else if (urlPath === '/api/fb/insights') {
+      if (!params.pageId) return jsonResp(res, 400, { error: 'pageId is required' });
       const cfg = readFbConfig();
-      if (!cfg || !cfg.accessToken) {
-        return jsonResp(res, 200, { valid: false, tokenValid: false, error: 'Facebook ch\u01b0a k\u1ebft n\u1ed1i. Paste token v\u00e0o Dashboard.' });
+      let pageInfo;
+      try {
+        pageInfo = getFbPageToken(cfg, String(params.pageId));
+      } catch (e) {
+        return jsonResp(res, 400, { valid: false, tokenValid: false, error: e.message });
       }
       try {
         const fbPub = require('./fb-publisher');
-        const result = await fbPub.getInsights(cfg.pageId, cfg.accessToken, {
+        const result = await fbPub.getInsights(pageInfo.pageId, pageInfo.token, {
           days: params.days || 7,
           limit: params.limit || 5,
-          pageName: cfg.pageName,
+          pageName: pageInfo.pageName,
         });
         return jsonResp(res, 200, result);
       } catch (e) {
@@ -2990,22 +3001,55 @@ function startCronApi() {
       }
 
     } else if (urlPath === '/api/fb/recent') {
+      if (!params.pageId) return jsonResp(res, 400, { error: 'pageId is required' });
       const cfg = readFbConfig();
-      if (!cfg || !cfg.accessToken) return jsonResp(res, 200, { posts: [] });
+      let pageInfo;
+      try {
+        pageInfo = getFbPageToken(cfg, String(params.pageId));
+      } catch (e) {
+        return jsonResp(res, 400, { error: e.message });
+      }
       try {
         const fbPub = require('./fb-publisher');
-        const posts = await fbPub.getRecentPosts(cfg.pageId, cfg.accessToken, params.limit || 5);
+        const posts = await fbPub.getRecentPosts(pageInfo.pageId, pageInfo.token, params.limit || 5);
         return jsonResp(res, 200, { posts });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/fb/verify') {
-      const cfg = readFbConfig();
-      if (!cfg || !cfg.accessToken) return jsonResp(res, 200, { valid: false, error: 'Facebook chưa kết nối. Paste token vào Dashboard.' });
-      try {
-        const fbPub = require('./fb-publisher');
-        const result = await fbPub.verifyToken(cfg.accessToken);
-        return jsonResp(res, 200, result);
-      } catch (e) { return jsonResp(res, 500, { valid: false, error: e.message }); }
+      const fbPub = require('./fb-publisher');
+      if (params.pageId) {
+        // Verify a specific page's token
+        const cfg = readFbConfig();
+        let pageInfo;
+        try {
+          pageInfo = getFbPageToken(cfg, String(params.pageId));
+        } catch (e) {
+          return jsonResp(res, 400, { valid: false, error: e.message });
+        }
+        try {
+          const result = await fbPub.verifyToken(pageInfo.token);
+          return jsonResp(res, 200, { ...result, pageId: pageInfo.pageId, pageName: pageInfo.pageName });
+        } catch (e) { return jsonResp(res, 500, { valid: false, error: e.message }); }
+      } else {
+        // No pageId: verify ALL pages in parallel
+        const cfg = readFbConfig();
+        const pages = (cfg && cfg.pages) ? cfg.pages : [];
+        if (pages.length === 0) return jsonResp(res, 200, { results: [], error: 'Facebook chưa kết nối. Paste token vào Dashboard.' });
+        const results = await Promise.allSettled(pages.map(async (page) => {
+          let pageInfo;
+          try { pageInfo = getFbPageToken(cfg, page.id); } catch (e) { return { pageId: page.pageId || page.id, pageName: page.pageName, valid: false, error: e.message }; }
+          try {
+            const r = await fbPub.verifyToken(pageInfo.token);
+            return { pageId: pageInfo.pageId, pageName: pageInfo.pageName, valid: r.valid, error: r.error || null };
+          } catch (e) { return { pageId: pageInfo.pageId, pageName: pageInfo.pageName, valid: false, error: e.message }; }
+        }));
+        return jsonResp(res, 200, { results: results.map(r => r.status === 'fulfilled' ? r.value : { valid: false, error: r.reason && r.reason.message }) });
+      }
+
+    } else if (urlPath === '/api/fb/pages') {
+      const fbPub = require('./fb-publisher');
+      const pages = fbPub.listPages();
+      return jsonResp(res, 200, { pages });
 
     } else if (urlPath === '/api/zalo/ready') {
       try {

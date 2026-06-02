@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 148,
+    "apiRoutes": 149,
     "ipcHandlers": 212,
     "preloadBridges": 205,
     "dashboardPages": 18,
@@ -145,6 +145,15 @@
     },
     {
       "path": "/api/fb/insights",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/fb/pages",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -2071,10 +2080,6 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
-      "channel": "select-fb-page",
-      "source": "electron/lib/dashboard-ipc.js"
-    },
-    {
       "channel": "send-chat-message",
       "source": "electron/lib/chat.js"
     },
@@ -2156,6 +2161,10 @@
     },
     {
       "channel": "update-ceo-memory-status",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "update-fb-page",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -3068,11 +3077,6 @@
       "source": "electron/preload.js"
     },
     {
-      "name": "selectFbPage",
-      "channel": "select-fb-page",
-      "source": "electron/preload.js"
-    },
-    {
       "name": "sendChatMessage",
       "channel": "send-chat-message",
       "source": "electron/preload.js"
@@ -3175,6 +3179,11 @@
     {
       "name": "updateCeoMemoryStatus",
       "channel": "update-ceo-memory-status",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "updateFbPage",
+      "channel": "update-fb-page",
       "source": "electron/preload.js"
     },
     {
@@ -3346,7 +3355,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 185930
+      "bytes": 187896
     },
     {
       "path": "electron/lib/cron.js",
@@ -3354,15 +3363,15 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 287594
+      "bytes": 289976
     },
     {
       "path": "electron/lib/fb-publisher.js",
-      "bytes": 21954
+      "bytes": 24489
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 69221
+      "bytes": 76078
     },
     {
       "path": "electron/lib/gateway.js",
@@ -3406,7 +3415,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 56067
+      "bytes": 62404
     },
     {
       "path": "electron/lib/zalo-plugin.js",
@@ -3418,7 +3427,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 687785
+      "bytes": 689419
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",

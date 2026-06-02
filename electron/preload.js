@@ -286,7 +286,7 @@ contextBridge.exposeInMainWorld('claw', {
   // Facebook
   getFbConfig: () => ipcRenderer.invoke('get-fb-config'),
   saveFbConfig: (accessToken) => ipcRenderer.invoke('save-fb-config', { accessToken }),
-  selectFbPage: (pageId) => ipcRenderer.invoke('select-fb-page', { pageId }),
+  updateFbPage: (id, props) => ipcRenderer.invoke('update-fb-page', { id, ...props }),
   verifyFbToken: () => ipcRenderer.invoke('verify-fb-token'),
   getFbRecentPosts: () => ipcRenderer.invoke('get-fb-recent-posts'),
 

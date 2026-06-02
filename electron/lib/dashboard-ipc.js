@@ -18,7 +18,7 @@ const zaloMenu = require('./zalo-menu');
 const {
   getWorkspace, invalidateWorkspaceCache, getWorkspaceTemplateRoot,
   getOpenclawAgentWorkspace, seedWorkspace, purgeAgentSessions,
-  getBrandAssetsDir, getFbConfigPath, readFbConfig, writeFbConfig,
+  getBrandAssetsDir, getFbConfigPath, readFbConfig, writeFbConfig, generateFbId,
   getSetupCompletePath, hasCompletedOnboarding, markOnboardingComplete,
   isOpenClawConfigured, getAppPrefsPath, loadAppPrefs, saveAppPrefs,
   auditLog, backupWorkspace,
@@ -3480,8 +3480,9 @@ ipcMain.handle('toggle-fb-schedule', async (_event, { id, enabled }) => {
 ipcMain.handle('get-fb-config', async () => {
   const cfg = readFbConfig();
   if (!cfg) return null;
-  const pages = (cfg.pages || []).map(p => ({ id: p.id, name: p.name }));
-  return { pageId: cfg.pageId, pageName: cfg.pageName, pages, selectedPageId: cfg.selectedPageId, connectedAt: cfg.connectedAt };
+  const fbPub = require('./fb-publisher');
+  // listPages() returns [{id, pageId, pageName, shortName, enabled, tokenId, tokenStatus}]
+  return { connectedAt: cfg.connectedAt, pages: fbPub.listPages() };
 });
 
 ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
@@ -3489,45 +3490,93 @@ ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
     const fbPub = require('./fb-publisher');
     const result = await fbPub.verifyToken(accessToken);
     if (!result.valid) return { success: false, error: result.error };
-    const pages = (result.pages || [{ id: result.pageId, name: result.pageName, accessToken: result.pageToken || accessToken }]);
+    const verified = result.pages || [];
+    if (!verified.length) return { success: false, error: 'Không tìm thấy Fanpage nào có quyền đăng bài.' };
+
+    // Preserve per-page settings (shortName/enabled) across reconnect. Internal
+    // page ids are deterministic from the Facebook pageId, so re-pasting the same
+    // token re-maps to the same internal ids and keeps the CEO's customizations.
+    const existing = readFbConfig();
+    const prevById = {};
+    if (existing && Array.isArray(existing.pages)) {
+      for (const p of existing.pages) prevById[p.id] = p;
+    }
+
+    const connectedAt = new Date().toISOString();
+    const tokenId = generateFbId('tok', verified.map(p => p.pageId).sort().join(','));
+    const pages = verified.map(v => {
+      const internalId = generateFbId('page', v.pageId);
+      const prev = prevById[internalId] || {};
+      return {
+        id: internalId,
+        tokenId,
+        pageId: v.pageId,
+        pageAccessToken: v.pageToken,
+        pageName: v.pageName,
+        shortName: prev.shortName ?? null,
+        enabled: prev.enabled !== undefined ? prev.enabled : true,
+        connectedAt: prev.connectedAt || connectedAt,
+      };
+    });
+    // Pages that existed before but the new token no longer grants — they vanish
+    // from config, so surface the names to the CEO instead of dropping silently.
+    const newIds = new Set(pages.map(p => p.id));
+    const removed = (existing && Array.isArray(existing.pages) ? existing.pages : [])
+      .filter(p => !newIds.has(p.id))
+      .map(p => p.pageName || p.pageId);
     const cfg = {
+      tokens: [{
+        id: tokenId,
+        userToken: null,
+        isLegacy: false,
+        pageIds: pages.map(p => p.id),
+        connectedAt,
+      }],
       pages,
-      selectedPageId: pages[0].id,
-      connectedAt: new Date().toISOString()
+      connectedAt,
     };
     writeFbConfig(cfg);
-    return { success: true, pageId: pages[0].id, pageName: pages[0].name, pages: pages.map(p => ({ id: p.id, name: p.name })) };
+    return { success: true, count: pages.length, removed, pages: pages.map(p => ({ id: p.id, pageName: p.pageName })) };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.handle('select-fb-page', async (_event, { pageId }) => {
+// Toggle a page on/off or set its short name (used by the bot for "post to <shortName>").
+ipcMain.handle('update-fb-page', async (_event, { id, shortName, enabled }) => {
   try {
     const cfg = readFbConfig();
-    if (!cfg || !cfg.pages) return { success: false, error: 'Chưa kết nối Facebook' };
-    const page = cfg.pages.find(p => p.id === pageId);
-    if (!page) return { success: false, error: 'Không tìm thấy trang này' };
-    cfg.selectedPageId = pageId;
+    if (!cfg || !Array.isArray(cfg.pages)) return { success: false, error: 'Chưa kết nối Facebook' };
+    const page = cfg.pages.find(p => p.id === id);
+    if (!page) return { success: false, error: 'Không tìm thấy Fanpage' };
+    if (shortName !== undefined) page.shortName = shortName ? String(shortName).trim() : null;
+    if (enabled !== undefined) page.enabled = !!enabled;
     writeFbConfig(cfg);
-    return { success: true, pageId: page.id, pageName: page.name };
+    return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('verify-fb-token', async () => {
   const cfg = readFbConfig();
-  if (!cfg || !cfg.accessToken) return { valid: false, error: 'Chưa kết nối Facebook' };
+  const page = cfg && Array.isArray(cfg.pages) ? cfg.pages.find(p => p.enabled && p.pageAccessToken) : null;
+  if (!page) return { valid: false, error: 'Chưa kết nối Facebook' };
   const fbPub = require('./fb-publisher');
-  const result = await fbPub.verifyToken(cfg.accessToken);
-  const { pageToken, ...safe } = result;
-  return safe;
+  const result = await fbPub.verifyToken(page.pageAccessToken);
+  if (!result.valid) return result;
+  // Strip pageToken from each page before sending to renderer
+  const pages = (result.pages || []).map(({ pageToken, ...rest }) => rest);
+  return { valid: true, pages };
 });
 
 ipcMain.handle('get-fb-recent-posts', async () => {
   const cfg = readFbConfig();
-  if (!cfg || !cfg.accessToken) return [];
+  // Shows the first enabled page's posts — the UI labels which page so the CEO
+  // isn't misled into thinking these are from a different connected fanpage.
+  const page = cfg && Array.isArray(cfg.pages) ? cfg.pages.find(p => p.enabled && p.pageAccessToken) : null;
+  if (!page) return { pageName: null, posts: [] };
   try {
     const fbPub = require('./fb-publisher');
-    return await fbPub.getRecentPosts(cfg.pageId, cfg.accessToken, 5);
-  } catch { return []; }
+    const posts = await fbPub.getRecentPosts(page.pageId, page.pageAccessToken, 5);
+    return { pageName: page.pageName, posts: posts || [] };
+  } catch { return { pageName: page.pageName, posts: [] }; }
 });
 
 

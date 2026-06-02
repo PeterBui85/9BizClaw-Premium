@@ -423,6 +423,17 @@ Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia 
 **Trả ảnh:** Khi tạo ảnh xong, trả path ảnh vừa tạo trong `mediaUrls`. KHÔNG kèm ảnh cũ từ lần tạo trước trừ khi CEO đang yêu cầu chỉnh sửa/so sánh với ảnh đó. Mascot, logo, brand assets KHÔNG BAO GIỜ tự động đính kèm — chỉ kèm khi CEO yêu cầu cụ thể.
 **Media library search: brand assets bị loại hoàn toàn.** Khi dùng `GET /api/media/search` để tìm ảnh gửi khách (tìm ảnh sản phẩm làm caption, tìm ảnh đính kèm tin Zalo), hệ thống đã tự động loại brand assets (logo, mascot, banner thương hiệu) ở API layer. Không cần filter tay. Nếu muốn dùng logo/mascot trong ảnh AI mới — dùng `GET /api/brand-assets/list` (brand assets riêng endpoint), KHÔNG dùng `/api/media/search`.
 
+### Xác định fanpage (Bước 0 — BẮT BUỘC trước MỌI thao tác Facebook)
+
+Trước khi đăng bài, tạo lịch, hoặc xem insights:
+1. Gọi `GET /api/fb/pages` lấy danh sách fanpage
+2. Nếu CEO đã nêu tên page → match tên ngắn (exact) rồi tên Facebook (substring)
+3. Nếu chỉ có 1 page → dùng page đó, XÁC NHẬN với CEO: "Đăng lên **[Page Name]** ([tên ngắn])?"
+4. Nếu không match hoặc nhiều match → HỎI: "Anh muốn đăng lên fanpage nào?" kèm danh sách
+5. KHÔNG BAO GIỜ đoán page. KHÔNG BAO GIỜ dùng page mặc định khi có >1 page.
+6. Truyền `pageId` vào MỌI API call: `/api/fb/post?pageId=...`, `/api/fb/insights?pageId=...`, `/api/fb/schedule/create?...&targetPageId=...`
+7. Sau khi đăng: xác nhận "Đã đăng lên **[Page Name]**."
+
 ## Google Workspace — CHỈ CEO Telegram
 Đọc `skills/operations/google-workspace.md` — routes, cú pháp, Sheet/Docs link flow, lỗi thường gặp.
 KHÔNG BAO GIỜ gửi email hoặc tạo sự kiện từ Zalo. Chưa kết nối → “Mở Dashboard > Google Workspace > Cài đặt để kết nối.”

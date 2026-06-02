@@ -1,7 +1,7 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 148
+- apiRoutes: 149
 - ipcHandlers: 212
 - preloadBridges: 205
 - dashboardPages: 18
@@ -31,6 +31,7 @@ API Routes
 - /api/customer-memory/write [local-api]
 - /api/exec [local-api]
 - /api/fb/insights [local-api]
+- /api/fb/pages [local-api]
 - /api/fb/post [local-api]
 - /api/fb/recent [local-api]
 - /api/fb/schedule [local-api]
@@ -191,11 +192,11 @@ Large Source Files
 - electron/lib/channels.js: 99822 bytes
 - electron/lib/config.js: 64106 bytes
 - electron/lib/conversation.js: 32431 bytes
-- electron/lib/cron-api.js: 185930 bytes
+- electron/lib/cron-api.js: 187896 bytes
 - electron/lib/cron.js: 142294 bytes
-- electron/lib/dashboard-ipc.js: 287594 bytes
-- electron/lib/fb-publisher.js: 21954 bytes
-- electron/lib/fb-schedule.js: 69221 bytes
+- electron/lib/dashboard-ipc.js: 289976 bytes
+- electron/lib/fb-publisher.js: 24489 bytes
+- electron/lib/fb-schedule.js: 76078 bytes
 - electron/lib/gateway.js: 87849 bytes
 - electron/lib/google-api.js: 39708 bytes
 - electron/lib/google-routes.js: 26715 bytes

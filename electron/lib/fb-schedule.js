@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getWorkspace, getBrandAssetsDir, readFbConfig, auditLog } = require('./workspace');
+const { getWorkspace, getBrandAssetsDir, readFbConfig, writeFbConfig, auditLog, getFbPageById, getFbPageToken, getTokenById } = require('./workspace');
 const { sendTelegram: _sendTelegram, sendTelegramPhoto: _sendTelegramPhoto } = require('./channels');
 
 // ─── Callbacks ────────────────────────────────────────────────────
@@ -200,6 +200,7 @@ function assetSummaryLine(assetNames) {
  *   assetNames: string[] (brand asset filenames for image-gen),
  *   imageSize: string (e.g. "1024x1024"),
  *   daysOfWeek: number[] (0=Sun..6=Sat, empty=every day),
+ *   targetPageId: string (internal page id — which fanpage to publish to),
  *   createdAt: ISO string,
  *   updatedAt: ISO string,
  * }
@@ -261,6 +262,7 @@ function deleteScheduleById(id) {
  *   imagePath: string (absolute),
  *   caption: string,
  *   prompt: string,
+ *   targetPageId: string | null (internal page id for multi-page publish),
  *   generatedAt: ISO string,
  *   approvedAt: ISO string | null,
  *   publishedAt: ISO string | null,
@@ -357,6 +359,17 @@ async function _handleGenerateInner(scheduleId) {
     return;
   }
 
+  // Resolve target page name for preview messages
+  let _targetPageName = null;
+  let _targetShortName = null;
+  if (schedule.targetPageId) {
+    try {
+      const _cfg = readFbConfig();
+      const _page = _cfg ? getFbPageById(_cfg, schedule.targetPageId) : null;
+      if (_page) { _targetPageName = _page.pageName; _targetShortName = _page.shortName; }
+    } catch {}
+  }
+
   const prompt = schedule.prompt || '';
   const caption = schedule.caption || '';
   if (!prompt) {
@@ -375,6 +388,7 @@ async function _handleGenerateInner(scheduleId) {
     imagePath: null,
     caption,
     prompt,
+    targetPageId: schedule.targetPageId || null,
     generatedAt: null,
     approvedAt: null,
     publishedAt: null,
@@ -440,29 +454,31 @@ async function _handleGenerateInner(scheduleId) {
       savePending(pending);
 
       if (_sendTelegramPhoto) {
+        const _pageLabel = _targetPageName ? `Bài cho **${_targetPageName}**${_targetShortName ? ` (${_targetShortName})` : ''} — lúc ${schedule.postTime}` : `Lúc ${schedule.postTime}`;
         try {
-          await _sendTelegramPhoto(imagePath, `[FB Auto-post] "${schedule.label}"\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nSẽ tự động đăng lúc ${schedule.postTime}. Trả lời "fb hủy" để hủy.`);
+          await _sendTelegramPhoto(imagePath, `[FB Auto-post] "${schedule.label}"\n${_pageLabel}\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nSẽ tự động đăng. Trả lời "fb hủy" để hủy.`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send auto-post preview:', e.message);
         }
       }
     } else {
       // Normal mode: send preview and wait for CEO approval
+      const _pageLabel = _targetPageName ? `Bài cho **${_targetPageName}**${_targetShortName ? ` (${_targetShortName})` : ''} — lúc ${schedule.postTime}` : `Lúc ${schedule.postTime}`;
       if (_sendTelegramPhoto) {
         try {
-          await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nTrả lời:\n• "fb ok" → duyệt đăng\n• "fb sửa caption: <nội dung mới>" → đổi caption\n• "fb ảnh khác" → tạo lại ảnh\n• "fb hủy" → bỏ bài này`);
+          await _sendTelegramPhoto(imagePath, `[FB Preview] "${schedule.label}"\n${_pageLabel}\n\nCaption:\n${caption}\n\n${assetSummaryLine(schedule.assetNames)}\n\nTrả lời:\n• "fb ok" → duyệt đăng\n• "fb sửa caption: <nội dung mới>" → đổi caption\n• "fb ảnh khác" → tạo lại ảnh\n• "fb hủy" → bỏ bài này`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send photo preview:', e.message);
           // Fall back to a text preview — a photo-send hiccup must not silently
           // strand the post (CEO never sees it → it gets skipped at postTime).
           if (_sendTelegram) {
-            try { await _sendTelegram(`[FB Preview] "${schedule.label}" — Ảnh đã tạo xong (gửi ảnh lỗi, ${assetSummaryLine(schedule.assetNames)}).\nCaption: ${caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`); }
+            try { await _sendTelegram(`[FB Preview] "${schedule.label}" (${_targetPageName || 'Facebook'}) — Ảnh đã tạo xong (gửi ảnh lỗi, ${assetSummaryLine(schedule.assetNames)}).\nCaption: ${caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`); }
             catch (e2) { console.warn('[fb-schedule] text preview fallback also failed:', e2.message); }
           }
         }
       } else if (_sendTelegram) {
         try {
-          await _sendTelegram(`[FB Preview] "${schedule.label}" — Ảnh đã tạo xong.\nCaption: ${caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`);
+          await _sendTelegram(`[FB Preview] "${schedule.label}" (${_targetPageName || 'Facebook'}) — Ảnh đã tạo xong.\nCaption: ${caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`);
         } catch (e) {
           console.warn('[fb-schedule] failed to send text preview:', e.message);
         }
@@ -624,21 +640,39 @@ async function publishPending(pending, schedule) {
 
 async function _publishPendingImpl(pending, schedule) {
   const cfg = readFbConfig();
-  if (!cfg || !cfg.accessToken || !cfg.pageId) {
+  if (!cfg) {
     pending.status = 'skipped';
-    pending.error = !cfg?.pageId ? 'Facebook chưa chọn Fanpage (không có pageId)'
-      : (cfg?.tokenError === 'decrypt_failed' ? 'Token Facebook không giải mã được — cần kết nối lại Fanpage'
-        : 'Facebook chưa kết nối (không có token)');
+    pending.error = 'Facebook chưa kết nối (không có config)';
     savePending(pending);
-
     auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: pending.error });
+    if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Không đăng được "${schedule?.label || pending.scheduleId}": Facebook chưa kết nối.`); } catch {} }
+    return;
+  }
 
-    if (_sendTelegram) {
-      const m = cfg?.tokenError === 'decrypt_failed'
-        ? `[FB Schedule] Không đăng được "${schedule?.label || pending.scheduleId}": token Facebook không giải mã được (máy/keychain đã đổi). Vào Dashboard → Facebook → kết nối lại Fanpage.`
-        : `[FB Schedule] Không đăng được "${schedule?.label || pending.scheduleId}": Facebook chưa kết nối.`;
-      try { await _sendTelegram(m); } catch {}
-    }
+  // Resolve target page — pending.targetPageId takes priority over schedule.targetPageId
+  const targetPageId = pending.targetPageId || schedule?.targetPageId;
+  if (!targetPageId) {
+    pending.status = 'skipped';
+    pending.error = 'Không có fanpage mục tiêu';
+    savePending(pending);
+    auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: pending.error });
+    if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Lịch đăng "${schedule?.label || pending.scheduleId}" bị bỏ qua — không có fanpage mục tiêu. Xóa và tạo lại lịch này.`); } catch {} }
+    return;
+  }
+
+  let publishPageId, publishToken, publishPageName;
+  try {
+    const pageInfo = getFbPageToken(cfg, targetPageId);
+    publishPageId = pageInfo.pageId;
+    publishToken = pageInfo.token;
+    publishPageName = pageInfo.pageName;
+  } catch (e) {
+    pending.status = 'skipped';
+    pending.error = e.message;
+    savePending(pending);
+    auditLog('fb_schedule_publish_failed', { scheduleId: pending.scheduleId, date: pending.date, error: e.message, targetPageId });
+    const pName = (() => { try { const p = getFbPageById(cfg, targetPageId); return p?.pageName || targetPageId; } catch { return targetPageId; } })();
+    if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Lịch đăng "${schedule?.label || pending.scheduleId}" bị bỏ qua — fanpage "${pName}" không còn hoạt động.`); } catch {} }
     return;
   }
 
@@ -696,13 +730,13 @@ async function _publishPendingImpl(pending, schedule) {
     try {
       let result;
       if (imgBuf) {
-        result = await fbPub.postPhoto(cfg.pageId, cfg.accessToken, caption, imgBuf, imagePath);
+        result = await fbPub.postPhoto(publishPageId, publishToken, caption, imgBuf, imagePath);
       } else {
-        result = await fbPub.postText(cfg.pageId, cfg.accessToken, caption);
+        result = await fbPub.postText(publishPageId, publishToken, caption);
       }
       if (!result.postId) {
         // 200 but no post id returned (rare) — try to recover the real post id/url.
-        try { const f = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption, undefined, sendStartedMs); if (f && f.postId) result = f; } catch {}
+        try { const f = await fbPub.findRecentPostByCaption(publishPageId, publishToken, caption, undefined, sendStartedMs); if (f && f.postId) result = f; } catch {}
       }
 
       pending.status = 'published';
@@ -716,13 +750,15 @@ async function _publishPendingImpl(pending, schedule) {
         date: pending.date,
         postId: result.postId,
         postUrl: result.postUrl,
+        targetPageId,
         attempt,
       });
       console.log(`[fb-schedule] published ${pending.scheduleId} on ${pending.date}: ${result.postUrl}${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}`);
 
       if (_sendTelegram) {
         try {
-          await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.scheduleId}" thành công.\n${result.postUrl || ''}`);
+          const pgLabel = publishPageName ? ` lên **${publishPageName}**` : '';
+          await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.scheduleId}"${pgLabel} thành công.\n${result.postUrl || ''}`);
         } catch {}
       }
       return;
@@ -746,7 +782,7 @@ async function _publishPendingImpl(pending, schedule) {
       if (isIndeterminate) {
         let verifyFailed = false;
         try {
-          const found = await fbPub.findRecentPostByCaption(cfg.pageId, cfg.accessToken, caption, undefined, sendStartedMs);
+          const found = await fbPub.findRecentPostByCaption(publishPageId, publishToken, caption, undefined, sendStartedMs);
           if (found && found.verifyFailed) {
             verifyFailed = true;
           } else if (found) {
@@ -755,7 +791,7 @@ async function _publishPendingImpl(pending, schedule) {
             pending.postId = found.postId;
             pending.postUrl = found.postUrl;
             savePending(pending);
-            auditLog('fb_schedule_published', { scheduleId: pending.scheduleId, date: pending.date, postId: found.postId, recovered: true });
+            auditLog('fb_schedule_published', { scheduleId: pending.scheduleId, date: pending.date, postId: found.postId, targetPageId, recovered: true });
             console.log(`[fb-schedule] recovered published ${pending.scheduleId} after "${msg}": ${found.postUrl}`);
             if (_sendTelegram) { try { await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.scheduleId}" (xác nhận lại sau gián đoạn mạng).\n${found.postUrl || ''}`); } catch {} }
             return;
@@ -784,6 +820,21 @@ async function _publishPendingImpl(pending, schedule) {
         continue;
       }
 
+      // OAuthException: mark page token as expired + send differentiated CEO alert
+      if (isTokenExpired && targetPageId) {
+        try {
+          const freshCfg = readFbConfig();
+          if (freshCfg && Array.isArray(freshCfg.pages)) {
+            const pg = freshCfg.pages.find(p => p.id === targetPageId);
+            if (pg) {
+              pg.tokenExpired = true;
+              writeFbConfig(freshCfg);
+              console.log(`[fb-schedule] marked page ${targetPageId} token as expired`);
+            }
+          }
+        } catch (markErr) { console.warn('[fb-schedule] failed to mark token expired:', markErr?.message); }
+      }
+
       pending.status = 'skipped';
       pending.error = msg;
       savePending(pending);
@@ -794,15 +845,30 @@ async function _publishPendingImpl(pending, schedule) {
         error: msg,
         tokenExpired: isTokenExpired,
         permission: isPermission,
+        targetPageId,
         attempt,
       });
       console.error(`[fb-schedule] publish failed for ${pending.scheduleId} (attempt ${attempt + 1}):`, msg);
 
       if (_sendTelegram) {
         let hint = '';
-        if (isTokenExpired) hint = ' Token Facebook hết hạn — cần paste token mới vào Dashboard.';
-        else if (isPermission) hint = ' Token thiếu quyền đăng bài (pages_manage_posts) — kết nối lại Fanpage trong Dashboard.';
-        else if (isIndeterminate) hint = ' (Mạng gián đoạn — em chưa chắc đã đăng được hay chưa, anh kiểm tra Fanpage giúp em nhé.)';
+        if (isTokenExpired) {
+          // Differentiated CEO alert for legacy vs normal token
+          const page = getFbPageById(cfg, targetPageId);
+          let isLegacy = false;
+          if (page && page.tokenId) {
+            const tok = getTokenById(cfg, page.tokenId);
+            isLegacy = !!(tok && tok.isLegacy);
+          }
+          const pName = publishPageName || targetPageId;
+          hint = isLegacy
+            ? ` Token fanpage "${pName}" đã hết hạn. Cần dán User Token mới (không phải Page Token cũ) trong Dashboard → Facebook.`
+            : ` Token fanpage "${pName}" đã hết hạn. Vào Dashboard → Facebook để kết nối lại.`;
+        } else if (isPermission) {
+          hint = ' Token thiếu quyền đăng bài (pages_manage_posts) — kết nối lại Fanpage trong Dashboard.';
+        } else if (isIndeterminate) {
+          hint = ' (Mạng gián đoạn — em chưa chắc đã đăng được hay chưa, anh kiểm tra Fanpage giúp em nhé.)';
+        }
         try {
           await _sendTelegram(`[FB Schedule] Đăng thất bại "${schedule?.label || pending.scheduleId}": ${msg}${hint}`);
         } catch {}
@@ -1078,6 +1144,15 @@ function handleRoute(urlPath, params, jsonResp, res) {
     if (!parseTime(postTime)) { jsonResp(res, 400, { success: false, error: 'postTime phải có dạng HH:MM' }); return true; }
     if (!prompt) { jsonResp(res, 400, { success: false, error: 'prompt required' }); return true; }
 
+    // Validate targetPageId — every schedule must target a specific fanpage
+    const targetPageId = params.targetPageId;
+    if (!targetPageId) { jsonResp(res, 400, { success: false, error: 'targetPageId is required — specify which fanpage this schedule targets' }); return true; }
+    const cfg = readFbConfig();
+    if (!cfg || !getFbPageById(cfg, targetPageId)) {
+      jsonResp(res, 400, { success: false, error: 'Page not found' });
+      return true;
+    }
+
     const schedules = loadSchedules();
     const id = 'fb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const now = new Date().toISOString();
@@ -1130,6 +1205,7 @@ function handleRoute(urlPath, params, jsonResp, res) {
       imageSize: params.imageSize || '1024x1024',
       daysOfWeek: postDate ? [] : daysOfWeek,
       postDate,
+      targetPageId,
       createdAt: now,
       updatedAt: now,
     };
@@ -1219,6 +1295,14 @@ function handleRoute(urlPath, params, jsonResp, res) {
         existing.postDate = String(params.postDate);
         existing.daysOfWeek = [];
       }
+    }
+    if (params.targetPageId !== undefined) {
+      const updateCfg = readFbConfig();
+      if (!updateCfg || !getFbPageById(updateCfg, params.targetPageId)) {
+        jsonResp(res, 400, { success: false, error: 'Page not found' });
+        return true;
+      }
+      existing.targetPageId = params.targetPageId;
     }
 
     existing.updatedAt = new Date().toISOString();
@@ -1437,6 +1521,16 @@ function parseTelegramCommand(text) {
   // ASCII-only, so it FAILS after a Vietnamese diacritic char (e.g. "bỏ", "huỷ"
   // end in non-ASCII) and the keyword would never match → command silently ignored.
 
+  // Approve all — must check before single approve
+  if (/^(tất cả|tat ca|all)$/i.test(t)) {
+    return { action: 'approveAll' };
+  }
+
+  // Select a specific pending by number (disambiguation response: "1", "2", etc.)
+  if (/^[0-9]+$/.test(t)) {
+    return { action: 'selectPending', index: parseInt(t, 10) };
+  }
+
   // Approve — prefix match so "ok nhé", "duyệt đi" etc. still work. Bare "đăng"
   // dropped (matched "đăng ký"/"đăng nhập"); use "đăng đi"/"đăng bài".
   if (/^(ok|okay|duyệt|duyet|đăng đi|đăng bài|post|approve)(?=$|\s|[.,:!?])/i.test(t)) {
@@ -1468,11 +1562,23 @@ function parseTelegramCommand(text) {
   return null;
 }
 
-// When several FB posts await approval and the CEO didn't specify which, ask
-// them to disambiguate by id (rather than silently approving the wrong one).
-function _fbDisambig(list, cmdHint) {
-  const lines = list.map(x => `• "${x.schedule.label}" → ${cmdHint} ${x.schedule.id}`).join('\n');
-  return `Đang có ${list.length} bài Facebook chờ duyệt. Anh chỉ rõ bài nào ạ:\n${lines}`;
+// When several FB posts await approval and the CEO didn't specify which, present
+// a numbered list with page names so they can reply with a number or "tất cả".
+function _fbDisambig(list) {
+  // Resolve page names for each entry
+  let cfg = null;
+  try { cfg = readFbConfig(); } catch {}
+  const lines = list.map((x, i) => {
+    let pageLabel = '';
+    const tpid = x.pending?.targetPageId || x.schedule?.targetPageId;
+    if (tpid && cfg) {
+      const page = getFbPageById(cfg, tpid);
+      if (page) pageLabel = `${page.pageName || tpid}${page.shortName ? ` (${page.shortName})` : ''}`;
+    }
+    const capSnippet = x.pending?.caption ? `"${x.pending.caption.slice(0, 30)}${x.pending.caption.length > 30 ? '...' : ''}"` : '';
+    return `${i + 1}. ${pageLabel ? pageLabel + ' — ' : ''}${capSnippet || `"${x.schedule.label}"`}`;
+  }).join('\n');
+  return `Có ${list.length} bài đang chờ duyệt:\n${lines}\nNhắn số (1, 2, ...) hoặc "tất cả" để duyệt.`;
 }
 
 /**
@@ -1491,6 +1597,8 @@ async function handleTelegramCommand(cmd) {
 
   // All currently-active pendings (deduped by scheduleId; first date in `dates`
   // order wins → today preferred over tomorrow over yesterday).
+  // Sorted deterministically by date + scheduleId so numbered disambiguation list
+  // is stable across repeated calls (CEO picks by number).
   function collectActive() {
     const seen = new Map();
     for (const date of dates) {
@@ -1501,7 +1609,10 @@ async function handleTelegramCommand(cmd) {
         }
       }
     }
-    return [...seen.values()];
+    return [...seen.values()].sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return a.pending.scheduleId < b.pending.scheduleId ? -1 : 1;
+    });
   }
 
   // Resolve the target. { found } | { notFound } | { ambiguous: [...] }.
@@ -1527,17 +1638,46 @@ async function handleTelegramCommand(cmd) {
   if (cmd.action === 'approve') {
     const r = resolve(cmd.scheduleId);
     if (r.notFound) return { handled: true, response: NONE };
-    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb ok') };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = await approvePending(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
     if (result.published) return { handled: true, response: `Đã duyệt và đăng "${r.found.schedule.label}" thành công.\n${result.postUrl || ''}` };
     return { handled: true, response: result.message || 'Đã duyệt.' };
   }
 
+  if (cmd.action === 'selectPending') {
+    const active = collectActive();
+    if (active.length === 0) return { handled: true, response: NONE };
+    const idx = cmd.index;
+    if (idx < 1 || idx > active.length) {
+      return { handled: true, response: `Số không hợp lệ. Nhắn 1-${active.length} hoặc "tất cả".` };
+    }
+    const target = active[idx - 1];
+    const result = await approvePending(target.pending.scheduleId, target.date);
+    if (!result.success) return { handled: true, response: result.error };
+    if (result.published) return { handled: true, response: `Đã duyệt và đăng "${target.schedule.label}" thành công.\n${result.postUrl || ''}` };
+    return { handled: true, response: result.message || `Đã duyệt "${target.schedule.label}".` };
+  }
+
+  if (cmd.action === 'approveAll') {
+    const active = collectActive();
+    if (active.length === 0) return { handled: true, response: NONE };
+    const results = [];
+    for (const entry of active) {
+      const result = await approvePending(entry.pending.scheduleId, entry.date);
+      results.push({ label: entry.schedule.label, ...result });
+    }
+    const ok = results.filter(r => r.success);
+    const fail = results.filter(r => !r.success);
+    let msg = `Đã duyệt ${ok.length}/${results.length} bài.`;
+    if (fail.length > 0) msg += `\nLỗi: ${fail.map(r => `"${r.label}": ${r.error}`).join('; ')}`;
+    return { handled: true, response: msg };
+  }
+
   if (cmd.action === 'reject') {
     const r = resolve(cmd.scheduleId);
     if (r.notFound) return { handled: true, response: NONE };
-    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb hủy') };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = rejectPending(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
     return { handled: true, response: `Đã hủy bài "${r.found.schedule.label}".` };
@@ -1546,7 +1686,7 @@ async function handleTelegramCommand(cmd) {
   if (cmd.action === 'editCaption') {
     const r = resolve(cmd.scheduleId);
     if (r.notFound) return { handled: true, response: NONE };
-    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb sửa caption (kèm mã)') };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = editCaption(r.found.pending.scheduleId, cmd.caption, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
     return { handled: true, response: `Đã cập nhật caption cho "${r.found.schedule.label}":\n${cmd.caption}` };
@@ -1555,7 +1695,7 @@ async function handleTelegramCommand(cmd) {
   if (cmd.action === 'regenerate') {
     const r = resolve(cmd.scheduleId);
     if (r.notFound) return { handled: true, response: NONE };
-    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous, 'fb ảnh khác') };
+    if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = await regenerateImage(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
     return { handled: true, response: 'Đang tạo ảnh mới. Sẽ gửi preview khi xong.' };

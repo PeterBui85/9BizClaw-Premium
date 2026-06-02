@@ -25,8 +25,10 @@ Trong phiên Telegram CEO, `web_fetch` tới `http://127.0.0.1:20200` tự độ
 ## Lấy Insights — 1 API call
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/fb/insights?days=7" method=GET
+web_fetch url="http://127.0.0.1:20200/api/fb/insights?pageId=<pageId>&days=7" method=GET
 ```
+
+**Bắt buộc:** Phải xác định fanpage trước (xem Bước 0 trong facebook-post-workflow.md). Truyền `pageId` đã xác định vào API call.
 
 **Response thành công** (`valid: true`):
 
