@@ -1,9 +1,9 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 143,
-    "ipcHandlers": 207,
-    "preloadBridges": 200,
+    "apiRoutes": 144,
+    "ipcHandlers": 208,
+    "preloadBridges": 201,
     "dashboardPages": 18,
     "capabilityContracts": 5
   },
@@ -145,6 +145,15 @@
     },
     {
       "path": "/api/fb/insights",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/fb/pages",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -2094,6 +2103,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "update-fb-page",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "update-user-skill",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -3088,6 +3101,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "updateFbPage",
+      "channel": "update-fb-page",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "updateUserSkill",
       "channel": "update-user-skill",
       "source": "electron/preload.js"
@@ -3232,15 +3250,15 @@
   "largeSourceFiles": [
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 663488
+      "bytes": 668603
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 283636
+      "bytes": 286223
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 182104
+      "bytes": 184070
     },
     {
       "path": "electron/lib/cron.js",
@@ -3259,16 +3277,16 @@
       "bytes": 96863
     },
     {
+      "path": "electron/lib/gateway.js",
+      "bytes": 86262
+    },
+    {
       "path": "electron/lib/runtime-installer.js",
       "bytes": 86209
     },
     {
-      "path": "electron/lib/gateway.js",
-      "bytes": 84305
-    },
-    {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 68926
+      "bytes": 75783
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -3280,7 +3298,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 54658
+      "bytes": 61793
     },
     {
       "path": "electron/lib/vendor-patches.js",
@@ -3336,7 +3354,7 @@
     },
     {
       "path": "electron/lib/fb-publisher.js",
-      "bytes": 21776
+      "bytes": 24489
     },
     {
       "path": "electron/lib/migration.js",

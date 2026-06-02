@@ -1,9 +1,9 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 143
-- ipcHandlers: 207
-- preloadBridges: 200
+- apiRoutes: 144
+- ipcHandlers: 208
+- preloadBridges: 201
 - dashboardPages: 18
 - capabilityContracts: 5
 
@@ -31,6 +31,7 @@ API Routes
 - /api/customer-memory/write [local-api]
 - /api/exec [local-api]
 - /api/fb/insights [local-api]
+- /api/fb/pages [local-api]
 - /api/fb/post [local-api]
 - /api/fb/recent [local-api]
 - /api/fb/schedule [local-api]
@@ -180,19 +181,19 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/ui/dashboard.html: 663488 bytes
-- electron/lib/dashboard-ipc.js: 283636 bytes
-- electron/lib/cron-api.js: 182104 bytes
+- electron/ui/dashboard.html: 668603 bytes
+- electron/lib/dashboard-ipc.js: 286223 bytes
+- electron/lib/cron-api.js: 184070 bytes
 - electron/lib/cron.js: 142188 bytes
 - electron/ui/wizard.html: 117791 bytes
 - electron/lib/channels.js: 99474 bytes
 - electron/lib/knowledge.js: 96863 bytes
+- electron/lib/gateway.js: 86262 bytes
 - electron/lib/runtime-installer.js: 86209 bytes
-- electron/lib/gateway.js: 84305 bytes
-- electron/lib/fb-schedule.js: 68926 bytes
+- electron/lib/fb-schedule.js: 75783 bytes
 - electron/ui/preview-telegram-redesign.html: 66621 bytes
 - electron/lib/config.js: 63822 bytes
-- electron/lib/workspace.js: 54658 bytes
+- electron/lib/workspace.js: 61793 bytes
 - electron/lib/vendor-patches.js: 49200 bytes
 - electron/lib/nine-router.js: 46625 bytes
 - electron/lib/skill-manager.js: 45069 bytes

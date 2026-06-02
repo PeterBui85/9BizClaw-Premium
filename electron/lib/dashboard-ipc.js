@@ -18,7 +18,7 @@ const zaloMenu = require('./zalo-menu');
 const {
   getWorkspace, invalidateWorkspaceCache, getWorkspaceTemplateRoot,
   getOpenclawAgentWorkspace, seedWorkspace, purgeAgentSessions,
-  getBrandAssetsDir, getFbConfigPath, readFbConfig, writeFbConfig,
+  getBrandAssetsDir, getFbConfigPath, readFbConfig, writeFbConfig, generateFbId,
   getSetupCompletePath, hasCompletedOnboarding, markOnboardingComplete,
   isOpenClawConfigured, getAppPrefsPath, loadAppPrefs, saveAppPrefs,
   auditLog, backupWorkspace,
@@ -3454,7 +3454,9 @@ ipcMain.handle('toggle-fb-schedule', async (_event, { id, enabled }) => {
 ipcMain.handle('get-fb-config', async () => {
   const cfg = readFbConfig();
   if (!cfg) return null;
-  return { pageId: cfg.pageId, pageName: cfg.pageName, connectedAt: cfg.connectedAt };
+  const fbPub = require('./fb-publisher');
+  // listPages() returns [{id, pageId, pageName, shortName, enabled, tokenId, tokenStatus}]
+  return { connectedAt: cfg.connectedAt, pages: fbPub.listPages() };
 });
 
 ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
@@ -3462,23 +3464,73 @@ ipcMain.handle('save-fb-config', async (_event, { accessToken }) => {
     const fbPub = require('./fb-publisher');
     const result = await fbPub.verifyToken(accessToken);
     if (!result.valid) return { success: false, error: result.error };
-    const page = result.pages[0];
+    const verified = result.pages || [];
+    if (!verified.length) return { success: false, error: 'Không tìm thấy Fanpage nào có quyền đăng bài.' };
+
+    // Preserve per-page settings (shortName/enabled) across reconnect. Internal
+    // page ids are deterministic from the Facebook pageId, so re-pasting the same
+    // token re-maps to the same internal ids and keeps the CEO's customizations.
+    const existing = readFbConfig();
+    const prevById = {};
+    if (existing && Array.isArray(existing.pages)) {
+      for (const p of existing.pages) prevById[p.id] = p;
+    }
+
+    const connectedAt = new Date().toISOString();
+    const tokenId = generateFbId('tok', verified.map(p => p.pageId).sort().join(','));
+    const pages = verified.map(v => {
+      const internalId = generateFbId('page', v.pageId);
+      const prev = prevById[internalId] || {};
+      return {
+        id: internalId,
+        tokenId,
+        pageId: v.pageId,
+        pageAccessToken: v.pageToken,
+        pageName: v.pageName,
+        pageAvatarUrl: prev.pageAvatarUrl || null,
+        shortName: prev.shortName || null,
+        category: prev.category || null,
+        enabled: prev.enabled !== undefined ? prev.enabled : true,
+        connectedAt: prev.connectedAt || connectedAt,
+      };
+    });
     const cfg = {
-      pageId: page.pageId,
-      pageName: page.pageName,
-      accessToken: page.pageToken || accessToken,
-      connectedAt: new Date().toISOString()
+      tokens: [{
+        id: tokenId,
+        userToken: null,
+        userName: 'Facebook',
+        isLegacy: false,
+        pageIds: pages.map(p => p.id),
+        connectedAt,
+      }],
+      pages,
+      connectedAt,
     };
     writeFbConfig(cfg);
-    return { success: true, pageId: cfg.pageId, pageName: cfg.pageName };
+    return { success: true, count: pages.length, pages: pages.map(p => ({ id: p.id, pageName: p.pageName })) };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// Toggle a page on/off or set its short name (used by the bot for "post to <shortName>").
+ipcMain.handle('update-fb-page', async (_event, { id, shortName, enabled }) => {
+  try {
+    const cfg = readFbConfig();
+    if (!cfg || !Array.isArray(cfg.pages)) return { success: false, error: 'Chưa kết nối Facebook' };
+    const page = cfg.pages.find(p => p.id === id);
+    if (!page) return { success: false, error: 'Không tìm thấy Fanpage' };
+    if (shortName !== undefined) page.shortName = shortName ? String(shortName).trim() : null;
+    if (enabled !== undefined) page.enabled = !!enabled;
+    writeFbConfig(cfg);
+    return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
 ipcMain.handle('verify-fb-token', async () => {
   const cfg = readFbConfig();
-  if (!cfg || !cfg.accessToken) return { valid: false, error: 'Chưa kết nối Facebook' };
+  const page = cfg && Array.isArray(cfg.pages) ? cfg.pages.find(p => p.enabled && p.pageAccessToken) : null;
+  if (!page) return { valid: false, error: 'Chưa kết nối Facebook' };
   const fbPub = require('./fb-publisher');
-  const result = await fbPub.verifyToken(cfg.accessToken);
+  const result = await fbPub.verifyToken(page.pageAccessToken);
   if (!result.valid) return result;
   // Strip pageToken from each page before sending to renderer
   const pages = (result.pages || []).map(({ pageToken, ...rest }) => rest);
@@ -3487,10 +3539,11 @@ ipcMain.handle('verify-fb-token', async () => {
 
 ipcMain.handle('get-fb-recent-posts', async () => {
   const cfg = readFbConfig();
-  if (!cfg || !cfg.accessToken) return [];
+  const page = cfg && Array.isArray(cfg.pages) ? cfg.pages.find(p => p.enabled && p.pageAccessToken) : null;
+  if (!page) return [];
   try {
     const fbPub = require('./fb-publisher');
-    return await fbPub.getRecentPosts(cfg.pageId, cfg.accessToken, 5);
+    return await fbPub.getRecentPosts(page.pageId, page.pageAccessToken, 5);
   } catch { return []; }
 });
 

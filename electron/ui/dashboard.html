@@ -879,13 +879,17 @@
     .skill-list-item .skill-dot.shipped { border:1.5px solid var(--text-muted); background:transparent; }
     .skill-list-item.active .skill-dot.shipped { border-color:#fff; }
     .skill-detail-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text-muted); font-size:14px; gap:12px; }
-    .skill-detail-name { font-size:18px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .skill-detail-meta { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+    .skill-detail-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .skill-detail-header-left { min-width:0; flex:1; }
+    .skill-detail-name { font-size:17px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.4; }
+    .skill-detail-meta { font-size:12px; color:var(--text-secondary); margin-top:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .skill-detail-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; padding-top:2px; }
     .skill-detail-divider { height:1px; background:var(--border); margin:16px 0; }
-    .skill-detail-section-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+    .skill-detail-section-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; font-weight:500; }
     .skill-detail-section { margin-bottom:16px; }
-    .skill-detail-section-value { font-size:14px; color:var(--text-primary); padding-left:2px; }
-    .skill-detail-content { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code','Consolas',monospace; line-height:1.6; color:var(--text-primary); max-height:60vh; overflow-y:auto; }
+    .skill-detail-section-value { font-size:14px; color:var(--text-primary); padding-left:2px; line-height:1.5; }
+    .skill-detail-content { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:12.5px; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code','Consolas',monospace; line-height:1.6; color:var(--text-primary); max-height:60vh; overflow-y:auto; }
+    .skill-type-badge { display:inline-flex; align-items:center; padding:1px 7px; border-radius:4px; font-size:10.5px; font-weight:500; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); letter-spacing:0.2px; }
     .skills-list-create-btn { display:flex; align-items:center; gap:6px; padding:8px 16px; margin-bottom:8px; }
     .skill-list-empty { padding:16px; text-align:center; color:var(--text-muted); font-size:13px; }
     /* Page system */
@@ -929,9 +933,12 @@
     @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
     .btn-spinner { display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
     .btn.is-loading { opacity:0.75; cursor:wait; pointer-events:none; }
+    .btn-sm { padding:5px 12px !important; font-size:12px !important; border-radius:6px !important; line-height:1.4; }
     .btn-danger { background:var(--danger,#e74c3c); color:#fff; border-color:var(--danger,#e74c3c); }
     .btn-danger:hover { opacity:0.9; }
     .btn-danger:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-danger-ghost { background:transparent; color:var(--danger,#e74c3c); border:1px solid color-mix(in srgb, var(--danger,#e74c3c) 40%, transparent); }
+    .btn-danger-ghost:hover { background:color-mix(in srgb, var(--danger,#e74c3c) 10%, transparent); }
     .spinner { width:18px; height:18px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
     .ux-inline-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; width:100%; min-height:96px; padding:18px; text-align:center; color:var(--text-muted); border:1px solid var(--border); border-radius:10px; background:var(--surface); box-sizing:border-box; }
     .ux-inline-state.compact { min-height:0; padding:12px; align-items:flex-start; text-align:left; }
@@ -5803,22 +5810,67 @@
       loadFbRecentPosts();
     }
 
+    function _fbTokenStatusBadge(status) {
+      if (status === 'expired') return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:color-mix(in srgb, var(--danger) 14%, transparent);color:var(--danger);font-weight:500">Token hết hạn</span>';
+      if (status === 'missing') return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:color-mix(in srgb, var(--warning,#b45309) 16%, transparent);color:var(--warning,#b45309);font-weight:500">Thiếu token</span>';
+      return '<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:color-mix(in srgb, var(--success) 14%, transparent);color:var(--success);font-weight:500">Hoạt động</span>';
+    }
+
     async function loadFbConfig() {
       const el = document.getElementById('fb-status');
       try {
         const cfg = await window.claw.getFbConfig();
-        if (cfg && cfg.pageName) {
-          el.innerHTML = '<div class="card" style="border-color:var(--success);margin-bottom:0">' +
-            '<div style="display:flex;align-items:center;gap:8px">' +
-            '<span style="color:var(--success);font-size:20px">●</span>' +
-            '<div><strong>' + esc(cfg.pageName) + '</strong><div style="font-size:12px;color:var(--text-muted)">Kết nối lúc ' + new Date(cfg.connectedAt).toLocaleString('vi-VN') + '</div></div>' +
-            '</div></div>';
-        } else {
+        const pages = (cfg && cfg.pages) || [];
+        if (pages.length === 0) {
           renderInlineState(el, { type: 'empty', compact: true, icon: 'globe', title: 'Chưa kết nối Fanpage', detail: 'Paste Page Access Token hợp lệ để 9BizClaw có thể đăng bài lên đúng Fanpage.' });
+          return;
         }
+        let html = '<div class="card" style="border-color:var(--success);margin-bottom:0">';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">Fanpage đã kết nối (' + pages.length + ')</div>' +
+          (cfg.connectedAt ? '<div style="font-size:11px;color:var(--text-muted)">Kết nối lúc ' + new Date(cfg.connectedAt).toLocaleString('vi-VN') + '</div>' : '') +
+          '</div>';
+        html += '<div style="display:flex;flex-direction:column;gap:8px">';
+        for (const p of pages) {
+          const dim = p.enabled ? '' : 'opacity:0.55;';
+          html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);' + dim + '">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.pageName || '(không tên)') + '</span>' + _fbTokenStatusBadge(p.tokenStatus) + '</div>' +
+              '<div style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
+                '<label style="font-size:11px;color:var(--text-muted);flex-shrink:0">Tên ngắn:</label>' +
+                '<input type="text" value="' + escAttr(p.shortName || '') + '" placeholder="vd: cafe" onchange="updateFbPageShortName(\'' + escAttr(p.id) + '\', this.value)" style="font-size:12px;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);width:120px;height:26px;box-sizing:border-box">' +
+                '<span style="font-size:11px;color:var(--text-muted)" title="ID nội bộ Facebook page">· ' + esc(p.pageId || '') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">' +
+              '<input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="toggleFbPage(\'' + escAttr(p.id) + '\', this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent)">' +
+              '<span style="font-size:11px;color:var(--text-secondary)">Bật</span>' +
+            '</label>' +
+          '</div>';
+        }
+        html += '</div>';
+        html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.5">Đặt <b>tên ngắn</b> để nhắn bot qua Telegram: "đăng bài lên <i>cafe</i>". Tắt fanpage để bot không đăng lên nó.</div>';
+        html += '</div>';
+        el.innerHTML = html;
       } catch (e) {
         renderInlineState(el, { type: 'error', compact: true, title: 'Không đọc được trạng thái Facebook', detail: e.message || 'Lỗi không xác định' });
       }
+    }
+
+    async function updateFbPageShortName(id, shortName) {
+      try {
+        const res = await window.claw.updateFbPage(id, { shortName });
+        if (res.success) { showToast('Đã lưu tên ngắn', 'success'); }
+        else { showToast(res.error || 'Không lưu được', 'error'); await loadFbConfig(); }
+      } catch (e) { showToast(e.message || 'Lỗi lưu tên ngắn', 'error'); await loadFbConfig(); }
+    }
+
+    async function toggleFbPage(id, enabled) {
+      try {
+        const res = await window.claw.updateFbPage(id, { enabled });
+        if (res.success) { await loadFbConfig(); showToast(enabled ? 'Đã bật fanpage' : 'Đã tắt fanpage', 'success'); }
+        else { showToast(res.error || 'Không đổi được', 'error'); await loadFbConfig(); }
+      } catch (e) { showToast(e.message || 'Lỗi', 'error'); await loadFbConfig(); }
     }
 
     async function connectFbPage() {
@@ -5838,7 +5890,7 @@
           tokenInput.value = '';
           await loadFbConfig();
           await loadFbRecentPosts();
-          showToast('Đã kết nối Fanpage', 'success');
+          showToast('Đã kết nối ' + (res.count || 1) + ' fanpage', 'success');
         } else {
           renderInlineState(status, { type: 'error', compact: true, title: 'Token chưa dùng được', detail: res.error || 'Không xác thực được Fanpage.' });
         }
@@ -11925,7 +11977,7 @@
     function renderSkillList() {
       const panel = document.getElementById('skills-list-panel');
       if (!panel) return;
-      let html = '<div class="skills-list-create-btn"><button class="btn btn-sm" onclick="showCreateSkillInDetail()" style="font-size:13px;width:100%">+ Tạo mới</button></div>';
+      let html = '<div class="skills-list-create-btn"><button class="btn btn-secondary btn-sm" onclick="showCreateSkillInDetail()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:4px">+ Tạo mới</button></div>';
       // User skills section
       html += '<div class="skill-list-header" onclick="toggleSkillCategory(this)">' + _chevronSvg + ' Tùy chỉnh <span class="skill-count">(' + _skillsCache.user.length + ')</span></div>';
       html += '<div class="skill-list-items">';
@@ -12006,17 +12058,17 @@
     function renderSkillDetail(meta, content, source) {
       const panel = document.getElementById('skills-detail-panel');
       if (!panel) return;
-      let html = '<div style="display:flex;align-items:flex-start;justify-content:space-between">';
-      html += '<div><div class="skill-detail-name">' + esc(meta.name) + '</div>';
+      let html = '<div class="skill-detail-header">';
+      html += '<div class="skill-detail-header-left"><div class="skill-detail-name">' + esc(meta.name) + '</div>';
       html += '<div class="skill-detail-meta">';
       if (source === 'user') {
-        html += '<span style="padding:2px 6px;border-radius:4px;background:var(--badge-bg, #e8e8e8);font-size:11px">' + esc(meta.type || 'rule') + '</span> · tùy chỉnh';
+        html += '<span class="skill-type-badge">' + esc(meta.type || 'rule') + '</span><span style="color:var(--text-muted)">tùy chỉnh</span>';
       } else {
-        html += esc(meta.category || '') + ' · hệ thống';
+        html += '<span style="color:var(--text-muted)">' + esc(meta.category || '') + '</span><span style="color:var(--text-muted)">hệ thống</span>';
       }
       html += '</div></div>';
       if (source === 'user') {
-        html += '<button class="btn btn-sm btn-danger" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')" style="font-size:12px;flex-shrink:0">Xóa</button>';
+        html += '<div class="skill-detail-actions"><button class="btn btn-sm btn-danger-ghost" onclick="deleteSkill(\'' + escAttr(meta.id) + '\',\'' + escAttr(meta.name) + '\')">Xóa</button></div>';
       }
       html += '</div><div class="skill-detail-divider"></div>';
       // User skill metadata sections
@@ -12031,10 +12083,10 @@
       }
       // Content
       html += '<div class="skill-detail-section"><div class="skill-detail-section-label">Nội dung</div>';
-      if (content != null) {
+      if (content != null && content.trim()) {
         html += '<div class="skill-detail-content">' + esc(content) + '</div>';
       } else {
-        html += '<div style="color:var(--text-muted);font-size:13px">Không đọc được nội dung skill</div>';
+        html += '<div style="color:var(--text-muted);font-size:13px;padding:12px 0">Skill chưa có nội dung hoặc file không tìm thấy</div>';
       }
       html += '</div>';
       panel.innerHTML = html;
