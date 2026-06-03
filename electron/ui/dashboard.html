@@ -760,6 +760,25 @@
     #page-9router .page-header, #page-openclaw .page-header {
       margin-bottom:12px !important; padding-bottom:12px !important;
     }
+    /* Google Workspace: contained layout — only the calendar scrolls, header/tabs stay fixed (matches zalo/telegram/knowledge) */
+    #page-google.page.active {
+      display:flex; flex-direction:column; height:calc(100vh - 32px); overflow:hidden;
+    }
+    #page-google .page-header {
+      margin-bottom:14px !important; padding-bottom:14px !important;
+    }
+    #page-google .page-header .page-icon { width:38px !important; height:38px !important; }
+    #page-google .page-header h2 { font-size:22px !important; margin:0 0 2px !important; }
+    #page-google .gw-tabs { flex-shrink:0; }
+    .gw-panel { flex:1 1 auto; min-height:0; overflow-y:auto; }
+    #gw-calendar { display:flex; flex-direction:column; overflow:hidden; }
+    #gw-calendar .gw-calendar-head { flex-shrink:0; }
+    #cal-fullcalendar.gw-calendar-shell { flex:1 1 auto; min-height:0; }
+    @media (max-width:760px){
+      #page-google.page.active { height:auto; overflow:visible; }
+      .gw-panel { overflow:visible; }
+      #cal-fullcalendar.gw-calendar-shell { height:70vh; min-height:520px; }
+    }
     .embed-wrap {
       flex:1; min-height:0; position:relative;
       border:1px solid var(--border); border-radius:12px;
@@ -3990,7 +4009,7 @@
           <div><h2>Google Workspace</h2><div class="page-sub">Calendar, Gmail, Drive, Docs, Contacts, Tasks</div></div>
         </div>
         <!-- Internal tab bar -->
-        <div class="gw-tabs" style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin:0 0 24px">
+        <div class="gw-tabs" style="display:flex;gap:0;border-bottom:1.5px solid var(--border);margin:0 0 12px">
           <button class="gw-tab active" data-gw="calendar" onclick="switchGwTab('calendar')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Lịch</button>
           <button class="gw-tab" data-gw="gmail" onclick="switchGwTab('gmail')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Email</button>
           <button class="gw-tab" data-gw="drive" onclick="switchGwTab('drive')" style="padding:10px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s">Tài liệu</button>
@@ -5502,7 +5521,7 @@
       }
       if (page === 'google') {
         setTimeout(() => {
-          if (_fcCalendar) _fcCalendar.updateSize();
+          if (_fcCalendar) { _fcCalendar.updateSize(); _calScrollToNow(); }
           else if (typeof ensureGoogleCalendar === 'function') {
             ensureGoogleCalendar();
             loadCalendarEvents();
@@ -11335,7 +11354,10 @@
       document.querySelectorAll('.gw-panel').forEach(p => p.style.display = 'none');
       const panel = document.getElementById('gw-' + tab);
       if (panel) panel.style.display = '';
-      if (tab === 'calendar') loadCalendarEvents();
+      if (tab === 'calendar') {
+        loadCalendarEvents();
+        requestAnimationFrame(() => { if (_fcCalendar) { _fcCalendar.updateSize(); _calScrollToNow(); } });
+      }
       if (tab === 'gmail') loadGmailInbox();
       if (tab === 'drive') loadDriveFiles();
       if (tab === 'docs') loadRecentDocs(false);
@@ -11474,6 +11496,12 @@
       return raw.calendarId || raw.calendarID || raw.calendar || raw.calendar_id || undefined;
     }
 
+    function _calScrollToNow() {
+      if (!_fcCalendar) return;
+      const n = new Date();
+      try { _fcCalendar.scrollToTime({ hours: Math.max(0, n.getHours() - 1), minutes: 0 }); } catch {}
+    }
+
     function ensureGoogleCalendar() {
       const el = document.getElementById('cal-fullcalendar');
       if (!el) return false;
@@ -11482,16 +11510,20 @@
         return false;
       }
       if (_fcCalendar) return true;
+      const _calNow = new Date();
+      const _calScrollHour = String(Math.max(0, _calNow.getHours() - 1)).padStart(2, '0');
       _fcCalendar = new FullCalendar.Calendar(el, {
         initialView: 'timeGridWeek',
         locale: 'vi',
         firstDay: 1,
-        height: 'auto',
+        height: '100%',
         expandRows: true,
         nowIndicator: true,
         allDaySlot: true,
-        slotMinTime: '06:00:00',
-        slotMaxTime: '22:00:00',
+        slotMinTime: '00:00:00',
+        slotMaxTime: '24:00:00',
+        scrollTime: _calScrollHour + ':00:00',
+        scrollTimeReset: false,
         selectable: true,
         editable: true,
         eventStartEditable: true,
