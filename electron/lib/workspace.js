@@ -387,9 +387,14 @@ function writeFbConfig(cfg) {
 }
 
 // ─── Page lookup helpers ───────────────────────────────────────
-function getFbPageById(config, pageInternalId) {
+function getFbPageById(config, pageRef) {
   if (!config || !config.pages) return null;
-  return config.pages.find(p => p.id === pageInternalId) || null;
+  // Accept EITHER the internal id (page_xxx, used by the dashboard) OR the FB
+  // pageId (numeric, used by every /api/fb/* caller + AGENTS.md Bước 0). The two
+  // formats never collide, so matching both is safe and avoids the "FB page not
+  // found: <pageId>" failure when the agent (correctly) passes the FB pageId.
+  const ref = String(pageRef);
+  return config.pages.find(p => p.id === ref || String(p.pageId) === ref) || null;
 }
 
 function getFbPageToken(config, pageInternalId) {

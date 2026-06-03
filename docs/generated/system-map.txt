@@ -196,7 +196,7 @@ Large Source Files
 - electron/lib/cron.js: 142294 bytes
 - electron/lib/dashboard-ipc.js: 289976 bytes
 - electron/lib/fb-publisher.js: 24489 bytes
-- electron/lib/fb-schedule.js: 76078 bytes
+- electron/lib/fb-schedule.js: 76068 bytes
 - electron/lib/gateway.js: 87849 bytes
 - electron/lib/google-api.js: 39708 bytes
 - electron/lib/google-routes.js: 26715 bytes

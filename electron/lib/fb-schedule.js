@@ -825,7 +825,7 @@ async function _publishPendingImpl(pending, schedule) {
         try {
           const freshCfg = readFbConfig();
           if (freshCfg && Array.isArray(freshCfg.pages)) {
-            const pg = freshCfg.pages.find(p => p.id === targetPageId);
+            const pg = getFbPageById(freshCfg, targetPageId);
             if (pg) {
               pg.tokenExpired = true;
               writeFbConfig(freshCfg);

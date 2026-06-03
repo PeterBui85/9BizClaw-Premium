@@ -3371,7 +3371,7 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 76078
+      "bytes": 76068
     },
     {
       "path": "electron/lib/gateway.js",
@@ -3415,7 +3415,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 62404
+      "bytes": 62769
     },
     {
       "path": "electron/lib/zalo-plugin.js",
