@@ -16,7 +16,7 @@ const files = [
   'AGENTS.md',
   'README.md',
   ...walkFiles('skills', { exts: ['.md'] }).filter(f => !f.startsWith('skills/_archived/')),
-  ...walkFiles('docs', { exts: ['.md'] }).filter(f => !f.startsWith('docs/generated/') && !f.startsWith('docs/superpowers/') && !/-backlog\.md$/.test(f))
+  ...walkFiles('docs', { exts: ['.md'] }).filter(f => !f.startsWith('docs/generated/') && !f.startsWith('docs/superpowers/') && !/-backlog\.md$/.test(f) && f !== 'docs/fix-history.md')
 ];
 
 function routeExists(refPath) {
