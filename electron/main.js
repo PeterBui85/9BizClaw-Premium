@@ -350,6 +350,8 @@ function createWindow() {
     ctx.mainWindow.maximize();
     // Ensure workspace files exist BEFORE cron jobs try to read them
     try { seedWorkspace(); } catch (e) { console.error('[seedWorkspace early] error:', e.message); }
+    // Layer 3+4: boot self-heal — detect and restore any missing sacred files BEFORE gateway starts
+    try { require('./lib/sacred-data').healSacredOnBoot().catch(e => console.error('[sacred-data] healSacredOnBoot error:', e?.message)); } catch (e) { console.error('[sacred-data] healSacredOnBoot load error:', e?.message); }
     if (!onboardingComplete) {
       setZaloChannelEnabled(false).catch((e) => { console.error('[createWindow] setZaloChannelEnabled error:', e.message); });
       try { setChannelPermanentPause('zalo', 'review-required-before-autoboot'); } catch (e) { console.warn('[createWindow] setChannelPermanentPause failed:', e?.message); }

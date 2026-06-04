@@ -5073,6 +5073,9 @@ ipcMain.handle('relaunch', async () => {
 ipcMain.handle('factory-reset', async () => {
   try {
     console.log('[factory-reset] Starting full wipe...');
+    // Layer 2: sacred snapshot BEFORE any wipe — makes factory-reset reversible
+    // SACRED-OK: snapshotSacred copies sacred files to external ~/9BizClaw-SacredBackups before wipe
+    try { await require('./sacred-data').snapshotSacred('factory-reset'); } catch (e) { console.error('[factory-reset] sacred snapshot failed (continuing):', e?.message); }
     // Stop background processes so they don't hold file handles
     try { await stopOpenClaw(); } catch {}
     try { stop9Router(); } catch {}

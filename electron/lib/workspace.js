@@ -506,6 +506,8 @@ function seedWorkspace() {
       // accidentally editing the stamp higher and freezing the file forever.
       const spoofed = existingVersion > CURRENT_AGENTS_MD_VERSION + 10;
       if (existingVersion < CURRENT_AGENTS_MD_VERSION || spoofed) {
+        // Layer 2: sacred snapshot before version-bump cascade (extra safety net)
+        try { require('./sacred-data').snapshotSacred('version-bump').catch(e => console.error('[sacred-data] version-bump snapshot error:', e?.message)); } catch (e) { console.error('[sacred-data] version-bump snapshot load error:', e?.message); }
         try {
           backupWorkspace({
             force: true,

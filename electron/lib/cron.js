@@ -2190,6 +2190,8 @@ function _startCronJobsInner() {
           }
           global._cronInFlight?.set('morning', true);
           try {
+            // Layer 2: daily sacred snapshot alongside morning briefing
+            try { require('./sacred-data').snapshotSacred('daily').catch(e => console.error('[sacred-data] daily snapshot error:', e?.message)); } catch (e) { console.error('[sacred-data] daily snapshot load error:', e?.message); }
             const prompt = buildMorningBriefingPrompt(s.time);
             await runCronViaSessionOrFallback(prompt, { label: 'morning-briefing' });
             try { auditLog('cron_fired', { id: 'morning', label: s.label || 'Báo cáo sáng' }); } catch {}
