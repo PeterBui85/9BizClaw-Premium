@@ -3365,7 +3365,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 64106
+      "bytes": 64888
     },
     {
       "path": "electron/lib/conversation.js",
@@ -3437,7 +3437,7 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 49328
+      "bytes": 50244
     },
     {
       "path": "electron/lib/workspace.js",

@@ -309,29 +309,50 @@ function ensureOpenclawPricingFix(vendorDir) {
     if (!fs.existsSync(distDir)) return;
 
     const urlPattern = /"https:\/\/openrouter\.ai\/api\/v1([^"]*)"/g;
-    const markerStr = '// 9BIZCLAW_OPENROUTER_DISABLED';
+    const urlMarker = '// 9BIZCLAW_OPENROUTER_DISABLED';
+    // The (now dead) pricing fetch still logs `[model-pricing] pricing bootstrap
+    // failed / pricing refresh failed` on every offline/proxy boot. Silence just the
+    // two log.warn calls (leave all refresh logic intact) so no scary error appears.
+    const logPattern = /log\.warn\(`pricing \w+ failed: \$\{String\(error\)\}`\);/g;
+    const logMarker = '// 9BIZCLAW_PRICING_LOG_SILENCED';
     const allFiles = fs.readdirSync(distDir).filter(f => f.endsWith('.js'));
-    let patchedCount = 0, scannedCount = 0;
+    let patchedCount = 0;
 
     for (const fname of allFiles) {
       const filePath = path.join(distDir, fname);
       let content;
       try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
-      if (!urlPattern.test(content)) continue;
-      scannedCount++;
-      urlPattern.lastIndex = 0;
-      if (content.includes(markerStr)) continue;
-      const patched = content.replace(urlPattern, '"http://127.0.0.1:1/disabled$1"') + `\n${markerStr}\n`;
-      try {
-        fs.writeFileSync(filePath, patched, 'utf-8');
-        patchedCount++;
-        console.log(`[openclaw-pricing-fix] patched ${fname}`);
-      } catch (e) {
-        console.warn(`[openclaw-pricing-fix] write failed ${fname}: ${e.message}`);
+      let changed = false;
+      // 1. OpenRouter pricing URL → unreachable (fail fast on isolated networks)
+      if (!content.includes(urlMarker)) {
+        urlPattern.lastIndex = 0;
+        if (urlPattern.test(content)) {
+          urlPattern.lastIndex = 0;
+          content = content.replace(urlPattern, '"http://127.0.0.1:1/disabled$1"') + `\n${urlMarker}\n`;
+          changed = true;
+        }
+      }
+      // 2. Silence the pricing-bootstrap/refresh failure logs
+      if (!content.includes(logMarker)) {
+        logPattern.lastIndex = 0;
+        if (logPattern.test(content)) {
+          logPattern.lastIndex = 0;
+          content = content.replace(logPattern, '/* 9bizclaw: pricing log silenced */ void 0;') + `\n${logMarker}\n`;
+          changed = true;
+        }
+      }
+      if (changed) {
+        try {
+          fs.writeFileSync(filePath, content, 'utf-8');
+          patchedCount++;
+          console.log(`[openclaw-pricing-fix] patched ${fname}`);
+        } catch (e) {
+          console.warn(`[openclaw-pricing-fix] write failed ${fname}: ${e.message}`);
+        }
       }
     }
-    if (patchedCount > 0) console.log(`[openclaw-pricing-fix] ${patchedCount}/${scannedCount} file(s) patched`);
-    else if (scannedCount > 0) console.log(`[openclaw-pricing-fix] already patched — skipping`);
+    if (patchedCount > 0) console.log(`[openclaw-pricing-fix] ${patchedCount} file(s) patched`);
+    else console.log(`[openclaw-pricing-fix] already patched — skipping`);
   } catch (e) {
     console.warn('[openclaw-pricing-fix] error:', e?.message);
   }

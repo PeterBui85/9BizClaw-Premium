@@ -818,6 +818,18 @@ async function ensureDefaultConfig() {
       config.discovery.mdns.mode = "off";
       changed = true;
     }
+    // Disable the Control UI device-token check for the loopback-only gateway.
+    // After a reinstall the Dashboard webview presents a renderer-cached device
+    // identity that no longer matches the gateway's paired token → an endless
+    // "device token mismatch" WS rejection loop. The gateway is 127.0.0.1-only and
+    // the API still requires gateway.auth.token, so bypassing per-device pairing for
+    // the Control UI is safe. Config path verified: configSnapshot.gateway?.controlUi.
+    if (!config.gateway) config.gateway = {};
+    if (!config.gateway.controlUi) config.gateway.controlUi = {};
+    if (config.gateway.controlUi.dangerouslyDisableDeviceAuth !== true) {
+      config.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
+      changed = true;
+    }
     // Sync plugin hard-off with the master Zalo enabled flag. If Zalo is off,
     // the gateway should not load modoro-zalo at all.
     try {
