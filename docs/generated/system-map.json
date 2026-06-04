@@ -3363,7 +3363,7 @@
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 20776
+      "bytes": 21198
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
