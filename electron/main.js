@@ -373,6 +373,7 @@ function createWindow() {
         try { seedZaloCustomersFromCache(); } catch (e) { console.error('[boot] seedZaloCustomers error:', e?.message || e); }
         try { startCronApi(); } catch (e) { console.error('[boot] startCronApi preflight error:', e?.message || e); }
         try { await startOpenClaw(); } catch (e) { console.error('[boot] startOpenClaw error:', e?.message || e); }
+        try { require('./lib/customer-memory-updater').init(); } catch (e) { console.error('[boot] customer-memory-updater init error:', e?.message || e); }
         startRuntimeSidecars('boot');
         // Warm cookie age check 30s after boot, then broadcast loop handles daily cadence.
         setTimeout(() => { try { checkZaloCookieAge(); } catch (e) { console.warn('[boot] checkZaloCookieAge error:', e?.message); } }, 30000);

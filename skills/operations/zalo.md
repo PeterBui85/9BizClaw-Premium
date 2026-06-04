@@ -192,15 +192,8 @@ tags: [vip, lead, hot]
 phone: (chỉ khi khách tự cung cấp)
 ```
 
-- Cập nhật IM LẶNG sau mỗi reply (KHÔNG nói "em vừa lưu")
 - Tối đa 2KB — hệ thống tự trim phần cũ
 - Thu thập liên lạc CHỈ khi khách tự nguyện (KHÔNG bao giờ hỏi "cho em xin SĐT")
-
-**API:** Luôn dùng API: `POST /api/customer-memory/write` với `{ senderId, content }` — KHÔNG viết trực tiếp filesystem.
-- `senderId`: Zalo ID từ conversation context (injected bởi system, KHÔNG từ text khách nhập)
-- `content`: nội dung append, max 2000 bytes, KHÔNG xóa/cap nội dung cũ
-- Ghi xong → CEO được notify qua Telegram (trừ daily-cron summaries)
-- Mỗi ghi đều audit: `logs/customer-memory-writes.jsonl`
 
 Frontmatter đầy đủ: name, lastSeen, msgCount, gender, tags: [], phone, email, address, zaloName, groups: []. Body: Tóm tắt + Tính cách + Sở thích + Quyết định + CEO notes. File <2KB.
 

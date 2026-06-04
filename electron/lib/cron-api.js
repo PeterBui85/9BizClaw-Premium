@@ -1565,46 +1565,8 @@ function startCronApi() {
     //  6. CEO Telegram notification (non-blocking)
     // ============================================================
     } else if (urlPath === '/api/customer-memory/write') {
-      const ws = getWorkspace();
-      if (!ws) return jsonResp(res, 500, { error: 'workspace not found' });
-      const senderId = sanitizeZaloUserId(params.senderId);
-      const content = String(params.content || '').trim();
-      if (!senderId) return jsonResp(res, 400, { error: 'invalid senderId' });
-      if (!content) return jsonResp(res, 400, { error: 'content required' });
-      const byteLen = Buffer.byteLength(content, 'utf-8');
-      if (byteLen > 2000) return jsonResp(res, 400, { error: 'content too large (max 2000 bytes)' });
-
-      const { withMemoryFileLock } = require('./conversation');
-      const { auditLog } = require('./workspace');
-      const { sendMemoryWriteAlert } = require('./channels');
-      const usersDir = path.join(ws, 'memory', 'zalo-users');
-      const filePath = path.join(usersDir, senderId + '.md');
-
-      try {
-        await withMemoryFileLock(filePath, () => {
-          fs.appendFileSync(filePath, '\n' + content, 'utf-8');
-        }, { senderId, action: 'append-via-api', source: 'workspace-api' });
-
-        // Audit log
-        auditLog('customer-memory-write', {
-          senderId,
-          action: 'append-via-api',
-          file: senderId + '.md',
-          source: 'workspace-api',
-          size: (() => { try { return fs.statSync(filePath).size; } catch { return 0; } })(),
-        });
-
-        // CEO notification (non-blocking — don't block the API response)
-        sendMemoryWriteAlert({
-          senderId,
-          action: 'append-via-api',
-          details: { file: senderId + '.md', source: 'workspace-api' },
-        }).catch(e => console.warn('[cron-api] sendMemoryWriteAlert failed:', e?.message));
-
-        return jsonResp(res, 200, { success: true, senderId, bytes: byteLen });
-      } catch (e) {
-        return jsonResp(res, 500, { error: e.message });
-      }
+      // deprecated: replaced by lib/customer-memory-updater.js (code-enforced). No-op shim for one release; remove next.
+      return jsonResp(res, 200, { ok: true, deprecated: true });
 
     // ============================================================
     //  CEO RULE WRITING ENDPOINT
