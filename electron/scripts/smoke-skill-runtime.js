@@ -225,10 +225,12 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   else bad('AGENTS no longer routes document tasks to MiniMax skills', stale.join(', '));
   if (!/pptxgenjs`\s+v3/.test(agents)) ok('AGENTS does not claim pptxgenjs v3');
   else bad('AGENTS does not claim pptxgenjs v3', 'installed dependency is v4.x');
-  if (/modoroclaw-agents-version:\s*110/.test(agents) && /CURRENT_AGENTS_MD_VERSION\s*=\s*110/.test(workspace)) {
-    ok('AGENTS template version bumped to 110');
+  const _amV = (agents.match(/modoroclaw-agents-version:\s*(\d+)/) || [])[1];
+  const _wsV = (workspace.match(/CURRENT_AGENTS_MD_VERSION\s*=\s*(\d+)/) || [])[1];
+  if (_amV && _wsV && _amV === _wsV && parseInt(_amV, 10) >= 110) {
+    ok('AGENTS template version in sync (v' + _amV + ', >=110)');
   } else {
-    bad('AGENTS template version bumped to 110', 'AGENTS.md and workspace.js must stay in sync');
+    bad('AGENTS template version in sync', `AGENTS.md (${_amV || 'none'}) and workspace.js (${_wsV || 'none'}) must match and be >=110`);
   }
 }
 

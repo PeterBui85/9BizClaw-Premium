@@ -21,6 +21,7 @@ let shell;
 try { shell = require('electron').shell; } catch {}
 
 let _cronApiServer = null;
+let _cronApiStarting = false; // sync in-flight guard — see startCronApi() for why
 let _cronApiPort = 20200;
 let _cronApiToken = '';
 const _fbPostApprovals = new Map();
@@ -39,6 +40,26 @@ function cleanupFbPostApprovals(now = Date.now()) {
       removed++;
     }
   }
+}
+
+function resolveFbPageRef(params) {
+  // Explicit pageId (or internal id) wins. Otherwise resolve a human name or
+  // shortName ("cf1", "Coffee shop") server-side via resolvePageByName, so the
+  // agent can just pass page=<what the CEO said> instead of fetching /api/fb/pages
+  // and matching it itself (LLM-unreliable). Returns { ref } or { status, error, matches? }.
+  if (params.pageId) return { ref: String(params.pageId) };
+  const name = params.page;
+  if (name) {
+    const r = require('./fb-publisher').resolvePageByName(String(name));
+    if (r.reason === 'found') return { ref: r.page.id };
+    if (r.reason === 'ambiguous') {
+      const list = (r.matches || []).map(p => p.shortName ? `${p.pageName} (${p.shortName})` : p.pageName).join(', ');
+      return { status: 400, error: `Nhiều fanpage khớp "${name}": ${list}. Nêu rõ tên đầy đủ.`, matches: r.matches };
+    }
+    if (r.reason === 'disabled') return { status: 400, error: `Fanpage "${name}" đang tắt — bật lại trong Dashboard → Facebook.` };
+    return { status: 400, error: `Không tìm thấy fanpage "${name}". Kiểm tra tên ngắn / tên Facebook trong Dashboard.` };
+  }
+  return { status: 400, error: 'pageId hoặc page (tên/tên ngắn fanpage) là bắt buộc' };
 }
 
 function isInsideDir(absPath, dirPath) {
@@ -161,7 +182,14 @@ function resolveZaloIsGroup({ groupId, groupName, friendName, isGroupParam }) {
 }
 
 function startCronApi() {
-  if (_cronApiServer) return;
+  // _cronApiServer is set asynchronously (in the 'listening' callback below), so
+  // guarding on it alone races: every caller fires a preflight + an actual call,
+  // and both pass this guard before the first bind completes — each then leaks a
+  // server on the next free port (20201, 20202…) until the range exhausts →
+  // EADDRINUSE. _cronApiStarting is set synchronously here to serialize starts;
+  // it clears on a successful listen or on terminal failure.
+  if (_cronApiServer || _cronApiStarting) return;
+  _cronApiStarting = true;
   const http = require('http');
   const crypto = require('crypto');
   const nodeCron = require('node-cron');
@@ -2899,11 +2927,12 @@ function startCronApi() {
       const { message: fbMessage, imagePath: relImgPath, approvalNonce } = params;
       if (!fbMessage) return jsonResp(res, 400, { error: 'message required' });
       if (String(fbMessage).length > 63206) return jsonResp(res, 400, { error: 'message too long (max 63206 chars)' });
-      if (!params.pageId) return jsonResp(res, 400, { error: 'pageId is required' });
+      const _pr = resolveFbPageRef(params);
+      if (_pr.error) return jsonResp(res, _pr.status, { error: _pr.error, matches: _pr.matches });
       const cfg = readFbConfig();
       let pageInfo;
       try {
-        pageInfo = getFbPageToken(cfg, String(params.pageId));
+        pageInfo = getFbPageToken(cfg, _pr.ref);
       } catch (e) {
         return jsonResp(res, 400, { error: e.message });
       }
@@ -2977,11 +3006,12 @@ function startCronApi() {
       }
 
     } else if (urlPath === '/api/fb/insights') {
-      if (!params.pageId) return jsonResp(res, 400, { error: 'pageId is required' });
+      const _pr = resolveFbPageRef(params);
+      if (_pr.error) return jsonResp(res, _pr.status, { valid: false, tokenValid: false, error: _pr.error, matches: _pr.matches });
       const cfg = readFbConfig();
       let pageInfo;
       try {
-        pageInfo = getFbPageToken(cfg, String(params.pageId));
+        pageInfo = getFbPageToken(cfg, _pr.ref);
       } catch (e) {
         return jsonResp(res, 400, { valid: false, tokenValid: false, error: e.message });
       }
@@ -3001,11 +3031,12 @@ function startCronApi() {
       }
 
     } else if (urlPath === '/api/fb/recent') {
-      if (!params.pageId) return jsonResp(res, 400, { error: 'pageId is required' });
+      const _pr = resolveFbPageRef(params);
+      if (_pr.error) return jsonResp(res, _pr.status, { error: _pr.error, matches: _pr.matches });
       const cfg = readFbConfig();
       let pageInfo;
       try {
-        pageInfo = getFbPageToken(cfg, String(params.pageId));
+        pageInfo = getFbPageToken(cfg, _pr.ref);
       } catch (e) {
         return jsonResp(res, 400, { error: e.message });
       }
@@ -3017,12 +3048,14 @@ function startCronApi() {
 
     } else if (urlPath === '/api/fb/verify') {
       const fbPub = require('./fb-publisher');
-      if (params.pageId) {
-        // Verify a specific page's token
+      if (params.pageId || params.page) {
+        // Verify a specific page's token (by pageId or by name/shortName)
+        const _pr = resolveFbPageRef(params);
+        if (_pr.error) return jsonResp(res, _pr.status, { valid: false, error: _pr.error, matches: _pr.matches });
         const cfg = readFbConfig();
         let pageInfo;
         try {
-          pageInfo = getFbPageToken(cfg, String(params.pageId));
+          pageInfo = getFbPageToken(cfg, _pr.ref);
         } catch (e) {
           return jsonResp(res, 400, { valid: false, error: e.message });
         }
@@ -3584,8 +3617,8 @@ function startCronApi() {
 
   function tryListen(port, retries) {
     const onceListening = () => {
-      if (_cronApiServer !== server) return; // stale — a newer server is active
       _cronApiServer = server;
+      _cronApiStarting = false;
       _cronApiPort = server.address().port;
       console.log('[cron-api] listening on http://127.0.0.1:' + _cronApiPort);
     };
@@ -3598,6 +3631,7 @@ function startCronApi() {
         tryListen(port + 1, retries - 1);
       } else {
         console.error('[cron-api] server error:', err.message);
+        _cronApiStarting = false;
         _cronApiPort = null;
         try { sendCeoAlert('[Cron API] Không khởi động được HTTP server: ' + err.message); } catch {}
       }
@@ -3628,6 +3662,7 @@ function _broadcastSkillUpdated() {
 function getCronApiPort() { return _cronApiPort; }
 
 function cleanupCronApi() {
+  _cronApiStarting = false; // allow a clean restart after teardown
   if (_cronApiServer) {
     try { _cronApiServer.close(); } catch {}
     _cronApiServer = null;

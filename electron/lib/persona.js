@@ -15,6 +15,8 @@ const _PERSONA_MARKER_START = '<!-- PERSONA-MIX-INJECT-START -->';
 const _PERSONA_MARKER_END = '<!-- PERSONA-MIX-INJECT-END -->';
 const _SHOPSTATE_MARKER_START = '<!-- SHOP-STATE-INJECT-START -->';
 const _SHOPSTATE_MARKER_END = '<!-- SHOP-STATE-INJECT-END -->';
+const _PROFILE_MARKER_START = '<!-- PROFILE-INJECT-START -->';
+const _PROFILE_MARKER_END = '<!-- PROFILE-INJECT-END -->';
 
 // --- compilePersonaMix(mix) ---
 // Pure function: compiles persona config into human-readable Markdown prompt.
@@ -194,9 +196,63 @@ function syncAllBootstrapData() {
   syncShopStateToBootstrap();
 }
 
+// --- syncProfileToUserMd(profile) ---
+// Injects the CEO/assistant personalization profile (name, honorific/xưng hô, bot
+// name, company) into USER.md between markers — so USER.md holds the COMPLETE
+// personalization the bot reads each message. Merges with any existing values so a
+// partial update (e.g. a persona-only edit) doesn't wipe fields set by the wizard.
+function syncProfileToUserMd(profile = {}) {
+  try {
+    const ws = getWorkspace();
+    if (!ws) return;
+    const userPath = path.join(ws, 'USER.md');
+    if (!fs.existsSync(userPath)) return;
+    let user = fs.readFileSync(userPath, 'utf-8');
+    const startIdx = user.indexOf(_PROFILE_MARKER_START);
+    const endIdx = user.indexOf(_PROFILE_MARKER_END);
+    const hasValid = startIdx >= 0 && endIdx > startIdx;
+    const prev = {};
+    if (hasValid) {
+      const block = user.slice(startIdx, endIdx);
+      const grab = (re) => { const m = block.match(re); return m ? m[1].trim() : ''; };
+      prev.ceoName = grab(/Tên chủ doanh nghiệp:\s*(.*)/);
+      prev.ceoTitle = grab(/Trợ lý gọi chủ là:\s*(.*)/);
+      prev.company = grab(/Tên công ty\/cửa hàng:\s*(.*)/);
+      prev.botName = grab(/Tên trợ lý:\s*(.*)/);
+    }
+    const clean = (v) => String(v == null ? '' : v).replace(/<!--|-->/g, '').replace(/[\r\n]/g, ' ').trim();
+    const keep = (v) => (v && v !== '(chưa có)' && v !== 'em (mặc định)') ? v : '';
+    const ceoName = clean(profile.ceoName) || keep(prev.ceoName);
+    const ceoTitle = clean(profile.ceoTitle) || keep(prev.ceoTitle);
+    const company = clean(profile.company) || keep(prev.company);
+    const botName = clean(profile.botName) || keep(prev.botName);
+    const body = '## Hồ sơ chủ doanh nghiệp + Trợ lý (CEO thiết lập)\n\n' +
+      'Bot dùng thông tin này để xưng hô và giới thiệu đúng. Đây là thông tin chính thức.\n\n' +
+      '- Tên chủ doanh nghiệp: ' + (ceoName || '(chưa có)') + '\n' +
+      '- Trợ lý gọi chủ là: ' + (ceoTitle || '(chưa có)') + '\n' +
+      '- Tên công ty/cửa hàng: ' + (company || '(chưa có)') + '\n' +
+      '- Tên trợ lý: ' + (botName || 'em (mặc định)') + '\n';
+    const injection = `${_PROFILE_MARKER_START}\n${body}\n${_PROFILE_MARKER_END}`;
+    if (hasValid) {
+      user = user.slice(0, startIdx) + injection + user.slice(endIdx + _PROFILE_MARKER_END.length);
+    } else if (startIdx >= 0) {
+      // Corrupt/partial section (orphan start marker, e.g. a crash mid-write) —
+      // strip from the orphan onward, then re-append one clean section (no dup).
+      user = user.slice(0, startIdx).trimEnd() + '\n\n' + injection + '\n';
+    } else {
+      user = user.trimEnd() + '\n\n---\n\n' + injection + '\n';
+    }
+    fs.writeFileSync(userPath, user, 'utf-8');
+    console.log('[bootstrap-sync] personalization profile injected into USER.md');
+  } catch (e) {
+    console.warn('[bootstrap-sync] profile sync failed:', e?.message);
+  }
+}
+
 module.exports = {
   compilePersonaMix,
   syncPersonaToBootstrap,
   syncShopStateToBootstrap,
+  syncProfileToUserMd,
   syncAllBootstrapData,
 };

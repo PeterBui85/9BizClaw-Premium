@@ -46,6 +46,7 @@
     "prebuild:models": "node scripts/prebuild-models.js",
     "prebuild:vendor": "node scripts/prebuild-vendor.js",
     "prebuild:modoro-zalo": "node scripts/prebuild-modoro-zalo.js",
+    "verify:caps": "node scripts/verify-capabilities.js",
     "build:win": "node scripts/build-win.js",
     "build:mac": "npm run prebuild:models && npm run prebuild:vendor && npm run prebuild:modoro-zalo && npm run smoke && electron-builder --mac",
     "obfuscate": "node scripts/obfuscate.js",

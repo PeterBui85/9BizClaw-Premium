@@ -1581,7 +1581,7 @@ async function fixRuntimeNativeModules(nodeBin, nodeModulesDir, onProgress) {
     const installArgs = [...npm.argsPrefix, 'install', '--prefix', bsqlDir,
       'prebuild-install', '--no-save', '--no-fund', '--no-audit', '--ignore-scripts'];
     require('child_process').execFileSync(npm.command, installArgs, {
-      timeout: 60000, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell,
+      timeout: 60000, encoding: 'utf-8', stdio: 'pipe', shell: npm.shell, windowsHide: true,
       env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_node_gyp: 'echo' }),
     });
   } catch (e) {
@@ -1594,7 +1594,7 @@ async function fixRuntimeNativeModules(nodeBin, nodeModulesDir, onProgress) {
     try {
       require('child_process').execFileSync(nodeBin,
         [prebuildJs, '-r', 'node', '-t', nodeVer, '--arch', arch],
-        { cwd: bsqlDir, timeout: 60000, shell: false,
+        { cwd: bsqlDir, timeout: 60000, shell: false, windowsHide: true,
           env: buildEnvWithGitPath({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/echo', npm_config_arch: arch, npm_config_node_gyp: 'echo' }) });
       if (fs.existsSync(bsqlBin)) {
         console.log('[runtime-installer] ✓ better-sqlite3 prebuilt fetched');

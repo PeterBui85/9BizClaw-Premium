@@ -2192,10 +2192,11 @@ try {
   }
   // 4. AGENTS.md internal-user section + version bumped (re-seeds to existing workspaces)
   const agentsMd = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
-  if (agentsMd.includes('Người nội bộ') && /modoroclaw-agents-version:\s*110/.test(agentsMd)) {
-    pass('AGENTS.md has internal-user behavior section + version 110');
+  const _amVer = (agentsMd.match(/modoroclaw-agents-version:\s*(\d+)/) || [])[1];
+  if (agentsMd.includes('Người nội bộ') && _amVer && parseInt(_amVer, 10) >= 110) {
+    pass('AGENTS.md has internal-user behavior section + version ' + _amVer + ' (>=110)');
   } else {
-    fail('AGENTS.md internal rule', 'AGENTS.md missing internal-user section or version not bumped to 110');
+    fail('AGENTS.md internal rule', 'AGENTS.md missing internal-user section or version < 110 (got ' + (_amVer || 'none') + ')');
   }
   // 5. internal-flag path consistency: marking someone "Nội bộ" only works if the
   //    Dashboard WRITES the flag where the bot READS it. Both route through

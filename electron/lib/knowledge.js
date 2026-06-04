@@ -473,6 +473,7 @@ function autoFixBetterSqlite3() {
       cwd: scriptCwd,
       timeout: 120000,
       stdio: 'inherit',
+      windowsHide: true,
     });
     try {
       const moduleId = require.resolve('better-sqlite3');

@@ -1269,6 +1269,11 @@
               </div>
             </div>
             <div class="wz-field">
+              <label class="wz-label">Trợ lý gọi anh/chị là gì?</label>
+              <input type="text" class="wz-input" id="ceo-title" placeholder="Ví dụ: anh, chị, sếp">
+              <p class="wz-help">Trợ lý AI sẽ xưng hô với anh/chị bằng từ này khi trò chuyện.</p>
+            </div>
+            <div class="wz-field">
               <label class="wz-label">Tên trợ lý ảo (không bắt buộc)</label>
               <input type="text" class="wz-input" id="bot-name" placeholder="Để trống = trợ lý tự xưng 'em'. Ví dụ: Momo, Linh, Claw">
               <p class="wz-help">Đây là tên riêng của trợ lý AI. Khách Zalo sẽ thấy trợ lý tự giới thiệu bằng tên này.</p>
@@ -2396,6 +2401,8 @@
           pronouns: 'em-anh-chi',
           ceoTitle,
           botName,
+          ceoName: name,
+          companyName: company,
           personaMix,
         }));
 

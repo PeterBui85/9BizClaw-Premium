@@ -125,7 +125,7 @@ function tryPrebuild() {
     const platformFlag = `--platform ${targetPlatform}`;
     execSync(
       `npx --yes prebuild-install -r electron -t ${electronVersion} ${archFlag} ${platformFlag}`,
-      { cwd: bsqlDir, stdio: 'inherit' }
+      { cwd: bsqlDir, stdio: 'inherit', windowsHide: true }
     );
     if (isBinaryUsable()) { log('prebuilt binary installed + verified'); return true; }
     return false;
@@ -140,7 +140,7 @@ function tryRebuild() {
     log('attempting electron-rebuild (requires C++ toolchain)...');
     execSync(
       `npx --yes @electron/rebuild -f -w better-sqlite3 -v ${electronVersion} --arch ${targetArch}`,
-      { cwd: electronDir, stdio: 'inherit' }
+      { cwd: electronDir, stdio: 'inherit', windowsHide: true }
     );
     if (isBinaryUsable()) { log('electron-rebuild succeeded'); return true; }
     return false;

@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 110 -->
+<!-- modoroclaw-agents-version: 111 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -343,43 +343,6 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 
 <!-- ROUTING_TABLE_END -->
 
-
-| Trigger trong tin CEO | Capability | Skill file |
-|---|---|---|
-| "gửi ảnh vào nhóm", "tạo ảnh gửi nhóm", "poster nhóm Zalo" | `zalo_image_post` | `skills/marketing/zalo-post-workflow.md` |
-| "gửi ảnh SP", "xem hình sản phẩm", "ảnh sản phẩm", "có hình không" (khi trả lời khách Zalo) | `zalo_product_image` | `skills/operations/zalo.md` (mục GỬI ẢNH SẢN PHẨM CHO KHÁCH) |
-| "đăng bài Facebook", "đăng ảnh fanpage", "tạo ảnh đăng Facebook" | `facebook_image_post` | `skills/marketing/facebook-post-workflow.md` |
-| "lịch đăng Facebook", "tự động đăng Facebook", "scheduled post", "đăng Facebook mỗi sáng" | `facebook_scheduled` | `skills/marketing/facebook-post-workflow.md` (mục Lịch tự động) |
-| "insights Facebook", "chỉ số Facebook", "báo cáo Fanpage", "thống kê Facebook", "reach Facebook", "xem insights Fanpage" | `facebook_insights` | `skills/operations/facebook-insights.md` |
-| "fb ok", "fb đăng đi", "fb duyệt", "fb hủy", "fb sửa caption:", "fb ảnh khác" | `fb_approve` | Gọi `web_fetch POST http://127.0.0.1:20200/api/fb/schedule/telegram-command` với `{ "text": "<nội dung sau 'fb '>" }`. VD: CEO nhắn "fb ok" → gọi API với `{ "text": "ok" }`. Trả kết quả cho CEO. |
-| "tạo ảnh", "banner", "poster" (KHÔNG kèm Zalo/Facebook), "tạo skill ảnh mới", "xóa skill ảnh" | `brand_image_generate` | `skills/operations/image-generation.md` |
-| "nhắn Zalo", "gửi nhóm", "say hi nhóm", "gửi khách Zalo" (không tạo ảnh) | `zalo_send` | `skills/operations/telegram-ceo.md` (mục Gửi Zalo từ Telegram) |
-| "mỗi ngày", "tự động gửi", "cron", "nhắc nhóm" | `zalo_cron` | `skills/operations/cron-management.md` |
-| "đọc file", "liệt kê folder", "ổ D", "ổ C", "Desktop", "Downloads", "mở file", "xem file", "chạy lệnh", "exec" | `ceo_file` | `skills/operations/ceo-file-api.md` |
-| Google Sheet/Doc/Drive/Gmail/Calendar/AppSheet | `google_workspace` | `skills/operations/google-workspace.md` |
-| file JSON, client_secret, OAuth, Google chưa kết nối | `setup_google` | `skills/operations/google-workspace.md` (mục Lỗi) |
-| CEO yêu cầu KẾT HỢP nhiều domain (VD: "đọc Sheet rồi tạo ảnh đăng Facebook", "lấy dữ liệu rồi gửi nhóm") HOẶC prompt cron có `[WORKFLOW]` prefix | `workflow_chain` | `skills/operations/workflow-chains.md` |
-| "tạo file word", "báo giá", "hợp đồng", "soạn văn bản", "xuất docx", "làm đẹp file word" | `docx_create` | `skills/anthropic-docx/SKILL.md` |
-| "sửa file word", "thêm dòng word", "chỉnh sửa văn bản" | `docx_edit` | `skills/anthropic-docx/SKILL.md` |
-| "tạo file Excel", "báo cáo Excel", ".xlsx", "file bang tinh" | `xlsx_create` | `skills/anthropic-xlsx/SKILL.md` |
-| "sửa file Excel", "thêm dòng/cột Excel", "chỉnh sửa bảng tính" | `xlsx_edit` | `skills/anthropic-xlsx/SKILL.md` |
-| "tạo slide", "PowerPoint", "thuyết trình", "pitch deck", "presentation", "làm bài trình bày" | `pptx_create` | `skills/anthropic-pptx/SKILL.md` |
-| "tạo file PDF", "xuất PDF", "tạo PDF" | `pdf_create` | `skills/anthropic-pdf/SKILL.md` |
-| "ghi nhớ", "nhớ giùm", "lưu lại", "remember", "bộ nhớ bot" | `ceo_memory` | `skills/operations/ceo-memory-api.md` — gọi `POST /api/memory/write` NGAY. |
-| "tạo skill", "dạy em quy trình", "thêm rule mới", "từ giờ khi", "tạo quy tắc" | `skill_builder` | `skills/operations/skill-builder.md` |
-| "tổng hợp khách Zalo", "xuất khách ra Sheet", "follow-up sheet", "báo cáo khách vào Sheet" | `zalo_followup_sheet` | `skills/operations/zalo-followup-sheet.md` |
-| bot định nói không kéo được / chưa kết nối / chưa thấy dữ liệu | `diagnostic_recovery` | gọi status/list/health route tương ứng trước; báo lỗi theo response thật |
-| "báo cáo ngày", "báo cáo tuần", "hôm nay thế nào", "tóm tắt ngày" | `daily_report` | `POST /api/report/daily` — gọi API, format kết quả cho CEO |
-| "sổ sách", "thu chi", "ghi thu", "ghi chi" | `bookkeeping` | `skills/operations/so-sach-don-gian.md` |
-| "công nợ", "ai nợ", "khách nợ" | `receivables` | `skills/operations/cong-no.md` |
-| "kịch bản", "mẫu trả lời", "script bán hàng" | `sales_script` | `skills/operations/kich-ban-ban-hang.md` |
-| "checklist", "danh sách kiểm tra" | `checklist` | `skills/operations/checklist-van-hanh.md` |
-| "tuyển dụng", "JD", "đăng tuyển" | `recruitment` | `skills/operations/tuyen-dung-nhanh.md` |
-| "lịch hẹn", "đặt lịch", "cuộc hẹn" | `appointments` | `skills/appointments.md` |
-| "ghi đơn", "đơn hàng", "order", "đặt hàng" | `order_mgmt` | `POST /api/order/create` hoặc `GET /api/order/list` tùy ngữ cảnh |
-| "tồn kho", "kiểm kho", "nhập hàng", "xuất hàng" | `inventory` | `POST /api/inventory/adjust` hoặc `GET /api/inventory/check` |
-| "xin nghỉ", "nghỉ phép", "chấm công" | `leave_mgmt` | `POST /api/leave/request` hoặc `GET /api/leave/list` |
-
 **Multi-step:** Nhiều bước = checklist giao dịch. `jobId` / `status: "generating"` KHÔNG PHẢI proof thành công. Block đợi kết quả thật. Nếu bước fail → báo rõ, không im lặng.
 
 ## Lịch tự động — CHỈ CEO qua Telegram
@@ -423,16 +386,13 @@ Khách Zalo yêu cầu → "Dạ đây là thông tin nội bộ em không chia 
 **Trả ảnh:** Khi tạo ảnh xong, trả path ảnh vừa tạo trong `mediaUrls`. KHÔNG kèm ảnh cũ từ lần tạo trước trừ khi CEO đang yêu cầu chỉnh sửa/so sánh với ảnh đó. Mascot, logo, brand assets KHÔNG BAO GIỜ tự động đính kèm — chỉ kèm khi CEO yêu cầu cụ thể.
 **Media library search: brand assets bị loại hoàn toàn.** Khi dùng `GET /api/media/search` để tìm ảnh gửi khách (tìm ảnh sản phẩm làm caption, tìm ảnh đính kèm tin Zalo), hệ thống đã tự động loại brand assets (logo, mascot, banner thương hiệu) ở API layer. Không cần filter tay. Nếu muốn dùng logo/mascot trong ảnh AI mới — dùng `GET /api/brand-assets/list` (brand assets riêng endpoint), KHÔNG dùng `/api/media/search`.
 
-### Xác định fanpage (Bước 0 — BẮT BUỘC trước MỌI thao tác Facebook)
+### Xác định fanpage (Bước 0 — trước MỌI thao tác Facebook)
 
-Trước khi đăng bài, tạo lịch, hoặc xem insights:
-1. Gọi `GET /api/fb/pages` lấy danh sách fanpage
-2. Nếu CEO đã nêu tên page → match tên ngắn (exact) rồi tên Facebook (substring)
-3. Nếu chỉ có 1 page → dùng page đó, XÁC NHẬN với CEO: "Đăng lên **[Page Name]** ([tên ngắn])?"
-4. Nếu không match hoặc nhiều match → HỎI: "Anh muốn đăng lên fanpage nào?" kèm danh sách
-5. KHÔNG BAO GIỜ đoán page. KHÔNG BAO GIỜ dùng page mặc định khi có >1 page.
-6. Truyền `pageId` vào MỌI API call: `/api/fb/post?pageId=...`, `/api/fb/insights?pageId=...`, `/api/fb/schedule/create?...&targetPageId=...`
-7. Sau khi đăng: xác nhận "Đã đăng lên **[Page Name]**."
+CEO nêu tên page (VD "đăng lên cf1") → **truyền thẳng `page=<tên/tên ngắn đó>`** vào `/api/fb/post`, `/api/fb/insights`, `/api/fb/verify`. Server tự resolve (tên ngắn chính xác → tên Facebook substring). KHÔNG cần gọi `/api/fb/pages` rồi tự match `pageId`.
+- Server báo `Không tìm thấy fanpage "X"` hoặc `Nhiều fanpage khớp "X": ...` → khi đó mới HỎI CEO chọn, hoặc gọi `GET /api/fb/pages` để liệt kê.
+- CEO không nêu tên + chỉ có 1 page → gọi `GET /api/fb/pages`, dùng page đó, xác nhận "Đăng lên **[Page Name]**?".
+- Lịch đăng (`/api/fb/schedule/create`): truyền `targetPageId=<pageId>` (lấy từ `GET /api/fb/pages`).
+- KHÔNG đoán page khi server báo nhiều match. Sau khi đăng: "Đã đăng lên **[Page Name]**."
 
 ## Google Workspace — CHỈ CEO Telegram
 Đọc `skills/operations/google-workspace.md` — routes, cú pháp, Sheet/Docs link flow, lỗi thường gặp.

@@ -143,7 +143,7 @@ const {
 } = require('./zalo-plugin');
 const {
   compilePersonaMix, syncPersonaToBootstrap,
-  syncShopStateToBootstrap, syncAllBootstrapData,
+  syncShopStateToBootstrap, syncAllBootstrapData, syncProfileToUserMd,
 } = require('./persona');
 const {
   processEscalationQueue, startEscalationChecker,
@@ -433,15 +433,18 @@ ipcMain.handle('setup-9router-auto', async (_event, opts = {}) => {
       console.log('[setup-9router-auto] found codex provider:', codexConn.id, codexConn.name || codexConn.provider);
 
       const picked = 'cx/gpt-5.4';
+      // Main combo carries BOTH models so the agent falls back to gpt-5.5 when 5.4
+      // is unavailable/rate-limited (CEO asked for 5.5 in the combo, not just 5.4).
+      const comboModels = ['cx/gpt-5.4', 'cx/gpt-5.5'];
       const combosRes = await nineRouterApi('GET', '/api/combos');
       const combos = combosRes.data?.combos || combosRes.data || [];
       let mainCombo = (Array.isArray(combos) ? combos : []).find(c => c.name === 'main');
       if (mainCombo) {
-        await nineRouterApi('PUT', `/api/combos/${mainCombo.id}`, { name: 'main', models: [picked] });
+        await nineRouterApi('PUT', `/api/combos/${mainCombo.id}`, { name: 'main', models: comboModels });
       } else {
-        await nineRouterApi('POST', '/api/combos', { name: 'main', models: [picked] });
+        await nineRouterApi('POST', '/api/combos', { name: 'main', models: comboModels });
       }
-      console.log('[setup-9router-auto] combo "main" set to:', picked);
+      console.log('[setup-9router-auto] combo "main" set to:', comboModels.join(', '));
 
       const keysRes = await nineRouterApi('GET', '/api/keys');
       const keys = keysRes.data?.keys || keysRes.data || [];
@@ -2007,7 +2010,7 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
 });
 
 // Save personalization (industry, tone, pronouns)
-ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns, ceoTitle, botName, personaMix, selectedPersona }) => {
+ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns, ceoTitle, botName, personaMix, selectedPersona, ceoName, companyName }) => {
   try {
     // Validate inputs
     const VALID_INDUSTRIES = ['bat-dong-san', 'fnb', 'thuong-mai', 'dich-vu', 'giao-duc', 'cong-nghe', 'san-xuat', 'tong-quat'];
@@ -2148,6 +2151,11 @@ ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns
       console.log('[save-personalization] persona mix saved: voice=' + mix.voice + ' traits=' + (mix.traits || []).length + ' formality=' + mix.formality);
       syncPersonaToBootstrap();
     } catch (e) { console.warn('[save-personalization] persona mix write failed:', e?.message); }
+
+    // Sync the full personalization profile (CEO name, xưng hô, bot name, company)
+    // into USER.md so it holds the complete personalization the bot reads each message.
+    try { syncProfileToUserMd({ ceoName, ceoTitle, botName, company: companyName }); }
+    catch (e) { console.warn('[save-personalization] profile→USER.md sync failed:', e?.message); }
 
     // Delete BOOTSTRAP.md — it's single-use, wizard completion means bot is
     // bootstrapped. Leaving it wastes ~1.5k chars per session-bootstrap read.
@@ -4976,7 +4984,7 @@ ipcMain.handle('install-openclaw', async (event) => {
       args = ['install', '-g', '--save-exact', ...PINNED_VERSIONS];
     }
 
-    const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: isWin });
+    const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: isWin, windowsHide: true });
     let output = '';
 
     // Stream ALL output — both stdout and stderr

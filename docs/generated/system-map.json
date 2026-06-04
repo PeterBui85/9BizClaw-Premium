@@ -3355,7 +3355,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 187896
+      "bytes": 190185
     },
     {
       "path": "electron/lib/cron.js",
@@ -3363,7 +3363,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 289976
+      "bytes": 290649
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3387,7 +3387,7 @@
     },
     {
       "path": "electron/lib/knowledge.js",
-      "bytes": 96863
+      "bytes": 96888
     },
     {
       "path": "electron/lib/media-library.js",
@@ -3399,11 +3399,11 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 46717
+      "bytes": 46793
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 86366
+      "bytes": 86404
     },
     {
       "path": "electron/lib/skill-manager.js",
@@ -3439,7 +3439,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 117016
+      "bytes": 117433
     }
   ]
 }

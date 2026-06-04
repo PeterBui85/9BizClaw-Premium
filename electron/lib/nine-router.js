@@ -738,7 +738,7 @@ async function autoFix9RouterSqlite() {
     if (fs.existsSync(prebuildBin)) {
       try {
         execFileSync(nodeBin, [prebuildBin, '-r', 'node', '-t', nodeVer, '--arch', arch], {
-          cwd: bsqlDir, timeout: 60000, shell: false,
+          cwd: bsqlDir, timeout: 60000, shell: false, windowsHide: true,
           env: { ...process.env, npm_config_arch: arch },
         });
         if (fs.existsSync(bsqlBin)) {
@@ -754,7 +754,7 @@ async function autoFix9RouterSqlite() {
     if (fs.existsSync(nodePreGyp)) {
       try {
         execFileSync(nodeBin, [nodePreGyp, 'rebuild', `--target=${nodeVer}`, `--target_arch=${arch}`], {
-          cwd: bsqlDir, timeout: 120000, shell: false,
+          cwd: bsqlDir, timeout: 120000, shell: false, windowsHide: true,
         });
         if (fs.existsSync(bsqlBin)) {
           console.log('[9router-autofix] ✓ rebuilt via node-pre-gyp');
@@ -774,7 +774,7 @@ async function autoFix9RouterSqlite() {
       try {
         console.log('[9router-autofix] trying npx prebuild-install...');
         execFileSync(npxBin, ['--yes', 'prebuild-install', '-r', 'node', '-t', nodeVer, '--arch', arch], {
-          cwd: bsqlDir, timeout: 90000, shell: isWin,
+          cwd: bsqlDir, timeout: 90000, shell: isWin, windowsHide: true,
           env: { ...process.env, npm_config_arch: arch },
         });
         if (fs.existsSync(bsqlBin)) {
@@ -794,7 +794,7 @@ async function autoFix9RouterSqlite() {
         console.log('[9router-autofix] trying npm rebuild better-sqlite3...');
         execFileSync(npmBin, ['rebuild', 'better-sqlite3', `--arch=${arch}`], {
           cwd: path.join(vendorDir2, 'node_modules', '9router', 'app'),
-          timeout: 180000, shell: isWin,
+          timeout: 180000, shell: isWin, windowsHide: true,
           env: { ...process.env, npm_config_arch: arch, npm_config_target: nodeVer, npm_config_runtime: 'node' },
         });
         if (fs.existsSync(bsqlBin)) {
