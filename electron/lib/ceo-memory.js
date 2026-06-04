@@ -823,7 +823,7 @@ function regenerateCeoMemoryFile() {
   const currentFacts = countLines(current);
   const newFacts = countLines(md);
   if (newFacts !== currentFacts || md.trim() !== current.trim()) {
-    fs.writeFileSync(filePath, md, 'utf-8');
+    fs.writeFileSync(filePath, md, 'utf-8'); // SACRED-OK: sole designated regeneration engine for CEO-MEMORY.md
     console.log('[ceo-memory] CEO-MEMORY.md regenerated (' + totalChars + ' chars, ' + allRows.length + ' active memories)');
   }
   injectMemoryIntoAgentsMd();

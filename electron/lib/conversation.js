@@ -490,14 +490,14 @@ async function appendPerCustomerSummaries(ws, dateStr, sinceMs) {
             const hasGenderLine = /^gender:\s*.+$/im.test(currentContent);
             if (hasGenderLine) {
               currentContent = currentContent.replace(/^gender:\s*.+$/im, `gender: ${extractedGender}`);
-              fs.writeFileSync(profilePath, currentContent, 'utf-8');
+              fs.writeFileSync(profilePath, currentContent, 'utf-8'); // SACRED-OK: targeted gender-field update in customer profile
               console.log(`[journal] updated gender=${extractedGender} in zalo-users/${senderId}.md`);
             } else if (currentContent.startsWith('---')) {
               const secondDash = currentContent.indexOf('---', 3);
               if (secondDash > 0) {
                 const frontmatter = currentContent.slice(0, secondDash);
                 currentContent = frontmatter + `gender: ${extractedGender}\n` + currentContent.slice(secondDash);
-                fs.writeFileSync(profilePath, currentContent, 'utf-8');
+                fs.writeFileSync(profilePath, currentContent, 'utf-8'); // SACRED-OK: targeted gender-field insert in customer profile
                 console.log(`[journal] wrote gender=${extractedGender} to zalo-users/${senderId}.md`);
               }
             }
