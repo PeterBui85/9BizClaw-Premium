@@ -22,3 +22,78 @@ let withDated = out + '\n\n## 2026-06-01 — note\nhello\n';
 let out3 = u.mergeFacts(withDated, { summary:'x', preferences:['y'], decisions:[], personality:[], tags:[] });
 assert.ok(out3.includes('## 2026-06-01 — note') && out3.includes('hello')); // dated section preserved
 console.log('mergeFacts OK');
+
+// --- readNewDmMessages tests ---
+{
+  const { DatabaseSync } = require('node:sqlite');
+  const { readNewDmMessages } = require('../lib/customer-memory-updater');
+
+  // Build a throwaway in-memory SQLite
+  const db = new DatabaseSync(':memory:');
+  db.exec(`
+    CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
+    INSERT INTO self_profiles VALUES ('default', 'self001');
+
+    CREATE TABLE messages (
+      profile TEXT,
+      scope_thread_id TEXT,
+      thread_type TEXT,
+      msg_id TEXT,
+      sender_id TEXT,
+      sender_name TEXT,
+      to_id TEXT,
+      timestamp_ms INTEGER,
+      msg_type TEXT,
+      content_text TEXT,
+      source TEXT
+    );
+  `);
+
+  const selfId = 'self001';
+  const threadId = 'user_thread_A';
+  const baselineTs = 1700000000000;
+
+  // Insert 3 rows: msg1 at T1, msg2 at T1 same timestamp (tie), msg3 at T2 > T1
+  // msg1 and msg2 share timestamp_ms (tie case) — different msg_ids
+  const T1 = baselineTs + 1000;
+  const T2 = baselineTs + 2000;
+
+  db.exec(`
+    INSERT INTO messages VALUES
+      ('default', '${threadId}', 'user', '7899015117901', '${selfId}',   'Bot',   '${threadId}', ${T1}, 'text', 'hello from self', 'zalo'),
+      ('default', '${threadId}', 'user', '7899015117902', 'cust001',     'Alice', '${selfId}',   ${T1}, 'text', 'hi there',        'zalo'),
+      ('default', '${threadId}', 'user', '7899015117903', 'cust001',     'Alice', '${selfId}',   ${T2}, 'text', 'follow up',       'zalo');
+  `);
+
+  // --- Test A: first read from baseline, no cursor ---
+  const result1 = readNewDmMessages(db, 'default', selfId, {}, baselineTs);
+  assert.ok(result1 instanceof Map, 'result1 should be a Map');
+  assert.ok(result1.has(threadId), 'should have threadId in result');
+  const e1 = result1.get(threadId);
+  assert.strictEqual(e1.msgs.length, 3, 'should return all 3 rows after baseline');
+  assert.strictEqual(e1.inboundN, 2, 'inboundN should count only non-self senders');
+  assert.strictEqual(e1.newCursor.lastProcessedTs, T2);
+  assert.strictEqual(e1.newCursor.lastProcessedMsgId, '7899015117903');
+  console.log('readNewDmMessages Test A (first read) OK');
+
+  // --- Test B: re-read with returned cursor → 0 new (no loss, no double-count) ---
+  const cursors2 = { [threadId]: e1.newCursor };
+  const result2 = readNewDmMessages(db, 'default', selfId, cursors2, baselineTs);
+  const e2 = result2.get(threadId);
+  assert.ok(!e2 || e2.msgs.length === 0, 'second read should return 0 new messages');
+  console.log('readNewDmMessages Test B (idempotent re-read) OK');
+
+  // --- Test C: insert a 4th row at same maxTs but larger msg_id → exactly 1 new ---
+  db.exec(`
+    INSERT INTO messages VALUES
+      ('default', '${threadId}', 'user', '7899015117904', 'cust001', 'Alice', '${selfId}', ${T2}, 'text', 'same-ts tie', 'zalo');
+  `);
+  const result3 = readNewDmMessages(db, 'default', selfId, cursors2, baselineTs);
+  const e3 = result3.get(threadId);
+  assert.ok(e3 && e3.msgs.length === 1, 'tie-safe: same-ts larger msg_id should return exactly 1 new message');
+  assert.strictEqual(e3.msgs[0].msg_id, '7899015117904');
+  assert.strictEqual(e3.inboundN, 1);
+  console.log('readNewDmMessages Test C (tie-safe cursor) OK');
+
+  console.log('readNewDmMessages OK');
+}

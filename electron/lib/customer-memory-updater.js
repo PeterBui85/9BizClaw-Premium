@@ -1,5 +1,7 @@
 'use strict';
 
+const { DatabaseSync } = require('node:sqlite');
+
 const POLL_INTERVAL_MS = 180_000;
 const SETTLE_MS = 45_000;
 const MAX_DEFER_MS = 600_000;
@@ -101,4 +103,69 @@ function mergeFacts(content, facts) {
   return out;
 }
 
-module.exports = { sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev };
+// --- SQLite DM reader ---
+
+// Read new inbound/outbound DM messages from openzca's SQLite, using a
+// tie-safe cursor (timestamp_ms, msg_id) so no message is lost when two
+// messages share the same millisecond timestamp.
+//
+// cursors: { [scope_thread_id]: { lastProcessedTs, lastProcessedMsgId } }
+// migrationBaselineTs: lower-bound epoch ms — ignore anything before this.
+//
+// Returns Map<scope_thread_id, { msgs, inboundN, newCursor, oldestTs }>
+function readNewDmMessages(db, profile, selfId, cursors, migrationBaselineTs) {
+  // Pull the lowest already-processed ts across all known threads so we can
+  // narrow the SQL range; fall back to migrationBaselineTs if no cursors yet.
+  const cursorFloors = Object.values(cursors).map(c => c.lastProcessedTs).filter(Number.isFinite);
+  const floor = cursorFloors.length > 0
+    ? Math.min(...cursorFloors)
+    : (Number(migrationBaselineTs) || 0);
+
+  const rows = db.prepare(
+    `SELECT scope_thread_id, msg_id, sender_id, sender_name, content_text, msg_type, timestamp_ms
+       FROM messages
+      WHERE profile=? AND thread_type='user' AND timestamp_ms >= ?
+      ORDER BY scope_thread_id, timestamp_ms, msg_id`
+  ).all(profile, Number.isFinite(floor) ? floor : 0);
+
+  const out = new Map();
+  for (const r of rows) {
+    const cur = cursors[r.scope_thread_id] || { lastProcessedTs: 0, lastProcessedMsgId: '' };
+    // Tie-safe: advance only when strictly after cursor
+    const after =
+      r.timestamp_ms > cur.lastProcessedTs ||
+      (r.timestamp_ms === cur.lastProcessedTs &&
+        String(r.msg_id) > String(cur.lastProcessedMsgId));
+    if (!after) continue;
+
+    let e = out.get(r.scope_thread_id);
+    if (!e) {
+      e = { msgs: [], inboundN: 0, newCursor: { lastProcessedTs: 0, lastProcessedMsgId: '' }, oldestTs: r.timestamp_ms };
+      out.set(r.scope_thread_id, e);
+    }
+    e.msgs.push(r);
+    if (String(r.sender_id) !== String(selfId)) e.inboundN++;
+    // newCursor always ends up pointing at the last (highest) row per thread
+    e.newCursor = { lastProcessedTs: r.timestamp_ms, lastProcessedMsgId: String(r.msg_id) };
+  }
+  return out;
+}
+
+// Open the openzca messages SQLite for a profile in read-only mode.
+// Returns null if the DB file does not exist yet.
+function openDb(profile) {
+  const os = require('os');
+  const path = require('path');
+  const fs = require('fs');
+  const p = path.join(os.homedir(), '.openzca', 'profiles', profile, 'messages.sqlite');
+  if (!fs.existsSync(p)) return null;
+  return new DatabaseSync(p, { readOnly: true });
+}
+
+// Read self user_id from self_profiles table.
+function readSelfId(db, profile) {
+  const r = db.prepare('SELECT user_id FROM self_profiles WHERE profile=? LIMIT 1').get(profile);
+  return r ? String(r.user_id) : '';
+}
+
+module.exports = { sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev, readNewDmMessages, openDb, readSelfId };
