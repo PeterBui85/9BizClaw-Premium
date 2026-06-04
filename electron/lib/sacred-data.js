@@ -55,6 +55,11 @@ const SACRED_BACKUP_ROOT = path.join(os.homedir(), '9BizClaw-SacredBackups');
 // Max snapshots to keep (oldest is always preserved on top of this).
 const MAX_SNAPSHOTS = 20;
 
+// One-shot sentinel: when present, the next healSacredOnBoot() skips its restore
+// step (so a deliberate factory-reset actually sticks) then deletes the sentinel.
+// Lives in SACRED_BACKUP_ROOT (outside the workspace) so it survives the reset wipe.
+const SUPPRESS_HEAL_FILE = '.suppress-next-heal';
+
 // ── Lazy imports (avoid circular deps at require-time) ────────────────────────
 
 function _getWorkspace() {
@@ -264,6 +269,45 @@ async function snapshotSacred(reason) {
   }
 }
 
+// ── Factory-reset heal suppression (one-shot) ─────────────────────────────────
+
+/**
+ * markHealSuppressed() — write the one-shot sentinel into SACRED_BACKUP_ROOT so
+ * the NEXT boot's healSacredOnBoot() skips its restore step. Called by the
+ * factory-reset handler so a deliberate wipe actually sticks. The external
+ * backups themselves are kept, so the CEO can still recover manually.
+ * Never throws — failure here must not block factory-reset.
+ */
+function markHealSuppressed() {
+  try {
+    fs.mkdirSync(SACRED_BACKUP_ROOT, { recursive: true });
+    const sentinel = path.join(SACRED_BACKUP_ROOT, SUPPRESS_HEAL_FILE);
+    fs.writeFileSync(sentinel, new Date().toISOString(), 'utf-8');
+    console.log('[sacred-data] heal suppression marked at', sentinel);
+  } catch (e) {
+    console.error('[sacred-data] markHealSuppressed failed (non-blocking):', e?.message);
+  }
+}
+
+/**
+ * _consumeSuppressSentinel — pure, path-injectable check used by healSacredOnBoot.
+ * If the sentinel exists in backupRoot, delete it (one-shot consume) and return
+ * true (caller must skip restore). Otherwise return false.
+ * @param {string} backupRoot - dir that holds the sentinel
+ * @returns {boolean} true if heal should be suppressed this boot
+ */
+function _consumeSuppressSentinel(backupRoot) {
+  const sentinel = path.join(backupRoot, SUPPRESS_HEAL_FILE);
+  if (!fs.existsSync(sentinel)) return false;
+  try {
+    // SACRED-OK: removes the suppression sentinel in the external backup root, not a sacred path
+    fs.unlinkSync(sentinel); // SACRED-OK
+  } catch (e) {
+    console.error('[sacred-data] could not delete suppress sentinel:', e?.message);
+  }
+  return true;
+}
+
 // ── Layer 3+4: healSacredOnBoot ───────────────────────────────────────────────
 
 /**
@@ -341,6 +385,14 @@ async function healSacredOnBoot() {
     const census = _buildCensus(ws);
     const censusLine = Object.entries(census).map(([k, v]) => `${path.basename(k)}=${v}`).join(' ');
     console.log(`[sacred-data] census ${censusLine}`);
+
+    // One-shot suppression: a deliberate factory-reset set the sentinel so this
+    // boot must NOT resurrect the wiped data. Consume the sentinel and skip restore.
+    // External backups are kept — the CEO can still recover manually via restoreFrom().
+    if (_consumeSuppressSentinel(SACRED_BACKUP_ROOT)) {
+      console.log(`[sacred-data] heal suppressed once after factory-reset — backups kept at ${SACRED_BACKUP_ROOT}`);
+      return { suppressed: true, restored: 0, census };
+    }
 
     // Find newest snapshot
     const snapshotDirs = _listSnapshotDirs();
@@ -503,8 +555,12 @@ module.exports = {
   listSnapshots,
   restoreFrom,
   appendSacredAudit,
+  // Factory-reset heal suppression (one-shot)
+  markHealSuppressed,
   // Testable internals (underscore = private, exposed for testing only)
   _snapshotTo,
   _healInto,
+  _consumeSuppressSentinel,
   SACRED_BACKUP_ROOT,
+  SUPPRESS_HEAL_FILE,
 };

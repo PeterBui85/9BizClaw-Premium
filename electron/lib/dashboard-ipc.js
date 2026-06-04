@@ -5076,6 +5076,9 @@ ipcMain.handle('factory-reset', async () => {
     // Layer 2: sacred snapshot BEFORE any wipe — makes factory-reset reversible
     // SACRED-OK: snapshotSacred copies sacred files to external ~/9BizClaw-SacredBackups before wipe
     try { await require('./sacred-data').snapshotSacred('factory-reset'); } catch (e) { console.error('[factory-reset] sacred snapshot failed (continuing):', e?.message); }
+    // Suppress the NEXT boot's heal so this deliberate wipe sticks (backups kept
+    // for manual recovery). Sentinel lives outside the workspace, surviving rmSync.
+    try { require('./sacred-data').markHealSuppressed(); } catch (e) { console.error('[factory-reset] markHealSuppressed failed (continuing):', e?.message); }
     // Stop background processes so they don't hold file handles
     try { await stopOpenClaw(); } catch {}
     try { stop9Router(); } catch {}

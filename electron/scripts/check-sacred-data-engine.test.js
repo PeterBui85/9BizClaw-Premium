@@ -17,7 +17,7 @@ const path = require('path');
 const os = require('os');
 
 // Import the testable internals
-const { _snapshotTo, _healInto, SACRED_DIRS, SACRED_FILES, SACRED_BACKUP_ROOT } = require('../lib/sacred-data');
+const { _snapshotTo, _healInto, _consumeSuppressSentinel, SACRED_DIRS, SACRED_FILES, SACRED_BACKUP_ROOT, SUPPRESS_HEAL_FILE } = require('../lib/sacred-data');
 
 // ── Test harness ─────────────────────────────────────────────────────────────
 
@@ -259,6 +259,56 @@ function test4_healNeverOverwrites() {
   }
 }
 
+// ── Test 5: factory-reset heal suppression (one-shot) ─────────────────────────
+//
+// WHY: a deliberate factory-reset must STICK — the next boot must not resurrect
+// the wiped sacred data from the external backup. The sentinel is one-shot, so a
+// 2nd boot heals normally again. External backups are always kept (we assert the
+// backup dir/files are untouched by the consume).
+
+function test5_healSuppressionOneShot() {
+  console.log('\nTest 5: factory-reset heal suppression — sentinel skips one heal, then heals normally');
+  const backupRoot = makeTempDir('-suppress5');
+  const ws = makeTempDir('-ws5');
+  const snapDir = path.join(backupRoot, '2026-01-01T00-00-00.000Z-factory-reset');
+
+  try {
+    // External backup snapshot has 2 sacred files (simulating pre-reset snapshot kept on disk)
+    writeFile(path.join(snapDir, 'memory', 'zalo-users', 'user1.md'), 'backup-user1');
+    writeFile(path.join(snapDir, 'memory', 'zalo-users', 'user2.md'), 'backup-user2');
+
+    // Simulate markHealSuppressed(): write the sentinel into the backup root.
+    // (markHealSuppressed itself targets the real SACRED_BACKUP_ROOT, so we exercise
+    //  the same write here against a temp root, then test the consume + skip logic.)
+    const sentinel = path.join(backupRoot, SUPPRESS_HEAL_FILE);
+    fs.writeFileSync(sentinel, new Date().toISOString(), 'utf-8');
+    assert(fs.existsSync(sentinel), 'sentinel written into backup root');
+
+    // ── First heal: sentinel present → consume it (skip restore) ──
+    const suppressed = _consumeSuppressSentinel(backupRoot);
+    assertEqual(suppressed, true, 'first heal: _consumeSuppressSentinel returns true (suppress)');
+    assert(!fs.existsSync(sentinel), 'sentinel deleted after consume (one-shot)');
+
+    // The caller (healSacredOnBoot) would skip _healInto when suppressed — emulate that:
+    // post-reset workspace is empty, restore is SKIPPED, so data stays wiped.
+    assert(!fs.existsSync(path.join(ws, 'memory', 'zalo-users', 'user1.md')), 'reset sticks: wiped file NOT restored while suppressed');
+
+    // External backups must be untouched — CEO can still recover manually.
+    assertEqual(countFiles(snapDir), 2, 'external backup snapshot still has its 2 files (kept for recovery)');
+
+    // ── Second heal: no sentinel → normal restore happens ──
+    const suppressed2 = _consumeSuppressSentinel(backupRoot);
+    assertEqual(suppressed2, false, 'second heal: no sentinel → returns false (heal normally)');
+    const { restored } = _healInto(ws, snapDir);
+    assertEqual(restored, 2, 'second heal restores both files normally');
+    assert(fs.existsSync(path.join(ws, 'memory', 'zalo-users', 'user1.md')), 'user1 restored on normal heal');
+    assert(fs.existsSync(path.join(ws, 'memory', 'zalo-users', 'user2.md')), 'user2 restored on normal heal');
+  } finally {
+    cleanup(backupRoot);
+    cleanup(ws);
+  }
+}
+
 // ── Run all tests ─────────────────────────────────────────────────────────────
 
 console.log('=== Sacred Data Engine Tests ===');
@@ -267,6 +317,7 @@ test1_snapshotCopiesFiles();
 test2_retention();
 test3_healUnionRestore();
 test4_healNeverOverwrites();
+test5_healSuppressionOneShot();
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failed > 0) {

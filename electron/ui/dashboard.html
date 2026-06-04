@@ -4490,7 +4490,7 @@
         <li>Google Calendar OAuth token</li>
       </ul>
       <div style="padding:10px 14px;background:#2a1215;border:1px solid #5c2b2b;border-radius:8px;font-size:12px;color:#e8a8a8;margin-bottom:14px">
-        <strong>Không thể khôi phục sau khi xóa.</strong> Sau khi reset, app sẽ restart và chạy lại wizard onboarding từ đầu.
+        <strong>Reset sẽ xóa sạch app và chạy lại wizard onboarding.</strong> Một bản sao lưu khôi phục được giữ tại thư mục <code>~/9BizClaw-SacredBackups</code> phòng khi cần khôi phục thủ công.
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Nhập <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:#e06666">xóa</code> để xác nhận:</div>
       <input type="text" id="factory-reset-confirm-input" placeholder="Nhập xóa (hoặc xoa)" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px" oninput="_updateFactoryResetBtn()">
@@ -10636,7 +10636,7 @@
       try {
         const r = await window.claw.factoryReset();
         if (r && r.success) {
-          showToast('Đã xóa sạch — đang khởi động lại app...', 'success');
+          showToast('Đã xóa sạch — đang khởi động lại app. Bản khôi phục giữ tại ~/9BizClaw-SacredBackups.', 'success');
           setTimeout(() => window.claw.relaunch(), 1500);
         } else {
           showToast('Lỗi: ' + (r && r.error || 'không rõ'), 'error');
