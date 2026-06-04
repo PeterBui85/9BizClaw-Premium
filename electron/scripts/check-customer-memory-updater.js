@@ -120,7 +120,45 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
   u._setCall9(async () => '{"summary":"thích áo xanh","preferences":["áo xanh"],"decisions":[],"personality":[],"tags":[]}');
   let r2 = await u.extractForThread('123', [{ sender_id:'123', sender_name:'A', content_text:'thích áo xanh' }], '');
   assert.ok(r2 && r2.summary === 'thích áo xanh' && Array.isArray(r2.preferences));
+  // no name field in LLM output → name stays undefined (no hallucination)
+  assert.strictEqual(r2.name, undefined, 'extractForThread: name undefined when LLM omits it');
+
+  // customer states a real name → name captured
+  u._setCall9(async () => '{"name":"Minh","summary":"thích áo xanh","preferences":["áo xanh"],"decisions":[],"personality":[],"tags":[]}');
+  let r3 = await u.extractForThread('123', [{ sender_id:'123', sender_name:'A', content_text:'anh tên Minh thích áo xanh' }], '');
+  assert.strictEqual(r3.name, 'Minh', 'extractForThread: captures stated real name');
+
+  // empty/whitespace name from LLM → dropped (never reaches frontmatter)
+  u._setCall9(async () => '{"name":"   ","summary":"x","preferences":[],"decisions":[],"personality":[],"tags":[]}');
+  let r4 = await u.extractForThread('123', [{ sender_id:'123', sender_name:'A', content_text:'một câu thực chất dài hơn bốn ký tự' }], '');
+  assert.strictEqual(r4.name, undefined, 'extractForThread: blank name dropped after sanitize');
   console.log('extractForThread OK');
+}
+
+// --- _setFrontmatterField tests ---
+{
+  const { _setFrontmatterField } = require('../lib/customer-memory-updater');
+
+  // Stated name overwrites name: but leaves zaloName: (display name) unchanged.
+  const profile = '---\nname: Bizclaw\nzaloName: Bizclaw\nmsgCount: 0\n---\n# Bizclaw\n';
+  const updated = _setFrontmatterField(profile, 'name', 'Minh');
+  assert.ok(/^name: Minh$/m.test(updated), '_setFrontmatterField: name: updated to Minh');
+  assert.ok(/^zaloName: Bizclaw$/m.test(updated), '_setFrontmatterField: zaloName: preserved');
+
+  // Idempotent: applying the same value again is a no-op.
+  const again = _setFrontmatterField(updated, 'name', 'Minh');
+  assert.strictEqual(again, updated, '_setFrontmatterField: idempotent');
+
+  // Missing field → inserted before closing ---.
+  const noName = '---\nmsgCount: 0\n---\n# X\n';
+  const inserted = _setFrontmatterField(noName, 'name', 'Lan');
+  assert.ok(/^name: Lan$/m.test(inserted), '_setFrontmatterField: inserts missing name field');
+  assert.ok(inserted.includes('# X'), '_setFrontmatterField: body preserved');
+
+  // Empty value → no change (never blanks an existing name).
+  const unchanged = _setFrontmatterField(profile, 'name', '   ');
+  assert.strictEqual(unchanged, profile, '_setFrontmatterField: empty value is a no-op');
+  console.log('_setFrontmatterField OK');
 }
 
 // --- _bumpFrontmatter tests ---
@@ -235,6 +273,62 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     assert.ok(mcMatch1, 'T1: msgCount present in frontmatter');
     assert.strictEqual(parseInt(mcMatch1[1], 10), 5, 'T1: msgCount bumped to 5');
     console.log('tick T1 (5 msgs settled, 1 extraction, msgCount bumped) OK');
+  }
+
+  // ── Test T1b: stated real name → frontmatter name: updated, zaloName: preserved ---
+  {
+    const ws1b = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-tick-t1b-'));
+    const threadId = 'custT1b';
+    const dir = path.join(ws1b, 'memory', 'zalo-users');
+    fs.mkdirSync(dir, { recursive: true });
+    const profilePath = path.join(dir, `${threadId}.md`);
+    // Zalo display name = Bizclaw; customer will state real name = Minh
+    fs.writeFileSync(profilePath, `---\nname: Bizclaw\nzaloName: Bizclaw\nmsgCount: 0\n---\n# Bizclaw\n`, 'utf-8');
+
+    const baselineTs = Date.now() - 600_000;
+    const fixtureDb1b = makeFixtureDb('selfXYZ');
+    const ts = Date.now() - 120_000;
+    fixtureDb1b.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT1b','custT1b','Bizclaw','selfXYZ',${ts},'text','Anh tên Minh thích áo xanh nhé','zalo')`);
+    _setOpenDb(() => fixtureDb1b);
+
+    _setCall9(async () => '{"name":"Minh","summary":"thích áo xanh","preferences":["áo xanh"],"decisions":[],"personality":[],"tags":[]}');
+
+    const statePath1b = path.join(ws1b, 'zalo-profile-sync-state.json');
+    fs.writeFileSync(statePath1b, JSON.stringify({ migrationBaselineTs: baselineTs, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 }), 'utf-8');
+
+    await tick({ now: Date.now(), profile: 'ticktest', wsOverride: ws1b });
+
+    const content1b = readProfile(ws1b, threadId);
+    assert.ok(/^name: Minh$/m.test(content1b), 'T1b: frontmatter name updated to stated name Minh');
+    assert.ok(/^zaloName: Bizclaw$/m.test(content1b), 'T1b: zaloName (display name) preserved');
+    console.log('tick T1b (stated name → frontmatter name updated, zaloName preserved) OK');
+  }
+
+  // ── Test T1c: extractor returns no name → frontmatter name unchanged (no hallucination) ---
+  {
+    const ws1c = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-tick-t1c-'));
+    const threadId = 'custT1c';
+    const dir = path.join(ws1c, 'memory', 'zalo-users');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${threadId}.md`), `---\nname: Bizclaw\nzaloName: Bizclaw\nmsgCount: 0\n---\n# Bizclaw\n`, 'utf-8');
+
+    const baselineTs = Date.now() - 600_000;
+    const fixtureDb1c = makeFixtureDb('selfXYZ');
+    const ts = Date.now() - 120_000;
+    fixtureDb1c.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT1c','custT1c','Bizclaw','selfXYZ',${ts},'text','Cho hỏi giá sản phẩm bao nhiêu vậy','zalo')`);
+    _setOpenDb(() => fixtureDb1c);
+
+    // LLM omits name → must not change frontmatter name
+    _setCall9(async () => '{"summary":"hỏi giá","preferences":[],"decisions":[],"personality":[],"tags":[]}');
+
+    const statePath1c = path.join(ws1c, 'zalo-profile-sync-state.json');
+    fs.writeFileSync(statePath1c, JSON.stringify({ migrationBaselineTs: baselineTs, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 }), 'utf-8');
+
+    await tick({ now: Date.now(), profile: 'ticktest', wsOverride: ws1c });
+
+    const content1c = readProfile(ws1c, threadId);
+    assert.ok(/^name: Bizclaw$/m.test(content1c), 'T1c: frontmatter name unchanged when no stated name');
+    console.log('tick T1c (no stated name → frontmatter name unchanged) OK');
   }
 
   // ── Test T2: newest msg age < SETTLE_MS and oldest < MAX_DEFER_MS → deferred ---
