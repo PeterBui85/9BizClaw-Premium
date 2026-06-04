@@ -3381,7 +3381,7 @@
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 23992
+      "bytes": 26257
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -3465,7 +3465,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 117433
+      "bytes": 118016
     }
   ]
 }
