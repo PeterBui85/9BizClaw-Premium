@@ -698,14 +698,24 @@ function updateKnowledgeMediaAssets(match, patch = {}) {
 function deleteKnowledgeMediaAssets(match, options = {}) {
   const index = readIndex();
   const matched = index.assets.filter(asset => matchesKnowledgeSource(asset, match));
-  let removed = 0;
   const keepPath = options.keepPath ? path.resolve(options.keepPath) : '';
+  const removeIds = new Set();
   for (const asset of matched) {
     const unlinkFile = asset.path && (!keepPath || path.resolve(asset.path) !== keepPath);
-    const result = deleteMediaAsset(asset.id, { unlinkFile });
-    if (result.success) removed++;
+    try {
+      if (unlinkFile && asset.path && pathInsideWorkspace(asset.path) && fs.existsSync(asset.path)) {
+        fs.unlinkSync(asset.path);
+      }
+    } catch { continue; } // unlink failed → keep its index entry
+    removeIds.add(asset.id);
   }
-  return { success: true, removed };
+  // Single read-modify-write over one snapshot (was one per asset, which could
+  // drop entries under a concurrent index write).
+  if (removeIds.size) {
+    index.assets = index.assets.filter(a => !removeIds.has(a.id));
+    writeIndex(index);
+  }
+  return { success: true, removed: removeIds.size };
 }
 
 async function describeMediaAsset(idOrAsset, options = {}) {
@@ -779,8 +789,9 @@ async function describeMediaAsset(idOrAsset, options = {}) {
     for (const t of generatedTags) {
       if (!existingTags.has(t)) newTags.push(t);
     }
-    // First 3 new tags also seed aliases (short phrasal queries)
-    newAliases = newTags.slice(0, 3);
+    // First 3 new tags also seed aliases (short phrasal queries) — skip any that
+    // already exist as an alias so re-describe doesn't append duplicates up to the cap.
+    newAliases = newTags.slice(0, 3).filter(t => !existingAliases.has(t));
   }
 
   const patch = {

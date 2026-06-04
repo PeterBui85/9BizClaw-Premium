@@ -1688,7 +1688,11 @@ async function checkInstallation() {
   const nodeStatus = await detectNodeInstallation();
   const installedPackages = await getInstalledPackages();
   const runtimeVersion = getInstalledVersion();
-  if (!runtimeVersion) return { ready: false, filesReady: false, runtimeVersion: null };
+  // NOTE: do NOT early-return when runtimeVersion is null. The full status (with
+  // needs* flags) must be computed even on a fresh machine, or runInstallation's
+  // first pass reads undefined needs* flags and SKIPS node+package install while
+  // still stamping the version marker. `ready` below already accounts for a null
+  // version (null !== RUNTIME_INSTALL_VERSION → ready:false).
   const zaloReady = checkModoroZaloReady();
   const pythonReady = checkPythonRuntimeReady();
 

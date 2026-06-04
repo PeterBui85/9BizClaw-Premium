@@ -902,7 +902,6 @@ async function _startOpenClawImpl(opts = {}) {
   const gwStderrLog = path.join(logsDir, 'openclaw-stderr.log');
   const logStream = fs.createWriteStream(gwStdoutLog, { flags: 'a' });
   let lastError = '';
-  let stderrLines = [];
   // Swallow pipe errors (they occur when process exits abruptly)
   logStream.on('error', (e) => console.error('[openclaw.log] write error:', e.message));
   ctx.openclawProcess.stdout.on('error', (e) => console.error('[openclaw stdout] pipe error:', e.message));
@@ -1151,10 +1150,12 @@ async function _startOpenClawImpl(opts = {}) {
     console.warn('[startOpenClaw] gateway process was killed externally during spawn — aborting attachment');
     return;
   }
+  // stderr is a file FD (see stdio above) → ctx.openclawProcess.stderr is null.
+  // Attaching .on('data') to it threw, which silently skipped scanForConnectFailure
+  // AND the idle-memory timer below. Scan stdout only (openclaw logs markers there);
+  // stderr is read from disk via readStderrTail() when needed.
   ctx.openclawProcess.stdout.on('data', scanForReadiness);
-  ctx.openclawProcess.stderr.on('data', scanForReadiness);
   ctx.openclawProcess.stdout.on('data', scanForConnectFailure);
-  ctx.openclawProcess.stderr.on('data', scanForConnectFailure);
   try {
     const { touchIdleMemoryTimer } = require('./conversation');
     ctx.openclawProcess.stdout.on('data', (chunk) => {

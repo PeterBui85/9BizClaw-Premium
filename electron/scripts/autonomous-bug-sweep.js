@@ -563,8 +563,18 @@ function scanFile(filePath) {
 // ─── Main loop ───────────────────────────────────────────────────────────────
 
 async function runSweep() {
+  if (!DRY_RUN) {
+    // Safety: --apply rewrites source files in place. Refuse unless the git tree
+    // is clean, so every applied fix is isolated and revertible via git. (This tool
+    // previously injected duplicate/broken null-guards across the codebase.)
+    try {
+      const dirty = require('child_process').execFileSync('git', ['status', '--porcelain'], { cwd: CLAW_ROOT, encoding: 'utf-8' }).trim();
+      if (dirty) { console.error('[bug-sweep] --apply refused: git working tree is dirty. Commit or stash first.'); process.exit(1); }
+    } catch (e) { console.error('[bug-sweep] --apply refused: cannot verify git state:', e.message); process.exit(1); }
+  }
   const deadLine = startTime + DURATION_MS;
   let pass = 0;
+  let totalJsFiles = 0;
 
   while (Date.now() < deadLine) {
     pass++;
@@ -583,6 +593,7 @@ async function runSweep() {
     log(`===========================================`);
 
     const jsFiles = getJsFiles(CLAW_ROOT);
+    totalJsFiles = jsFiles.length;
     if (pass === 1) log(`Found ${jsFiles.length} JS files to scan`);
 
     for (const filePath of jsFiles) {
@@ -641,16 +652,15 @@ async function runSweep() {
   }
 
   // ─── Summary ──────────────────────────────────────────────────────────────
+  const findings = Array.from(findingsMap.values());
   const elapsed = Date.now() - startTime;
   log(`===========================================`);
   log(`SWEEP COMPLETE (${pass} passes, elapsed: ${msToStr(elapsed)})`);
   log(`Bugs found:     ${bugsFound} (${findings.length} unique)`);
-  log(`Files scanned:  ${jsFiles.length} JS files`);
+  log(`Files scanned:  ${totalJsFiles} JS files`);
   log(`Bugs fixed:     ${bugsFixed}`);
   log(`Errors:         ${errors}`);
   log(`===========================================`);
-
-  const findings = Array.from(findingsMap.values());
   const bySeverity = findings.reduce((acc, f) => {
     const s = f.severity || 'INFO';
     acc[s] = acc[s] || [];

@@ -3361,7 +3361,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 99822
+      "bytes": 99928
     },
     {
       "path": "electron/lib/config.js",
@@ -3397,7 +3397,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 88310
+      "bytes": 88481
     },
     {
       "path": "electron/lib/google-api.js",
@@ -3413,7 +3413,7 @@
     },
     {
       "path": "electron/lib/media-library.js",
-      "bytes": 38494
+      "bytes": 39069
     },
     {
       "path": "electron/lib/migration.js",
@@ -3425,7 +3425,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 86404
+      "bytes": 86708
     },
     {
       "path": "electron/lib/sacred-data.js",
