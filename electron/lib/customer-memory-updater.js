@@ -455,6 +455,7 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
 
 // Guard against double-init (e.g. hot-reload in dev mode)
 let _initDone = false;
+let _tickInFlight = false;
 
 // Pure helper — testable without spawning anything.
 // Returns true when the db-status JSON indicates the DB is not yet enabled.
@@ -537,9 +538,16 @@ async function init({ profile = 'default', wsOverride } = {}) {
     }
   }
 
-  // Register 3-min poll interval
+  // Register 3-min poll interval. In-flight guard: a tick over many threads × LLM
+  // calls can exceed POLL_INTERVAL_MS; without this the next interval would start a
+  // 2nd concurrent tick that races the state file (lost cursor advances → double
+  // extraction). Skip the tick if the previous one is still running.
   setInterval(() => {
-    tick({ profile }).catch(e => console.error('[customer-memory] tick error', e?.message));
+    if (_tickInFlight) return;
+    _tickInFlight = true;
+    tick({ profile })
+      .catch(e => console.error('[customer-memory] tick error', e?.message))
+      .finally(() => { _tickInFlight = false; });
   }, POLL_INTERVAL_MS);
 
   console.log('[customer-memory] init complete, polling every', POLL_INTERVAL_MS / 1000, 's');

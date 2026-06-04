@@ -28,12 +28,10 @@ const DESTRUCTIVE_PATTERNS = [
 // IMPORTANT: 'user-skills' is sacred; bare 'skills' alone is NOT.
 // The guard checks for these as distinct path segments using word-boundary logic
 // to avoid matching 'skills' inside 'user-skills' as a standalone sacred segment.
-const SACRED_SEGMENTS = [
-  'zalo-users', 'zalo-groups',
-  'whatsapp-users', 'whatsapp-groups',
-  'user-skills',
-  'CEO-MEMORY.md', 'so-sach.md', 'cong-no.md',
-];
+// Single source of truth — import from sacred-data.js so adding a sacred dir/file
+// there automatically extends this guard. Hardcoding a 2nd copy here would silently
+// stop protecting any newly-added sacred path (the list drifts unnoticed).
+const { SACRED_SEGMENTS } = require('../lib/sacred-data');
 
 // Files (basename) permitted to perform destructive ops on sacred paths.
 // Each sacred-touching op must also carry a `// SACRED-OK` marker (warn if absent).
