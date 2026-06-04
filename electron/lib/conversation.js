@@ -662,6 +662,7 @@ function stopIdleMemoryTimer() {
 }
 
 module.exports = {
+  sanitizeMemorySummary,
   extractConversationHistoryRaw,
   extractConversationHistory,
   writeDailyMemoryJournal,
