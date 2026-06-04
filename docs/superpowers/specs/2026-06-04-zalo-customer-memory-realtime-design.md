@@ -142,8 +142,10 @@ any dated section**:
 - The updater rewrites ONLY the region between the two markers (same merge-preserve
   pattern as `syncProfileToUserMd` in persona.js). It never touches dated sections.
 - Because the block sits *before* the first `## YYYY-MM-DD`, `trimZaloMemoryFile`
-  treats it as the preserved intro and never trims it. (Verify against
-  `trimZaloMemoryFile`'s split logic at implementation; add a test.)
+  treats it as the preserved intro and never trims it. **Verified**: that function
+  splits only on `/(?=\n\n## \d{4}-\d{2}-\d{2})/` (dated sections) and never drops
+  the intro — so the block's inner `## Tóm tắt` / `## Tính cách` headings are safe
+  (they don't match the date pattern). A test still asserts this.
 - Two writers, disjoint regions → no corruption.
 
 ## Token economy
