@@ -839,27 +839,40 @@ async function waitFor9RouterReady(maxMs = 10000) {
   return false;
 }
 
+// Pure model-resolution for call9Router. Extracted so it can be unit-tested
+// without touching the filesystem or network.
+// Resolution order (NEVER hardcode a model name):
+//   1. opts.model (explicit override) → strip ninerouter/ prefix
+//   2. config.agents.defaults.model from openclaw.json → strip ninerouter/ prefix
+//   3. First id in config.models.providers.ninerouter.models[]
+//   4. Literal 'auto' — 9router treats this as "use first available combo"
+function resolveModel(opts, config) {
+  if (opts && opts.model) {
+    return String(opts.model).replace(/^ninerouter\//, '');
+  }
+  try {
+    const def = config?.agents?.defaults?.model;
+    if (typeof def === 'string' && def.length > 0) {
+      return def.replace(/^ninerouter\//, '');
+    }
+    const provider = config?.models?.providers?.ninerouter;
+    if (Array.isArray(provider?.models) && provider.models[0]?.id) {
+      return provider.models[0].id;
+    }
+  } catch {}
+  return 'auto';
+}
+
 // Shared 9Router LLM call helper. Returns response text or null on failure.
 // Reuses CEO's configured 9Router provider from openclaw.json.
 // timeoutMs: per-call timeout (default 8s). maxTokens: response cap.
-// Model resolution order (NEVER hardcode):
-//   1. agents.defaults.model from openclaw.json (e.g. 'ninerouter/auto') → strip prefix
-//   2. First model id in models.providers.ninerouter.models[]
-//   3. Literal 'auto' — 9router treats this as "use first available combo"
-async function call9Router(prompt, { maxTokens = 200, temperature = 0.3, timeoutMs = 8000 } = {}) {
+// opts.model: optional override (e.g. 'ninerouter/main') to pin a specific model.
+async function call9Router(prompt, { maxTokens = 200, temperature = 0.3, timeoutMs = 8000, model } = {}) {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(ctx.HOME, '.openclaw', 'openclaw.json'), 'utf-8'));
     const provider = config?.models?.providers?.ninerouter;
     if (!provider?.baseUrl || !provider?.apiKey) return null;
-    let modelName = 'auto';
-    try {
-      const def = config?.agents?.defaults?.model;
-      if (typeof def === 'string' && def.length > 0) {
-        modelName = def.replace(/^ninerouter\//, '');
-      } else if (Array.isArray(provider?.models) && provider.models[0]?.id) {
-        modelName = provider.models[0].id;
-      }
-    } catch {}
+    const modelName = resolveModel({ model }, config);
     const http = require('http');
     const body = JSON.stringify({
       model: modelName,
@@ -1063,7 +1076,7 @@ module.exports = {
   ensure9RouterRtkDefaultEnabled,
   start9Router, stop9Router, nineRouterApi, autoFix9RouterSqlite,
   waitFor9RouterReady, validateOllamaKeyDirect,
-  call9Router, call9RouterVision, detectChatgptPlusOAuth,
+  resolveModel, call9Router, call9RouterVision, detectChatgptPlusOAuth,
   format9RouterVisionError,
   get9RouterCliTokenCandidates,
   getRouterProcess, setKillPort,
