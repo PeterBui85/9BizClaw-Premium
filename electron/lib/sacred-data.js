@@ -62,6 +62,19 @@ const MAX_SNAPSHOTS = 20;
 // Lives in SACRED_BACKUP_ROOT (outside the workspace) so it survives the reset wipe.
 const SUPPRESS_HEAL_FILE = '.suppress-next-heal';
 
+// Persistent factory-reset epoch (ms). Heal NEVER restores from a snapshot taken
+// at/before this time, so a deliberately-wiped profile can't be resurrected on a
+// LATER boot (the one-shot sentinel only covered the immediate next boot). The
+// pre-reset snapshot is kept on disk for manual recovery via restoreFrom().
+const RESET_EPOCH_FILE = '.reset-epoch';
+
+function _readResetEpoch() {
+  try {
+    const v = Number(fs.readFileSync(path.join(SACRED_BACKUP_ROOT, RESET_EPOCH_FILE), 'utf-8').trim());
+    return Number.isFinite(v) ? v : 0;
+  } catch { return 0; }
+}
+
 // ── Lazy imports (avoid circular deps at require-time) ────────────────────────
 
 function _getWorkspace() {
@@ -189,26 +202,62 @@ function _snapshotTo(ws, destRoot, reason) {
   const safeR = _safeReason(reason);
   const destDir = path.join(destRoot, `${ts}-${safeR}`);
 
+  // Incremental: for files byte-identical to the previous snapshot (same size+mtime),
+  // HARDLINK the already-backed-up copy instead of re-copying content. This keeps an
+  // unbounded store (zalo-history) from being fully re-copied on every version-bump.
+  // Hardlinks are retention-safe: deleting one snapshot keeps the inode alive while
+  // any other snapshot still links it.
+  let prevDir = null;
+  let prevStats = {};
+  try {
+    // List siblings under destRoot (NOT the global backup root) so this stays correct
+    // when tests pass a temp destRoot.
+    const prev = fs.readdirSync(destRoot, { withFileTypes: true })
+      .filter(e => e.isDirectory())
+      .map(e => e.name)
+      .sort().reverse()
+      .find(d => d !== `${ts}-${safeR}`);
+    if (prev) {
+      prevDir = path.join(destRoot, prev);
+      const pm = path.join(prevDir, 'manifest.json');
+      if (fs.existsSync(pm)) prevStats = (JSON.parse(fs.readFileSync(pm, 'utf-8')).stats) || {};
+    }
+  } catch {}
+
   fs.mkdirSync(destDir, { recursive: true });
 
   const counts = {};
   const files = [];
+  const stats = {};
+
+  const _backupOne = (relF, srcFile) => {
+    let st;
+    try { st = fs.statSync(srcFile); } catch { return; }
+    const meta = { size: st.size, mtimeMs: Math.floor(st.mtimeMs) };
+    const destFile = path.join(destDir, relF);
+    const prev = prevStats[relF];
+    const unchanged = prevDir && prev && prev.size === meta.size && prev.mtimeMs === meta.mtimeMs;
+    try {
+      fs.mkdirSync(path.dirname(destFile), { recursive: true });
+      if (unchanged) {
+        try { fs.linkSync(path.join(prevDir, relF), destFile); } // no content read
+        catch { _copyFile(srcFile, destFile); }                  // fallback (cross-device / missing)
+      } else {
+        _copyFile(srcFile, destFile);
+      }
+      files.push(relF);
+      stats[relF] = meta;
+    } catch (e) {
+      console.error('[sacred-data] snapshot copy failed:', relF, e?.message);
+    }
+  };
 
   // Copy each SACRED_DIR
   for (const rel of SACRED_DIRS) {
     const src = path.join(ws, rel);
     if (!fs.existsSync(src)) continue;
     const relFiles = _listFilesRelative(src, ws);
-    for (const f of relFiles) {
-      const srcFile = path.join(ws, f);
-      const destFile = path.join(destDir, f);
-      try {
-        _copyFile(srcFile, destFile);
-        files.push(f);
-      } catch (e) {
-        console.error('[sacred-data] snapshot copy failed:', f, e?.message);
-      }
-    }
+    for (const f of relFiles) _backupOne(f, path.join(ws, f));
     counts[rel] = relFiles.length;
   }
 
@@ -216,13 +265,7 @@ function _snapshotTo(ws, destRoot, reason) {
   for (const rel of SACRED_FILES) {
     const src = path.join(ws, rel);
     if (!fs.existsSync(src)) continue;
-    const dest = path.join(destDir, rel);
-    try {
-      _copyFile(src, dest);
-      files.push(rel);
-    } catch (e) {
-      console.error('[sacred-data] snapshot file copy failed:', rel, e?.message);
-    }
+    _backupOne(rel, src);
   }
 
   // Write manifest
@@ -231,6 +274,7 @@ function _snapshotTo(ws, destRoot, reason) {
     reason,
     counts,
     files,
+    stats,
   };
   try {
     fs.writeFileSync(path.join(destDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
@@ -285,7 +329,9 @@ function markHealSuppressed() {
     fs.mkdirSync(SACRED_BACKUP_ROOT, { recursive: true });
     const sentinel = path.join(SACRED_BACKUP_ROOT, SUPPRESS_HEAL_FILE);
     fs.writeFileSync(sentinel, new Date().toISOString(), 'utf-8');
-    console.log('[sacred-data] heal suppression marked at', sentinel);
+    // Persistent epoch: also bars resurrection on every later boot, not just the next.
+    try { fs.writeFileSync(path.join(SACRED_BACKUP_ROOT, RESET_EPOCH_FILE), String(Date.now()), 'utf-8'); } catch {}
+    console.log('[sacred-data] heal suppression + reset epoch marked at', sentinel);
   } catch (e) {
     console.error('[sacred-data] markHealSuppressed failed (non-blocking):', e?.message);
   }
@@ -396,24 +442,37 @@ async function healSacredOnBoot() {
       return { suppressed: true, restored: 0, census };
     }
 
-    // Find newest snapshot
+    // Find newest snapshot — but skip any taken at/before the last factory-reset so
+    // deliberately-wiped data is never resurrected on a later boot.
     const snapshotDirs = _listSnapshotDirs();
     if (snapshotDirs.length === 0) {
       console.log('[sacred-data] no snapshots yet — census written, no heal needed');
       return { restored: 0, census };
     }
 
-    const newestDir = path.join(SACRED_BACKUP_ROOT, snapshotDirs[0]);
-
-    // Read newest manifest for comparison
+    const resetEpoch = _readResetEpoch();
+    let newestDir = null;
     let snapshotManifest = null;
-    try {
-      const manifestPath = path.join(newestDir, 'manifest.json');
-      if (fs.existsSync(manifestPath)) {
-        snapshotManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    for (const d of snapshotDirs) {
+      const abs = path.join(SACRED_BACKUP_ROOT, d);
+      let m = null;
+      try {
+        const mp = path.join(abs, 'manifest.json');
+        if (fs.existsSync(mp)) m = JSON.parse(fs.readFileSync(mp, 'utf-8'));
+      } catch (e) {
+        console.warn('[sacred-data] could not read snapshot manifest for', d, e?.message);
       }
-    } catch (e) {
-      console.warn('[sacred-data] could not read snapshot manifest:', e?.message);
+      if (resetEpoch > 0) {
+        const snapMs = m && m.ts ? Date.parse(m.ts) : NaN;
+        if (!Number.isFinite(snapMs) || snapMs <= resetEpoch) continue; // pre-reset → never resurrect
+      }
+      newestDir = abs;
+      snapshotManifest = m;
+      break;
+    }
+    if (!newestDir) {
+      console.log('[sacred-data] no post-reset snapshot to heal from — skipping restore');
+      return { restored: 0, census };
     }
 
     // Heal: restore any missing files from newest snapshot

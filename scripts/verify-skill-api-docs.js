@@ -95,7 +95,6 @@ const API_TRUTH = {
   '/api/memory/delete': { required: ['id'] },
   '/api/memory/list': { optional: ['limit'] },
   '/api/memory/count': {},
-  '/api/customer-memory/write': { required: ['senderId', 'content'] },
   '/api/ceo-rules/write': { required: ['content'], optional: ['senderId'] },
   '/api/workspace/read': { required: ['path'] },
   '/api/workspace/append': { required: ['path', 'content'] },

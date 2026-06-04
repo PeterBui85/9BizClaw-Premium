@@ -1467,7 +1467,7 @@ ${__fapPolicy}
     runtime.log?.("modoro-zalo: gender-hint error: " + String(__ghErr));
   }
   // === END 9BizClaw GENDER-HINT PATCH v2 ===
-  // === 9BizClaw CUSTOMER-PROFILE PATCH v2 ===
+  // === 9BizClaw CUSTOMER-PROFILE PATCH v3 ===
   // Server-side injection of the sender's own stored profile into rawBody so the
   // bot never "forgets" a customer's name, preferences, or known facts between
   // sessions. This is safe: only the sender's OWN file is read, the content is
@@ -1504,11 +1504,17 @@ ${__fapPolicy}
         // Sanitize profile content: strip lines that could spoof control frames
         // or inject instructions. The profile is DATA, not commands.
         const __cpSanitizeLine = (line: string): string => {
-          // Remove lines that start with role-like prefixes or internal frame tags
-          const __cpBanned = /^\s*(\[NGƯỜI NỘI BỘ|\[XƯNG HÔ|\[DỮ LIỆU KHÁCH|\[HỒ SƠ KHÁCH|SYSTEM:|ASSISTANT:|USER:|<file-access-policy|<kb-doc)/i;
+          // Remove lines that start with role-like prefixes or internal frame tags.
+          // HUMAN: added (OpenAI-style role) and <active-user-skills> (OpenClaw marker).
+          const __cpBanned = /^\s*(\[NGƯỜI NỘI BỘ|\[XƯNG HÔ|\[DỮ LIỆU KHÁCH|\[HỒ SƠ KHÁCH|SYSTEM:|ASSISTANT:|USER:|HUMAN:|<file-access-policy|<kb-doc|<active-user-skills)/i;
           if (__cpBanned.test(line)) return '';
-          // Strip any remaining [ ... ] control-frame lookalikes (keep normal brackets in text)
-          return line.replace(/^\s*\[(?:NGƯỜI NỘI BỘ|XƯNG HÔ|DỮ LIỆU KHÁCH|HỒ SƠ KHÁCH)[^\]]*\]/gi, '');
+          // Strip remaining [ ... ] frame lookalikes, backtick fences (can't form a
+          // code block), and XML/HTML-ish tags (e.g. <kb-doc>, </active-user-skills>)
+          // so injected profile content can never spoof structure. The profile is DATA.
+          return line
+            .replace(/^\s*\[(?:NGƯỜI NỘI BỘ|XƯNG HÔ|DỮ LIỆU KHÁCH|HỒ SƠ KHÁCH)[^\]]*\]/gi, '')
+            .replace(/`+/g, ' ')
+            .replace(/<\/?[a-zA-Z][^>]*>/g, ' ');
         };
 
         for (const __cpWs of __cpWsCandidates) {
@@ -1584,7 +1590,7 @@ ${__fapPolicy}
   } catch (__cpErr) {
     runtime.log?.("modoro-zalo: customer-profile error: " + String(__cpErr));
   }
-  // === END 9BizClaw CUSTOMER-PROFILE PATCH v2 ===
+  // === END 9BizClaw CUSTOMER-PROFILE PATCH v3 ===
 
   // === 9BizClaw USER-SKILLS-INJECT PATCH v3 (unified with skill-manager.js) ===
   // v3: Replaced inline trigger matching with call to buildSkillInjectionBlock()

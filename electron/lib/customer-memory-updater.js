@@ -5,6 +5,11 @@ const SETTLE_MS = 45_000;
 const MAX_DEFER_MS = 600_000;
 const EXTRACTOR_MODEL = 'ninerouter/main';
 const WARN_EXTRACTIONS_PER_DAY = 200;
+// Cap LLM extract calls per tick. After a long offline period many threads can
+// have new messages at once; extracting all serially makes one tick run very long
+// and burns 9Router calls. Excess threads are still ARCHIVED (ground truth never
+// lost) and their cursor is left unadvanced, so they're picked up next tick.
+const MAX_EXTRACTS_PER_TICK = 12;
 const FACT_STR_MAX = 200;
 const PROFILE_MAX_BYTES = 50 * 1024;
 const FACTS_START = '<!-- CUSTOMER-FACTS-START -->';
@@ -18,6 +23,8 @@ function sanitizeFact(s) {
   t = t.replace(/[\r\n]+/g, ' ');
   t = t.replace(/<!--[\s\S]*?-->|<!--|-->/g, ' ');
   t = t.replace(/\[(NGƯỜI NỘI BỘ|XƯNG HÔ|DỮ LIỆU KHÁCH|HỒ SƠ KHÁCH)[^\]]*\]?/gi, ' ');
+  t = t.replace(/`+/g, ' '); // strip backtick fences — a stored ``` could open a code block in the injected prompt
+  t = t.replace(/<\/?[a-zA-Z][^>]*>/g, ' '); // strip XML/HTML-ish tags (e.g. <kb-doc …>) — never let customer text spoof OpenClaw markers
   t = t.replace(/(^|\s)#{1,6}\s+/g, ' ');
   t = t.replace(/(^|\s)(-{3,}|\*{3,}|_{3,})(\s|$)/g, ' ');
   t = t.replace(/^\s*[>*-]\s+/g, '');
@@ -187,6 +194,17 @@ function readSelfId(db, profile) {
 let _call9 = null;
 function _getCall9() { if (!_call9) _call9 = require('./nine-router').call9Router; return _call9; }
 function _setCall9(fn) { _call9 = fn; }
+
+// Fire-and-forget CEO alert (never throws, never blocks). Used to surface silent
+// failure modes (corrupt sync state, db-enable failure) instead of swallowing them.
+function _alertCeo(text) {
+  try {
+    const { sendCeoAlert } = require('./channels');
+    Promise.resolve(sendCeoAlert(text)).catch(() => {});
+  } catch {}
+}
+let _stateCorruptAlerted = false; // dedupe the corrupt-state alert (tick is hot)
+let _dbEnableAlerted = false;     // dedupe the db-enable-failure alert
 
 // --- _isSubstantive ---
 
@@ -390,7 +408,21 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
   let state;
   try {
     state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-  } catch {
+    if (!state || typeof state !== 'object' || !Number.isFinite(Number(state.migrationBaselineTs))) {
+      throw new Error('invalid state shape');
+    }
+  } catch (e) {
+    // A corrupt/unreadable state file means we lose the per-thread cursors and the
+    // baseline resets to `now` — which would SILENTLY skip any messages that arrived
+    // before this moment. Surface it LOUD + alert the CEO (the raw messages are still
+    // in the zalo-history archive, so this is missed extraction, not lost data).
+    if (fs.existsSync(statePath)) {
+      console.error('[customer-memory] state file corrupt — cursors reset (raw msgs kept in archive):', e?.message);
+      if (!_stateCorruptAlerted) {
+        _stateCorruptAlerted = true;
+        _alertCeo('[Trí nhớ khách] File trạng thái đồng bộ Zalo bị lỗi — đã đặt lại con trỏ. Tin nhắn thô vẫn được lưu trong kho lịch sử, không mất dữ liệu.');
+      }
+    }
     state = { migrationBaselineTs: now, threads: {}, extractionDay: _today(now), extractionCount: 0 };
   }
   if (!state.threads) state.threads = {};
@@ -411,6 +443,7 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
 
   let processed = 0;
   let extracted = 0;
+  let llmCalls = 0; // bounded by MAX_EXTRACTS_PER_TICK
 
   for (const [threadId, { msgs, inboundN, newCursor, oldestTs }] of threadsMap) {
     // Ground-truth archive: append ALL new msgs (even trivial ones) for this
@@ -436,6 +469,11 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
     const substantive = msgs.some(
       m => String(m.sender_id) !== String(selfId) && _isSubstantive(m)
     );
+
+    // Per-tick LLM cap: defer substantive threads beyond the cap to the next tick.
+    // Already archived above; leaving the cursor unadvanced = retried next tick.
+    if (substantive && llmCalls >= MAX_EXTRACTS_PER_TICK) continue;
+    if (substantive) llmCalls++;
 
     // extractFailed: true when we attempted extraction but got null back (LLM error/bad JSON).
     // WHY: null from extractForThread when called with substantive input = failure → retry.
@@ -597,7 +635,13 @@ async function init({ profile = 'default', wsOverride } = {}) {
         console.log('[customer-memory] db already enabled — no spawn needed');
       }
     } catch (e) {
-      console.warn('[customer-memory] db status/enable error (continuing):', e?.message);
+      // A db-enable failure means ZERO customer-memory extraction with no visible
+      // signal. Alert the CEO once instead of only console.warn (the original silent gap).
+      console.error('[customer-memory] db status/enable FAILED — extraction will not run:', e?.message);
+      if (!_dbEnableAlerted) {
+        _dbEnableAlerted = true;
+        _alertCeo('[Trí nhớ khách] Không bật được DB tin nhắn Zalo — bot sẽ KHÔNG tự cập nhật hồ sơ khách. Vui lòng kiểm tra kết nối Zalo.');
+      }
     }
   } else {
     console.warn('[customer-memory] init: openzca CLI or node not found — skipping db enable');

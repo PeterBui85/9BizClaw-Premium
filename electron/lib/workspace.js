@@ -184,7 +184,9 @@ function _encryptToken(plaintext) {
     if (safeStorage.isEncryptionAvailable()) {
       return safeStorage.encryptString(plaintext).toString('base64');
     }
-    console.warn('[fb-config] safeStorage unavailable — storing token in plaintext');
+    // Windows/Mac always have safeStorage (DPAPI/Keychain); this only hits Linux
+    // without a keyring. Log LOUD so a plaintext-token build is never silent.
+    console.error('[fb-config] SECURITY: safeStorage unavailable — FB token stored in PLAINTEXT (no OS keyring)');
     return plaintext;
   } catch {
     return plaintext;

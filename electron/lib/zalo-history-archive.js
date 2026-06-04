@@ -24,6 +24,12 @@ const path = require('path');
 // escape the zalo-history root.
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
+// Dedup only needs to catch RETRIES (msgs re-appended because the poller's cursor
+// didn't advance), which are always the most recent lines. So we scan just the tail
+// instead of the whole file — keeping append O(tail) not O(n) as the archive grows
+// unbounded. A long-ago msgId can't reappear (the poller cursor is forward-only).
+const DEDUP_TAIL_BYTES = 256 * 1024;
+
 function _isSafeId(id) {
   return ID_RE.test(String(id == null ? '' : id));
 }
@@ -66,7 +72,22 @@ function _toLine(row, ownerAccountId) {
 function _existingMsgIds(file) {
   const seen = new Set();
   let raw;
-  try { raw = fs.readFileSync(file, 'utf-8'); } catch { return seen; }
+  try {
+    const size = fs.statSync(file).size;
+    if (size > DEDUP_TAIL_BYTES) {
+      // Read only the last DEDUP_TAIL_BYTES; drop the first (possibly partial) line.
+      const fd = fs.openSync(file, 'r');
+      try {
+        const buf = Buffer.alloc(DEDUP_TAIL_BYTES);
+        const n = fs.readSync(fd, buf, 0, DEDUP_TAIL_BYTES, size - DEDUP_TAIL_BYTES);
+        raw = buf.toString('utf-8', 0, n);
+      } finally { fs.closeSync(fd); }
+      const nl = raw.indexOf('\n');
+      if (nl >= 0) raw = raw.slice(nl + 1);
+    } else {
+      raw = fs.readFileSync(file, 'utf-8');
+    }
+  } catch { return seen; }
   for (const line of raw.split('\n')) {
     if (!line) continue;
     try {
