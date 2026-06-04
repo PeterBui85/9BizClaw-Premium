@@ -3363,11 +3363,11 @@
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 21198
+      "bytes": 23128
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 291007
+      "bytes": 291333
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3410,6 +3410,10 @@
       "bytes": 86404
     },
     {
+      "path": "electron/lib/sacred-data.js",
+      "bytes": 20445
+    },
+    {
       "path": "electron/lib/skill-manager.js",
       "bytes": 51030
     },
@@ -3431,7 +3435,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 691767
+      "bytes": 691912
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
