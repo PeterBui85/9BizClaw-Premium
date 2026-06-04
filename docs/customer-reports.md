@@ -159,3 +159,17 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 2. Path 2 (fallback `--json`): Agent output parsed correctly but only delivered to Zalo targets. Telegram-only crons had no delivery → report lost
 **Fix:** (1) `getCeoSessionKey()` reads `session.dmScope` from openclaw.json, returns correct key format. (2) Fallback path calls `sendTelegram(replyText)` when no zaloTarget.
 **Status:** Fixed in v2.4.8
+
+---
+
+## 2026-06-04 — Bot forgot customer name + CEO-taught behavior after update
+
+**Reporter:** Customer CEO (via founder) — "có con đến tên nó còn không nhớ", "công cụ anh đã dạy nó quên"; one customer mắng vốn.
+**Symptom:** After an app update the bot stopped remembering a customer's name and appeared to forget CEO-taught behavior. Separately, when a customer asked it to read Zalo history, the bot fabricated a non-existent "Bật lưu lịch sử tin nhắn / message DB" Dashboard flow.
+**Root cause (3 compounding):**
+1. Every AGENTS version-bump ran `purgeAgentSessions()` → wiped ALL chat sessions on each update (conversation memory + daily-cron source gone).
+2. The bot never read the stored customer profile into replies (file-access blocked memory reads; only a 1-line name/gender hint injected) → blind to saved data.
+3. The per-customer memory mechanism relied on the LLM voluntarily calling `/api/customer-memory/write` — it had NEVER fired (audit log absent) → profiles stayed empty.
+The "message DB" answer was a pure LLM hallucination — no such UI existed.
+**Fix (v2.4.11, 2026-06-04):** (1) removed session-purge on version-bump; (2) code-injects the sender's own profile (name+facts) into every reply; (3) replaced the LLM-self-call with a code-enforced 3-min extractor (`customer-memory-updater`) that builds each customer's profile from openzca SQLite; (4) added a verbatim ground-truth history archive + `/api/zalo/history` endpoint; (5) AGENTS.md anti-hallucination section forbidding invented UI; (6) Sacred-Data 4-layer protection so customer data can never be lost on update/reset.
+**Status:** Fixed in v2.4.11 (build 2026-06-04). Verified live (Minh test extracted + remembered). Pending CEO live-confirm after reinstall.
