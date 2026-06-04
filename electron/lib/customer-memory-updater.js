@@ -115,9 +115,12 @@ function readNewDmMessages(db, profile, selfId, cursors, migrationBaselineTs) {
   // Pull the lowest already-processed ts across all known threads so we can
   // narrow the SQL range; fall back to migrationBaselineTs if no cursors yet.
   const cursorFloors = Object.values(cursors).map(c => c.lastProcessedTs).filter(Number.isFinite);
-  const floor = cursorFloors.length > 0
-    ? Math.min(...cursorFloors)
-    : (Number(migrationBaselineTs) || 0);
+  // ALWAYS include the migration baseline in the floor. Otherwise one thread whose
+  // cursor has advanced raises the SQL floor above OTHER threads' messages and
+  // starves every thread below the highest cursor (they'd never be read). The
+  // per-thread cursor (defaulting to baseline) still applies per-row below, so this
+  // only widens the candidate scan — it never re-processes an already-cursored msg.
+  const floor = Math.min(...cursorFloors, Number(migrationBaselineTs) || 0);
 
   const rows = db.prepare(
     `SELECT scope_thread_id, msg_id, sender_id, sender_name, content_text, msg_type, timestamp_ms
