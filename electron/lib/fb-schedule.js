@@ -34,15 +34,14 @@ const _regenPending = new Set();
 
 function getFbSchedulesPath() {
   const ws = getWorkspace();
-  if (!ws) return;  // auto-fix: null guard for workspace path
-  if (!ws) return;  // auto-fix: null guard for workspace path
-  if (!ws) return;  // auto-fix: null guard for workspace path
   if (!ws) return null;
   return path.join(ws, SCHEDULES_FILE);
 }
 
 function getPendingDir() {
-  const dir = path.join(getWorkspace(), PENDING_DIR);
+  const ws = getWorkspace();
+  if (!ws) return null;
+  const dir = path.join(ws, PENDING_DIR);
   try { fs.mkdirSync(dir, { recursive: true }); } catch {}
   return dir;
 }

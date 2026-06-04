@@ -8,7 +8,7 @@ const execFilePromise = promisify(execFile);
 const ctx = require('./context');
 const { writeJsonAtomic } = require('./util');
 const {
-  getWorkspace, seedWorkspace, auditLog, backupWorkspace, purgeAgentSessions,
+  getWorkspace, seedWorkspace, auditLog, backupWorkspace,
 } = require('./workspace');
 const {
   getBundledVendorDir, findNodeBin, findOpenClawBin,
@@ -319,7 +319,12 @@ async function _startOpenClawImpl(opts = {}) {
   }
   resetGatewayZaloDiag();
   try { backupWorkspace(); } catch (e) { console.error('[backup] failed:', e.message); }
-  purgeAgentSessions('startOpenClaw');
+  // DO NOT purge sessions on gateway start. Wiping every .jsonl on each restart
+  // (app launch / update / watchdog) reset the bot's in-conversation context and,
+  // together with the old seedWorkspace purge, caused the "bot forgot" reports after
+  // updates. Durable identity/facts are re-injected per message (inbound.ts profile
+  // patches); session files are bounded by enforceRetentionPolicies (7-day, boot+6h).
+  // Sessions pick up the new AGENTS.md on their next turn — no need to nuke them. (2026-06-04)
   auditLog('startOpenClaw_begin', {});
 
   const bin = await findOpenClawBin();

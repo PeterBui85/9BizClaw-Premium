@@ -30,9 +30,6 @@ function init(opts = {}) {
 
 function getMenuDir() {
   const ws = getWorkspaceFn();
-  if (!ws) return;  // auto-fix: null guard for workspace path
-  if (!ws) return;  // auto-fix: null guard for workspace path
-  if (!ws) return;  // auto-fix: null guard for workspace path
   if (!ws) throw new Error('workspace not found');
   return path.join(ws, 'data', 'zalo-menu');
 }

@@ -267,7 +267,7 @@ async function _tick() {
           try {
             const entry = JSON.parse(lines[i]);
             if (entry.event === 'message_inbound' && entry.channel === 'telegram') {
-              const msgAge = now - new Date(entry.at || stat.mtime);
+              const msgAge = Date.now() - new Date(entry.at || stat.mtime);
               if (msgAge < 24 * 60 * 60 * 1000) return; // active → skip
               break;
             }

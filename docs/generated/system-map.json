@@ -3381,11 +3381,11 @@
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 26257
+      "bytes": 29734
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 291333
+      "bytes": 290829
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3393,15 +3393,15 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 76068
+      "bytes": 75920
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 87849
+      "bytes": 88310
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 39708
+      "bytes": 39642
     },
     {
       "path": "electron/lib/google-routes.js",
@@ -3429,7 +3429,7 @@
     },
     {
       "path": "electron/lib/sacred-data.js",
-      "bytes": 20542
+      "bytes": 24080
     },
     {
       "path": "electron/lib/skill-manager.js",
@@ -3441,7 +3441,7 @@
     },
     {
       "path": "electron/lib/workspace.js",
-      "bytes": 63535
+      "bytes": 63385
     },
     {
       "path": "electron/lib/zalo-plugin.js",

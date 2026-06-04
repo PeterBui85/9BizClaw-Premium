@@ -1582,9 +1582,6 @@ ipcMain.handle('get-zalo-manager-config', async () => {
     }
     let allowlist = [];
     const ap = getZaloAllowlistPath();
-  if (!ap) return;  // auto-fix: null guard for workspace path
-  if (!ap) return;  // auto-fix: null guard for workspace path
-  if (!ap) return;  // auto-fix: null guard for workspace path
     if (ap && fs.existsSync(ap)) {
       try { allowlist = JSON.parse(fs.readFileSync(ap, 'utf-8')); } catch (e) { console.warn('[zalo-manager] allowlist parse error:', e?.message); }
     }
@@ -1680,8 +1677,6 @@ function saveZaloRealtimeManagerFiles({ userBlocklist, userBlocklistTouched, use
   // Allowlist (v2.4.4+): explicit list of friends CEO turned ON
   if (userAllowlistTouched) {
     const ap = getZaloAllowlistPath();
-  if (!ap) return;  // auto-fix: null guard for workspace path
-  if (!ap) return;  // auto-fix: null guard for workspace path
     if (ap) {
       const al = Array.isArray(userAllowlist) ? userAllowlist.map(x => String(x || '').trim()).filter(Boolean) : [];
       writeJsonAtomic(ap, al);
@@ -4327,9 +4322,6 @@ ipcMain.handle('delete-document', async (_event, filename) => {
   try {
     if (!filename || /[\/\\]/.test(filename) || filename.includes('..')) return { success: false, error: 'Invalid filename' };
     const db = getDocumentsDb();
-  if (!db) return;  // auto-fix: null guard for workspace path
-  if (!db) return;  // auto-fix: null guard for workspace path
-  if (!db) return;  // auto-fix: null guard for workspace path
     if (db) {
       const row = db.prepare('SELECT id FROM documents WHERE filename = ?').get(filename);
       if (row) { try { db.prepare('DELETE FROM documents_chunks WHERE document_id = ?').run(row.id); } catch {} }

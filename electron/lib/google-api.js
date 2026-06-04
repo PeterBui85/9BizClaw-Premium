@@ -257,7 +257,6 @@ async function getAuthUrl(email) {
 
 async function disconnectAccount() {
   const email = getGogAccount();
-  if (!email) return;  // auto-fix: null guard for workspace path
   if (email) {
     try { await gogExec(['auth', 'remove', email], 10000); } catch {}
   }
