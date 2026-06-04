@@ -1,7 +1,5 @@
 'use strict';
 
-const { DatabaseSync } = require('node:sqlite');
-
 const POLL_INTERVAL_MS = 180_000;
 const SETTLE_MS = 45_000;
 const MAX_DEFER_MS = 600_000;
@@ -130,7 +128,9 @@ function readNewDmMessages(db, profile, selfId, cursors, migrationBaselineTs) {
 
   const out = new Map();
   for (const r of rows) {
-    const cur = cursors[r.scope_thread_id] || { lastProcessedTs: 0, lastProcessedMsgId: '' };
+    // WHY: default to migrationBaselineTs (not 0) so a newly-seen thread never
+    // backfills history before the migration baseline.
+    const cur = cursors[r.scope_thread_id] || { lastProcessedTs: Number(migrationBaselineTs) || 0, lastProcessedMsgId: '' };
     // Tie-safe: advance only when strictly after cursor
     const after =
       r.timestamp_ms > cur.lastProcessedTs ||
@@ -153,14 +153,25 @@ function readNewDmMessages(db, profile, selfId, cursors, migrationBaselineTs) {
 
 // Open the openzca messages SQLite for a profile in read-only mode.
 // Returns null if the DB file does not exist yet.
+// WHY lazy-require better-sqlite3: the module must load under system node (for
+// tests that inject a node:sqlite fixture via _setOpenDb), where the Electron
+// ABI binary is absent. Deferring the require to call time means test code can
+// call _setOpenDb() before ever touching openDb().
 function openDb(profile) {
   const os = require('os');
   const path = require('path');
   const fs = require('fs');
   const p = path.join(os.homedir(), '.openzca', 'profiles', profile, 'messages.sqlite');
   if (!fs.existsSync(p)) return null;
-  return new DatabaseSync(p, { readOnly: true });
+  const Database = require('better-sqlite3'); // Electron-ABI binary; lazy so module loads even where bsql is absent
+  return new Database(p, { readonly: true, fileMustExist: true });
 }
+
+// Test hook: replace openDb with a fixture factory (e.g. () => node:sqlite db).
+// WHY: tick() calls _openDb(profile) so tests inject a fixture without needing
+// the Electron binary under system node.
+let _openDb = openDb;
+function _setOpenDb(fn) { _openDb = fn; }
 
 // Read self user_id from self_profiles table.
 function readSelfId(db, profile) {
@@ -323,7 +334,7 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
   const ws = wsOverride || getWorkspace();
   if (!ws) return { skipped: 'no-ws' };
 
-  const db = openDb(profile);
+  const db = _openDb(profile);
   if (!db) {
     console.log('[customer-memory] tick: no db — skipped');
     return { skipped: 'no-db' };
@@ -416,8 +427,10 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
             lastSeen: new Date(now).toISOString(),
             addMsg: inboundN,
           });
-          // SACRED-OK: writing updated profile content back under withMemoryFileLock
-          fs.writeFileSync(profilePath, content, 'utf-8'); // SACRED-OK
+          // SACRED-OK: atomic tmp+rename so a concurrent snapshot never reads a torn file
+          const tmpPath = profilePath + '.tmp';
+          fs.writeFileSync(tmpPath, content, 'utf-8'); // SACRED-OK
+          fs.renameSync(tmpPath, profilePath); // SACRED-OK
           // Trim oversized profiles in-place (respects the FACTS block — trim only dated sections)
           try { trimZaloMemoryFile(profilePath, PROFILE_MAX_BYTES); } catch {}
         }
@@ -471,7 +484,7 @@ async function init({ profile = 'default', wsOverride } = {}) {
 
   const fs = require('fs');
   const path = require('path');
-  const { spawnSync } = require('child_process');
+  const { execFile } = require('child_process');
   const { getWorkspace } = require('./workspace');
   const { writeJsonAtomic } = require('./util');
   const { findNodeBin } = require('./boot');
@@ -483,7 +496,16 @@ async function init({ profile = 'default', wsOverride } = {}) {
 
   const ws = wsOverride || getWorkspace();
 
-  // --- db enable (idempotent) ---
+  // --- db enable (idempotent, async — must not block Electron main thread) ---
+  // WHY: spawnSync here could stall the UI for up to 25s on first boot.
+  // execFile wrapped in a Promise is fully async; we await both steps.
+  const _execFileAsync = (bin, args, opts) => new Promise((resolve, reject) => {
+    execFile(bin, args, opts, (err, stdout, stderr) => {
+      if (err) { err.stdout = stdout; err.stderr = stderr; reject(err); }
+      else resolve({ stdout, stderr });
+    });
+  });
+
   let openzcaCliJs = null;
   try {
     const { findOpenzcaCliJs } = require('./zalo-plugin');
@@ -494,17 +516,17 @@ async function init({ profile = 'default', wsOverride } = {}) {
 
   if (nodeBin && openzcaCliJs) {
     try {
-      const statusResult = spawnSync(
+      const { stdout: statusOut } = await _execFileAsync(
         nodeBin,
         [openzcaCliJs, '--profile', profile, 'db', 'status'],
         { shell: false, windowsHide: true, encoding: 'utf-8', timeout: 10000 }
       );
       let statusJson = null;
-      try { statusJson = JSON.parse(statusResult.stdout); } catch {}
+      try { statusJson = JSON.parse(statusOut); } catch {}
 
       if (_needsEnable(statusJson)) {
         console.log('[customer-memory] db not enabled — running db enable');
-        spawnSync(
+        await _execFileAsync(
           nodeBin,
           [openzcaCliJs, '--profile', profile, 'db', 'enable'],
           { shell: false, windowsHide: true, timeout: 15000 }
@@ -559,4 +581,5 @@ module.exports = {
   _isSubstantive, _buildExtractPrompt, extractForThread, _setCall9,
   _compactFacts, _bumpFrontmatter, _needsEnable,
   tick, init,
+  _setOpenDb, // test hook: inject fixture db factory without needing Electron binary
 };

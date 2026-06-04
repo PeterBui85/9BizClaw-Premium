@@ -162,74 +162,33 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
 }
 
 // --- tick() tests ---
+// WHY _setOpenDb injection: tick() calls _openDb(profile) internally. Tests use
+// node:sqlite DatabaseSync fixtures (fine under system node) injected via _setOpenDb
+// so the Electron ABI binary (better-sqlite3) is never loaded during test runs.
 {
   const os = require('os');
   const fs = require('fs');
   const path = require('path');
   const { DatabaseSync } = require('node:sqlite');
-  const { tick, _setCall9 } = require('../lib/customer-memory-updater');
+  const { tick, _setCall9, _setOpenDb } = require('../lib/customer-memory-updater');
 
-  // Set up a temp workspace + temp db for all tick tests
-  const tmpWs = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-tick-test-'));
-  const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-db-test-'));
-  const dbPath = path.join(dbDir, 'messages.sqlite');
+  // Build a shared in-memory fixture db that each test repopulates
+  // WHY in-memory: no file system cleanup needed, fully isolated per test
+  function makeFixtureDb(selfId) {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
+      INSERT INTO self_profiles VALUES ('ticktest', '${selfId}');
+      CREATE TABLE messages (
+        profile TEXT, scope_thread_id TEXT, thread_type TEXT,
+        msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
+        timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
+      );
+    `);
+    return db;
+  }
 
-  // Build a temp db with the openzca schema
-  const db = new DatabaseSync(dbPath);
-  db.exec(`
-    CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
-    INSERT INTO self_profiles VALUES ('test', 'selfXYZ');
-    CREATE TABLE messages (
-      profile TEXT, scope_thread_id TEXT, thread_type TEXT,
-      msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
-      timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
-    );
-  `);
-  db.close();
-
-  // Patch openDb to use our temp db
-  const { DatabaseSync: DS } = require('node:sqlite');
-  const origOpenDb = u.openDb; // save (not patchable via module exports — override via require cache trick)
-
-  // We need a way to inject the db. tick() calls openDb(profile) from the module scope.
-  // Override via patching the module's openDb via the exported reference isn't possible
-  // without monkey-patching require. Instead, use a real file-path override approach:
-  // Place our temp DB at the expected openzca path under a test homedir override.
-  // Actually simpler: monkey-patch the module's exports.openDb used inside tick.
-  // tick() uses module-internal openDb — we must use a separate test hook.
-  // The spec says use wsOverride + temp dirs + temp sqlite + _setCall9 stub.
-  // tick() calls openDb(profile) directly. We expose _setOpenDb for tests.
-
-  // Since tick() calls the module-local openDb, and we cannot rewire it without
-  // a hook, we use a practical approach: place the real temp db at the openzca
-  // path. On CI/test machines, HOME varies. So we use a per-test USERPROFILE override.
-  // Best option: expose _setOpenDb in the module (add to exports) — but spec says
-  // don't change the spec, just implement. Re-read: spec says "wsOverride + temp dirs
-  // + temp sqlite + _setCall9 stub". This implies we CAN expose a _setOpenDb hook.
-  // We add _setOpenDb to exports (minimal, consistent with _setCall9 pattern).
-
-  // HOWEVER, to keep this test self-contained without modifying the module further,
-  // we create the sqlite file at the real path that openDb() would use.
-  // openDb() uses: os.homedir()/.openzca/profiles/<profile>/messages.sqlite
-  const realDbDir = path.join(os.homedir(), '.openzca', 'profiles', 'ticktest', );
-  fs.mkdirSync(realDbDir, { recursive: true });
-  const realDbPath = path.join(realDbDir, 'messages.sqlite');
-
-  // Build the DB at the real location
-  const db2 = new DatabaseSync(realDbPath);
-  db2.exec(`
-    CREATE TABLE IF NOT EXISTS self_profiles (profile TEXT, user_id TEXT);
-    DELETE FROM self_profiles WHERE profile='ticktest';
-    INSERT INTO self_profiles VALUES ('ticktest', 'selfXYZ');
-    CREATE TABLE IF NOT EXISTS messages (
-      profile TEXT, scope_thread_id TEXT, thread_type TEXT,
-      msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
-      timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
-    );
-    DELETE FROM messages WHERE profile='ticktest';
-  `);
-
-  // Helper to seed a user profile file
+  // Helper to seed a user profile file in a temp workspace
   function seedProfile(ws, threadId) {
     const dir = path.join(ws, 'memory', 'zalo-users');
     fs.mkdirSync(dir, { recursive: true });
@@ -238,7 +197,6 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     return p;
   }
 
-  // Helper to read profile
   function readProfile(ws, threadId) {
     return fs.readFileSync(path.join(ws, 'memory', 'zalo-users', `${threadId}.md`), 'utf-8');
   }
@@ -247,15 +205,15 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
   {
     const ws1 = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-tick-t1-'));
     const threadId = 'custT1';
-    const profileFile = seedProfile(ws1, threadId);
+    seedProfile(ws1, threadId);
     const baselineTs = Date.now() - 600_000; // 10min ago
 
-    // Insert 5 inbound msgs, all 5 minutes old (well past SETTLE_MS=45s)
+    const fixtureDb1 = makeFixtureDb('selfXYZ');
     const msgBase = Date.now() - 300_000;
-    db2.exec(`DELETE FROM messages WHERE profile='ticktest';`);
     for (let i = 1; i <= 5; i++) {
-      db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msg00${i}','custT1','Cust','selfXYZ',${msgBase + i*100},'text','Tôi muốn mua sản phẩm số ${i} với chất lượng tốt nhất','zalo')`);
+      fixtureDb1.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msg00${i}','custT1','Cust','selfXYZ',${msgBase + i*100},'text','Tôi muốn mua sản phẩm số ${i} với chất lượng tốt nhất','zalo')`);
     }
+    _setOpenDb(() => fixtureDb1);
 
     let extractCallCount = 0;
     _setCall9(async () => {
@@ -264,17 +222,15 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     });
 
     const now1 = Date.now();
-    // Create state with baseline in the past
     const statePath1 = path.join(ws1, 'zalo-profile-sync-state.json');
     fs.writeFileSync(statePath1, JSON.stringify({ migrationBaselineTs: baselineTs, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 }), 'utf-8');
 
-    const result1 = await tick({ now: now1, profile: 'ticktest', wsOverride: ws1 });
+    await tick({ now: now1, profile: 'ticktest', wsOverride: ws1 });
 
     assert.strictEqual(extractCallCount, 1, 'T1: extractForThread called exactly once for 5 msgs');
     const content1 = readProfile(ws1, threadId);
     assert.ok(content1.includes('<!-- CUSTOMER-FACTS-START -->'), 'T1: FACTS block present');
     assert.ok(content1.includes('muốn mua sản phẩm'), 'T1: summary in FACTS block');
-    // msgCount should be bumped by 5 (all inbound)
     const mcMatch1 = content1.match(/^msgCount:\s*(\d+)/m);
     assert.ok(mcMatch1, 'T1: msgCount present in frontmatter');
     assert.strictEqual(parseInt(mcMatch1[1], 10), 5, 'T1: msgCount bumped to 5');
@@ -287,12 +243,12 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     const threadId = 'custT2';
     seedProfile(ws2, threadId);
 
-    // Insert msgs with newest only 10s old (< SETTLE_MS=45s), oldest also 10s old (< MAX_DEFER_MS)
     const now2 = Date.now();
     const recentTs = now2 - 10_000;
-    db2.exec(`DELETE FROM messages WHERE profile='ticktest';`);
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT2a','custT2','C','selfXYZ',${recentTs},'text','Hỏi giá sản phẩm nhé','zalo')`);
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT2b','custT2','C','selfXYZ',${recentTs + 100},'text','Bên em có giao hàng không?','zalo')`);
+    const fixtureDb2 = makeFixtureDb('selfXYZ');
+    fixtureDb2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT2a','custT2','C','selfXYZ',${recentTs},'text','Hỏi giá sản phẩm nhé','zalo')`);
+    fixtureDb2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT2b','custT2','C','selfXYZ',${recentTs + 100},'text','Bên em có giao hàng không?','zalo')`);
+    _setOpenDb(() => fixtureDb2);
 
     let extractCallCount2 = 0;
     _setCall9(async () => { extractCallCount2++; return '{"summary":"x","preferences":[],"decisions":[],"personality":[],"tags":[]}'; });
@@ -303,7 +259,6 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     await tick({ now: now2, profile: 'ticktest', wsOverride: ws2 });
 
     assert.strictEqual(extractCallCount2, 0, 'T2: no extraction when not settled');
-    // Cursor unchanged: state.threads should be empty (no cursor advanced)
     const state2 = JSON.parse(fs.readFileSync(statePath2, 'utf-8'));
     assert.ok(!state2.threads[threadId], 'T2: cursor not advanced when deferred');
     console.log('tick T2 (not settled → deferred, cursor unchanged) OK');
@@ -316,12 +271,12 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     seedProfile(ws3, threadId);
 
     const now3 = Date.now();
-    // oldest msg is 11 min old (> MAX_DEFER_MS=10min); newest is only 10s old (< SETTLE_MS)
     const oldestTs = now3 - 660_000;
     const newestTs = now3 - 10_000;
-    db2.exec(`DELETE FROM messages WHERE profile='ticktest';`);
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT3a','custT3','C','selfXYZ',${oldestTs},'text','Câu đầu tiên hỏi về sản phẩm','zalo')`);
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT3b','custT3','C','selfXYZ',${newestTs},'text','Câu cuối hỏi tiếp theo','zalo')`);
+    const fixtureDb3 = makeFixtureDb('selfXYZ');
+    fixtureDb3.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT3a','custT3','C','selfXYZ',${oldestTs},'text','Câu đầu tiên hỏi về sản phẩm','zalo')`);
+    fixtureDb3.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT3b','custT3','C','selfXYZ',${newestTs},'text','Câu cuối hỏi tiếp theo','zalo')`);
+    _setOpenDb(() => fixtureDb3);
 
     let extractCallCount3 = 0;
     _setCall9(async () => { extractCallCount3++; return '{"summary":"hỏi về sản phẩm","preferences":[],"decisions":[],"personality":[],"tags":[]}'; });
@@ -342,11 +297,11 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     seedProfile(ws4, threadId);
 
     const now4 = Date.now();
-    const oldTs = now4 - 120_000; // 2 min ago (settled)
-    db2.exec(`DELETE FROM messages WHERE profile='ticktest';`);
-    // Non-substantive inbound: sticker + "ok"
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT4a','custT4','C','selfXYZ',${oldTs},'sticker','','zalo')`);
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT4b','custT4','C','selfXYZ',${oldTs + 100},'text','ok','zalo')`);
+    const oldTs = now4 - 120_000;
+    const fixtureDb4 = makeFixtureDb('selfXYZ');
+    fixtureDb4.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT4a','custT4','C','selfXYZ',${oldTs},'sticker','','zalo')`);
+    fixtureDb4.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT4b','custT4','C','selfXYZ',${oldTs + 100},'text','ok','zalo')`);
+    _setOpenDb(() => fixtureDb4);
 
     let extractCallCount4 = 0;
     _setCall9(async () => { extractCallCount4++; return '{"summary":"x"}'; });
@@ -357,11 +312,9 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     await tick({ now: now4, profile: 'ticktest', wsOverride: ws4 });
 
     assert.strictEqual(extractCallCount4, 0, 'T4: 0 LLM calls for non-substantive burst');
-    // msgCount bumped (inboundN=2)
-    const content4 = fs.readFileSync(path.join(ws4, 'memory', 'zalo-users', `${threadId}.md`), 'utf-8');
+    const content4 = readProfile(ws4, threadId);
     const mc4 = content4.match(/^msgCount:\s*(\d+)/m);
     assert.ok(mc4 && parseInt(mc4[1], 10) === 2, 'T4: msgCount bumped by 2 for non-substantive');
-    // Cursor advanced
     const state4 = JSON.parse(fs.readFileSync(statePath4, 'utf-8'));
     assert.ok(state4.threads[threadId], 'T4: cursor advanced even for non-substantive');
     console.log('tick T4 (skip-gate: 0 LLM calls, msgCount+cursor advanced) OK');
@@ -375,15 +328,14 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
 
     const now5 = Date.now();
     const oldTs5 = now5 - 120_000;
-    db2.exec(`DELETE FROM messages WHERE profile='ticktest';`);
-    db2.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT5a','custT5','C','selfXYZ',${oldTs5},'text','Câu hỏi thực chất về sản phẩm chất lượng','zalo')`);
+    const fixtureDb5 = makeFixtureDb('selfXYZ');
+    fixtureDb5.exec(`INSERT INTO messages VALUES ('ticktest','${threadId}','user','msgT5a','custT5','C','selfXYZ',${oldTs5},'text','Câu hỏi thực chất về sản phẩm chất lượng','zalo')`);
+    _setOpenDb(() => fixtureDb5);
 
-    // Extractor throws
     _setCall9(async () => { throw new Error('LLM timeout'); });
 
     const statePath5 = path.join(ws5, 'zalo-profile-sync-state.json');
-    const initialState5 = { migrationBaselineTs: now5 - 600_000, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 };
-    fs.writeFileSync(statePath5, JSON.stringify(initialState5), 'utf-8');
+    fs.writeFileSync(statePath5, JSON.stringify({ migrationBaselineTs: now5 - 600_000, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 }), 'utf-8');
 
     await tick({ now: now5, profile: 'ticktest', wsOverride: ws5 });
 
@@ -392,9 +344,30 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     console.log('tick T5 (extractor throws → cursor unchanged for retry) OK');
   }
 
-  // Clean up real db
-  db2.close();
-  try { fs.unlinkSync(realDbPath); } catch {}
+  // ── Test T6 (M1 baseline): new thread with no cursor + msg older than baseline → NOT returned ---
+  {
+    const now6 = Date.now();
+    const baseline6 = now6 - 60_000; // 1 min ago
+    const threadId6 = 'custT6';
+    const fixtureDb6 = makeFixtureDb('selfXYZ');
+    const oldMsgTs = baseline6 - 10_000; // before baseline
+    const newMsgTs = baseline6 + 10_000; // after baseline
+    fixtureDb6.exec(`INSERT INTO messages VALUES ('ticktest','${threadId6}','user','msgT6old','custT6','C','selfXYZ',${oldMsgTs},'text','Tin nhắn cũ trước baseline','zalo')`);
+    fixtureDb6.exec(`INSERT INTO messages VALUES ('ticktest','${threadId6}','user','msgT6new','custT6','C','selfXYZ',${newMsgTs},'text','Tin nhắn mới sau baseline, hỏi sản phẩm chất lượng','zalo')`);
+
+    const { readNewDmMessages } = require('../lib/customer-memory-updater');
+    // No cursor for this thread → default uses baseline6
+    const result6 = readNewDmMessages(fixtureDb6, 'ticktest', 'selfXYZ', {}, baseline6);
+    const e6 = result6.get(threadId6);
+    assert.ok(e6, 'T6: thread present in results');
+    assert.strictEqual(e6.msgs.length, 1, 'T6: only 1 msg returned (new, after baseline)');
+    assert.strictEqual(e6.msgs[0].msg_id, 'msgT6new', 'T6: only the post-baseline msg returned');
+    console.log('tick T6 (M1 baseline: new-thread default uses migrationBaselineTs, old msg excluded) OK');
+  }
+
+  // Reset _setOpenDb to a no-op (null db) so subsequent tests don't accidentally
+  // use stale fixture dbs.
+  _setOpenDb(() => null);
 
   console.log('tick() tests OK');
 }
@@ -404,20 +377,17 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
   const os = require('os');
   const fs = require('fs');
   const path = require('path');
-  const { init, _needsEnable } = require('../lib/customer-memory-updater');
+  const { _needsEnable } = require('../lib/customer-memory-updater');
 
   // ── Test I1: missing state file → init creates it with migrationBaselineTs ≈ now ---
   {
     const ws1 = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-init-t1-'));
     const before = Date.now();
 
-    // Override the module's _initDone flag so we can test init again.
-    // We require a fresh module instance via a temp copy approach.
-    // Since we can't re-require a cached module, test the state-file creation logic directly.
-    // Strategy: manually run the state-file creation logic (same as init does).
+    // init() has a _initDone guard so we can't call it twice in the same process.
+    // Test the state-file creation logic directly (same code path, extracted inline).
     const { writeJsonAtomic } = require('../lib/util');
     const statePath = path.join(ws1, 'zalo-profile-sync-state.json');
-    // Simulate the init state-file creation
     if (!fs.existsSync(statePath)) {
       const baseline = Date.now();
       writeJsonAtomic(statePath, {
@@ -437,44 +407,36 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
   }
 
   // ── Test I2: baseline guard — messages with ts < baseline are NOT processed ---
+  // Uses _setOpenDb injection (no real file, no better-sqlite3 dependency).
   {
     const { DatabaseSync } = require('node:sqlite');
+    const { tick: tick2, _setCall9: sc9, _setOpenDb: sodb } = require('../lib/customer-memory-updater');
     const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-init-t2-'));
     const threadId = 'custI2';
 
-    // Create profile
     const profileDir = path.join(ws2, 'memory', 'zalo-users');
     fs.mkdirSync(profileDir, { recursive: true });
     fs.writeFileSync(path.join(profileDir, `${threadId}.md`), '---\nname: I2User\nmsgCount: 0\n---\n# I2User\n', 'utf-8');
 
-    // Place DB at openzca path
-    const realDbDir2 = path.join(os.homedir(), '.openzca', 'profiles', 'inittest2');
-    fs.mkdirSync(realDbDir2, { recursive: true });
-    const realDbPath2 = path.join(realDbDir2, 'messages.sqlite');
-    const db3 = new DatabaseSync(realDbPath2);
-    db3.exec(`
-      CREATE TABLE IF NOT EXISTS self_profiles (profile TEXT, user_id TEXT);
-      DELETE FROM self_profiles WHERE profile='inittest2';
+    const now = Date.now();
+    const baseline = now - 60_000;
+
+    const fixtureDb6 = new DatabaseSync(':memory:');
+    fixtureDb6.exec(`
+      CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
       INSERT INTO self_profiles VALUES ('inittest2', 'selfI2');
-      CREATE TABLE IF NOT EXISTS messages (
+      CREATE TABLE messages (
         profile TEXT, scope_thread_id TEXT, thread_type TEXT,
         msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
         timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
       );
-      DELETE FROM messages WHERE profile='inittest2';
     `);
-
-    const now = Date.now();
-    const baseline = now - 60_000; // 1 minute ago
-
-    // Insert one OLD message (ts < baseline) and one NEW (ts > baseline)
     const oldMsgTs = baseline - 10_000;
     const newMsgTs = baseline + 10_000;
-    db3.exec(`INSERT INTO messages VALUES ('inittest2','${threadId}','user','msgI2old','custI2','C','selfI2',${oldMsgTs},'text','Tin nhắn cũ trước baseline','zalo')`);
-    db3.exec(`INSERT INTO messages VALUES ('inittest2','${threadId}','user','msgI2new','custI2','C','selfI2',${newMsgTs},'text','Tin nhắn mới sau baseline, hỏi mua hàng chất lượng','zalo')`);
-    db3.close();
+    fixtureDb6.exec(`INSERT INTO messages VALUES ('inittest2','${threadId}','user','msgI2old','custI2','C','selfI2',${oldMsgTs},'text','Tin nhắn cũ trước baseline','zalo')`);
+    fixtureDb6.exec(`INSERT INTO messages VALUES ('inittest2','${threadId}','user','msgI2new','custI2','C','selfI2',${newMsgTs},'text','Tin nhắn mới sau baseline, hỏi mua hàng chất lượng','zalo')`);
+    sodb(() => fixtureDb6);
 
-    // State file: migrationBaselineTs = baseline
     const { writeJsonAtomic } = require('../lib/util');
     const statePath2 = path.join(ws2, 'zalo-profile-sync-state.json');
     writeJsonAtomic(statePath2, {
@@ -485,20 +447,15 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     });
 
     let extractCallCount = 0;
-    const { _setCall9, tick: tick2 } = require('../lib/customer-memory-updater');
-    _setCall9(async () => { extractCallCount++; return '{"summary":"mua hàng","preferences":[],"decisions":[],"personality":[],"tags":[]}'; });
+    sc9(async () => { extractCallCount++; return '{"summary":"mua hàng","preferences":[],"decisions":[],"personality":[],"tags":[]}'; });
 
-    // tick with now set so the new msg is settled (> SETTLE_MS old)
-    const tickNow = newMsgTs + 60_000; // 1 min after new msg
+    const tickNow = newMsgTs + 60_000;
     await tick2({ now: tickNow, profile: 'inittest2', wsOverride: ws2 });
 
-    // The old message (before baseline) should NOT be processed (baseline guard)
-    // The new message (after baseline) SHOULD be processed → 1 extraction
     assert.strictEqual(extractCallCount, 1, 'I2: exactly 1 extraction (new msg only, old filtered by baseline)');
     console.log('init I2 (baseline guard: old msgs skipped, new msg processed) OK');
 
-    // Cleanup
-    try { fs.unlinkSync(realDbPath2); } catch {}
+    sodb(() => null); // reset
   }
 
   // ── Test I3: _needsEnable pure logic ---
@@ -512,3 +469,16 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
 
 // End of single sequential async chain
 })().catch(e => { console.error('async tests FAIL:', e.message); process.exit(1); });
+
+// --- Static sqlite-runtime guard ---
+// WHY: ensures the module NEVER silently regresses to node:sqlite (absent in Electron 28 / Node 18).
+// This check runs synchronously after all async tests are queued, so it always executes.
+{
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'lib', 'customer-memory-updater.js'), 'utf8');
+  assert.ok(
+    !src.includes("require('node:sqlite')") && !src.includes('require("node:sqlite")'),
+    'must not use node:sqlite (absent in Electron 28 / Node 18)'
+  );
+  assert.ok(src.includes('better-sqlite3'), 'must use better-sqlite3 for main-process sqlite');
+  console.log('sqlite-runtime guard OK');
+}
