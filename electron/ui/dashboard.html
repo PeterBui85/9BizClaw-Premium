@@ -9813,7 +9813,12 @@
         const metaParts = [];
         if (meta.lastSeen) metaParts.push('Lần gần nhất: ' + meta.lastSeen.slice(0, 16).replace('T', ' '));
         if (meta.msgCount) metaParts.push(meta.msgCount + ' lượt');
-        if (meta.gender && meta.gender !== 'unknown') metaParts.push(meta.gender === 'male' ? 'Nam' : 'Nữ');
+        if (meta.gender && meta.gender !== 'unknown') {
+          // Stored values are 'M'/'F' (from friends cache + journal), not 'male'/'female'.
+          // The old 'male' check never matched, so every known gender fell through to 'Nữ'.
+          const g = String(meta.gender).toLowerCase();
+          metaParts.push((g === 'm' || g === 'male' || g === 'nam') ? 'Nam' : 'Nữ');
+        }
         if (phoneNumber) metaParts.push(formatViPhone(phoneNumber));
         if (metaParts.length > 0) subEl.textContent = 'ID: ' + senderId + ' · ' + metaParts.join(' · ');
         // Strip frontmatter for display

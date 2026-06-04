@@ -3355,7 +3355,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 190185
+      "bytes": 190439
     },
     {
       "path": "electron/lib/cron.js",
@@ -3399,7 +3399,7 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 46793
+      "bytes": 46816
     },
     {
       "path": "electron/lib/runtime-installer.js",
@@ -3427,7 +3427,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 691483
+      "bytes": 691767
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -3435,7 +3435,7 @@
     },
     {
       "path": "electron/ui/splash.html",
-      "bytes": 28238
+      "bytes": 27648
     },
     {
       "path": "electron/ui/wizard.html",

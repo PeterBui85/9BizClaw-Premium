@@ -806,17 +806,8 @@
     }
   });
 
-  // Watchdog: if install takes more than 5 minutes total, show timeout warning
-  setTimeout(() => {
-    // If progress hasn't reached 'complete', show a warning
-    if (!fill.classList.contains('complete') && !document.getElementById('timeout-warning')) {
-      const warn = document.createElement('div');
-      warn.id = 'timeout-warning';
-      warn.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(251,146,60,0.15);border:1px solid rgba(251,146,60,0.4);color:#fb923c;padding:10px 20px;border-radius:8px;font-size:13px;z-index:100;text-align:center;';
-      warn.textContent = 'Cài đặt quá lâu. Kiểm tra kết nối mạng hoặc thử lại.';
-      document.body.appendChild(warn);
-    }
-  }, 5 * 60 * 1000);
+  // (Removed the 5-minute "Cài đặt quá lâu" watchdog warning — it false-alarmed on
+  // slow connections where the first-run runtime download legitimately takes longer.)
 </script>
 </body>
 </html>

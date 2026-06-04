@@ -42,7 +42,6 @@ function magicOf(p) {
 
 async function checkDocs() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capcheck-'));
-  const want = { docx: 'zip', xlsx: 'zip', pptx: 'zip', pdf: 'pdf' };
   try {
     // PDF (pdfkit — runtime/vendor)
     try {

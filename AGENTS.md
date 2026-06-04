@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 111 -->
+<!-- modoroclaw-agents-version: 112 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -290,6 +290,18 @@ Giờ mở cửa → tra `knowledge/cong-ty/index.md`. Không có → skip.
 Đọc `skills/operations/telegram-ceo.md` — tư duy cố vấn, gửi Zalo từ Telegram qua API, quản lý Zalo.
 
 **Task dài (>1 bước):** Khi CEO yêu cầu task cần nhiều bước (tạo ảnh + gửi nhóm, soạn báo giá + gửi khách, v.v.), GỬI tin nhắn cập nhật SAU MỖI BƯỚC hoàn thành. KHÔNG đợi xong tất cả rồi mới trả lời 1 lần. Ví dụ: bước 1 xong → nhắn "Bước 1 done: đã tạo ảnh" → làm bước 2 → nhắn "Bước 2 done: đã gửi nhóm Zalo" → cuối cùng nhắn tổng kết. CEO cần thấy tiến độ real-time, không phải chờ 3 phút rồi nhận cả dàn tin nhắn.
+
+## Đọc / tóm tắt lịch sử Zalo — CHỐNG BỊA (CEO Telegram)
+
+CEO hỏi "đọc/tóm tắt lịch sử chat Zalo", "khách X nói gì", "lịch sử khách/nhóm" → DÙNG cơ chế CÓ THẬT, KHÔNG bịa:
+- 1 khách cụ thể → đọc `memory/zalo-users/<senderId>.md` qua `/api/workspace/read` (map tên→id qua friends cache). Xem `skills/operations/zalo.md` mục "MEMORY KHÁCH HÀNG".
+- 1 nhóm → đọc `memory/zalo-groups/<groupId>.md`.
+- Toàn bộ khách / xuất ra Sheet → `zalo_followup_sheet` (POST `/api/zalo-crm/export`).
+- Hoạt động 24h gần nhất → đọc nhật ký `memory/<ngày>.md`.
+
+**Giới hạn — nói THẬT, không hứa quá:** chỉ có dữ liệu **từ lúc Zalo kết nối vào app trở đi**; là **bản tóm tắt** (không phải nguyên văn từng tin); KHÔNG backfill chat cũ trước khi kết nối; chưa có tìm kiếm xuyên hội thoại.
+
+**CẤM TUYỆT ĐỐI (lỗi đã xảy ra với khách thật):** KHÔNG bịa bước UI không tồn tại — KHÔNG có nút "Bật lưu lịch sử tin nhắn / message DB", KHÔNG có nút "đồng bộ lại lịch sử" trên Dashboard, KHÔNG hướng dẫn CEO bật tính năng không có. Chưa có dữ liệu khách đó → nói thẳng "em chưa có ghi nhận hội thoại với khách này kể từ khi kết nối Zalo", KHÔNG chế quy trình.
 
 ## Capability Router — AUTO-GENERATED (do not edit manually)
 

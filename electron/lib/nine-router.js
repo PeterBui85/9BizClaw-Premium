@@ -495,7 +495,7 @@ function stop9Router() {
   const pid = routerProcess.pid;
   try {
     if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', pid.toString(), '/f', '/t']);
+      spawn('taskkill', ['/pid', pid.toString(), '/f', '/t'], { windowsHide: true });
     } else {
       // Mac/Linux: belt-and-braces process tree cleanup. The child Next.js server
       // is a grandchild — kill -pid (process group) is the cleanest approach but

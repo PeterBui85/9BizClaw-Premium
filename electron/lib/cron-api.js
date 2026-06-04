@@ -186,10 +186,9 @@ function startCronApi() {
   // guarding on it alone races: every caller fires a preflight + an actual call,
   // and both pass this guard before the first bind completes — each then leaks a
   // server on the next free port (20201, 20202…) until the range exhausts →
-  // EADDRINUSE. _cronApiStarting is set synchronously here to serialize starts;
-  // it clears on a successful listen or on terminal failure.
+  // EADDRINUSE. _cronApiStarting (set just before the async listen, below)
+  // serializes starts; it clears on a successful listen or on terminal failure.
   if (_cronApiServer || _cronApiStarting) return;
-  _cronApiStarting = true;
   const http = require('http');
   const crypto = require('crypto');
   const nodeCron = require('node-cron');
@@ -3640,6 +3639,10 @@ function startCronApi() {
   // In test env, bind to an OS-assigned ephemeral port to avoid colliding with
   // a live MODOROClaw app instance that already owns 20200..20203. Production
   // still uses the fixed 20200 range so the `web_fetch` tool URL stays stable.
+  // Flip the in-flight guard ONLY here, right before the async listen. Everything
+  // above is synchronous (no interleave possible), so a throw during setup can't
+  // wedge the flag `true` and dead-lock every future startCronApi() call.
+  _cronApiStarting = true;
   const startPort = process.env.NODE_ENV === 'test' ? 0 : 20200;
   tryListen(startPort, 3);
 }
