@@ -669,7 +669,12 @@ function seedWorkspace() {
             try { fs.unlinkSync(fp); console.log('[seedWorkspace] removed fake memory file: ' + f); } catch {}
           }
         }
-        purgeAgentSessions('seedWorkspace');
+        // DO NOT purge sessions here. Purging on every AGENTS.md version bump
+        // deleted all .jsonl conversation history — wiping the bot's in-session
+        // memory AND the raw source the daily memory-cron reads. Paying customers
+        // experienced the bot "forgetting" recent interactions on every app update.
+        // Sessions naturally pick up the new AGENTS.md on their next turn /
+        // gateway restart; there is no need to nuke them. (2026-06-04)
         _agentsUpgraded = true;
       }
     } catch (e) {
