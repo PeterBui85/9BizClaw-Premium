@@ -23,7 +23,7 @@ let _cachedOpenzcaCliJs = null;
 // NOTE: keep this in EXACT sync with packages/modoro-zalo/src/.fork-version —
 // they are compared on boot; any mismatch re-copies the whole plugin every
 // launch. A smoke guard (smoke-test.js) fails the build if they drift.
-const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.15';
+const MODORO_ZALO_FORK_VERSION = 'modoro-zalo-v1.0.16';
 
 // ============================================
 //  GETTERS

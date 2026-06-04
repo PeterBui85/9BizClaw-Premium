@@ -1351,6 +1351,9 @@ ${__fapPolicy}
     const __ghPath = require("node:path");
     const __ghOs = require("node:os");
     const __ghSender = String(message.senderId || "").trim();
+    // Security: strict allowlist — Zalo senderIds are numeric, but accept
+    // alphanumeric/underscore/hyphen to cover edge cases; blocks ../ traversal.
+    const __ghIdOk = /^[A-Za-z0-9_-]{1,64}$/.test(__ghSender);
     const __ghSanitize = (s: string) => s.replace(/[\[\]"'`\\\n\r<>{}]/g, "").slice(0, 60).trim();
     let __ghName = __ghSanitize(String(message.senderName || ""));
     if (__ghSender) {
@@ -1376,6 +1379,12 @@ ${__fapPolicy}
         try {
           const __ghMemPath = __ghPath.join(__ghWs, "memory", "zalo-users", __ghSender + ".md");
           if (__ghFs.existsSync(__ghMemPath)) {
+            // Security: skip file read if senderId failed allowlist or
+            // realpath escapes the zalo-users directory (symlink attack).
+            if (!__ghIdOk) continue;
+            const __ghReal = __ghFs.realpathSync(__ghMemPath);
+            const __ghBase = __ghFs.realpathSync(__ghPath.join(__ghWs, "memory", "zalo-users"));
+            if (!__ghReal.startsWith(__ghBase + __ghPath.sep)) continue;
             const __ghRaw = __ghFs.readFileSync(__ghMemPath, "utf-8").slice(0, 500);
             const __ghMatch = __ghRaw.match(/^gender:\s*(M|F|male|female|nam|nu|nữ)\s*$/im);
             if (__ghMatch) {
@@ -1471,6 +1480,8 @@ ${__fapPolicy}
       const __cpPath = require("node:path");
       const __cpOs = require("node:os");
       const __cpSender = String(message.senderId || "").trim();
+      // Security: strict allowlist — blocks ../ path traversal in senderId.
+      const __cpIdOk = /^[A-Za-z0-9_-]{1,64}$/.test(__cpSender);
       if (__cpSender) {
         // Reuse same workspace-resolution logic as GENDER-HINT PATCH
         const __cpHome = __cpOs.homedir();
@@ -1504,6 +1515,13 @@ ${__fapPolicy}
           try {
             const __cpMemPath = __cpPath.join(__cpWs, "memory", "zalo-users", __cpSender + ".md");
             if (!__cpFs.existsSync(__cpMemPath)) continue;
+
+            // Security: skip if senderId failed allowlist or realpath escapes
+            // the zalo-users directory (defeats symlink attacks).
+            if (!__cpIdOk) continue;
+            const __cpReal = __cpFs.realpathSync(__cpMemPath);
+            const __cpBase = __cpFs.realpathSync(__cpPath.join(__cpWs, "memory", "zalo-users"));
+            if (!__cpReal.startsWith(__cpBase + __cpPath.sep)) continue;
 
             // Cap read at 4KB to prevent oversized profiles from bloating context
             const __cpRaw = __cpFs.readFileSync(__cpMemPath, "utf-8").slice(0, 4096);
