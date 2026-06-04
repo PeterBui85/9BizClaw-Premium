@@ -19,7 +19,7 @@ function sanitizeFact(s) {
   let t = sanitizeMemorySummary(String(s));
   t = t.replace(/[\r\n]+/g, ' ');
   t = t.replace(/<!--[\s\S]*?-->|<!--|-->/g, ' ');
-  t = t.replace(/\[(NGƯỜI NỘI BỘ|XƯNG HÔ|DỮ LIỆU KHÁCH)[^\]]*\]?/gi, ' ');
+  t = t.replace(/\[(NGƯỜI NỘI BỘ|XƯNG HÔ|DỮ LIỆU KHÁCH|HỒ SƠ KHÁCH)[^\]]*\]?/gi, ' ');
   t = t.replace(/(^|\s)#{1,6}\s+/g, ' ');
   t = t.replace(/(^|\s)(-{3,}|\*{3,}|_{3,})(\s|$)/g, ' ');
   t = t.replace(/^\s*[>*-]\s+/g, '');
