@@ -43,6 +43,16 @@
 - [ ] Add a smoke/guard test asserting a Zalo-channel turn's available tool set EXCLUDES all `higgsfield`/MCP tools. This is the must-pass test.
 - [ ] If fork source changes, bump `MODORO_ZALO_FORK_VERSION`.
 
+## Task 4b (CRITICAL — credit conservation): cost-control engine
+**Files:** `electron/lib/higgsfield-cost.js` (new) + tests. Drives the AGENTS routing (Task 5).
+- [ ] **Cost-tier table** (economy/mid/premium) seeded from research: image — `nano_banana`(economy ~1-2cr) / `nano_banana_2` (mid) / `nano_banana_pro`+4k (premium); video — Kling 720p(economy ~7cr) / Seedance(mid ~25cr) / Sora2,Veo3.1(premium ~40-70cr). Plus param multipliers (resolution, duration, mode).
+- [ ] `pickEconomyModel(type)` → cheapest viable model + cheapest params (1k/480-720p/4s/fast). This is the DEFAULT the bot uses unless the CEO explicitly asks for premium.
+- [ ] `estimateCost(model, params)` → approx credits. `shouldConfirm(estimate, balance)` → true if estimate > threshold or balance low.
+- [ ] Pre-flight: ALWAYS call the `balance` tool before a paid gen; if `shouldConfirm`, the bot states cost + remaining + asks. Economy gens (≤ few cr) run without nagging.
+- [ ] **Learn real cost:** after a generation, read actual credits used from the job result → persist to refine the tier table (published rates are approximate).
+- [ ] Guardrails: balance floor (refuse premium below it); optional daily credit cap; never auto-pick mid/premium; log every spend (model, params, credits, balance-after).
+- [ ] Tests: `pickEconomyModel('image')==='nano_banana'`; premium never auto-selected; `shouldConfirm` true for a Sora/Veo estimate; estimate ordering economy<mid<premium.
+
 ## Task 5: AGENTS.md routing (CEO section)
 **Files:** `AGENTS.md` + `electron/lib/workspace.js` (bump CURRENT_AGENTS_MD_VERSION + header).
 - [ ] Add a Higgsfield section (CEO Telegram): intent → tool map (image/video/Soul/marketing/virality/clipper/reframe/upscale). Co-equal with free-Veo3 (offer both; Higgsfield for premium models/4K/Soul-consistency/marketing-studio). ALWAYS check `balance` before a paid generation; surface cost; never overspend; honest when not connected ("CEO chưa kết nối Higgsfield — gõ 'kết nối Higgsfield'").

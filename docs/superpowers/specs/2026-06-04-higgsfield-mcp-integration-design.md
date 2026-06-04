@@ -91,6 +91,33 @@ streamable-http`/`transport`). Decision branches the whole token-wiring design:
    - Always check `balance` before a paid generation; surface cost; never silently
      overspend.
 
+## Cost-conservation process (CRITICAL — CEO requirement)
+A Plus customer has ~1,000 credits and model cost varies **~50×**. Defaulting to a
+premium model burns their credits in a day. The bot MUST default to the cheapest
+viable model and never waste credits. Community-reported rates (NOT published in API
+— treat as approximate, refine from actual job cost at runtime):
+- Image: **nano_banana ~1-2 cr** (budget, default) · nano_banana_2 (2k) · nano_banana_pro/4k (priciest image).
+- Video: **Kling ~7 cr/720p** (cheapest, default) · Seedance ~25 cr/5s · **Sora 2 / Veo 3.1 ~40-70 cr** (avoid by default).
+- Cost multipliers within a model: resolution (1k→4k, 480p→1080p), duration (4s→15s), mode (fast→std).
+
+Process (enforced in CODE + AGENTS routing, not LLM goodwill):
+1. **ECONOMY by default, always:** image → `nano_banana`; video → the cheapest model
+   (Kling 720p), `mode:fast`, lowest resolution (1k / 480-720p), shortest duration (4-5s).
+   A maintained **cost-tier table** (economy / mid / premium) lives in code; the
+   default picker NEVER selects a mid/premium model on its own.
+2. **Pre-flight check:** before ANY paid generation, call `balance`; estimate cost
+   from the tier table × params. If the estimate exceeds a small threshold (e.g.
+   >10 cr) OR balance is low → tell the CEO the cost + ask to confirm. Cheap economy
+   gens (≤ a few cr) run without nagging.
+3. **Premium = explicit opt-in only.** Sora/Veo/Seedance, 4k, 1080p, long video, Soul
+   training → only when the CEO explicitly asks ("chất lượng cao", "Veo", "4k", "video dài").
+   Then state the cost + remaining balance + confirm before spending.
+4. **Learn real costs:** the generate job result reports actual credits used → record
+   per (model, params) to refine the tier table over time (the published rates are
+   approximate). Surface "đã dùng ~N credit, còn M" after each gen.
+5. **Guardrails (fail-loud):** if balance below a floor → warn + refuse premium; cap
+   credits/day per the CEO; never silently pick an expensive model; log every spend.
+
 ## Anti-features
 - NOT the `@higgsfield/cli` (its install downloads a GitHub-release binary that
   fails on customer proxy/AV networks — the MCP path is chosen precisely to avoid this).
