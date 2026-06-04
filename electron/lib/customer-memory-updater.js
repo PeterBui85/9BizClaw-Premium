@@ -382,7 +382,12 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
         if (substantive) {
           let facts = null;
           try {
-            facts = await extractForThread(threadId, msgs, _compactFacts(content));
+            // Use the actual peer sender_id (not the thread id) so the extractor's
+            // inbound filter matches even if scope_thread_id ever differs from sender_id
+            // (DM threads normally key on the peer id, but don't depend on it).
+            const __peerMsg = msgs.find(m => String(m.sender_id) !== String(selfId));
+            const __peerId = __peerMsg ? String(__peerMsg.sender_id) : threadId;
+            facts = await extractForThread(__peerId, msgs, _compactFacts(content));
           } catch (e) {
             console.log('[customer-memory] extractor error for', threadId, e?.message);
             extractFailed = true;
