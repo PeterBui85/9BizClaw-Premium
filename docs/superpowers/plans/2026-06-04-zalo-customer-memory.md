@@ -65,6 +65,8 @@ console.log('sanitizeFact OK');
 
 - [ ] **Step 2: Run, verify it fails** — `cd electron && node scripts/check-customer-memory-updater.js` → FAIL (module/exports missing).
 
+- [ ] **Step 3a (prerequisite): export `sanitizeMemorySummary` from conversation.js** — it is currently module-local. Add it to `module.exports` in `electron/lib/conversation.js` (verify the name first). Commit separately or with this task.
+
 - [ ] **Step 3: Implement**
 ```js
 const { sanitizeMemorySummary, withMemoryFileLock, trimZaloMemoryFile } = require('./conversation');
@@ -99,7 +101,7 @@ module.exports = { sanitizeFact };
 const empty = '---\nname: A\nmsgCount: 0\n---\n# A\n';
 let out = u.mergeFacts(empty, { summary:'thích áo xanh', preferences:['áo xanh'], decisions:['mua 2'], personality:[], tags:['vip'] });
 assert.ok(out.includes(u.FACTS_START) && out.includes(u.FACTS_END));
-assert.ok(out.indexOf(u.FACTS_START) < out.indexOf('# A') === false); // block sits after the # heading, before dated sections
+assert.ok(out.indexOf(u.FACTS_START) > out.indexOf('# A')); // block sits AFTER the # heading, before dated sections
 // dedup + accumulate, summary replaces
 let out2 = u.mergeFacts(out, { summary:'thích áo xanh navy', preferences:['ÁO XANH','quần kaki'], decisions:[], personality:[], tags:['vip'] });
 assert.strictEqual((out2.match(/áo xanh/gi)||[]).length, 1 + 1); // 'áo xanh' pref deduped (1) + appears in summary (1)
@@ -133,7 +135,9 @@ function _renderBlock(facts, prev) {
   const decisions   = mergeArr(prev.decisions,   facts.decisions);
   const tags        = mergeArr(prev.tags,        facts.tags);
   const li = (a) => a.length ? a.map(x => `- ${x}`).join('\n') : '(chưa có)';
-  return `${FACTS_START}\n## Tóm tắt\n${summary || '(chưa có)'}\n\n## Tính cách\n${li(personality)}\n\n## Sở thích\n${li(preferences)}\n\n## Quyết định\n${li(decisions)}\n\n## Tags\n${tags.length ? tags.map(t=>'#'+t.replace(/\s+/g,'-')).join(' ') : '(chưa có)'}\n${FACTS_END}`;
+  // tags rendered as a bullet list too (NOT a space-separated #a #b line — that line
+  // form round-trips wrong through grabList and corrupts tags every update).
+  return `${FACTS_START}\n## Tóm tắt\n${summary || '(chưa có)'}\n\n## Tính cách\n${li(personality)}\n\n## Sở thích\n${li(preferences)}\n\n## Quyết định\n${li(decisions)}\n\n## Tags\n${li(tags)}\n${FACTS_END}`;
 }
 
 function _parsePrev(content) {
@@ -142,7 +146,7 @@ function _parsePrev(content) {
   const block = content.slice(s, e);
   const grabList = (h) => { const m = block.match(new RegExp(`## ${h}\\n([\\s\\S]*?)(?:\\n## |$)`)); if(!m) return []; return m[1].split('\n').map(x=>x.replace(/^[-#]\s*/,'').trim()).filter(x=>x && x!=='(chưa có)'); };
   const sm = block.match(/## Tóm tắt\n([\s\S]*?)\n\n## /); 
-  return { summary: sm? sm[1].trim().replace(/^\(chưa có\)$/,'') : '', personality:grabList('Tính cách'), preferences:grabList('Sở thích'), decisions:grabList('Quyết định'), tags:grabList('Tags').map(t=>t.replace(/^#/,'').replace(/-/g,' ')) };
+  return { summary: sm? sm[1].trim().replace(/^\(chưa có\)$/,'') : '', personality:grabList('Tính cách'), preferences:grabList('Sở thích'), decisions:grabList('Quyết định'), tags:grabList('Tags') };
 }
 
 function mergeFacts(content, facts) {
@@ -158,7 +162,7 @@ function mergeFacts(content, facts) {
     if (h1 >= 0) { const nl = content.indexOf('\n', h1); const at = nl < 0 ? content.length : nl + 1; out = content.slice(0, at) + '\n' + block + '\n' + content.slice(at); }
     else out = content.trimEnd() + '\n\n' + block + '\n';
   }
-  return trimZaloMemoryFile ? out : out; // trim applied by caller after write; see Task 7
+  return out; // caller applies trimZaloMemoryFile(profilePath) after the write (Task 7)
 }
 module.exports = { sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev };
 ```
@@ -181,9 +185,14 @@ module.exports = { sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev 
 - [ ] **Step 3: Implement**
 ```js
 const { DatabaseSync } = require('node:sqlite');
-function readNewDmMessages(db, profile, selfId, cursors) {
-  // discovery: threads with any message after the global floor
-  const floor = Math.min(...Object.values(cursors).map(c=>c.lastProcessedTs), Number.MAX_SAFE_INTEGER);
+function readNewDmMessages(db, profile, selfId, cursors, migrationBaselineTs) {
+  // discovery floor = lowest of (per-thread cursors, migration baseline). Without the
+  // baseline term, an EMPTY cursors map → Math.min(MAX_SAFE_INTEGER) → 0 rows (feature
+  // dead on arrival). The baseline both prevents that AND enforces no-backfill.
+  const floor = Math.min(
+    ...Object.values(cursors).map(c => c.lastProcessedTs),
+    Number(migrationBaselineTs) || 0
+  );
   const rows = db.prepare(
     `SELECT scope_thread_id, msg_id, sender_id, sender_name, content_text, msg_type, timestamp_ms
        FROM messages
@@ -243,7 +252,7 @@ function readSelfId(db, profile) { const r = db.prepare(`SELECT user_id FROM sel
 
 **Files:** Modify `electron/lib/nine-router.js` (`call9Router` ~line 849); test in check script.
 
-- [ ] **Step 1: Failing test** — stub the HTTP layer or assert: calling `call9Router('hi', { model:'ninerouter/main' })` results in modelId `main` in the request body, while `call9Router('hi')` keeps reading `agents.defaults.model`. (If HTTP can't be stubbed cleanly, assert via a small refactor: extract `resolveModel(opts, config)` pure fn and test that.)
+- [ ] **Step 1: Failing test** — MANDATORY refactor (HTTP isn't stubbable in this harness): extract a pure `resolveModel(opts, config)` from `call9Router`'s model-resolution block and export it for test. Assert: `resolveModel({model:'ninerouter/main'}, cfg) === 'main'` (override wins, prefix stripped); `resolveModel({}, cfgWithDefault) === <agents.defaults.model stripped>` (back-compat). `call9Router` then calls `resolveModel(opts, config)`.
 
 - [ ] **Step 2: Run, verify fail.**
 
