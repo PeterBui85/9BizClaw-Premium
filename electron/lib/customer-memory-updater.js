@@ -28,6 +28,10 @@ function sanitizeFact(s) {
   t = t.replace(/(^|\s)#{1,6}\s+/g, ' ');
   t = t.replace(/(^|\s)(-{3,}|\*{3,}|_{3,})(\s|$)/g, ' ');
   t = t.replace(/^\s*[>*-]\s+/g, '');
+  // Re-neutralize role prefixes anywhere (not just line-start): sanitizeMemorySummary's
+  // ^-anchored rule misses a bullet-prefixed "- SYSTEM:" which _renderBlock then stores
+  // as a bullet line. Catch them after start, whitespace, or "(" (bracket-neutralized "[").
+  t = t.replace(/(^|[\s(])(SYSTEM|ASSISTANT|HUMAN|USER|INSTRUCTION|PROMPT|RULE)\s*:/gi, '$1[khách nói]:');
   t = t.replace(/\s+/g, ' ').trim();
   return t.slice(0, FACT_STR_MAX);
 }

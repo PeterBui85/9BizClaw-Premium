@@ -75,6 +75,16 @@ function _readResetEpoch() {
   } catch { return 0; }
 }
 
+// Parse the ISO timestamp embedded in a snapshot dir name (`<ts>-<reason>`, where
+// ts has ':' replaced by '-') back to epoch ms. Authoritative for the epoch check
+// even when a snapshot's manifest is missing/corrupt — so a double fault (reset +
+// bad manifest) can't make heal silently skip a valid post-reset snapshot.
+function _snapshotDirMs(dirName) {
+  const m = String(dirName).match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})\.(\d{3})Z/);
+  if (!m) return NaN;
+  return Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`);
+}
+
 // ── Lazy imports (avoid circular deps at require-time) ────────────────────────
 
 function _getWorkspace() {
@@ -463,7 +473,9 @@ async function healSacredOnBoot() {
         console.warn('[sacred-data] could not read snapshot manifest for', d, e?.message);
       }
       if (resetEpoch > 0) {
-        const snapMs = m && m.ts ? Date.parse(m.ts) : NaN;
+        // Prefer the dir-name timestamp (always present) over manifest.ts (may be corrupt).
+        const dirMs = _snapshotDirMs(d);
+        const snapMs = Number.isFinite(dirMs) ? dirMs : (m && m.ts ? Date.parse(m.ts) : NaN);
         if (!Number.isFinite(snapMs) || snapMs <= resetEpoch) continue; // pre-reset → never resurrect
       }
       newestDir = abs;
@@ -479,7 +491,7 @@ async function healSacredOnBoot() {
     const { restored, missing } = _healInto(ws, newestDir);
 
     if (restored > 0) {
-      const snapshotTs = snapshotManifest?.ts || snapshotDirs[0];
+      const snapshotTs = snapshotManifest?.ts || path.basename(newestDir);
       const alertText = `[Sacred Data] Phát hiện thiếu ${restored} hồ sơ — đã tự khôi phục từ backup ${snapshotTs}.`;
       console.error('[sacred-data] HEAL ALERT:', alertText, 'files:', missing);
       try { await _sendCeoAlert(alertText); } catch (e) { console.error('[sacred-data] alert failed:', e?.message); }
