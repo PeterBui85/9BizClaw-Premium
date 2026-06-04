@@ -404,6 +404,10 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
   if (_warnDay !== today) { _warnDay = today; _warnCount = 0; }
 
   const threadsMap = readNewDmMessages(db, profile, selfId, state.threads, state.migrationBaselineTs);
+  // Release the openzca SQLite handle the moment we're done reading. On Windows an
+  // open (even readonly) handle can block openzca from replacing messages.sqlite
+  // during an account switch — and surviving account switches is a core requirement.
+  try { db.close(); } catch {}
 
   let processed = 0;
   let extracted = 0;

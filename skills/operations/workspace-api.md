@@ -31,17 +31,14 @@ web_fetch http://127.0.0.1:20200/api/workspace/read?path=.learnings/LEARNINGS.md
 - `IDENTITY.md`, `schedules.json`, `custom-crons.json`
 - `logs/cron-runs.jsonl`
 
-## Ghi hồ sơ khách hàng
+## Hồ sơ khách hàng Zalo — TỰ ĐỘNG (không gọi API)
 
-```
-web_fetch "http://127.0.0.1:20200/api/customer-memory/write?senderId=<zalo-id>&content=<nội-dung>"
-```
+Hồ sơ khách Zalo (`memory/zalo-users/<id>.md`) được **hệ thống tự động cập nhật** từ
+lịch sử chat thật (`lib/customer-memory-updater.js`, quét mỗi 3 phút). **KHÔNG** cần
+và **KHÔNG** được gọi API để ghi — endpoint cũ `/api/customer-memory/write` đã bị bỏ.
 
-**Parameters:**
-- `senderId`: Zalo ID (18-19 số)
-- `content`: **⚠️ TIẾNG VIỆT CÓ DẤU** — ví dụ: "khách hỏi về giao hàng nhanh", **KHÔNG phải** "khach hoi ve giao hang nhanh". Tối đa 2000 bytes.
-
-**Kết quả:** Chỉ ghi vào `memory/zalo-users/<senderId>.md` — append-only (không ghi đè). CEO được notify qua Telegram sau mỗi lần ghi. Audit log: `logs/customer-memory-writes.jsonl`.
+Nếu CEO muốn **dặn thêm** một thông tin về khách (tên, sở thích cụ thể), dùng endpoint
+ghi rule bên dưới — hệ thống tự định tuyến "khách + tên/id" vào `memory/zalo-users/<id>.md`.
 
 ## Ghi rule từ CEO (CHÍNH)
 

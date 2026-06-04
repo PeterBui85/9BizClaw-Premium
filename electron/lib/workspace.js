@@ -333,17 +333,6 @@ function readFbConfig() {
   } catch { return null; }
 }
 
-function _encryptToken(plaintext) {
-  try {
-    const { safeStorage } = require('electron');
-    if (safeStorage.isEncryptionAvailable()) {
-      return safeStorage.encryptString(plaintext).toString('base64');
-    }
-    console.warn('[fb-config] safeStorage unavailable — storing token in plaintext');
-  } catch {}
-  return plaintext;
-}
-
 function writeFbConfig(cfg) {
   // Deep-clone to avoid mutating the caller's object
   const toWrite = JSON.parse(JSON.stringify(cfg));
