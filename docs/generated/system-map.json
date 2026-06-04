@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 149,
+    "apiRoutes": 151,
     "ipcHandlers": 212,
     "preloadBridges": 205,
     "dashboardPages": 18,
@@ -1315,6 +1315,24 @@
     },
     {
       "path": "/api/zalo/groups",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/zalo/history",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/zalo/history/accounts",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -3355,7 +3373,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 188782
+      "bytes": 190682
     },
     {
       "path": "electron/lib/cron.js",
@@ -3363,7 +3381,7 @@
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 23506
+      "bytes": 23992
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -3411,7 +3429,7 @@
     },
     {
       "path": "electron/lib/sacred-data.js",
-      "bytes": 20445
+      "bytes": 20542
     },
     {
       "path": "electron/lib/skill-manager.js",
