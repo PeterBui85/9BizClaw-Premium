@@ -256,8 +256,294 @@ async function extractForThread(senderId, newMsgs, compactFacts) {
   };
 }
 
+// --- Task 6 helpers ---
+
+// Extract the current CUSTOMER-FACTS block text (or '') to feed as context.
+// Capped at ~1KB so extraction prompt stays tight.
+function _compactFacts(content) {
+  const s = content.indexOf(FACTS_START), e = content.indexOf(FACTS_END);
+  if (s < 0 || e < s) return '';
+  const block = content.slice(s, e + FACTS_END.length);
+  return block.slice(0, 1024);
+}
+
+// Update `lastSeen:` and `msgCount:` inside the `---` frontmatter block.
+// Pure function — does not read/write files.
+// msgCount is inbound-only; missing = treat as 0.
+function _bumpFrontmatter(content, { lastSeen, addMsg }) {
+  // Locate frontmatter: content starts with '---\n' ... '---\n'
+  const open = content.indexOf('---');
+  if (open < 0) return content;
+  const close = content.indexOf('\n---', open + 3);
+  if (close < 0) return content;
+
+  let fm = content.slice(open, close + 4); // includes trailing '---'
+  const rest = content.slice(close + 4);
+
+  // Update or insert lastSeen
+  if (/^lastSeen:/m.test(fm)) {
+    fm = fm.replace(/^(lastSeen:\s*).*$/m, `$1${lastSeen}`);
+  } else {
+    // Insert before closing ---
+    fm = fm.replace(/(\n---\s*)$/, `\nlastSeen: ${lastSeen}$1`);
+  }
+
+  // Update or insert msgCount
+  if (/^msgCount:/m.test(fm)) {
+    fm = fm.replace(/^(msgCount:\s*)(\d+)(.*)$/m, (_, pre, n, suf) => {
+      return pre + (parseInt(n, 10) + addMsg) + suf;
+    });
+  } else {
+    fm = fm.replace(/(\n---\s*)$/, `\nmsgCount: ${addMsg}$1`);
+  }
+
+  return fm + rest;
+}
+
+// Return today's date string YYYY-MM-DD for a given epoch ms.
+function _today(now) {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+// In-memory warn counter (reset on day change — acceptable for a soft warn).
+let _warnDay = '';
+let _warnCount = 0;
+
+// --- tick() ---
+
+// One poll cycle. Exported for tests and a future "update now" button.
+// Returns { processed, extracted } or { skipped: reason }.
+async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) {
+  const fs = require('fs');
+  const path = require('path');
+  const { writeJsonAtomic } = require('./util');
+  const { getWorkspace } = require('./workspace');
+  const { withMemoryFileLock, trimZaloMemoryFile } = require('./conversation');
+
+  const ws = wsOverride || getWorkspace();
+  if (!ws) return { skipped: 'no-ws' };
+
+  const db = openDb(profile);
+  if (!db) {
+    console.log('[customer-memory] tick: no db — skipped');
+    return { skipped: 'no-db' };
+  }
+
+  const selfId = readSelfId(db, profile);
+
+  // --- State load ---
+  const statePath = path.join(ws, 'zalo-profile-sync-state.json');
+  let state;
+  try {
+    state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+  } catch {
+    state = { migrationBaselineTs: now, threads: {}, extractionDay: _today(now), extractionCount: 0 };
+  }
+  if (!state.threads) state.threads = {};
+
+  // Day-rollover: reset in-memory warn counter and state fields at start of tick
+  const today = _today(now);
+  if (state.extractionDay !== today) {
+    state.extractionDay = today;
+    state.extractionCount = 0;
+  }
+  if (_warnDay !== today) { _warnDay = today; _warnCount = 0; }
+
+  const threadsMap = readNewDmMessages(db, profile, selfId, state.threads, state.migrationBaselineTs);
+
+  let processed = 0;
+  let extracted = 0;
+
+  for (const [threadId, { msgs, inboundN, newCursor, oldestTs }] of threadsMap) {
+    const newestTs = msgs.reduce((mx, m) => Math.max(mx, m.timestamp_ms), 0);
+
+    // Settle check: skip if still mid-burst AND not stale enough to force
+    const settled = (now - newestTs > SETTLE_MS) || (now - oldestTs > MAX_DEFER_MS);
+    if (!settled) continue;
+
+    // Profile must already exist (seeding owns creation)
+    const profilePath = path.join(ws, 'memory', 'zalo-users', `${threadId}.md`); // SACRED-OK
+    if (!fs.existsSync(profilePath)) continue;
+
+    const substantive = msgs.some(
+      m => String(m.sender_id) !== String(selfId) && _isSubstantive(m)
+    );
+
+    // extractFailed: true when we attempted extraction but got null back (LLM error/bad JSON).
+    // WHY: null from extractForThread when called with substantive input = failure → retry.
+    // substantive=false → skip extraction legitimately → cursor advances even if facts=null.
+    let extractFailed = false;
+    try {
+      await withMemoryFileLock(profilePath, async () => {
+        // SACRED-OK: writing customer profile under file lock (append-only merge)
+        let content = '';
+        try { content = fs.readFileSync(profilePath, 'utf-8'); } catch {} // SACRED-OK
+
+        if (substantive) {
+          let facts = null;
+          try {
+            facts = await extractForThread(threadId, msgs, _compactFacts(content));
+          } catch (e) {
+            console.log('[customer-memory] extractor error for', threadId, e?.message);
+            extractFailed = true;
+          }
+          if (!extractFailed && facts === null) {
+            // extractForThread returned null without throwing: LLM error / bad JSON.
+            // Treat as failure so cursor is not advanced and we retry next tick.
+            console.log('[customer-memory] extractor returned null for', threadId, '— will retry');
+            extractFailed = true;
+          }
+          if (facts && !extractFailed) {
+            content = mergeFacts(content, facts);
+            // Audit: record the sacred write
+            try {
+              require('./sacred-data').appendSacredAudit({ // SACRED-OK
+                type: 'customer-memory', senderId: threadId, extracted: true,
+              });
+            } catch {}
+            extracted++;
+            state.extractionCount++;
+          }
+        }
+
+        if (!extractFailed) {
+          content = _bumpFrontmatter(content, {
+            lastSeen: new Date(now).toISOString(),
+            addMsg: inboundN,
+          });
+          // SACRED-OK: writing updated profile content back under withMemoryFileLock
+          fs.writeFileSync(profilePath, content, 'utf-8'); // SACRED-OK
+          // Trim oversized profiles in-place (respects the FACTS block — trim only dated sections)
+          try { trimZaloMemoryFile(profilePath, PROFILE_MAX_BYTES); } catch {}
+        }
+      });
+    } catch (e) {
+      console.log('[customer-memory] lock error for', threadId, e?.message);
+      extractFailed = true;
+    }
+
+    // Only advance cursor if pass succeeded (extractor error = retry next tick at-least-once)
+    if (!extractFailed) {
+      state.threads[threadId] = newCursor;
+      processed++;
+    }
+  }
+
+  // Soft warn (once per day, log loud)
+  if (state.extractionCount > WARN_EXTRACTIONS_PER_DAY && _warnCount === 0) {
+    _warnCount++;
+    console.warn('[customer-memory] WARN: extraction count', state.extractionCount,
+      'exceeds WARN_EXTRACTIONS_PER_DAY =', WARN_EXTRACTIONS_PER_DAY, '— check for runaway ticks');
+  }
+
+  // Persist state (atomic)
+  try {
+    writeJsonAtomic(statePath, state);
+  } catch (e) {
+    console.error('[customer-memory] state persist failed:', e?.message);
+  }
+
+  return { processed, extracted };
+}
+
+// --- Task 7: init() ---
+
+// Guard against double-init (e.g. hot-reload in dev mode)
+let _initDone = false;
+
+// Pure helper — testable without spawning anything.
+// Returns true when the db-status JSON indicates the DB is not yet enabled.
+function _needsEnable(statusJson) {
+  return !!(statusJson && statusJson.enabled === false);
+}
+
+// Called once at boot. Spawns openzca db enable if needed, creates state file
+// if missing (no-backfill guard), registers the 3-min poll interval.
+async function init({ profile = 'default', wsOverride } = {}) {
+  if (_initDone) return;
+  _initDone = true;
+
+  const fs = require('fs');
+  const path = require('path');
+  const { spawnSync } = require('child_process');
+  const { getWorkspace } = require('./workspace');
+  const { writeJsonAtomic } = require('./util');
+  const { findNodeBin } = require('./boot');
+
+  // Sample baseline BEFORE any spawn — sub-ms race: a message landing between
+  // baseline sample and the db-enable spawn completing would be missed, but
+  // forward-only capture accepts this tiny window (well under 1 second).
+  const baseline = Date.now();
+
+  const ws = wsOverride || getWorkspace();
+
+  // --- db enable (idempotent) ---
+  let openzcaCliJs = null;
+  try {
+    const { findOpenzcaCliJs } = require('./zalo-plugin');
+    openzcaCliJs = findOpenzcaCliJs();
+  } catch {}
+
+  const nodeBin = findNodeBin();
+
+  if (nodeBin && openzcaCliJs) {
+    try {
+      const statusResult = spawnSync(
+        nodeBin,
+        [openzcaCliJs, '--profile', profile, 'db', 'status'],
+        { shell: false, windowsHide: true, encoding: 'utf-8', timeout: 10000 }
+      );
+      let statusJson = null;
+      try { statusJson = JSON.parse(statusResult.stdout); } catch {}
+
+      if (_needsEnable(statusJson)) {
+        console.log('[customer-memory] db not enabled — running db enable');
+        spawnSync(
+          nodeBin,
+          [openzcaCliJs, '--profile', profile, 'db', 'enable'],
+          { shell: false, windowsHide: true, timeout: 15000 }
+        );
+        console.log('[customer-memory] db enable complete');
+      } else {
+        console.log('[customer-memory] db already enabled — no spawn needed');
+      }
+    } catch (e) {
+      console.warn('[customer-memory] db status/enable error (continuing):', e?.message);
+    }
+  } else {
+    console.warn('[customer-memory] init: openzca CLI or node not found — skipping db enable');
+  }
+
+  // --- Ensure state file (no-backfill guard) ---
+  if (ws) {
+    const statePath = path.join(ws, 'zalo-profile-sync-state.json');
+    if (!fs.existsSync(statePath)) {
+      try {
+        writeJsonAtomic(statePath, {
+          migrationBaselineTs: baseline,
+          threads: {},
+          extractionDay: _today(baseline),
+          extractionCount: 0,
+        });
+        console.log('[customer-memory] created state file with baseline', baseline);
+      } catch (e) {
+        console.error('[customer-memory] state file create failed:', e?.message);
+      }
+    }
+  }
+
+  // Register 3-min poll interval
+  setInterval(() => {
+    tick({ profile }).catch(e => console.error('[customer-memory] tick error', e?.message));
+  }, POLL_INTERVAL_MS);
+
+  console.log('[customer-memory] init complete, polling every', POLL_INTERVAL_MS / 1000, 's');
+}
+
 module.exports = {
   sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev,
   readNewDmMessages, openDb, readSelfId,
   _isSubstantive, _buildExtractPrompt, extractForThread, _setCall9,
+  _compactFacts, _bumpFrontmatter, _needsEnable,
+  tick, init,
 };
