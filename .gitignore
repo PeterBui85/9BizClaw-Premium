@@ -67,6 +67,7 @@ Thumbs.db
 # Build-time secrets + obfuscation backup (never commit)
 electron/.update-secrets.json
 electron/.obfuscate-backup/
+rag-secret.txt
 
 # Apple signing certs — NEVER commit (secrets live in GitHub Secrets only)
 mac/
