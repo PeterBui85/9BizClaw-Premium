@@ -43,6 +43,7 @@ const ALLOWLIST = new Set([
   'backup.js',                   // manifest backups
   'ceo-memory.js',               // sole regeneration engine for CEO-MEMORY.md
   'zalo-plugin.js',              // seeds zalo-users/ + zalo-groups/ on first sync
+  'zalo-history-archive.js',     // append-only raw ground-truth archive writer
 ]);
 
 // Lines of context window (current + N following) to inspect for sacred segments

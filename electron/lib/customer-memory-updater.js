@@ -369,6 +369,16 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
   let extracted = 0;
 
   for (const [threadId, { msgs, inboundN, newCursor, oldestTs }] of threadsMap) {
+    // Ground-truth archive: append ALL new msgs (even trivial ones) for this
+    // thread BEFORE/independent of the skip-gate, tagged with the live selfId so
+    // an account switch produces a separate per-account record. Archive failure
+    // must never break extraction.
+    try {
+      require('./zalo-history-archive').appendMessages(ws, selfId, threadId, msgs);
+    } catch (e) {
+      console.error('[customer-memory] archive append failed for', threadId, e?.message);
+    }
+
     const newestTs = msgs.reduce((mx, m) => Math.max(mx, m.timestamp_ms), 0);
 
     // Settle check: skip if still mid-burst AND not stale enough to force

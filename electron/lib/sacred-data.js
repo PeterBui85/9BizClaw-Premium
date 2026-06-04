@@ -17,6 +17,7 @@ const SACRED_DIRS = [
   'memory/zalo-users', 'memory/zalo-groups',
   'memory/whatsapp-users', 'memory/whatsapp-groups',
   'user-skills',
+  'zalo-history', // append-only raw ground-truth archive (account-namespaced)
 ];
 
 const SACRED_FILES = [
@@ -32,6 +33,7 @@ const SACRED_SEGMENTS = [
   'zalo-users', 'zalo-groups',
   'whatsapp-users', 'whatsapp-groups',
   'user-skills',
+  'zalo-history',
   'CEO-MEMORY.md', 'so-sach.md', 'cong-no.md',
 ];
 

@@ -3045,6 +3045,48 @@ function startCronApi() {
       const pages = fbPub.listPages();
       return jsonResp(res, 200, { pages });
 
+    } else if (urlPath === '/api/zalo/history/accounts') {
+      // List owner accounts present in the ground-truth archive.
+      const archive = require('./zalo-history-archive');
+      const ws = getWorkspace();
+      const accounts = ws ? archive.listAccounts(ws) : [];
+      return jsonResp(res, 200, { count: accounts.length, accounts });
+
+    } else if (urlPath === '/api/zalo/history') {
+      // Raw ground-truth transcript for one customer under one account (CEO-gated).
+      // Per-account by default; never merges accounts.
+      const archive = require('./zalo-history-archive');
+      const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+      const ws = getWorkspace();
+      if (!ws) return jsonResp(res, 500, { error: 'no workspace' });
+
+      const senderId = String(params.senderId || params.customerId || '').trim();
+      if (!ID_RE.test(senderId)) {
+        return jsonResp(res, 400, { error: 'senderId required (1-64 chars, [A-Za-z0-9_-])' });
+      }
+
+      // account: explicit param wins; else current self id from openzca DB.
+      let account = String(params.account || '').trim();
+      if (!account) {
+        try {
+          const cmu = require('./customer-memory-updater');
+          const db = cmu.openDb('default');
+          if (db) {
+            account = cmu.readSelfId(db, 'default');
+            try { db.close(); } catch {}
+          }
+        } catch (e) { console.error('[cron-api] /api/zalo/history selfId read failed:', e?.message); }
+      }
+      if (!ID_RE.test(account)) {
+        return jsonResp(res, 400, { error: 'no current Zalo account; pass &account=<ownerAccountId>' });
+      }
+
+      let limit = parseInt(params.limit, 10);
+      if (!Number.isFinite(limit) || limit <= 0) limit = 200;
+
+      const messages = archive.readHistory(ws, senderId, { account, limit });
+      return jsonResp(res, 200, { account, senderId, count: messages.length, messages });
+
     } else if (urlPath === '/api/zalo/ready') {
       try {
         const result = await probeZaloReady();

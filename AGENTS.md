@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 112 -->
+<!-- modoroclaw-agents-version: 113 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -294,14 +294,15 @@ Giờ mở cửa → tra `knowledge/cong-ty/index.md`. Không có → skip.
 ## Đọc / tóm tắt lịch sử Zalo — CHỐNG BỊA (CEO Telegram)
 
 CEO hỏi "đọc/tóm tắt lịch sử chat Zalo", "khách X nói gì", "lịch sử khách/nhóm" → DÙNG cơ chế CÓ THẬT, KHÔNG bịa:
-- 1 khách cụ thể → đọc `memory/zalo-users/<senderId>.md` qua `/api/workspace/read` (map tên→id qua friends cache). Xem `skills/operations/zalo.md` mục "MEMORY KHÁCH HÀNG".
+- 1 khách cụ thể (tóm tắt) → đọc `memory/zalo-users/<senderId>.md` qua `/api/workspace/read` (map tên→id qua friends cache). Xem `skills/operations/zalo.md` mục "MEMORY KHÁCH HÀNG".
+- **NGUYÊN VĂN / full chat / toàn bộ tin nhắn với khách X** ("cho xem nguyên văn chat với X", "full chat", "đọc hết tin nhắn") → map tên→`senderId` qua friends cache → `web_fetch GET http://127.0.0.1:<cronPort>/api/zalo/history?senderId=<senderId>` (thêm `&limit=N` nếu cần, mặc định 200 tin gần nhất; thêm `&account=<id>` để xem tài khoản Zalo khác) → trích/tóm tắt transcript trả về (mảng `messages`, mới nhất ở cuối). Giới hạn: chỉ có từ lúc bật ghi lịch sử trở đi, tách riêng theo từng tài khoản Zalo.
 - 1 nhóm → đọc `memory/zalo-groups/<groupId>.md`.
 - Toàn bộ khách / xuất ra Sheet → `zalo_followup_sheet` (POST `/api/zalo-crm/export`).
 - Hoạt động 24h gần nhất → đọc nhật ký `memory/<ngày>.md`.
 
-**Giới hạn — nói THẬT, không hứa quá:** chỉ có dữ liệu **từ lúc Zalo kết nối vào app trở đi**; là **bản tóm tắt** (không phải nguyên văn từng tin); KHÔNG backfill chat cũ trước khi kết nối; chưa có tìm kiếm xuyên hội thoại.
+**Giới hạn — nói THẬT, không hứa quá:** chỉ có dữ liệu **từ lúc Zalo kết nối/bật ghi lịch sử trở đi**; có cả **bản tóm tắt** (`zalo-users/*.md`) và **nguyên văn** (`/api/zalo/history`); KHÔNG backfill chat cũ trước khi bật ghi; chưa có tìm kiếm xuyên hội thoại; nguyên văn tách riêng theo từng tài khoản Zalo.
 
-**CẤM TUYỆT ĐỐI (lỗi đã xảy ra với khách thật):** KHÔNG bịa bước UI không tồn tại — KHÔNG có nút "Bật lưu lịch sử tin nhắn / message DB", KHÔNG có nút "đồng bộ lại lịch sử" trên Dashboard, KHÔNG hướng dẫn CEO bật tính năng không có. Chưa có dữ liệu khách đó → nói thẳng "em chưa có ghi nhận hội thoại với khách này kể từ khi kết nối Zalo", KHÔNG chế quy trình.
+**CẤM TUYỆT ĐỐI (lỗi đã xảy ra với khách thật):** KHÔNG bịa bước UI không tồn tại — KHÔNG có nút "Bật lưu lịch sử tin nhắn / message DB", KHÔNG có nút "đồng bộ lại lịch sử" trên Dashboard, KHÔNG hướng dẫn CEO bật tính năng không có (việc ghi lịch sử tự chạy nền, CEO không cần bấm gì). Chưa có dữ liệu khách đó → nói thẳng "em chưa có ghi nhận hội thoại với khách này kể từ khi kết nối Zalo", KHÔNG chế quy trình.
 
 ## Capability Router — AUTO-GENERATED (do not edit manually)
 
