@@ -1088,11 +1088,19 @@ async function main() {
           // Verify tar integrity hasn't been tampered with since meta was written
           const actualSha = sha256File(tarPath);
           if (actualSha === meta.sha256) {
-            log('vendor-bundle.tar already built for', NODE_VERSION, '— skipping rebuild');
-            log('  file:', tarPath);
-            log('  file_count:', meta.file_count);
-            log('  archive_bytes:', (meta.archive_bytes / 1024 / 1024).toFixed(1), 'MB');
-            return;
+            // The skip above only validated the TAR. But package.json's extraResources
+            // ships gog from the on-disk vendor/gog dir — if that dir was cleaned while
+            // the tar survived, skipping here would silently package an installer with NO
+            // gog (dead Google Workspace for proxy/AV users). Only skip if it's on disk.
+            const onDiskGog = path.join(ROOT, expectedGogEntry);
+            if (fs.existsSync(onDiskGog)) {
+              log('vendor-bundle.tar already built for', NODE_VERSION, '— skipping rebuild');
+              log('  file:', tarPath);
+              log('  file_count:', meta.file_count);
+              log('  archive_bytes:', (meta.archive_bytes / 1024 / 1024).toFixed(1), 'MB');
+              return;
+            }
+            warn('vendor-bundle.tar present but', expectedGogEntry, 'missing on disk — rebuilding to repopulate it for extraResources');
           } else {
             warn('vendor-bundle.tar SHA mismatch vs meta — rebuilding');
           }

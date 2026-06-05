@@ -1969,9 +1969,20 @@ async function ensureGogCli(onProgress) {
 
 function getBundledGogPath() {
   if (!app || !app.isPackaged) return null;
-  const isWin = process.platform === 'win32';
+  const binName = process.platform === 'win32' ? 'gog.exe' : 'gog';
+  // Shipped inside the installer at resources/vendor/gog (extraResources) — always
+  // present, no network. ensureGogCli() copies it into userData/vendor/gog on first
+  // launch so Google Workspace works fully offline / behind a proxy or HTTPS-scanning
+  // antivirus that blocks the GitHub download (the UND_ERR_SOCKET failure mode).
   try {
-    const vendorGog = path.join(app.getPath('userData'), 'vendor', 'gog', isWin ? 'gog.exe' : 'gog');
+    if (process.resourcesPath) {
+      const resGog = path.join(process.resourcesPath, 'vendor', 'gog', binName);
+      if (fs.existsSync(resGog)) return resGog;
+    }
+  } catch {}
+  // Fallback: a copy already present in userData (e.g. a prior successful download).
+  try {
+    const vendorGog = path.join(app.getPath('userData'), 'vendor', 'gog', binName);
     if (fs.existsSync(vendorGog)) return vendorGog;
   } catch {}
   return null;
