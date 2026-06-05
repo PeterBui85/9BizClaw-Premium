@@ -66,8 +66,11 @@ Anh muốn em nhắc checklist này mỗi sáng [giờ] không?
 - "thêm mục X" / "bỏ mục Y" -> cập nhật ngay
 - "lưu" -> ghi qua workspace API:
   ```
-  web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"knowledge/cong-ty/files/checklist-[loai].md\",\"content\":\"<nội dung>\"}"
+  # web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+  # JSON: {"path":"knowledge/cong-ty/files/checklist-[loai].md","content":"<nội dung>"}
+  exec: node skills/operations/local-api.js /api/workspace/append <B64>
   ```
+  > Lưu ý: /api/workspace/append chỉ ghi được LEARNINGS.md, cong-no.md, so-sach.md — KHÔNG ghi vào knowledge/. Với checklist, lưu bằng cách khác (vd báo CEO hoặc dùng route phù hợp).
 - CEO đồng ý nhắc -> tạo cron qua Cron API. CHỈ tạo khi CEO XÁC NHẬN
 
 ## Quy tắc

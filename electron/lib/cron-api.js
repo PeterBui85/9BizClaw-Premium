@@ -3151,6 +3151,14 @@ function startCronApi() {
       });
       return res.end();
 
+    } else if (req.method !== 'POST' && ['/api/user-skills/create','/api/user-skills/update','/api/user-skills/delete','/api/user-skills/toggle','/api/user-skills/restore','/api/user-skills/check-conflict'].includes(urlPath)) {
+      // Agent DX: these routes are POST-only. A GET (typically the LLM "probing"
+      // whether a route exists before using it) used to fall through to the generic
+      // 404 {"error":"not found"} — which the bot then relayed to the CEO as
+      // "route tạo skill không tồn tại". Return an actionable 405 instead so the
+      // agent retries with POST rather than giving up. See docs/customer-reports.md.
+      return jsonResp(res, 405, { error: 'method_not_allowed', message: `Route ${urlPath} chỉ nhận POST với JSON body — web_fetch (GET) không gửi được body. Dùng script local-api.js (xem skills/operations/skill-builder.md).` });
+
     } else if (urlPath === '/api/user-skills/list' && (req.method === 'GET' || req.method === 'POST')) {
       // List is read-only — allowed from any channel (so bot can introspect on Zalo turn).
       try {

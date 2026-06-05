@@ -352,6 +352,17 @@ web_fetch http://127.0.0.1:20200/api/fb/schedule/list
 web_fetch "http://127.0.0.1:20200/api/fb/schedule/delete?id=<scheduleId>"
 ```
 
+### BÁO CÁO TRẠNG THÁI CHIẾN DỊCH (nhiều bài) — BẮT BUỘC đối chiếu 2 nguồn
+
+`/api/fb/schedule/list` CHỈ trả về bài **CHƯA đăng** (bài one-time tự xoá khỏi lịch ngay sau khi đăng) — KHÔNG bao giờ thấy bài đã đăng ở đây. Nếu chỉ đọc `/list` sẽ báo THIẾU (vd chiến dịch 14 bài mà chỉ thấy 5 bài chờ).
+
+Khi CEO hỏi "đã đăng bao nhiêu / còn bao nhiêu / chiến dịch N bài tới đâu rồi", PHẢI đối chiếu **2 nguồn** rồi mới chốt số:
+```
+web_fetch http://127.0.0.1:20200/api/fb/schedule/list                 # bài CHỜ đăng (pending)
+web_fetch "http://127.0.0.1:20200/api/fb/schedule/history?limit=50"   # bài ĐÃ đăng/skip/lỗi (ledger bền)
+```
+Cách báo: `Tổng CEO nhắc = X` → đối chiếu: `đã đăng = số status:"published" trong history`, `chờ đăng = số trong list`, `lỗi/bỏ qua = status skipped/rejected`. Nếu `đã đăng + chờ đăng < X` → nói thẳng "còn (X − …) bài chưa thấy trong cả lịch chờ lẫn lịch sử, em cần kiểm tra thêm" — KHÔNG suy đoán đã đăng. TUYỆT ĐỐI không báo số chỉ từ 1 nguồn (`/list`).
+
 ### API duyệt thủ công (nếu cần)
 
 ```

@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 151,
+    "apiRoutes": 152,
     "ipcHandlers": 212,
     "preloadBridges": 205,
     "dashboardPages": 18,
@@ -217,6 +217,15 @@
     },
     {
       "path": "/api/fb/schedule/edit-caption",
+      "sources": [
+        "electron/lib/fb-schedule.js"
+      ],
+      "kinds": [
+        "fb-schedule-api"
+      ]
+    },
+    {
+      "path": "/api/fb/schedule/history",
       "sources": [
         "electron/lib/fb-schedule.js"
       ],
@@ -3365,7 +3374,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 66107
+      "bytes": 66842
     },
     {
       "path": "electron/lib/conversation.js",
@@ -3373,7 +3382,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 190682
+      "bytes": 191578
     },
     {
       "path": "electron/lib/cron.js",
@@ -3393,7 +3402,7 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 75920
+      "bytes": 79279
     },
     {
       "path": "electron/lib/gateway.js",
@@ -3425,7 +3434,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 86708
+      "bytes": 87327
     },
     {
       "path": "electron/lib/sacred-data.js",

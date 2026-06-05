@@ -43,12 +43,16 @@ metadata:
 
 **Ghi đơn hàng khách:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Chị Mai\",\"items\":[{\"name\":\"iPhone 15 Pro 256GB\",\"qty\":1,\"price\":25900000},{\"name\":\"Ốp lưng MagSafe\",\"qty\":1,\"price\":350000}],\"note\":\"Ship COD Q7\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"customer":"Chị Mai","items":[{"name":"iPhone 15 Pro 256GB","qty":1,"price":25900000},{"name":"Ốp lưng MagSafe","qty":1,"price":350000}],"note":"Ship COD Q7"}
+exec: node skills/operations/local-api.js /api/order/create eyJjdXN0b21lciI6IkNo4buLIE1haSIsIml0ZW1zIjpbeyJuYW1lIjoiaVBob25lIDE1IFBybyAyNTZHQiIsInF0eSI6MSwicHJpY2UiOjI1OTAwMDAwfSx7Im5hbWUiOiLhu5BwIGzGsG5nIE1hZ1NhZmUiLCJxdHkiOjEsInByaWNlIjozNTAwMDB9XSwibm90ZSI6IlNoaXAgQ09EIFE3In0=
 ```
 
 **Xuất kho:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"IP15P-256\",\"qty\":1,\"type\":\"out\",\"note\":\"Bán cho Chị Mai\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"sku":"IP15P-256","qty":1,"type":"out","note":"Bán cho Chị Mai"}
+exec: node skills/operations/local-api.js /api/inventory/adjust eyJza3UiOiJJUDE1UC0yNTYiLCJxdHkiOjEsInR5cGUiOiJvdXQiLCJub3RlIjoiQsOhbiBjaG8gQ2jhu4sgTWFpIn0=
 ```
 
 **Kiểm tra tồn kho toàn bộ:**

@@ -42,12 +42,16 @@ metadata:
 
 **Ghi đơn đăng ký khóa học:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Phụ huynh Nguyễn Văn A\",\"items\":[{\"name\":\"Khóa IELTS 3 tháng\",\"qty\":1,\"price\":8000000}],\"note\":\"Học viên: Nguyễn B, bắt đầu 01/06\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"customer":"Phụ huynh Nguyễn Văn A","items":[{"name":"Khóa IELTS 3 tháng","qty":1,"price":8000000}],"note":"Học viên: Nguyễn B, bắt đầu 01/06"}
+exec: node skills/operations/local-api.js /api/order/create eyJjdXN0b21lciI6IlBo4bulIGh1eW5oIE5ndXnhu4VuIFbEg24gQSIsIml0ZW1zIjpbeyJuYW1lIjoiS2jDs2EgSUVMVFMgMyB0aMOhbmciLCJxdHkiOjEsInByaWNlIjo4MDAwMDAwfV0sIm5vdGUiOiJI4buNYyB2acOqbjogTmd1eeG7hW4gQiwgYuG6r3QgxJHhuqd1IDAxLzA2In0=
 ```
 
 **Ghi nghỉ phép giáo viên:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Cô Hương\",\"type\":\"sick\",\"from\":\"2026-05-20\",\"to\":\"2026-05-20\",\"note\":\"Nghỉ ốm, cần tìm giáo viên thay\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"employee":"Cô Hương","type":"sick","from":"2026-05-20","to":"2026-05-20","note":"Nghỉ ốm, cần tìm giáo viên thay"}
+exec: node skills/operations/local-api.js /api/leave/request eyJlbXBsb3llZSI6IkPDtCBIxrDGoW5nIiwidHlwZSI6InNpY2siLCJmcm9tIjoiMjAyNi0wNS0yMCIsInRvIjoiMjAyNi0wNS0yMCIsIm5vdGUiOiJOZ2jhu4kg4buRbSwgY+G6p24gdMOsbSBnacOhbyB2acOqbiB0aGF5In0=
 ```
 
 **Xem tổng thu học phí tháng:**

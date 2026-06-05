@@ -43,7 +43,9 @@ metadata:
 
 **Ghi đơn hàng SaaS mới:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty ABC\",\"items\":[{\"name\":\"Gói Enterprise 12 tháng\",\"qty\":1,\"price\":120000000}],\"note\":\"Hợp đồng ký 20/05\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"customer":"Công ty ABC","items":[{"name":"Gói Enterprise 12 tháng","qty":1,"price":120000000}],"note":"Hợp đồng ký 20/05"}
+exec: node skills/operations/local-api.js /api/order/create <B64>
 ```
 
 **Xem tổng doanh thu tháng:**
@@ -53,5 +55,7 @@ web_fetch http://127.0.0.1:20200/api/order/summary?from=2026-05-01&to=2026-05-31
 
 **Ghi nghỉ phép dev:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Minh\",\"type\":\"annual\",\"from\":\"2026-05-26\",\"to\":\"2026-05-30\",\"note\":\"Nghỉ phép năm\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"employee":"Minh","type":"annual","from":"2026-05-26","to":"2026-05-30","note":"Nghỉ phép năm"}
+exec: node skills/operations/local-api.js /api/leave/request <B64>
 ```

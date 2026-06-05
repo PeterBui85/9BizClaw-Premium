@@ -14,7 +14,9 @@ CHỈ CEO Telegram. Khách Zalo -> "Dạ đây là thông tin nội bộ ạ."
 CEO nói "báo cáo hôm nay" -> gọi NGAY:
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/report/daily" method=POST body="{\"date\":\"2026-05-19\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"date":"2026-05-19"}
+exec: node skills/operations/local-api.js /api/report/daily <B64>
 ```
 
 Response chứa: `revenue` (income/expense/net), `customers` (newToday/pendingFollowUp), `crons` (fired/failed), `highlights`, `sources`.

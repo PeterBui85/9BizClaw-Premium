@@ -197,6 +197,10 @@
       {
         "from": "dist/modoro-zalo",
         "to": "modoro-zalo"
+      },
+      {
+        "from": "vendor/gog",
+        "to": "vendor/gog"
       }
     ],
     "asar": true,

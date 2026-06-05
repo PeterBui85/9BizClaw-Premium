@@ -24,6 +24,12 @@ function setOnScheduleChanged(cb) { _onScheduleChanged = cb; }
 // ─── Constants ─────────────────────────────────────────────────────
 const SCHEDULES_FILE = 'fb-scheduled-posts.json';
 const PENDING_DIR = 'fb-pending';
+// Append-only publish ledger. One-time schedules auto-delete after firing, so the
+// schedule list only ever shows NOT-YET-RUN posts — a multi-post campaign's already
+// published items vanish from it. This ledger is the durable, enumerable record the
+// bot reconciles against ("campaign of 14 = N published + M pending") so it can never
+// again under-count or say "can't tell if it posted". See /api/fb/schedule/history.
+const HISTORY_FILE = 'fb-post-history.jsonl';
 const DEFAULT_LEAD_MINUTES = 60;
 const PENDING_TTL_DAYS = 7;
 const _generateInFlight = new Set();
@@ -48,6 +54,60 @@ function getPendingDir() {
 
 function pendingFilename(scheduleId, dateStr) {
   return `${scheduleId}_${dateStr}.json`;
+}
+
+function getFbHistoryPath() {
+  const ws = getWorkspace();
+  if (!ws) return null;
+  return path.join(ws, HISTORY_FILE);
+}
+
+/**
+ * Append one terminal-outcome record to the publish ledger. Called once per post
+ * (from publishPending, after the publish impl runs — covers both the cron path and
+ * the immediate "fb ok" path). Fire-and-forget: never throws into the publish flow.
+ */
+function appendFbPostHistory(pending, schedule) {
+  try {
+    const p = getFbHistoryPath();
+    if (!p || !pending) return;
+    const rec = {
+      t: new Date().toISOString(),
+      scheduleId: pending.scheduleId || schedule?.id || null,
+      label: schedule?.label || pending.label || null,
+      date: pending.date || null,
+      postDate: schedule?.postDate || null,
+      campaignId: schedule?.campaignId || pending.campaignId || null,
+      status: pending.status || 'unknown',          // published | skipped | rejected | ...
+      postId: pending.postId || null,
+      postUrl: pending.postUrl || null,
+      publishedAt: pending.publishedAt || null,
+      targetPageId: pending.targetPageId || schedule?.targetPageId || null,
+      error: pending.error || null,
+    };
+    fs.appendFileSync(p, JSON.stringify(rec) + '\n', 'utf-8');
+  } catch (e) {
+    console.warn('[fb-schedule] appendFbPostHistory failed:', e?.message);
+  }
+}
+
+/**
+ * Read the publish ledger, most-recent first. Bounded tail of the last `limit`
+ * records (clamped 1..500). The bot reconciles this (published) against
+ * /schedule/list (pending) to report a multi-post campaign's true status.
+ */
+function readFbPostHistory({ limit = 50 } = {}) {
+  try {
+    const p = getFbHistoryPath();
+    if (!p || !fs.existsSync(p)) return [];
+    const lines = fs.readFileSync(p, 'utf-8').split(/\r?\n/).filter(Boolean);
+    const recs = [];
+    for (const ln of lines) { try { recs.push(JSON.parse(ln)); } catch {} }
+    return recs.reverse().slice(0, Math.max(1, Math.min(500, limit)));
+  } catch (e) {
+    console.warn('[fb-schedule] readFbPostHistory failed:', e?.message);
+    return [];
+  }
 }
 
 function todayStr() {
@@ -634,6 +694,9 @@ async function publishPending(pending, schedule) {
     await _publishPendingImpl(pending, schedule);
   } finally {
     _publishInFlight.delete(key);
+    // Record the terminal outcome to the durable ledger so the bot can reconcile a
+    // multi-post campaign (published items are auto-removed from the schedule list).
+    appendFbPostHistory(pending, schedule);
   }
 }
 
@@ -1133,6 +1196,17 @@ function handleRoute(urlPath, params, jsonResp, res) {
       return { ...s, pending: pending || null };
     });
     jsonResp(res, 200, { success: true, schedules: withPending, date });
+    return true;
+  }
+
+  // Publish history (durable ledger). Use this — NOT /list — to see ALREADY-PUBLISHED
+  // posts: one-time schedules auto-delete after firing, so /list shows only pending.
+  // To report a campaign: reconcile /list (pending) + /history (published) vs the total.
+  if (urlPath === '/api/fb/schedule/history') {
+    const limit = parseInt(params.limit, 10) || 50;
+    const history = readFbPostHistory({ limit });
+    const published = history.filter(h => h.status === 'published').length;
+    jsonResp(res, 200, { success: true, history, count: history.length, publishedCount: published });
     return true;
   }
 

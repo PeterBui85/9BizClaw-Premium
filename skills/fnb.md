@@ -41,12 +41,16 @@ metadata:
 
 **Nhập nguyên liệu:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"CF-ROBUSTA\",\"name\":\"Cà phê Robusta 1kg\",\"qty\":20,\"type\":\"in\",\"note\":\"Nhập từ NCC Tân Phú\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"sku":"CF-ROBUSTA","name":"Cà phê Robusta 1kg","qty":20,"type":"in","note":"Nhập từ NCC Tân Phú"}
+exec: node skills/operations/local-api.js /api/inventory/adjust <B64>
 ```
 
 **Ghi đơn đặt bàn:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Anh Hùng\",\"items\":[{\"name\":\"Bàn VIP 10 người\",\"qty\":1,\"price\":2000000}],\"note\":\"Tối 20/05 lúc 19h, sinh nhật\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"customer":"Anh Hùng","items":[{"name":"Bàn VIP 10 người","qty":1,"price":2000000}],"note":"Tối 20/05 lúc 19h, sinh nhật"}
+exec: node skills/operations/local-api.js /api/order/create <B64>
 ```
 
 **Kiểm tra nguyên liệu sắp hết:**

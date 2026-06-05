@@ -16,7 +16,9 @@ CEO nói: "tổng hợp khách Zalo", "báo cáo khách vào Sheet", "follow-up 
 ## Cách dùng (1 API call)
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/zalo-crm/export" method=POST body="{\"dateRange\":\"today\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"dateRange":"today"}
+exec: node skills/operations/local-api.js /api/zalo-crm/export <B64>
 ```
 
 Response: `{spreadsheetId, spreadsheetUrl, customersExported, customers: [{name, phone, summary}]}`

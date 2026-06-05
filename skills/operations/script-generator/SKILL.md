@@ -94,8 +94,9 @@ Bot tự viết Python/Node script. **Nguyên tắc:**
 ### Bước 5: Test trên sample
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/skill/test-exec" method=POST
-  body="{\"code\":\"<full script code>\",\"runtime\":\"python\",\"args\":[\"<sample arg>\"]}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"code":"<full script code>","runtime":"python","args":["<sample arg>"]}
+exec: node skills/operations/local-api.js /api/skill/test-exec <B64>
 ```
 
 Response: `{success, exitCode, stdout, stderr, durationMs}`.
@@ -126,28 +127,17 @@ Response: `{success, exitCode, stdout, stderr, durationMs}`.
 **Lưu skill bằng:**
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/create" method=POST
-  body="{
-    \"name\":\"[tên]\",
-    \"description\":\"<pushy description: WHAT + WHEN, list keyword task để future trigger>\",
-    \"trigger\":\"[keyword chính]\",
-    \"content\":\"[2-3 đoạn mô tả khi nào dùng, output format expected]\",
-    \"scripts\":[{
-      \"filename\":\"<name>.py\",
-      \"runtime\":\"python\",
-      \"description\":\"<1 dòng mô tả script>\",
-      \"code\":\"<full script code>\",
-      \"args\":[\"<arg1>\",\"<arg2>\"]
-    }],
-    \"allowedTools\":[]
-  }"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"name":"[tên]","description":"<pushy description: WHAT + WHEN, list keyword task để future trigger>","trigger":"[keyword chính]","content":"[2-3 đoạn mô tả khi nào dùng, output format expected]","scripts":[{"filename":"<name>.py","runtime":"python","description":"<1 dòng mô tả script>","code":"<full script code>","args":["<arg1>","<arg2>"]}],"allowedTools":[]}
+exec: node skills/operations/local-api.js /api/user-skills/create <B64>
 ```
 
 Sau create → run script với args thật:
 
 ```
-web_fetch url="http://127.0.0.1:20200/api/skill/exec" method=POST
-  body="{\"skillId\":\"<id từ create response>\",\"script\":\"<name>\",\"args\":[\"<real arg>\"]}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"skillId":"<id từ create response>","script":"<name>","args":["<real arg>"]}
+exec: node skills/operations/local-api.js /api/skill/exec <B64>
 ```
 
 Báo CEO output thật.

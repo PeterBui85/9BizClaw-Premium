@@ -43,12 +43,16 @@ metadata:
 
 **Nhập nguyên liệu:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/inventory/adjust" method=POST body="{\"sku\":\"NL-THEP-D10\",\"name\":\"Thép phi 10\",\"qty\":500,\"type\":\"in\",\"note\":\"NCC Hòa Phát, lô 2026-05\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"sku":"NL-THEP-D10","name":"Thép phi 10","qty":500,"type":"in","note":"NCC Hòa Phát, lô 2026-05"}
+exec: node skills/operations/local-api.js /api/inventory/adjust eyJza3UiOiJOTC1USEVQLUQxMCIsIm5hbWUiOiJUaMOpcCBwaGkgMTAiLCJxdHkiOjUwMCwidHlwZSI6ImluIiwibm90ZSI6Ik5DQyBIw7JhIFBow6F0LCBsw7QgMjAyNi0wNSJ9
 ```
 
 **Ghi đơn sản xuất:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty Đại Phát\",\"items\":[{\"name\":\"Khung sắt loại A\",\"qty\":200,\"price\":150000}],\"note\":\"Giao trước 30/05\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"customer":"Công ty Đại Phát","items":[{"name":"Khung sắt loại A","qty":200,"price":150000}],"note":"Giao trước 30/05"}
+exec: node skills/operations/local-api.js /api/order/create eyJjdXN0b21lciI6IkPDtG5nIHR5IMSQ4bqhaSBQaMOhdCIsIml0ZW1zIjpbeyJuYW1lIjoiS2h1bmcgc+G6r3QgbG/huqFpIEEiLCJxdHkiOjIwMCwicHJpY2UiOjE1MDAwMH1dLCJub3RlIjoiR2lhbyB0csaw4bubYyAzMC8wNSJ9
 ```
 
 **Kiểm tra nguyên liệu dưới mức tối thiểu:**

@@ -1236,9 +1236,20 @@ async function ensureZaloModelDefault() {
         if (!config.channels) config.channels = {};
         if (!config.channels.modelByChannel) config.channels.modelByChannel = {};
         const mbc = config.channels.modelByChannel;
-        if (mbc.telegram !== 'ninerouter/main') { mbc.telegram = 'ninerouter/main'; changed = true; }
-        for (const k of ['modoro-zalo', 'zalo']) {
-          if (mbc[k] !== 'ninerouter/zalo') { mbc[k] = 'ninerouter/zalo'; changed = true; }
+        // openclaw schema: each channel maps to a RECORD of { <conversationKey>|'*': modelId },
+        // NOT a bare string. '*' is the channel-wide default (all conversations). Writing a
+        // string here makes openclaw reject the ENTIRE config ("expected record, received
+        // string") and the gateway refuses to boot. Merge so we heal/set the '*' default
+        // without clobbering any per-conversation overrides; the record guard also
+        // self-heals a pre-existing bad string (or array) value on the next boot.
+        const channelModels = [['telegram', 'ninerouter/main'], ['modoro-zalo', 'ninerouter/zalo'], ['zalo', 'ninerouter/zalo']];
+        for (const [ch, model] of channelModels) {
+          const cur = mbc[ch];
+          const rec = (cur && typeof cur === 'object' && !Array.isArray(cur)) ? cur : null;
+          if (!rec || rec['*'] !== model) {
+            mbc[ch] = { ...(rec || {}), '*': model };
+            changed = true;
+          }
         }
       }
       if (changed) {

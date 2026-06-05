@@ -76,10 +76,21 @@ Format reply:
 - "đổi tên thành X" / "sửa nội dung..." / "áp cho... thay vì..." / "đổi standalone" → cập nhật proposal, trình lại bước 2
 - "thôi" / "hủy" → dừng
 
+## Cách gọi route GHI skill (BẮT BUỘC dùng script, KHÔNG dùng web_fetch)
+
+`web_fetch` chỉ GET — KHÔNG gửi được body POST → mọi `create/check-conflict/update/delete/toggle/restore` sẽ thất bại nếu gọi bằng web_fetch. Dùng script nội bộ:
+
+1. Tạo JSON body (đúng JSON, escape `"` thành `\"`).
+2. **Base64-encode** chuỗi JSON (UTF-8) → `<B64>`.
+3. Chạy: `exec: node skills/operations/local-api.js <route> <B64>`
+
+Script tự đọc token + thêm header auth + POST. Kết quả in ra `"<status> <body>"` — vd `200 {"success":true,...}`, `409 {"error":"conflicts_detected",...}`, hoặc `ERROR <lý do>`. Nếu thấy `ERROR base64-json không hợp lệ` → encode lại cho đúng. (Route đọc như `list` vẫn dùng `web_fetch` GET bình thường.)
+
 ## Bước 3: Check conflict TRƯỚC khi tạo
 
+JSON body: `{"content":"<nội dung>","appliesTo":[],"trigger":"<trigger>"}` → base64 → `<B64>`
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/check-conflict" method=POST body="{\"content\":\"<nội dung>\",\"appliesTo\":[],\"trigger\":\"<trigger>\"}"
+exec: node skills/operations/local-api.js /api/user-skills/check-conflict <B64>
 ```
 
 Response có `conflicts: [{skillName, reasons}]`:
@@ -88,8 +99,9 @@ Response có `conflicts: [{skillName, reasons}]`:
 
 ## Bước 4: Tạo skill
 
+JSON body: `{"name":"<tên>","type":"<rule|override|workflow|custom>","appliesTo":[],"trigger":"<trigger>","content":"<nội dung>"}` → base64 → `<B64>`
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/create" method=POST body="{\"name\":\"<tên>\",\"type\":\"<rule|override|workflow|custom>\",\"appliesTo\":[],\"trigger\":\"<trigger>\",\"content\":\"<nội dung>\"}"
+exec: node skills/operations/local-api.js /api/user-skills/create <B64>
 ```
 
 Trong JSON body:
@@ -122,28 +134,28 @@ web_fetch http://127.0.0.1:20200/api/user-skills/list
 ```
 Trả về `{skills: [{id, name, type, appliesTo, trigger, summary, enabled, ...}]}`.
 
-**Tắt/bật:**
+**Tắt/bật:** JSON `{"id":"<skill-id>","enabled":false}` → base64 → `<B64>`
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/toggle" method=POST body="{\"id\":\"<skill-id>\",\"enabled\":false}"
+exec: node skills/operations/local-api.js /api/user-skills/toggle <B64>
 ```
 
-**Sửa nội dung (giữ các field khác):**
+**Sửa nội dung (giữ các field khác):** JSON `{"id":"<skill-id>","content":"<nội dung mới>"}` → base64 → `<B64>`
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/update" method=POST body="{\"id\":\"<skill-id>\",\"content\":\"<nội dung mới>\"}"
+exec: node skills/operations/local-api.js /api/user-skills/update <B64>
 ```
 
 Chỉ truyền field nào cần sửa. Field không truyền → giữ nguyên.
 
-**Xóa:**
+**Xóa:** JSON `{"id":"<skill-id>"}` → base64 → `<B64>`
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/delete" method=POST body="{\"id\":\"<skill-id>\"}"
+exec: node skills/operations/local-api.js /api/user-skills/delete <B64>
 ```
 
 Xóa là SOFT delete — file lưu vào `_trash/`, giữ 20 lần xóa gần nhất. CEO có thể khôi phục bằng:
 
-**Khôi phục skill đã xóa:**
+**Khôi phục skill đã xóa:** JSON `{"id":"<skill-id>"}` → base64 → `<B64>`
 ```
-web_fetch url="http://127.0.0.1:20200/api/user-skills/restore" method=POST body="{\"id\":\"<skill-id>\"}"
+exec: node skills/operations/local-api.js /api/user-skills/restore <B64>
 ```
 
 CEO nói "khôi phục skill X" / "phục hồi skill X" / "lấy lại skill X" / "em xóa nhầm rồi, undo skill X" → gọi restore.

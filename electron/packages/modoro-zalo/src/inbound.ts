@@ -1424,28 +1424,41 @@ ${__fapPolicy}
         const __ghLastRaw = __ghParts[__ghParts.length - 1] || __ghName;
         let __ghGender = __ghStoredGender;
         let __ghCallName = __ghLastRaw;
-        if (!__ghGender) {
-          const __ghMaleNames = new Set([
-            "huy","minh","duc","hung","tuan","long","nam","dung","thanh","phong",
-            "khanh","dat","tai","trung","hieu","quang","khoa","thinh","an","duy",
-            "thang","cuong","binh","tien","vinh","hau","hoang","phuc","sang","lam",
-            "vu","tung","truong","son","hai","kien","nhan","bao","tam",
-          ]);
-          const __ghFemaleNames = new Set([
-            "huong","linh","trang","lan","mai","ngoc","ha","hang","hoa","phuong",
-            "thao","nhi","thy","vy","chi","trinh","lien","yen","nhung",
-            "van","nga","dao","diem","kieu","quyen","my","tram","suong","hanh",
-            "loan","hien","uyen","giang","ngan","tho","tuyet","cam","thuy","oanh","huyen",
-          ]);
-          const __ghFamilyNames = new Set([
-            "nguyen","tran","le","pham","hoang","huynh","phan","vu","vo","dang",
-            "bui","do","ho","ngo","duong","ly","truong","dinh","luong","mai",
-          ]);
-          for (const __ghPart of __ghParts) {
-            const __ghNorm = __ghPart.toLowerCase().normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "").replace(/đ/g, "d");
+        const __ghMaleNames = new Set([
+          "huy","minh","duc","hung","tuan","long","nam","dung","thanh","phong",
+          "khanh","dat","tai","trung","hieu","quang","khoa","thinh","an","duy",
+          "thang","cuong","binh","tien","vinh","hau","hoang","phuc","sang","lam",
+          "vu","tung","truong","son","hai","kien","nhan","bao","tam",
+        ]);
+        const __ghFemaleNames = new Set([
+          "huong","linh","trang","lan","mai","ngoc","ha","hang","hoa","phuong",
+          "thao","nhi","thy","vy","chi","trinh","lien","yen","nhung",
+          "van","nga","dao","diem","kieu","quyen","my","tram","suong","hanh",
+          "loan","hien","uyen","giang","ngan","tho","tuyet","cam","thuy","oanh","huyen",
+        ]);
+        const __ghFamilyNames = new Set([
+          "nguyen","tran","le","pham","hoang","huynh","phan","vu","vo","dang",
+          "bui","do","ho","ngo","duong","ly","truong","dinh","luong","mai",
+        ]);
+        const __ghNormOf = (__ghS: string) => __ghS.toLowerCase().normalize("NFD").replace(new RegExp('[\\u0300-\\u036F]', 'g'), "").replace(/đ/g, "d");
+        // Call-name = the RIGHTMOST recognized Vietnamese given name. Normally that is
+        // the last token ("Nguyễn Văn Minh" → "Minh"), but business Zalo display names
+        // are often "GivenName Brand" ("Lâm Modoro"), where the last token is a brand —
+        // so if the last token isn't a known given name we scan leftward for one, and
+        // fall back to the last token verbatim only if none is found. Runs even when
+        // gender is already known (the old code gated this behind `if (!__ghGender)`, so
+        // stored-gender customers kept the wrong last-token name → the "anh Modoro" bug).
+        const __ghLastNorm = __ghNormOf(__ghLastRaw);
+        if (__ghMaleNames.has(__ghLastNorm)) {
+          if (!__ghGender) __ghGender = "M";
+        } else if (__ghFemaleNames.has(__ghLastNorm)) {
+          if (!__ghGender) __ghGender = "F";
+        } else {
+          for (let __ghI = __ghParts.length - 2; __ghI >= 0; __ghI--) {
+            const __ghNorm = __ghNormOf(__ghParts[__ghI]);
             if (__ghFamilyNames.has(__ghNorm)) continue;
-            if (__ghMaleNames.has(__ghNorm)) { __ghGender = "M"; __ghCallName = __ghPart; break; }
-            if (__ghFemaleNames.has(__ghNorm)) { __ghGender = "F"; __ghCallName = __ghPart; break; }
+            if (__ghMaleNames.has(__ghNorm)) { __ghCallName = __ghParts[__ghI]; if (!__ghGender) __ghGender = "M"; break; }
+            if (__ghFemaleNames.has(__ghNorm)) { __ghCallName = __ghParts[__ghI]; if (!__ghGender) __ghGender = "F"; break; }
           }
         }
 

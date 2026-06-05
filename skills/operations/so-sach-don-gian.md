@@ -29,7 +29,9 @@ Bot NGAY LẬP TỨC:
 2. Suy luận khoản mục từ ngữ cảnh (SOUL.md biết ngành + sản phẩm)
 3. Ghi file (append nội dung mới vào cuối):
    ```
-   web_fetch url="http://127.0.0.1:20200/api/workspace/append" method=POST body="{\"path\":\"so-sach.md\",\"content\":\"<nội dung mới theo format bên dưới>\",\"mode\":\"append\"}"
+   # web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+   # JSON: {"path":"so-sach.md","content":"<nội dung mới theo format bên dưới>","mode":"append"}
+   exec: node skills/operations/local-api.js /api/workspace/append <B64>
    ```
 4. Xác nhận:
 

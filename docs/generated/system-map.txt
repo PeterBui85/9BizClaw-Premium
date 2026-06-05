@@ -1,7 +1,7 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 151
+- apiRoutes: 152
 - ipcHandlers: 212
 - preloadBridges: 205
 - dashboardPages: 18
@@ -39,6 +39,7 @@ API Routes
 - /api/fb/schedule/create [fb-schedule-api]
 - /api/fb/schedule/delete [fb-schedule-api]
 - /api/fb/schedule/edit-caption [fb-schedule-api]
+- /api/fb/schedule/history [fb-schedule-api]
 - /api/fb/schedule/list [fb-schedule-api]
 - /api/fb/schedule/pending [fb-schedule-api]
 - /api/fb/schedule/regenerate [fb-schedule-api]
@@ -192,14 +193,14 @@ Large Source Files
 - electron/lib/brain-graph.js: 26223 bytes
 - electron/lib/ceo-memory.js: 36596 bytes
 - electron/lib/channels.js: 99928 bytes
-- electron/lib/config.js: 66107 bytes
+- electron/lib/config.js: 66842 bytes
 - electron/lib/conversation.js: 32582 bytes
-- electron/lib/cron-api.js: 190682 bytes
+- electron/lib/cron-api.js: 191578 bytes
 - electron/lib/cron.js: 142599 bytes
 - electron/lib/customer-memory-updater.js: 29734 bytes
 - electron/lib/dashboard-ipc.js: 290829 bytes
 - electron/lib/fb-publisher.js: 24489 bytes
-- electron/lib/fb-schedule.js: 75920 bytes
+- electron/lib/fb-schedule.js: 79279 bytes
 - electron/lib/gateway.js: 88499 bytes
 - electron/lib/google-api.js: 39642 bytes
 - electron/lib/google-routes.js: 26715 bytes
@@ -207,4 +208,4 @@ Large Source Files
 - electron/lib/media-library.js: 39069 bytes
 - electron/lib/migration.js: 20682 bytes
 - electron/lib/nine-router.js: 47418 bytes
-- electron/lib/runtime-installer.js: 86708 bytes
+- electron/lib/runtime-installer.js: 87327 bytes

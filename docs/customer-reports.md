@@ -173,3 +173,48 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 The "message DB" answer was a pure LLM hallucination — no such UI existed.
 **Fix (v2.4.11, 2026-06-04):** (1) removed session-purge on version-bump; (2) code-injects the sender's own profile (name+facts) into every reply; (3) replaced the LLM-self-call with a code-enforced 3-min extractor (`customer-memory-updater`) that builds each customer's profile from openzca SQLite; (4) added a verbatim ground-truth history archive + `/api/zalo/history` endpoint; (5) AGENTS.md anti-hallucination section forbidding invented UI; (6) Sacred-Data 4-layer protection so customer data can never be lost on update/reset.
 **Status:** Fixed in v2.4.11 (build 2026-06-04). Verified live (Minh test extracted + remembered). Pending CEO live-confirm after reinstall.
+
+---
+
+## 2026-06-05 — Bot báo "route tạo skill không tồn tại" khi khách tạo skill qua Telegram
+
+- **Symptom (khách CEO):** Khách nhắn bot tạo skill/rule qua Telegram. Bot trả lời "route nội bộ tạo skill đang không có trên máy lúc này… route tạo skill và check conflict trả về không tồn tại" rồi không tạo được. Danh sách user skill thì đọc được (rỗng).
+- **Root cause:** Các route `/api/user-skills/create` + `/check-conflict` là **POST-only**; chỉ `/api/user-skills/list` nhận GET. Agent (LLM) "dò" route bằng GET trước khi dùng → POST-only route rơi xuống 404 `{"error":"not found"}` chung → bot hiểu nhầm là "route không tồn tại". Routes vẫn hoạt động bình thường với POST (reproduce live: GET create→404, POST check-conflict→200). Không phải lỗi version (routes có ở v2.4.9/2.4.10/2.4.11).
+- **Fix (v2.4.11, `electron/lib/cron-api.js`):** thêm guard trả **405 method_not_allowed** kèm thông điệp "chỉ nhận POST — gọi lại bằng web_fetch method=POST, đừng GET để dò route" cho 6 route user-skills POST-only, thay vì rơi xuống 404. Agent nhận feedback rõ ràng → retry bằng POST.
+- **Status:** Fixed in source. Pending rebuild + ship.
+
+## 2026-06-05 — Khách Zalo bị gọi sai tên ("anh Modoro" thay vì "anh Lâm")
+
+- **Symptom:** Khách Zalo tên hiển thị "Lâm Modoro" (Lâm = tên người, Modoro = brand). Bot xưng hô "anh Modoro" (sai) — phải là "anh Lâm".
+- **Root cause (`electron/packages/modoro-zalo/src/inbound.ts` ~1423-1450):** `__ghCallName` mặc định = **token cuối** ("Modoro"). Vòng quét tìm tên gọi đúng (khớp danh sách tên VN → "Lâm") nằm **bên trong `if (!__ghGender)`**. Khi Zalo đã cung cấp gender (rất phổ biến), `__ghGender` có sẵn → vòng quét bị bỏ qua → giữ nguyên token cuối "Modoro".
+- **Fix:** quét tên gọi (call-name) **luôn chạy**, không chỉ khi chưa biết gender; nhưng phải tránh regress tên truyền thống ("Nguyễn Văn Minh" → "Minh"). Heuristic cần CEO chốt. Chưa apply.
+- **Status:** Root-caused. Fix heuristic chờ CEO chốt.
+
+## 2026-06-05 — Khách Zalo vẫn dùng gpt-5.4 (combo main) thay vì combo zalo (cx/gpt-5.2)
+
+- **Symptom:** Reply cho khách Zalo dùng `ninerouter/main` (gpt-5.4, đắt) thay vì `ninerouter/zalo` (cx/gpt-5.2, rẻ). Xác nhận từ session transcript: turn 10:00 ghi `provider:ninerouter, model:main`.
+- **Root cause:** Per-channel routing v2.4.11 đặt `channels.modelByChannel.modoro-zalo = {"*":"ninerouter/zalo"}`. Nhưng openclaw `resolveChannelModelOverride` (vendor `model-overrides-CvsNtZ-p.js:105`) bail sớm: `if (keys.length === 0 && parentKeys.length === 0) return null` — với tin nhắn **1:1 (direct DM)** không có groupId/parent-conversation, cả keys & parentKeys rỗng → return null **trước khi** xét wildcard `"*"`. Mọi chat khách Zalo đều là DM → override không bao giờ áp dụng → fallback về `agents.defaults.model` = main. Không phải session-pin (`modelOverride` undefined), không phải session cũ. Telegram "có vẻ đúng" chỉ vì model mong muốn của nó trùng default (main).
+- **Fix:** `modelByChannel."*"` không chạy cho DM. Config-only trong CÙNG workspace (bindings + agent riêng) cũng KHÔNG đủ — theo CTO (2026-06-05), combo khác cho Zalo chỉ chạy nếu **tách workspace riêng** (AGENTS.md/memory/sessions/plugin wiring riêng). Đây là việc kiến trúc, không phải config tweak. Xem memory `project_zalo_per_channel_model_needs_workspace`.
+- **Status:** Root-caused. DEFERRED — cần scope project "Zalo workspace riêng". Telegram/default giữ combo main; Zalo tạm thời vẫn main cho tới khi làm.
+
+## 2026-06-05 — [SECURITY DEBT, logged + deferred] Zalo agent có exec/read/write tool toàn cục
+
+- **Finding (internal, không phải khách báo):** Global `tools.allow` trong openclaw.json cấp `exec`, `read_file`, `write_file`, `apply_patch` cho MỌI channel — kể cả Zalo (không có per-channel removal; `config.js:1016` xoá `tools.deny`). Phòng vệ Zalo hiện chỉ là **deny-list ở mức input** (COMMAND-BLOCK trong inbound.ts chặn message khách chứa `exec:`, các pattern gọi API nội bộ, `child_process`, "chạy lệnh") + policy mức prompt — KHÔNG gỡ tool khỏi agent.
+- **Exposure:** Một prompt-injection né được từ khoá bị chặn có thể khiến Zalo agent chạy `exec` → đọc `cron-api-token.txt` → giả mạo call CEO cron-api (`X-Source-Channel: telegram` + Bearer) ghi skill/memory/file/cron, hoặc chạy shell tuỳ ý. Impact cao (chiếm bot CEO), độ khó trung bình. Trái với chủ trương CLAUDE.md ("cron/process/read/write BANNED khỏi Zalo").
+- **Lưu ý về helper:** `skills/operations/local-api.js` KHÔNG mở rộng lỗ hổng này (Zalo exec đã có thể cat-token + curl sẵn) — chỉ *ghi rõ* câu lệnh leo thang trong file workspace Zalo đọc được.
+- **Fix đúng (deferred theo CEO):** gỡ `exec`/`write_file`/`apply_patch`/`read_file` khỏi Zalo agent ở **mức tool** (Zalo chỉ còn `message` + `web_fetch` GET + RAG). Giải quyết tự nhiên bằng hướng tách Zalo agent/workspace riêng (cùng project với routing model rẻ). Memory: `project_zalo_exec_tool_exposure`.
+- **Status:** LOGGED, DEFERRED — CEO quyết sau.
+
+## 2026-06-05 — Khách "sếp Huê": bot báo thiếu bài trong chiến dịch FB 14 bài (chỉ thấy 5 chờ đăng)
+
+- **Symptom:** Chiến dịch 14 bài FB. Bot báo chỉ còn 5 bài chờ đăng (bài 3-7), "vừa đăng bài 9", các bài còn lại "không còn trong lịch chờ, chưa kết luận được đã đăng hay chưa". Đếm thiếu, lệch mốc.
+- **Root cause (kiến trúc, mọi máy):** Mỗi bài là 1 schedule one-time trong `fb-scheduled-posts.json`; bài one-time **tự xoá khỏi lịch ngay sau khi đăng** (`fb-schedule.js` deleteScheduleById, line ~506). Bot báo cáo từ `/api/fb/schedule/list` — route này CHỈ trả bài CHƯA chạy. Nên với chiến dịch nhiều bài, bot chỉ thấy phần đuôi đang chờ (5/14), không bao giờ thấy bài đã đăng, không đối chiếu được tổng. Lịch sử đăng có lưu trong pending file (`status:published`) nhưng KHÔNG có route nào liệt kê được (chỉ `/pending?id=` theo từng id).
+- **Fix (v2.4.11):** (1) ledger bền `fb-post-history.jsonl` — ghi mọi kết quả đăng (published/skip/lỗi) tại `publishPending` trước khi schedule bị xoá; (2) route mới `GET /api/fb/schedule/history` liệt kê ledger; (3) `facebook-post-workflow.md` BẮT BUỘC đối chiếu `/list` (chờ) + `/history` (đã đăng) so với tổng CEO nhắc, không báo từ 1 nguồn.
+- **Status:** Fixed in source + build. Pending reinstall + verify.
+
+## 2026-06-05 — Tính năng đọc/tạo file Word (.docx) hỏng — thiếu module 'underscore'
+
+- **Symptom (internal, phát hiện khi audit):** Log lỗi `Cannot find module 'underscore'` khi dùng mammoth (đọc/convert .docx).
+- **Root cause (packaging, mọi máy):** `asarUnpack` unpack `**/mammoth/**` nhưng KHÔNG unpack các dep của mammoth (underscore, @xmldom/xmldom, base64-js, dingbat-to-unicode, lop, path-is-absolute) → mammoth chạy unpacked không resolve được dep nằm trong asar.
+- **Fix (v2.4.11):** bỏ `**/mammoth/**` khỏi asarUnpack → mammoth + toàn bộ dep nằm chung trong asar, resolve bình thường (`**/*.node` vẫn unpack native). Verified trong artifact: mammoth/underscore có trong app.asar, không còn ở app.asar.unpacked.
+- **Status:** Fixed in source + build. Pending reinstall.

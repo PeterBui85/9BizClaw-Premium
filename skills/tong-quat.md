@@ -49,15 +49,21 @@ metadata:
 
 **Ghi đơn hàng:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/order/create" method=POST body="{\"customer\":\"Công ty XYZ\",\"items\":[{\"name\":\"Dịch vụ tư vấn\",\"qty\":1,\"price\":5000000}],\"note\":\"Hợp đồng 1 tháng\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"customer":"Công ty XYZ","items":[{"name":"Dịch vụ tư vấn","qty":1,"price":5000000}],"note":"Hợp đồng 1 tháng"}
+exec: node skills/operations/local-api.js /api/order/create eyJjdXN0b21lciI6IkPDtG5nIHR5IFhZWiIsIml0ZW1zIjpbeyJuYW1lIjoiROG7i2NoIHbhu6UgdMawIHbhuqVuIiwicXR5IjoxLCJwcmljZSI6NTAwMDAwMH1dLCJub3RlIjoiSOG7o3AgxJHhu5NuZyAxIHRow6FuZyJ9
 ```
 
 **Ghi nghỉ phép nhân viên:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/leave/request" method=POST body="{\"employee\":\"Linh\",\"type\":\"annual\",\"from\":\"2026-05-26\",\"to\":\"2026-05-27\",\"note\":\"Việc gia đình\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"employee":"Linh","type":"annual","from":"2026-05-26","to":"2026-05-27","note":"Việc gia đình"}
+exec: node skills/operations/local-api.js /api/leave/request eyJlbXBsb3llZSI6IkxpbmgiLCJ0eXBlIjoiYW5udWFsIiwiZnJvbSI6IjIwMjYtMDUtMjYiLCJ0byI6IjIwMjYtMDUtMjciLCJub3RlIjoiVmnhu4djIGdpYSDEkcOsbmgifQ==
 ```
 
 **Báo cáo tổng hợp ngày:**
 ```
-web_fetch url="http://127.0.0.1:20200/api/report/daily" method=POST body="{\"date\":\"2026-05-19\"}"
+# web_fetch GET-only → KHÔNG POST được body. Tạo JSON, base64-encode (UTF-8) → <B64>, rồi gọi script:
+# JSON: {"date":"2026-05-19"}
+exec: node skills/operations/local-api.js /api/report/daily eyJkYXRlIjoiMjAyNi0wNS0xOSJ9
 ```
