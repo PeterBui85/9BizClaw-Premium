@@ -511,9 +511,9 @@ async function _startOpenClawImpl(opts = {}) {
       console.log(`[boot] T+${Date.now() - t0}ms 9Router /v1/models ready (after ${Math.round((Date.now() - t0) / 1000)}s), ${nineRouterModelCount} models`);
       try { ensure9RouterApiKeySync(); } catch (e) { console.warn('[boot] post-ready apiKeySync error:', e?.message); }
       try { await ensure9RouterZaloCombo(); } catch (e) { console.warn('[boot] post-ready zaloCombo error:', e?.message); }
-      // Now that 9Router is ready AND the zalo combo exists, switch the default
-      // agent model to ninerouter/zalo if 9Router is actually serving it. (The
-      // probe inside ensureDefaultConfig ran pre-9Router and never fired.)
+      // Now that 9Router is ready AND the zalo combo exists, reconcile per-channel
+      // models: keep telegram/default on ninerouter/main and point the Zalo channel
+      // at ninerouter/zalo via channels.modelByChannel (only once the combo serves).
       try { await ensureZaloModelDefault(); } catch (e) { console.warn('[boot] post-ready zaloModelDefault error:', e?.message); }
       break;
     } catch {}

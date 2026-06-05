@@ -3365,7 +3365,7 @@
     },
     {
       "path": "electron/lib/config.js",
-      "bytes": 64888
+      "bytes": 66107
     },
     {
       "path": "electron/lib/conversation.js",
@@ -3397,7 +3397,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 88481
+      "bytes": 88499
     },
     {
       "path": "electron/lib/google-api.js",
@@ -3421,7 +3421,7 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 47324
+      "bytes": 47418
     },
     {
       "path": "electron/lib/runtime-installer.js",

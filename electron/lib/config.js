@@ -1202,7 +1202,6 @@ async function ensureZaloModelDefault() {
     try {
       if (!fs.existsSync(configPath)) return false;
       const config = readOpenclawJsonFile(configPath);
-      if (config?.agents?.defaults?.model !== 'ninerouter/main') return false;
       const token = config.models?.providers?.ninerouter?.auth?.token || '123456';
       const res = await new Promise((resolve) => {
         let req;
@@ -1219,10 +1218,32 @@ async function ensureZaloModelDefault() {
       req.on('error', () => { try { req?.destroy(); } catch {} resolve(null); });
       req.on('timeout', () => { try { req?.destroy(); } catch {} resolve(null); });
       });
-      if (res?.data?.some?.(m => m.id === 'zalo')) {
-        config.agents.defaults.model = 'ninerouter/zalo';
+      const zaloServing = !!res?.data?.some?.(m => m.id === 'zalo');
+      let changed = false;
+      // Telegram (and EVERY non-Zalo channel) ALWAYS uses main. The old code flipped
+      // the GLOBAL agents.defaults.model to ninerouter/zalo, which leaked the cheap
+      // zalo combo onto Telegram. Force the default back to main.
+      if (config?.agents?.defaults?.model !== 'ninerouter/main') {
+        if (!config.agents) config.agents = {};
+        if (!config.agents.defaults) config.agents.defaults = {};
+        config.agents.defaults.model = 'ninerouter/main';
+        changed = true;
+      }
+      // Zalo uses the 'zalo' combo via a PER-CHANNEL override (channels.modelByChannel
+      // — a recognized openclaw schema key, so it survives config heal). Only set it
+      // once the combo actually serves, so a channel is never pointed at a 404 model.
+      if (zaloServing) {
+        if (!config.channels) config.channels = {};
+        if (!config.channels.modelByChannel) config.channels.modelByChannel = {};
+        const mbc = config.channels.modelByChannel;
+        if (mbc.telegram !== 'ninerouter/main') { mbc.telegram = 'ninerouter/main'; changed = true; }
+        for (const k of ['modoro-zalo', 'zalo']) {
+          if (mbc[k] !== 'ninerouter/zalo') { mbc[k] = 'ninerouter/zalo'; changed = true; }
+        }
+      }
+      if (changed) {
         const wrote = writeOpenClawConfigIfChanged(configPath, config);
-        if (wrote) console.log('[config] switched default model to ninerouter/zalo (combo serving)');
+        if (wrote) console.log(`[config] channel models: telegram/default=main, zalo=${zaloServing ? 'ninerouter/zalo' : 'main (combo pending)'}`);
         return wrote;
       }
     } catch (e) { console.warn('[config] ensureZaloModelDefault error:', e?.message); }

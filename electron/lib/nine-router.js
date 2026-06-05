@@ -232,32 +232,20 @@ function ensure9RouterApiKeySync() {
 // Idempotent: skips silently if a combo named "zalo" already exists.
 // Async: retries once after 2s if db.json not yet created by 9Router.
 async function ensure9RouterZaloCombo() {
-  const _tryCreate = () => {
-    const dbPath = get9RouterDbPath();
-    if (!fs.existsSync(dbPath)) return 'missing';
-    const raw = fs.readFileSync(dbPath, 'utf-8');
-    const db = JSON.parse(raw);
-    if (!Array.isArray(db.combos)) db.combos = [];
-    if (db.combos.some(c => c && c.name === 'zalo')) return 'exists';
-    const now = new Date().toISOString();
-    db.combos.push({
-      id: crypto.randomUUID(),
-      name: 'zalo',
-      models: ['cx/gpt-5.2'],
-      createdAt: now,
-      updatedAt: now,
-    });
-    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf-8');
-    console.log('[9router] created zalo combo (gpt-5.2)');
-    return 'created';
-  };
+  // Create the 'zalo' combo via the 9Router HTTP API — the SAME path setup-9router-auto
+  // uses for 'main'. The old code wrote db.json directly, but this 9Router version does
+  // not read db.json for combos (the file doesn't even exist on disk), so the zalo combo
+  // never served and Zalo silently fell back to 'main'. Runs AFTER 9Router is ready
+  // (gateway.js post-ready block). Zalo = cheaper model for customers; main = premium for CEO.
   try {
-    const r = _tryCreate();
-    if (r !== 'missing') return;
-    console.log('[9router] zalo combo: db.json not found, retrying in 2s...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    const r2 = _tryCreate();
-    if (r2 === 'missing') console.warn('[9router] zalo combo: db.json still missing after retry — combo not created');
+    const listRes = await nineRouterApi('GET', '/api/combos');
+    if (listRes.error) { console.warn('[9router] zalo combo: list failed:', listRes.error); return; }
+    const combos = listRes.data?.combos || listRes.data || [];
+    const existing = (Array.isArray(combos) ? combos : []).find(c => c && c.name === 'zalo');
+    if (existing) return; // already present — leave any CEO customization alone
+    const res = await nineRouterApi('POST', '/api/combos', { name: 'zalo', models: ['cx/gpt-5.2'] });
+    if (res.error) console.warn('[9router] zalo combo create failed:', res.error);
+    else console.log('[9router] created zalo combo (cx/gpt-5.2) via API');
   } catch (e) { console.error('[9router] ensure zalo combo error:', e.message); }
 }
 
