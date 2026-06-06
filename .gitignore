@@ -205,3 +205,8 @@ bug-sweep-*.md
 # Runtime media/brand data (lives in %APPDATA% at runtime, not source)
 /brand-assets/
 /media-assets/
+
+# E2E test scratch — auto-generated skill/runtime dumps, never source
+user-skills/_trash/
+_trash/
+*.deleteme/
