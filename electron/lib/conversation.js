@@ -262,9 +262,32 @@ async function writeDailyMemoryJournal({ date = new Date() } = {}) {
     const file = path.join(memDir, `${dateStr}.md`);
     const sinceMs = date.getTime() - 24 * 60 * 60 * 1000;
 
-    // 1. Raw journal (same as before — full history, no cap)
-    const history = extractConversationHistory({ sinceMs, maxMessages: 100 });
-    const header = `# Memory ${dateStr}\n\n*Auto-generated. Records all Zalo + Telegram messages in the last 24h before this cron fire.*\n\n`;
+    // 1. Raw journal. Telegram comes from session logs (rolling 24h). Zalo comes
+    // from the durable archive digest (covers OFF-toggled friends, which session
+    // logs miss), over the HCM calendar-day of this journal's instant.
+    let zaloDigestText = '';
+    try {
+      const digest = require('./zalo-daily-digest');
+      const cmu = require('./customer-memory-updater');
+      const db = cmu.openDb('default');
+      let account = '';
+      if (db) { account = cmu.readSelfId(db, 'default'); try { db.close(); } catch {} }
+      if (account) {
+        // HCM calendar-day window for this journal's instant. Use date.getTime()
+        // (NOT the UTC `dateStr`): a UTC date would mislabel the window for fires
+        // in the 17:00-24:00 UTC band (post-midnight HCM). computeWindow derives
+        // the HCM day from `now`. Group names render as a generic label here (the
+        // loadGroupsMap cache lives in cron-api scope; not worth coupling).
+        const win = digest.computeWindow({ now: date.getTime() });
+        zaloDigestText = digest.renderDigestForSummary(
+          digest.buildDigest({ ws, account, sinceMs: win.sinceMs, untilMs: win.untilMs })
+        );
+      }
+    } catch (e) { console.warn('[journal] zalo digest failed (non-blocking):', e?.message); }
+
+    const tgHistory = extractConversationHistory({ sinceMs, maxMessages: 100, channels: ['telegram'] });
+    const history = [zaloDigestText, tgHistory].filter(Boolean).join('\n\n');
+    const header = `# Memory ${dateStr}\n\n*Auto-generated. Telegram = tin nhắn 24h qua (session log). Zalo = tổng hợp theo NGÀY ${dateStr} từ kho lịch sử (gồm cả khách đang tắt auto-reply; đã rút gọn ≤8 tin/cuộc, ≤400 tin tổng).*\n\n`;
     const body = history || '_(Không có tin nhắn nào trong 24h qua.)_';
     fs.writeFileSync(file, header + body + '\n', 'utf-8');
 

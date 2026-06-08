@@ -1,7 +1,7 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 152
+- apiRoutes: 156
 - ipcHandlers: 212
 - preloadBridges: 205
 - dashboardPages: 18
@@ -27,6 +27,7 @@ API Routes
 - /api/cron/delete [local-api]
 - /api/cron/list [local-api]
 - /api/cron/replace [local-api]
+- /api/cron/telegram-command [local-api]
 - /api/cron/toggle [local-api]
 - /api/customer-memory/write [local-api]
 - /api/exec [local-api]
@@ -161,9 +162,12 @@ API Routes
 - /api/workspace/read [local-api]
 - /api/zalo-crm/export [local-api]
 - /api/zalo/friends [local-api]
+- /api/zalo/group/history [local-api]
+- /api/zalo/group/history/groups [local-api]
 - /api/zalo/groups [local-api]
 - /api/zalo/history [local-api]
 - /api/zalo/history/accounts [local-api]
+- /api/zalo/history/digest [local-api]
 - /api/zalo/ready [local-api]
 - /api/zalo/send [local-api]
 - /api/zalo/send-media [local-api]
@@ -192,16 +196,16 @@ Large Source Files
 - electron/lib/boot.js: 37246 bytes
 - electron/lib/brain-graph.js: 26223 bytes
 - electron/lib/ceo-memory.js: 36596 bytes
-- electron/lib/channels.js: 99928 bytes
+- electron/lib/channels.js: 101213 bytes
 - electron/lib/config.js: 66842 bytes
-- electron/lib/conversation.js: 32582 bytes
-- electron/lib/cron-api.js: 191578 bytes
-- electron/lib/cron.js: 142599 bytes
-- electron/lib/customer-memory-updater.js: 29734 bytes
-- electron/lib/dashboard-ipc.js: 290829 bytes
+- electron/lib/conversation.js: 34041 bytes
+- electron/lib/cron-api.js: 202330 bytes
+- electron/lib/cron.js: 144957 bytes
+- electron/lib/customer-memory-updater.js: 37568 bytes
+- electron/lib/dashboard-ipc.js: 289108 bytes
 - electron/lib/fb-publisher.js: 24489 bytes
-- electron/lib/fb-schedule.js: 79279 bytes
-- electron/lib/gateway.js: 88499 bytes
+- electron/lib/fb-schedule.js: 86437 bytes
+- electron/lib/gateway.js: 89623 bytes
 - electron/lib/google-api.js: 39642 bytes
 - electron/lib/google-routes.js: 26715 bytes
 - electron/lib/knowledge.js: 96888 bytes

@@ -15,6 +15,7 @@ const { extractConversationHistory, writeDailyMemoryJournal } = require('./conve
 const { call9Router } = require('./nine-router');
 const fbSchedule = require('./fb-schedule');
 const { getZcaProfile } = require('./zalo-memory');
+const { detectAgentPromptAsContent, detectOrchestrationLeak } = require('./cron-content-guard');
 
 // Lazy-load gateway to avoid circular require
 let _gateway = null;
@@ -277,6 +278,17 @@ async function deliverCronResultToZalo(replyText, zaloTarget, label) {
     console.log(`[cron-agent] Zalo delivery for "${label}" skipped — agent completed via tools (no customer-facing text)`);
     return true;
   }
+  // #5 output verifier: an agent-mode cron delivers the AI's GENERATED reply. If
+  // the agent echoed its prompt or leaked orchestration/meta-text (the system
+  // prepends [AUTO-MODE]; an echo carries it), do NOT post that to the customer
+  // group. Tighter than the input guard so a real automation article isn't hit.
+  const leak = detectOrchestrationLeak(cleaned);
+  if (leak) {
+    console.error(`[cron-agent] Zalo delivery for "${label}" BLOCKED — generated reply leaked orchestration/meta-text (${leak.reason})`);
+    try { auditLog('cron_zalo_blocked', { label, pattern: leak.reason }); } catch {}
+    await _alertCronBlocked(label, leak.reason, 'nhóm Zalo');
+    return false;
+  }
   // If the output filter would block this (raw upstream error/leak), do NOT
   // send a substituted polite ack to a CUSTOMER group — that looks broken and
   // the customer gets no real content. Skip delivery and alert the CEO instead.
@@ -509,6 +521,28 @@ async function runSafeExecCommand(shellCmd, { label } = {}) {
   const parsed = parseSafeOpenzcaMsgSend(shellCmd);
   if (!parsed) return null;
   const { targetIds, text, isGroup, profile } = parsed;
+  // Protect EXISTING fixed crons already saved in custom-crons.json: if the text
+  // is an agent/workflow prompt (2026-06-07 incident — a "[WORKFLOW] … tạo cron
+  // one-time mới …" prompt stored as fixed content), refuse to post it verbatim
+  // to the group. The create-time guard stops new ones; this stops bad ones that
+  // are already scheduled from re-firing. Alert the CEO so they can re-create it
+  // in agent mode.
+  const agentish = detectAgentPromptAsContent(text);
+  if (agentish) {
+    console.error(`[cron-exec] "${label || 'cron'}" BLOCKED — fixed content looks like an agent/workflow prompt (${agentish.reason}); refusing verbatim send`);
+    try { journalCronRun({ phase: 'blocked', label: label || 'cron', mode: 'safe-openzca', reason: 'agent-prompt-as-content' }); } catch {}
+    // Rate-limit (30 min/label) so a repeating bad cron doesn't spam the CEO
+    // every tick — reuses the same dedup map as _alertCronBlocked, distinct key.
+    try {
+      const alertKey = 'agent-content:' + (label || 'cron');
+      const now = Date.now();
+      if (now - (_lastCronBlockedAlertAt.get(alertKey) || 0) >= 30 * 60 * 1000) {
+        _lastCronBlockedAlertAt.set(alertKey, now);
+        await sendCeoAlert(`*Cron "${label || 'cron'}" bị chặn*\n\nNội dung lịch này là một prompt workflow (không phải bài đăng) nên KHÔNG được gửi nguyên văn vào nhóm. Hãy tạo lại lịch ở chế độ agent (để bot tự soạn bài) thay vì gửi text cố định.`);
+      }
+    } catch {}
+    return false;
+  }
   if (!isZaloListenerAlive()) {
     console.error(`[cron-exec] "${label || 'cron'}" — Zalo listener not running, refusing send`);
     journalCronRun({ phase: 'fail', label: label || 'cron', mode: 'safe-openzca', err: 'zalo-listener-down' });

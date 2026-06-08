@@ -8,8 +8,7 @@ Gửi khi CEO nhắn Telegram lần đầu hoặc sau reset session.
 
 Chào {ceo_title}! Em là trợ lý AI của {company} 🤝
 
-Em đã được thiết lập cho ngành **{industry}** với các kỹ năng:
-{skills_list}
+Em sẵn sàng hỗ trợ {ceo_title} bán hàng, chăm sóc khách, marketing và vận hành.
 
 **Bắt đầu nhanh:**
 - Gõ **"menu"** → xem danh sách mẫu giao việc
@@ -24,8 +23,6 @@ Hoặc cứ nhắn trực tiếp như nhắn cho nhân viên — em hiểu ngay 
 
 - `{ceo_title}`: lấy từ IDENTITY.md → dòng "Cách xưng hô" (ví dụ: "anh Huy", "chị Lan")
 - `{company}`: lấy từ USER.md hoặc wizard config
-- `{industry}`: tên lĩnh vực đã chọn (ví dụ: "F&B", "Bất động sản")
-- `{skills_list}`: đọc `skills/active.md`, liệt kê các section heading dạng bullet list
 
 ## Lưu ý
 

@@ -9724,12 +9724,39 @@
       await startUpdate();
     }
 
+    let _manualCheckInFlight = false;
     async function manualCheckUpdate() {
-      // Repurposed: click rail-version acts as "update" when available.
+      // Click rail-version: install if an update is already known, otherwise run
+      // an on-demand check. The boot-time push (main.js) can be missed via a
+      // renderer-not-ready race or a release published after boot, and there is
+      // no replay — so this click is the user's recovery path.
       if (_updateUiState.mode === 'available') {
         return await _confirmAndStartUpdate();
       }
-      // Otherwise: do nothing (no manual check needed).
+      // Don't interrupt an in-progress download/install.
+      if (_updateUiState.mode === 'downloading' || _updateUiState.mode === 'installing') return;
+      if (_manualCheckInFlight) return;
+      _manualCheckInFlight = true;
+      const label = document.getElementById('check-update-btn');
+      if (label) { label.classList.add('update-busy'); label.textContent = 'Đang kiểm tra...'; label.title = 'Đang kiểm tra cập nhật'; }
+      try {
+        const r = await window.claw.checkForUpdates();
+        if (r && r.available && r.version) {
+          _setUpdateLabelAvailable(r);
+          await _confirmAndStartUpdate();
+        } else if (r && r.error) {
+          if (label) { label.classList.remove('update-busy'); label.textContent = 'Lỗi kiểm tra'; label.title = 'Không kiểm tra được: ' + r.error; }
+          setTimeout(_setUpdateLabelIdle, 3000);
+        } else {
+          if (label) { label.classList.remove('update-busy'); label.textContent = 'Đã là mới nhất'; label.title = 'Bạn đang dùng phiên bản mới nhất'; }
+          setTimeout(_setUpdateLabelIdle, 2500);
+        }
+      } catch (e) {
+        if (label) { label.classList.remove('update-busy'); label.textContent = 'Lỗi kiểm tra'; label.title = 'Lỗi: ' + (e?.message || 'Không rõ'); }
+        setTimeout(_setUpdateLabelIdle, 3000);
+      } finally {
+        _manualCheckInFlight = false;
+      }
     }
 
     // Listen for auto-check result from main process

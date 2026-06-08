@@ -100,6 +100,8 @@ import {
 import { getModoroZaloRuntime } from "./runtime.js";
 import { resolveModoroZaloStateDir } from "./state-dir.js";
 import { sendMediaModoroZalo, sendTextModoroZalo, sendTypingModoroZalo, type ModoroZaloSendReceipt } from "./send.js";
+import { parseImageMarker } from "./image-marker.js";
+import { deliverCustomerImages } from "./image-send.js";
 import {
   allowlistHasEntry,
   normalizeAllowlist,
@@ -116,6 +118,7 @@ import {
 import type { CoreConfig, ModoroZaloInboundMessage, ResolvedModoroZaloAccount } from "./types.js";
 import { dedupeStrings } from "./utils/dedupe-strings.js";
 import { shouldBypassZaloDmAllowlistForStranger } from "./dm-policy.js";
+import { captureInbound } from "./history-capture.js";
 
 const CHANNEL_ID = "modoro-zalo" as const;
 // Intentionally English — this is LLM system prompt context, not user-facing text
@@ -481,6 +484,21 @@ export async function handleModoroZaloInbound(params: {
   if (!rawBody && !hasMedia) {
     return;
   }
+  // === 9BizClaw AT-LANDING CAPTURE v1 ===
+  // Record EVERY inbound message to the durable archive the instant it lands —
+  // BEFORE allowlist / command-block / owner-takeover — so off-allowlist senders
+  // are captured and recording survives openzca DB failures. Best-effort; never
+  // blocks or throws into the reply path. Keyed by botUserId (owner self id);
+  // skips cleanly if that is missing (poller backup still captures).
+  try {
+    captureInbound({
+      ownerId: botUserId || "",
+      threadId: targetThreadId,
+      isGroup: message.isGroup,
+      message,
+      log: runtime.log,
+    });
+  } catch {}
   if (!message.isGroup && rawBody && isZaloFriendshipSystemText(rawBody)) {
     runtime.log?.(`modoro-zalo: drop DM friendship system event from ${message.senderId}: ${rawBody.slice(0, 120)}`);
     return;
@@ -2553,6 +2571,15 @@ ${__fapPolicy}
     if (payload?.text) {
       payload.text = payload.text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '').replace(/\s{2,}/g, ' ').trim();
     }
+    // 9BizClaw IMAGE-MARKER: strip [[GUI_ANH: ...]] from the customer-facing text
+    // (ALWAYS, even if the send later fails) and remember the query to fire after
+    // the text is delivered. The agent can't reach the cron-API; the plugin sends.
+    let __imgQuery: string | null = null;
+    if (payload?.text) {
+      const { cleaned, query } = parseImageMarker(payload.text);
+      payload.text = cleaned;
+      __imgQuery = query;
+    }
     // 9BizClaw DELIVER-RETRY: retry once on transient openzca failures (ECONNREFUSED,
     // spawn crash, timeout). Prevents silent message drop when openzca hiccups.
     try {
@@ -2588,6 +2615,18 @@ ${__fapPolicy}
       } else {
         runtime.error?.(`modoro-zalo: deliver failed (non-transient): ${__drMsg.slice(0, 200)}`);
       }
+    }
+    // After the text is out, send the requested product image(s) to THIS
+    // conversation (best-effort; never block/throw into the deliver path).
+    // Drift-guard: skip if the payload itself already carried media (the Zalo
+    // agent has no media tool today, so this can't happen — but it prevents a
+    // double-send if that ever changes).
+    const __payloadHasMedia = !!(payload?.mediaUrl || (payload?.mediaUrls?.length ?? 0) > 0 || (payload?.mediaPaths?.length ?? 0) > 0);
+    if (__imgQuery && !__payloadHasMedia) {
+      try {
+        const __imgN = await deliverCustomerImages({ query: __imgQuery, to: outboundTarget, account, cfg, runtime });
+        runtime.log?.(`[image-marker] sent ${__imgN} image(s)`);
+      } catch (__imgErr) { runtime.error?.(`[image-marker] deliver error: ${String(__imgErr)}`); }
     }
   };
   const __mcFlush = async () => {

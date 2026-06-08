@@ -104,6 +104,56 @@ console.log('mergeFacts OK');
   console.log('readNewDmMessages OK');
 }
 
+// --- readNewGroupMessages tests ---
+{
+  const { DatabaseSync } = require('node:sqlite');
+  const { readNewGroupMessages } = require('../lib/customer-memory-updater');
+
+  const db = new DatabaseSync(':memory:');
+  db.exec(`
+    CREATE TABLE messages (
+      profile TEXT, scope_thread_id TEXT, thread_type TEXT,
+      msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
+      timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
+    );
+  `);
+  const selfId = 'self001';
+  const gid = 'group_thread_A';
+  const userThread = 'user_thread_A';
+  const baselineTs = 1700000000000;
+  const T1 = baselineTs + 1000, T2 = baselineTs + 2000;
+
+  // Two GROUP rows (one from a member, one from self) + one DM row that must be ignored.
+  db.exec(`
+    INSERT INTO messages VALUES
+      ('default','${gid}','group','gm1','memberX','MemX','${gid}',${T1},'text','tin nhóm 1','zalo'),
+      ('default','${gid}','group','gm2','${selfId}','Bot','${gid}',${T2},'text','bot trả lời','zalo'),
+      ('default','${userThread}','user','um1','cust','C','${selfId}',${T2},'text','tin DM','zalo');
+  `);
+
+  // First read from baseline, no cursor → only the 2 group rows.
+  const r1 = readNewGroupMessages(db, 'default', selfId, {}, baselineTs);
+  assert.ok(r1 instanceof Map, 'returns a Map');
+  assert.ok(r1.has(gid), 'group thread present');
+  assert.ok(!r1.has(userThread), 'DM thread excluded (thread_type filter)');
+  const e1 = r1.get(gid);
+  assert.strictEqual(e1.msgs.length, 2, 'both group rows returned');
+  assert.strictEqual(e1.newCursor.lastProcessedTs, T2);
+  assert.strictEqual(e1.newCursor.lastProcessedMsgId, 'gm2');
+
+  // Re-read with the returned cursor → 0 new (idempotent).
+  const r2 = readNewGroupMessages(db, 'default', selfId, { [gid]: e1.newCursor }, baselineTs);
+  const e2 = r2.get(gid);
+  assert.ok(!e2 || e2.msgs.length === 0, 'idempotent re-read returns nothing new');
+
+  // Tie-safe: same-ts larger msg_id → exactly 1 new.
+  db.exec(`INSERT INTO messages VALUES ('default','${gid}','group','gm3','memberY','MemY','${gid}',${T2},'text','tie','zalo');`);
+  const r3 = readNewGroupMessages(db, 'default', selfId, { [gid]: e1.newCursor }, baselineTs);
+  const e3 = r3.get(gid);
+  assert.ok(e3 && e3.msgs.length === 1 && e3.msgs[0].msg_id === 'gm3', 'tie-safe cursor');
+  console.log('readNewGroupMessages OK');
+}
+
 // --- _isSubstantive tests ---
 assert.strictEqual(u._isSubstantive({ msg_type:'sticker', content_text:'' }), false);
 assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'ok' }), false);
@@ -465,11 +515,157 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
     console.log('tick T6 (M1 baseline: new-thread default uses migrationBaselineTs, old msg excluded) OK');
   }
 
+  // ── Test T7: group messages archived to zalo-group-history; DM untouched; cursor advances ---
+  {
+    const ws7 = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-tick-t7-'));
+    const gid = '7290379638000003675';
+    const baselineTs = Date.now() - 600_000;
+    const ts = Date.now() - 120_000;
+    // tick() closes the db each cycle (Windows account-switch invariant), so the
+    // factory must hand back a FRESH open db on every open (mirrors real openDb()).
+    // 2 group msgs (member + self) and 1 DM msg that must NOT land in the group archive.
+    const buildDb7 = () => {
+      const d = makeFixtureDb('selfXYZ');
+      d.exec(`INSERT INTO messages VALUES ('ticktest','${gid}','group','g7a','mem1','Mèo','selfXYZ',${ts},'text','tin nhóm A','zalo')`);
+      d.exec(`INSERT INTO messages VALUES ('ticktest','${gid}','group','g7b','selfXYZ','Bot','selfXYZ',${ts + 100},'text','bot rep','zalo')`);
+      d.exec(`INSERT INTO messages VALUES ('ticktest','dmthread','user','d7','custZ','Z','selfXYZ',${ts + 200},'text','tin DM riêng','zalo')`);
+      return d;
+    };
+    _setOpenDb(buildDb7);
+    _setCall9(async () => '{"summary":"x","preferences":[],"decisions":[],"personality":[],"tags":[]}');
+
+    const statePath7 = path.join(ws7, 'zalo-profile-sync-state.json');
+    fs.writeFileSync(statePath7, JSON.stringify({ migrationBaselineTs: baselineTs, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 }), 'utf-8');
+
+    await tick({ now: Date.now(), profile: 'ticktest', wsOverride: ws7 });
+
+    const groupFile = path.join(ws7, 'zalo-group-history', 'selfXYZ', gid + '.jsonl');
+    assert.ok(fs.existsSync(groupFile), 'T7: group archive file created');
+    const gl = fs.readFileSync(groupFile, 'utf-8').trim().split('\n').map(l => JSON.parse(l));
+    assert.strictEqual(gl.length, 2, 'T7: exactly the 2 group msgs archived');
+    assert.deepStrictEqual(gl.map(m => m.msgId).sort(), ['g7a', 'g7b'], 'T7: correct group msgIds');
+    assert.ok(gl.find(m => m.msgId === 'g7b').dir === 'out', 'T7: self msg → out');
+    assert.ok(!gl.some(m => m.msgId === 'd7'), 'T7: DM msg NOT in group archive');
+
+    const state7 = JSON.parse(fs.readFileSync(statePath7, 'utf-8'));
+    assert.ok(state7.groupThreads && state7.groupThreads[gid], 'T7: group cursor advanced');
+    assert.strictEqual(state7.groupThreads[gid].lastProcessedMsgId, 'g7b', 'T7: cursor at newest group msg');
+
+    // Second tick, no new rows → no duplicate lines (idempotent).
+    await tick({ now: Date.now(), profile: 'ticktest', wsOverride: ws7 });
+    const gl2 = fs.readFileSync(groupFile, 'utf-8').trim().split('\n');
+    assert.strictEqual(gl2.length, 2, 'T7: second tick appends nothing new');
+    console.log('tick T7 (group archive append + DM isolation + cursor) OK');
+  }
+
+  // ── Test T8: empty selfId (mid-login) → group archive skipped, cursor NOT advanced (retry) ---
+  {
+    const ws8 = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-tick-t8-'));
+    const gid = '7290379638000003675';
+    const baselineTs = Date.now() - 600_000;
+    const ts = Date.now() - 120_000;
+    // Fixture with EMPTY self_profiles (openzca login not finished) → readSelfId = ''.
+    const buildDb8 = () => {
+      const d = new DatabaseSync(':memory:');
+      d.exec(`
+        CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
+        CREATE TABLE messages (
+          profile TEXT, scope_thread_id TEXT, thread_type TEXT,
+          msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
+          timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
+        );
+      `);
+      d.exec(`INSERT INTO messages VALUES ('ticktest','${gid}','group','g8a','mem1','M','${gid}',${ts},'text','tin nhóm','zalo')`);
+      return d;
+    };
+    _setOpenDb(buildDb8);
+
+    const statePath8 = path.join(ws8, 'zalo-profile-sync-state.json');
+    fs.writeFileSync(statePath8, JSON.stringify({ migrationBaselineTs: baselineTs, threads: {}, extractionDay: '2026-01-01', extractionCount: 0 }), 'utf-8');
+
+    await tick({ now: Date.now(), profile: 'ticktest', wsOverride: ws8 });
+
+    assert.ok(!fs.existsSync(path.join(ws8, 'zalo-group-history', gid + '.jsonl')), 'T8: no group archive written when selfId empty');
+    const state8 = JSON.parse(fs.readFileSync(statePath8, 'utf-8'));
+    assert.ok(!state8.groupThreads || !state8.groupThreads[gid], 'T8: group cursor NOT advanced (retry next tick)');
+    console.log('tick T8 (empty selfId → group pass skipped, cursor unadvanced) OK');
+  }
+
   // Reset _setOpenDb to a no-op (null db) so subsequent tests don't accidentally
   // use stale fixture dbs.
   _setOpenDb(() => null);
 
   console.log('tick() tests OK');
+}
+
+// --- backfillGroupHistory tests ---
+{
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  const { DatabaseSync } = require('node:sqlite');
+  const { backfillGroupHistory, _setOpenDb } = require('../lib/customer-memory-updater');
+  const ga = require('../lib/zalo-group-history-archive');
+
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-backfill-'));
+  const gid = '7290379638000003675';
+
+  const db = new DatabaseSync(':memory:');
+  db.exec(`
+    CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
+    INSERT INTO self_profiles VALUES ('bf', 'selfBF');
+    CREATE TABLE messages (
+      profile TEXT, scope_thread_id TEXT, thread_type TEXT,
+      msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
+      timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
+    );
+  `);
+  // 25 historical group msgs (the real INSTALLER group count) + 1 DM that must be ignored.
+  for (let i = 1; i <= 25; i++) {
+    db.exec(`INSERT INTO messages VALUES ('bf','${gid}','group','h${i}','mem${i % 3}','M','${gid}',${1700000000000 + i},'text','tin ${i}','zalo')`);
+  }
+  db.exec(`INSERT INTO messages VALUES ('bf','dm1','user','dmx','cust','C','selfBF',1700000099999,'text','dm','zalo')`);
+  _setOpenDb(() => db);
+
+  // First run: archives all 25, writes seal.
+  const r1 = backfillGroupHistory({ profile: 'bf', wsOverride: ws });
+  assert.strictEqual(r1.archived, 25, 'backfill archives all 25 group msgs');
+  const hist = ga.readGroupHistory(ws, gid, { account: 'selfBF', limit: 1000 });
+  assert.strictEqual(hist.length, 25, '25 lines present in archive');
+  assert.ok(!hist.some(m => m.msgId === 'dmx'), 'DM message excluded from group archive');
+  const seal = path.join(ws, 'zalo-group-history', '.backfilled');
+  assert.ok(fs.existsSync(seal), 'seal file written');
+
+  // Second run: sealed → skipped, no duplicate lines.
+  const r2 = backfillGroupHistory({ profile: 'bf', wsOverride: ws });
+  assert.strictEqual(r2.skipped, 'sealed', 'second run skipped via seal');
+  const hist2 = ga.readGroupHistory(ws, gid, { account: 'selfBF', limit: 1000 });
+  assert.strictEqual(hist2.length, 25, 'still 25 (idempotent, no dupes)');
+
+  fs.rmSync(ws, { recursive: true, force: true });
+
+  // --- no-selfId guard: empty self_profiles → NOT sealed (retry next boot) ---
+  {
+    const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-backfill-nosid-'));
+    const db2 = new DatabaseSync(':memory:');
+    db2.exec(`
+      CREATE TABLE self_profiles (profile TEXT, user_id TEXT);
+      CREATE TABLE messages (
+        profile TEXT, scope_thread_id TEXT, thread_type TEXT,
+        msg_id TEXT, sender_id TEXT, sender_name TEXT, to_id TEXT,
+        timestamp_ms INTEGER, msg_type TEXT, content_text TEXT, source TEXT
+      );
+    `); // self_profiles intentionally EMPTY (openzca login not finished)
+    db2.exec(`INSERT INTO messages VALUES ('bf2','${gid}','group','h1','m','M','${gid}',1700000000001,'text','x','zalo')`);
+    _setOpenDb(() => db2);
+    const r3 = backfillGroupHistory({ profile: 'bf2', wsOverride: ws2 });
+    assert.strictEqual(r3.skipped, 'no-selfid', 'empty self_profiles → skipped, not archived');
+    assert.ok(!fs.existsSync(path.join(ws2, 'zalo-group-history', '.backfilled')), 'NOT sealed → next boot retries');
+    fs.rmSync(ws2, { recursive: true, force: true });
+  }
+
+  _setOpenDb(() => null);
+  console.log('backfillGroupHistory OK');
 }
 
 // --- init() tests ---
@@ -581,4 +777,30 @@ assert.strictEqual(u._isSubstantive({ msg_type:'webchat', content_text:'Anh mu�
   );
   assert.ok(src.includes('better-sqlite3'), 'must use better-sqlite3 for main-process sqlite');
   console.log('sqlite-runtime guard OK');
+}
+
+// --- owner-id mismatch detection (spec §Owner-id layer 3) ---
+// Synchronous + self-contained: a zalo-history folder whose id != selfId alerts once.
+{
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'cmu-ownercheck-'));
+  fs.mkdirSync(path.join(ws, 'zalo-history', 'other999'), { recursive: true });
+  fs.mkdirSync(path.join(ws, 'zalo-history', 'self001'), { recursive: true });
+  const alerts = [];
+  const mism = u.detectOwnerIdMismatch({ wsOverride: ws, selfId: 'self001', alert: (m) => alerts.push(m) });
+  assert.strictEqual(mism, true, 'mismatch detected');
+  assert.strictEqual(alerts.length, 1, 'alerted once');
+  assert.ok(/other999/.test(alerts[0]), 'alert names the stray owner id');
+
+  const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cmu-ownercheck2-'));
+  fs.mkdirSync(path.join(ws2, 'zalo-history', 'self001'), { recursive: true });
+  const a2 = [];
+  assert.strictEqual(u.detectOwnerIdMismatch({ wsOverride: ws2, selfId: 'self001', alert: (m) => a2.push(m) }), false, 'no mismatch when only selfId folder');
+  assert.strictEqual(a2.length, 0, 'no alert when aligned');
+
+  fs.rmSync(ws, { recursive: true, force: true });
+  fs.rmSync(ws2, { recursive: true, force: true });
+  console.log('detectOwnerIdMismatch OK');
 }

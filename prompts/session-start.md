@@ -4,7 +4,7 @@ Mỗi phiên mới, **trước khi phản hồi bất kỳ tin nhắn nào**:
 
 ## Bước 1: Đọc file cốt lõi (theo thứ tự)
 
-1. **IDENTITY.md** — Tên, xưng hô, phong cách, ngành → áp dụng ngay cho mọi phản hồi
+1. **IDENTITY.md** — Tên, xưng hô, phong cách → áp dụng ngay cho mọi phản hồi
 2. **USER.md** — Người bạn đang giúp (tên, công ty, vai trò)
 3. **SOUL.md** — Triết lý cốt lõi
 4. **memory/YYYY-MM-DD.md** (hôm nay + hôm qua) — Ngữ cảnh gần nhất
@@ -13,8 +13,6 @@ Mỗi phiên mới, **trước khi phản hồi bất kỳ tin nhắn nào**:
 ## Bước 2: Đọc thêm nếu cần
 
 6. `memory/context/` — Ngữ cảnh đang hoạt động
-7. `industry/active.md` — Nếu tin nhắn liên quan vận hành
-8. `skills/active.md` — Nếu cần biết khả năng chuyên ngành
 
 Giới hạn: tối đa **5 lần đi sâu** khi bắt đầu phiên.
 

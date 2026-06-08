@@ -504,6 +504,10 @@ const _outputFilterSafeMsgs = [
  */
 function filterSensitiveOutput(text) {
   if (!text || typeof text !== 'string') return { blocked: false, text };
+  // 9BizClaw IMAGE-MARKER SAFETY (mirror of send.ts): a [[GUI_ANH: ...]] marker
+  // must never reach a customer. Strip it (reassign the same var the scan + the
+  // unblocked return below use) — do NOT block the whole reply for a marker.
+  text = text.replace(/\[\[\s*GUI_ANH\s*:[^\]\n]*?\]\]|\[\[\s*GUI_ANH\s*:[^\n]*/gi, '');
   for (const p of _outputFilterPatterns) {
     if (p.re.test(text)) {
       const safeMsg = _outputFilterSafeMsgs[Math.floor(Math.random() * _outputFilterSafeMsgs.length)];
@@ -875,10 +879,24 @@ async function sendZalo(text, opts = {}) {
 
 let _zaloListenerAlive = null;
 let _zaloListenerAliveAt = 0;
-const ZALO_LISTENER_CACHE_TTL = 30000;
+// Asymmetric cache TTL. A positive (alive) result is cheap to trust for 30s. A
+// NEGATIVE result must NOT stick: the openclaw health-monitor restarts the
+// listener under machine load, leaving a ~2-5s window where the listener process
+// is mid-respawn and findOpenzcaListenerPid() momentarily returns null. Caching
+// that transient false for 30s turned a ~3s respawn gap into 30s of refused
+// sends (false "listener_dead"). Re-probe negatives fast so sends recover in
+// seconds. Root cause of the churn itself is contention, not this check.
+const ZALO_LISTENER_CACHE_TTL_ALIVE = 30000;
+const ZALO_LISTENER_CACHE_TTL_DEAD = 2000;
+// Pure: is the cached liveness value still fresh? null = never probed = not fresh.
+function _listenerCacheFresh(cachedValue, ageMs) {
+  if (cachedValue === null) return false;
+  const ttl = cachedValue ? ZALO_LISTENER_CACHE_TTL_ALIVE : ZALO_LISTENER_CACHE_TTL_DEAD;
+  return ageMs < ttl;
+}
 function isZaloListenerAlive() {
   const now = Date.now();
-  if (_zaloListenerAlive !== null && (now - _zaloListenerAliveAt) < ZALO_LISTENER_CACHE_TTL) {
+  if (_listenerCacheFresh(_zaloListenerAlive, now - _zaloListenerAliveAt)) {
     return _zaloListenerAlive;
   }
   const pid = findOpenzcaListenerPid();
@@ -2157,6 +2175,7 @@ module.exports = {
   sendTelegram, sendTelegramPhoto, sendZalo, sendZaloTo, sendZaloMediaTo, sendCeoAlert, sendMemoryWriteAlert,
   // Probes
   isZaloListenerAlive, getReadyGateState,
+  _listenerCacheFresh, ZALO_LISTENER_CACHE_TTL_ALIVE, ZALO_LISTENER_CACHE_TTL_DEAD,
   finalizeTelegramReadyProbe, finalizeZaloReadyProbe,
   probeTelegramReady, findOpenzcaListenerPid, probeZaloReady, resetGatewayZaloDiag,
   probeChannelReady, connectNewChannel, disconnectChannel,

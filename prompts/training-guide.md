@@ -1,8 +1,8 @@
 # Hướng dẫn giao việc
 
-> **Lưu ý:** File này là hướng dẫn chung. Hướng dẫn chi tiết theo ngành nằm trong `prompts/training/active.md`.
+> **Lưu ý:** File này là hướng dẫn giao việc chung dùng cho mọi doanh nghiệp.
 
-Khi CEO gõ "hướng dẫn" trên Telegram, ưu tiên đọc `prompts/training/active.md` (theo ngành). Nếu file không tồn tại, dùng nội dung dưới đây:
+Khi CEO gõ "hướng dẫn" trên Telegram, dùng nội dung dưới đây:
 
 ---
 

@@ -904,12 +904,27 @@ async function _startOpenClawImpl(opts = {}) {
   let lastError = '';
   // Swallow pipe errors (they occur when process exits abruptly)
   logStream.on('error', (e) => console.error('[openclaw.log] write error:', e.message));
-  ctx.openclawProcess.stdout.on('error', (e) => console.error('[openclaw stdout] pipe error:', e.message));
-  ctx.openclawProcess.on('error', (e) => {
-    lastError = e && e.message ? e.message : String(e);
-    console.error('[openclaw spawn] error:', lastError);
-  });
-  ctx.openclawProcess.stdout.pipe(logStream).on('error', () => {});
+  // Defensive: this block runs AFTER the 240s WS-wait. A restart/kill race
+  // (resume-zalo, wizard-complete) can leave ctx.openclawProcess — or its
+  // stdout pipe — null by the time we attach here. Dereferencing null.stdout.on()
+  // used to throw "Cannot read properties of null (reading 'on')", abort boot,
+  // and leave the gateway permanently un-recovered (the guard 240 lines below
+  // checked the wrong property and ran too late). The stdout log-pipe is
+  // non-essential, so skip it instead of crashing — the background monitor
+  // still recovers boot.
+  const _gwStdout = ctx.openclawProcess && ctx.openclawProcess.stdout;
+  if (_gwStdout) {
+    _gwStdout.on('error', (e) => console.error('[openclaw stdout] pipe error:', e.message));
+    _gwStdout.pipe(logStream).on('error', () => {});
+  } else {
+    console.warn('[startOpenClaw] stdout pipe unavailable at attach time — skipping log pipe (boot continues)');
+  }
+  if (ctx.openclawProcess) {
+    ctx.openclawProcess.on('error', (e) => {
+      lastError = e && e.message ? e.message : String(e);
+      console.error('[openclaw spawn] error:', lastError);
+    });
+  }
   // stderr is a file FD (set in stdio above) — we read it from disk when needed.
   // This avoids Node pipe buffer deadlock on Windows when the gateway writes a
   // lot at startup (>64KB causes the pipe to block with no reader).
@@ -924,12 +939,14 @@ async function _startOpenClawImpl(opts = {}) {
     } catch { return []; }
   }
   // Log if the gateway process dies unexpectedly during boot
-  ctx.openclawProcess.on('exit', (code, signal) => {
-    const tail = readStderrTail(20);
-    console.error(`[gateway] process exited unexpectedly during boot — code=${code} signal=${signal}`);
-    for (const l of tail) console.error('  [openclaw stderr] ', l.slice(0, 300));
-    auditLog('gateway_died_during_boot', { code, signal });
-  });
+  if (ctx.openclawProcess) {
+    ctx.openclawProcess.on('exit', (code, signal) => {
+      const tail = readStderrTail(20);
+      console.error(`[gateway] process exited unexpectedly during boot — code=${code} signal=${signal}`);
+      for (const l of tail) console.error('  [openclaw stderr] ', l.slice(0, 300));
+      auditLog('gateway_died_during_boot', { code, signal });
+    });
+  }
 
   // REAL READINESS NOTIFICATIONS
   // CEO rule: "nếu thông báo là nhấn phải có reply thật sự" — don't send
@@ -1145,20 +1162,24 @@ async function _startOpenClawImpl(opts = {}) {
   // Guard: if an external stopOpenClaw() killed the process mid-spawn, the
   // reference here is null — attaching .on() would throw and break the
   // spawn path permanently (observed: wizard-complete race with resume-zalo
-  // → 240s timeout → null.stdout crash → gateway never recovers).
-  if (!ctx.openclawProcess) {
-    console.warn('[startOpenClaw] gateway process was killed externally during spawn — aborting attachment');
+  // → 240s timeout → null.stdout crash → gateway never recovers). The race can
+  // also leave the process non-null but its stdout pipe null, which threw
+  // "Cannot read properties of null (reading 'on')" one line later — so check
+  // BOTH the process and its stdout before attaching the data scanners.
+  const _scanStdout = ctx.openclawProcess && ctx.openclawProcess.stdout;
+  if (!_scanStdout) {
+    console.warn('[startOpenClaw] gateway stdout unavailable at scanner attach — aborting attachment (boot continues)');
     return;
   }
   // stderr is a file FD (see stdio above) → ctx.openclawProcess.stderr is null.
   // Attaching .on('data') to it threw, which silently skipped scanForConnectFailure
   // AND the idle-memory timer below. Scan stdout only (openclaw logs markers there);
   // stderr is read from disk via readStderrTail() when needed.
-  ctx.openclawProcess.stdout.on('data', scanForReadiness);
-  ctx.openclawProcess.stdout.on('data', scanForConnectFailure);
+  _scanStdout.on('data', scanForReadiness);
+  _scanStdout.on('data', scanForConnectFailure);
   try {
     const { touchIdleMemoryTimer } = require('./conversation');
-    ctx.openclawProcess.stdout.on('data', (chunk) => {
+    _scanStdout.on('data', (chunk) => {
       const s = chunk.toString();
       // Re-arm the "session idle" timer on activity.
       //  - 'telegram inbound:' is openclaw's CEO-message marker (the precise

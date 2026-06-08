@@ -62,6 +62,73 @@ function getFbHistoryPath() {
   return path.join(ws, HISTORY_FILE);
 }
 
+// Validate the image source for a schedule-create request. A post needs EITHER a
+// generation prompt OR a pre-rendered frozen imagePath (campaign posts). If an
+// imagePath is given, the file must already exist (fail fast — don't half-build a
+// campaign) AND resolve inside an allowed root. fileExists + isAllowed are
+// injected so this is unit-testable without a workspace.
+//
+// CONTAINMENT (security): imagePath is later read and sent to the CEO's Telegram
+// (_sendTelegramPhoto). A prompt-injected agent could otherwise pass an arbitrary
+// path (e.g. ../../license.json) and have its content surfaced. isAllowed pins the
+// frozen banner to the workspace/brand-assets roots where the bot's own images
+// live. Defaults to allow-all so pure unit tests stay workspace-free.
+function _validateImageSource(params, fileExists, isAllowed = () => true) {
+  const hasPrompt = !!(params && params.prompt);
+  const hasImage = !!(params && params.imagePath);
+  if (!hasPrompt && !hasImage) {
+    return { ok: false, error: 'prompt hoặc imagePath là bắt buộc (cần prompt để tạo ảnh, hoặc imagePath ảnh đã có sẵn)' };
+  }
+  if (hasImage && !isAllowed(params.imagePath)) {
+    return { ok: false, error: `imagePath nằm ngoài thư mục cho phép: ${params.imagePath}` };
+  }
+  if (hasImage && !fileExists(params.imagePath)) {
+    return { ok: false, error: `imagePath không tồn tại: ${params.imagePath}` };
+  }
+  return { ok: true };
+}
+
+// True when `p` resolves inside one of `roots` (after symlink-agnostic normalize).
+// Used to contain a frozen imagePath to the workspace / brand-assets dirs.
+function _isPathUnderRoots(p, roots) {
+  let abs;
+  try { abs = path.resolve(String(p)); } catch { return false; }
+  return roots.filter(Boolean).some((root) => {
+    const r = path.resolve(String(root));
+    const rel = path.relative(r, abs);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  });
+}
+
+// A "frozen" post carries a pre-rendered banner (campaign posts). Its image is
+// chosen + approved at plan time, so the generate phase must reuse it as-is and
+// never regenerate (Bug B). Pure → unit-testable.
+function _isFrozenPost(schedule) {
+  return !!(schedule && schedule.imagePath);
+}
+
+// Build one ledger record from a pending (+ optional schedule). Pure → testable.
+// Pending wins over schedule because a one-time schedule is usually auto-deleted by
+// publish time, so appendFbPostHistory is often called with schedule == null.
+function _buildFbHistoryRecord(pending, schedule) {
+  return {
+    t: new Date().toISOString(),
+    scheduleId: pending.scheduleId || schedule?.id || null,
+    label: schedule?.label || pending.label || null,
+    date: pending.date || null,
+    postDate: schedule?.postDate || pending.date || null,
+    campaignId: schedule?.campaignId || pending.campaignId || null,
+    postIndex: Number.isFinite(pending.postIndex) ? pending.postIndex : (Number.isFinite(schedule?.postIndex) ? schedule.postIndex : null),
+    postTotal: Number.isFinite(pending.postTotal) ? pending.postTotal : (Number.isFinite(schedule?.postTotal) ? schedule.postTotal : null),
+    status: pending.status || 'unknown',
+    postId: pending.postId || null,
+    postUrl: pending.postUrl || null,
+    publishedAt: pending.publishedAt || null,
+    targetPageId: pending.targetPageId || schedule?.targetPageId || null,
+    error: pending.error || null,
+  };
+}
+
 /**
  * Append one terminal-outcome record to the publish ledger. Called once per post
  * (from publishPending, after the publish impl runs — covers both the cron path and
@@ -71,20 +138,7 @@ function appendFbPostHistory(pending, schedule) {
   try {
     const p = getFbHistoryPath();
     if (!p || !pending) return;
-    const rec = {
-      t: new Date().toISOString(),
-      scheduleId: pending.scheduleId || schedule?.id || null,
-      label: schedule?.label || pending.label || null,
-      date: pending.date || null,
-      postDate: schedule?.postDate || null,
-      campaignId: schedule?.campaignId || pending.campaignId || null,
-      status: pending.status || 'unknown',          // published | skipped | rejected | ...
-      postId: pending.postId || null,
-      postUrl: pending.postUrl || null,
-      publishedAt: pending.publishedAt || null,
-      targetPageId: pending.targetPageId || schedule?.targetPageId || null,
-      error: pending.error || null,
-    };
+    const rec = _buildFbHistoryRecord(pending, schedule);
     fs.appendFileSync(p, JSON.stringify(rec) + '\n', 'utf-8');
   } catch (e) {
     console.warn('[fb-schedule] appendFbPostHistory failed:', e?.message);
@@ -370,6 +424,31 @@ function listPendingForDate(dateStr) {
   }
 }
 
+// Collect active pendings by SCANNING THE PENDING FILES ON DISK (not by iterating
+// live schedules). This is the Bug A fix: a one-time schedule auto-deletes after it
+// publishes, and an orphaned/late pending must still be approvable. Enrich with the
+// schedule if it still exists (for label), else schedule=null — approvePending and
+// publish already work from the pending alone. Deps injected for unit testing.
+// dates order = priority (today, tomorrow, yesterday) → first wins per scheduleId.
+function collectActivePendings(dates, schedules, listPendingForDateFn) {
+  const seen = new Map();
+  for (const date of dates) {
+    for (const pending of listPendingForDateFn(date)) {
+      if (!pending) continue;
+      if (pending.status === 'pending' || pending.status === 'approved' || pending.status === 'regenerating') {
+        if (!seen.has(pending.scheduleId)) {
+          const schedule = schedules.find(s => s.id === pending.scheduleId) || null;
+          seen.set(pending.scheduleId, { pending, schedule, date });
+        }
+      }
+    }
+  }
+  return [...seen.values()].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return a.pending.scheduleId < b.pending.scheduleId ? -1 : 1;
+  });
+}
+
 // ─── Phase 1: Generate image + send preview ────────────────────────
 
 /**
@@ -418,6 +497,41 @@ async function _handleGenerateInner(scheduleId) {
     return;
   }
 
+  // Frozen campaign post: image already chosen + approved at plan time. Skip image
+  // generation entirely (Bug B: never regenerate an approved asset). For autoPost
+  // (the campaign default) write an already-approved pending and send NO fire-time
+  // heads-up — the campaign was pre-approved and we post-then-notify at publish.
+  if (_isFrozenPost(schedule)) {
+    const fileOk = (() => { try { return fs.existsSync(schedule.imagePath); } catch { return false; } })();
+    const frozen = {
+      scheduleId, date,
+      status: fileOk ? (schedule.autoPost ? 'approved' : 'pending') : 'skipped',
+      imagePath: schedule.imagePath,
+      caption: schedule.caption || '',
+      prompt: schedule.prompt || '',
+      targetPageId: schedule.targetPageId || null,
+      campaignId: schedule.campaignId || null,
+      postIndex: Number.isFinite(schedule.postIndex) ? schedule.postIndex : null,
+      postTotal: Number.isFinite(schedule.postTotal) ? schedule.postTotal : null,
+      label: schedule.label || null,
+      generatedAt: new Date().toISOString(),
+      approvedAt: (fileOk && schedule.autoPost) ? new Date().toISOString() : null,
+      publishedAt: null, postId: null, postUrl: null,
+      error: fileOk ? null : 'Ảnh đóng băng không tồn tại trước giờ đăng',
+      autoPost: !!schedule.autoPost,
+    };
+    savePending(frozen);
+    if (!fileOk) {
+      if (_sendTelegram) { try { await _sendTelegram(`[FB Campaign] "${schedule.label}" — ảnh đóng băng đã mất, bỏ qua bài này. Tạo lại nếu cần.`); } catch {} }
+      return;
+    }
+    // Non-autoPost frozen post → still preview (reusing the frozen image, never regenerating).
+    if (!schedule.autoPost && _sendTelegramPhoto) {
+      try { await _sendTelegramPhoto(schedule.imagePath, `[FB Preview] "${schedule.label}"\nCaption:\n${frozen.caption}\n\nTrả lời "fb ok" để duyệt, "fb hủy" để bỏ.`); } catch {}
+    }
+    return;
+  }
+
   // Resolve target page name for preview messages
   let _targetPageName = null;
   let _targetShortName = null;
@@ -455,6 +569,10 @@ async function _handleGenerateInner(scheduleId) {
     postUrl: null,
     error: null,
     autoPost: !!schedule.autoPost,
+    label: schedule.label || null,
+    campaignId: schedule.campaignId || null,
+    postIndex: Number.isFinite(schedule.postIndex) ? schedule.postIndex : null,
+    postTotal: Number.isFinite(schedule.postTotal) ? schedule.postTotal : null,
   };
   savePending(pending);
 
@@ -820,7 +938,8 @@ async function _publishPendingImpl(pending, schedule) {
       if (_sendTelegram) {
         try {
           const pgLabel = publishPageName ? ` lên **${publishPageName}**` : '';
-          await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.scheduleId}"${pgLabel} thành công.\n${result.postUrl || ''}`);
+          const seq = (Number.isFinite(pending.postIndex) && Number.isFinite(pending.postTotal)) ? ` (bài ${pending.postIndex}/${pending.postTotal})` : '';
+          await _sendTelegram(`[FB Schedule] Đã đăng "${schedule?.label || pending.label || pending.scheduleId}"${seq}${pgLabel} thành công.\n${result.postUrl || ''}`);
         } catch {}
       }
       return;
@@ -1215,7 +1334,13 @@ function handleRoute(urlPath, params, jsonResp, res) {
     const { label, postTime, prompt, caption } = params;
     if (!postTime) { jsonResp(res, 400, { success: false, error: 'postTime required (HH:MM)' }); return true; }
     if (!parseTime(postTime)) { jsonResp(res, 400, { success: false, error: 'postTime phải có dạng HH:MM' }); return true; }
-    if (!prompt) { jsonResp(res, 400, { success: false, error: 'prompt required' }); return true; }
+    const _allowedImageRoots = [getWorkspace(), getBrandAssetsDir && getBrandAssetsDir()];
+    const _imgCheck = _validateImageSource(
+      params,
+      (p) => { try { return require('fs').existsSync(p); } catch { return false; } },
+      (p) => _isPathUnderRoots(p, _allowedImageRoots),
+    );
+    if (!_imgCheck.ok) { jsonResp(res, 400, { success: false, error: _imgCheck.error }); return true; }
 
     // Validate targetPageId — every schedule must target a specific fanpage
     const targetPageId = params.targetPageId;
@@ -1272,13 +1397,17 @@ function handleRoute(urlPath, params, jsonResp, res) {
       leadMinutes,
       enabled: true,
       autoPost,
-      prompt: String(prompt),
+      prompt: prompt ? String(prompt) : '',
       caption: caption || '',
       assetNames,
       imageSize: params.imageSize || '1024x1024',
       daysOfWeek: postDate ? [] : daysOfWeek,
       postDate,
       targetPageId,
+      imagePath: params.imagePath ? String(params.imagePath) : null,
+      campaignId: params.campaignId ? String(params.campaignId) : null,
+      postIndex: Number.isFinite(parseInt(params.postIndex, 10)) ? parseInt(params.postIndex, 10) : null,
+      postTotal: Number.isFinite(parseInt(params.postTotal, 10)) ? parseInt(params.postTotal, 10) : null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1649,7 +1778,7 @@ function _fbDisambig(list) {
       if (page) pageLabel = `${page.pageName || tpid}${page.shortName ? ` (${page.shortName})` : ''}`;
     }
     const capSnippet = x.pending?.caption ? `"${x.pending.caption.slice(0, 30)}${x.pending.caption.length > 30 ? '...' : ''}"` : '';
-    return `${i + 1}. ${pageLabel ? pageLabel + ' — ' : ''}${capSnippet || `"${x.schedule.label}"`}`;
+    return `${i + 1}. ${pageLabel ? pageLabel + ' — ' : ''}${capSnippet || `"${x.schedule?.label || x.pending.label || x.pending.scheduleId}"`}`;
   }).join('\n');
   return `Có ${list.length} bài đang chờ duyệt:\n${lines}\nNhắn số (1, 2, ...) hoặc "tất cả" để duyệt.`;
 }
@@ -1673,19 +1802,7 @@ async function handleTelegramCommand(cmd) {
   // Sorted deterministically by date + scheduleId so numbered disambiguation list
   // is stable across repeated calls (CEO picks by number).
   function collectActive() {
-    const seen = new Map();
-    for (const date of dates) {
-      for (const s of schedules) {
-        const pending = loadPending(s.id, date);
-        if (pending && (pending.status === 'pending' || pending.status === 'approved' || pending.status === 'regenerating')) {
-          if (!seen.has(s.id)) seen.set(s.id, { pending, schedule: s, date });
-        }
-      }
-    }
-    return [...seen.values()].sort((a, b) => {
-      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-      return a.pending.scheduleId < b.pending.scheduleId ? -1 : 1;
-    });
+    return collectActivePendings(dates, schedules, listPendingForDate);
   }
 
   // Resolve the target. { found } | { notFound } | { ambiguous: [...] }.
@@ -1695,8 +1812,10 @@ async function handleTelegramCommand(cmd) {
     if (specificId) {
       for (const date of dates) {
         const pending = loadPending(specificId, date);
-        const schedule = schedules.find(s => s.id === specificId);
-        if (pending && schedule) return { found: { pending, schedule, date } };
+        if (pending) {
+          const schedule = schedules.find(s => s.id === specificId) || null;
+          return { found: { pending, schedule, date } };
+        }
       }
       return { notFound: true };
     }
@@ -1714,7 +1833,7 @@ async function handleTelegramCommand(cmd) {
     if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = await approvePending(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
-    if (result.published) return { handled: true, response: `Đã duyệt và đăng "${r.found.schedule.label}" thành công.\n${result.postUrl || ''}` };
+    if (result.published) return { handled: true, response: `Đã duyệt và đăng "${r.found.schedule?.label || r.found.pending.label || r.found.pending.scheduleId}" thành công.\n${result.postUrl || ''}` };
     return { handled: true, response: result.message || 'Đã duyệt.' };
   }
 
@@ -1728,8 +1847,8 @@ async function handleTelegramCommand(cmd) {
     const target = active[idx - 1];
     const result = await approvePending(target.pending.scheduleId, target.date);
     if (!result.success) return { handled: true, response: result.error };
-    if (result.published) return { handled: true, response: `Đã duyệt và đăng "${target.schedule.label}" thành công.\n${result.postUrl || ''}` };
-    return { handled: true, response: result.message || `Đã duyệt "${target.schedule.label}".` };
+    if (result.published) return { handled: true, response: `Đã duyệt và đăng "${target.schedule?.label || target.pending.label || target.pending.scheduleId}" thành công.\n${result.postUrl || ''}` };
+    return { handled: true, response: result.message || `Đã duyệt "${target.schedule?.label || target.pending.label || target.pending.scheduleId}".` };
   }
 
   if (cmd.action === 'approveAll') {
@@ -1738,7 +1857,7 @@ async function handleTelegramCommand(cmd) {
     const results = [];
     for (const entry of active) {
       const result = await approvePending(entry.pending.scheduleId, entry.date);
-      results.push({ label: entry.schedule.label, ...result });
+      results.push({ label: entry.schedule?.label || entry.pending.label || entry.pending.scheduleId, ...result });
     }
     const ok = results.filter(r => r.success);
     const fail = results.filter(r => !r.success);
@@ -1753,7 +1872,7 @@ async function handleTelegramCommand(cmd) {
     if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = rejectPending(r.found.pending.scheduleId, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
-    return { handled: true, response: `Đã hủy bài "${r.found.schedule.label}".` };
+    return { handled: true, response: `Đã hủy bài "${r.found.schedule?.label || r.found.pending.label || r.found.pending.scheduleId}".` };
   }
 
   if (cmd.action === 'editCaption') {
@@ -1762,7 +1881,7 @@ async function handleTelegramCommand(cmd) {
     if (r.ambiguous) return { handled: true, response: _fbDisambig(r.ambiguous) };
     const result = editCaption(r.found.pending.scheduleId, cmd.caption, r.found.date);
     if (!result.success) return { handled: true, response: result.error };
-    return { handled: true, response: `Đã cập nhật caption cho "${r.found.schedule.label}":\n${cmd.caption}` };
+    return { handled: true, response: `Đã cập nhật caption cho "${r.found.schedule?.label || r.found.pending.label || r.found.pending.scheduleId}":\n${cmd.caption}` };
   }
 
   if (cmd.action === 'regenerate') {
@@ -1859,4 +1978,11 @@ module.exports = {
 
   // Callback registration
   setOnScheduleChanged,
+
+  // Pure helpers exported for tests
+  _validateImageSource,
+  _isPathUnderRoots,
+  _isFrozenPost,
+  _buildFbHistoryRecord,
+  collectActivePendings,
 };

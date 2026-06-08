@@ -1083,11 +1083,101 @@ function checkConflict({ content, appliesTo, trigger }) {
   return conflicts;
 }
 
-function listShippedSkills() {
-  const { getWorkspace } = require('./workspace');
-  const ws = getWorkspace();
-  if (!ws) return [];
-  const skillsDir = path.join(ws, 'skills');
+// 2026-06-07: skill library reorg (CEO request). The dashboard groups shipped
+// skills by category. Folder-derived categories lumped 28 skills under "Vận
+// hành" and scattered industry/dev/tooling skills into stray buckets ("Ngành",
+// "dev") — a mess. We now assign every CEO-facing skill to ONE of 5 fixed
+// buckets via an explicit id→category map (files stay where they are, so
+// AGENTS.md routing is untouched). Industry/vertical skills are removed from
+// the product entirely (given separately on request — see SKILL_CATEGORY_HIDE).
+const SKILL_CATEGORIES = ['Hệ Thống', 'Marketing', 'Sale', 'CSKH', 'Vận hành'];
+const SKILL_CATEGORY = {
+  // Hệ Thống — bot engine, config, internal APIs, system rules
+  'operations/gioi-thieu': 'Hệ Thống',
+  'shipped/auto-mode-rules': 'Hệ Thống',
+  'shipped/zalo-behavior': 'Hệ Thống',
+  'shipped/telegram-behavior': 'Hệ Thống',
+  'shipped/knowledge-routing': 'Hệ Thống',
+  'operations/skill-builder': 'Hệ Thống',
+  'operations/workspace-api': 'Hệ Thống',
+  'operations/ceo-file-api': 'Hệ Thống',
+  'operations/ceo-memory-api': 'Hệ Thống',
+  'operations/workflow-chains': 'Hệ Thống',
+  'operations/script-generator': 'Hệ Thống',
+  'operations/channel-control': 'Hệ Thống',
+  'operations/telegram-ceo': 'Hệ Thống',
+  'operations/google-workspace': 'Hệ Thống',
+  // Marketing — content/ads/images/insights
+  'marketing/zalo-post-workflow': 'Marketing',
+  'marketing/facebook-post-workflow': 'Marketing',
+  'marketing/facebook-campaign': 'Marketing',
+  // pro-content / pro-ds ship as `<name>/<name>.md` (not SKILL.md), so the
+  // scanner yields `pro-content/pro-content` / `pro-ds/pro-ds`. Map both that
+  // form and the folder-skill form so they bucket correctly either way.
+  'pro-content/pro-content': 'Marketing',
+  'pro-ds/pro-ds': 'Marketing',
+  'marketing/pro-content': 'Marketing',
+  'marketing/pro-ds': 'Marketing',
+  'operations/facebook-insights': 'Marketing',
+  'operations/image-generation': 'Marketing',
+  'bb-marketing': 'Marketing',
+  // Sale — bán hàng
+  'operations/viet-bai-ban-hang': 'Sale',
+  'operations/kich-ban-ban-hang': 'Sale',
+  'operations/bao-gia': 'Sale',
+  'bb-sales': 'Sale',
+  // CSKH — chăm sóc khách hàng
+  'operations/zalo': 'CSKH',
+  'operations/follow-up': 'CSKH',
+  'operations/veteran-behavior': 'CSKH',
+  'operations/zalo-followup-sheet': 'CSKH',
+  'operations/knowledge-base': 'CSKH',
+  'bb-customer': 'CSKH',
+  // Vận hành — điều hành hằng ngày + tạo tài liệu
+  'operations/cron-management': 'Vận hành',
+  'operations/checklist-van-hanh': 'Vận hành',
+  'operations/tuyen-dung-nhanh': 'Vận hành',
+  'operations/cong-no': 'Vận hành',
+  'operations/so-sach-don-gian': 'Vận hành',
+  'operations/bao-cao-ngay': 'Vận hành',
+  'appointments': 'Vận hành',
+  'operations/document-creation': 'Vận hành',
+  // NOTE: operations/excel is NOT here — it's a legacy alias of anthropic-xlsx
+  // (see _APPLIESTO_PATH_MIGRATIONS + _LEGACY_SHIPPED_SKILL_PATHS) and is hidden
+  // from the list by the scanner's legacy check. Don't re-add it.
+  'anthropic-docx': 'Vận hành',
+  'anthropic-pdf': 'Vận hành',
+  'anthropic-pptx': 'Vận hành',
+  'anthropic-xlsx': 'Vận hành',
+  // (pptx-generator is legacy → anthropic-pptx; not categorized, hidden by scanner)
+  // Business Builder doc-generation packs (Quốc MODORO / modoro-digital,
+  // MIT) — added selectively 2026-06-07. Each is a folder-skill (SKILL.md +
+  // references/ of doc recipes); the scanner lists the folder as one skill.
+  'bb-operations': 'Vận hành',
+  'bb-finance': 'Vận hành',
+  'bb-people': 'Vận hành',
+};
+// Never shown in the CEO skill list. `dev/*` = internal developer docs.
+// Industry/vertical ids are listed defensively so they vanish from the list
+// even if leftover .md files linger in an existing workspace until the
+// seed-time orphan purge removes them.
+const SKILL_CATEGORY_HIDE = new Set([
+  'INDEX',                        // the skill index itself, not a skill
+  'dev/claw-project', 'dev/handoff',
+  'bat-dong-san', 'cong-nghe', 'dich-vu', 'fnb',
+  'giao-duc', 'san-xuat', 'thuong-mai', 'tong-quat',
+]);
+
+// skillsDirOverride lets a test/guard scan the repo `skills/` tree directly
+// (the categorization guard runs with no workspace). Default: the live workspace.
+function listShippedSkills(skillsDirOverride) {
+  let skillsDir = skillsDirOverride;
+  if (!skillsDir) {
+    const { getWorkspace } = require('./workspace');
+    const ws = getWorkspace();
+    if (!ws) return [];
+    skillsDir = path.join(ws, 'skills');
+  }
   const results = [];
   const categoryMap = {
     operations: 'Vận hành',
@@ -1125,12 +1215,13 @@ function listShippedSkills() {
         if (fs.existsSync(skillMd)) {
           const skillId = (category && category !== 'Ngành' ? path.basename(dir) + '/' : '') + entry.name;
           if (_LEGACY_SHIPPED_SKILL_PATHS.has(skillId)) continue;
+          if (SKILL_CATEGORY_HIDE.has(skillId)) continue;
           // Anthropic folder skill — treat dir as single skill, do NOT recurse
           const name = _parseSkillName(skillMd, entry.name);
           results.push({
-            id: (category && category !== 'Ngành' ? path.basename(dir) + '/' : '') + entry.name,
+            id: skillId,
             name,
-            category: category || 'Ngành',
+            category: SKILL_CATEGORY[skillId] || category || 'Ngành',
             source: 'shipped',
             layout: 'folder',
           });
@@ -1139,12 +1230,18 @@ function listShippedSkills() {
         // Plain category subdir — recurse
         scan(path.join(dir, entry.name), categoryMap[entry.name] || entry.name);
       } else if (entry.name.endsWith('.md')) {
+        const skillId = (category && category !== 'Ngành' ? path.basename(dir) + '/' : '') + entry.name.replace(/\.md$/, '');
+        // Mirror the folder branch: a flat .md legacy alias (e.g. operations/excel
+        // → anthropic-xlsx) must also be skipped, else it leaks into the CEO list
+        // next to its canonical replacement.
+        if (_LEGACY_SHIPPED_SKILL_PATHS.has(skillId)) continue;
+        if (SKILL_CATEGORY_HIDE.has(skillId)) continue;
         const filePath = path.join(dir, entry.name);
         const name = _parseSkillName(filePath, entry.name.replace(/\.md$/, ''));
         results.push({
-          id: (category && category !== 'Ngành' ? path.basename(dir) + '/' : '') + entry.name.replace(/\.md$/, ''),
+          id: skillId,
           name,
-          category: category || 'Ngành',
+          category: SKILL_CATEGORY[skillId] || category || 'Ngành',
           source: 'shipped',
           layout: 'flat',
         });
@@ -1152,6 +1249,16 @@ function listShippedSkills() {
     }
   }
   scan(skillsDir, '');
+  // Stable display order: the 5 fixed buckets first (in canonical order), any
+  // unmapped leftover category after; skills sorted by name within a bucket.
+  results.sort((a, b) => {
+    const ai = SKILL_CATEGORIES.indexOf(a.category);
+    const bi = SKILL_CATEGORIES.indexOf(b.category);
+    const ar = ai === -1 ? SKILL_CATEGORIES.length : ai;
+    const br = bi === -1 ? SKILL_CATEGORIES.length : bi;
+    if (ar !== br) return ar - br;
+    return a.name.localeCompare(b.name, 'vi');
+  });
   return results;
 }
 
@@ -1195,4 +1302,6 @@ module.exports = {
   persistAppliesToMigrationIfNeeded,
   registerShippedSkills, SHIPPED_DOMAIN_SKILLS,
   _safeRegenInline,
+  // Exposed for the skill-categorization guard (check-skill-categorization.js).
+  SKILL_CATEGORY, SKILL_CATEGORIES, SKILL_CATEGORY_HIDE, _LEGACY_SHIPPED_SKILL_PATHS,
 };

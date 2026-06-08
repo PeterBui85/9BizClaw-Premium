@@ -165,6 +165,58 @@ function readNewDmMessages(db, profile, selfId, cursors, migrationBaselineTs) {
   return out;
 }
 
+// Read new GROUP messages (thread_type='group') with the same tie-safe cursor as
+// the DM reader. Returns Map<groupId, { msgs, newCursor, oldestTs }> — no inboundN
+// (groups have many senders; we archive raw, we don't extract facts per-thread).
+function readNewGroupMessages(db, profile, selfId, cursors, migrationBaselineTs) {
+  const cursorFloors = Object.values(cursors).map(c => c.lastProcessedTs).filter(Number.isFinite);
+  const floor = Math.min(...cursorFloors, Number(migrationBaselineTs) || 0);
+
+  const rows = db.prepare(
+    `SELECT scope_thread_id, msg_id, sender_id, sender_name, content_text, msg_type, timestamp_ms
+       FROM messages
+      WHERE profile=? AND thread_type='group' AND timestamp_ms >= ?
+      ORDER BY scope_thread_id, timestamp_ms, msg_id`
+  ).all(profile, Number.isFinite(floor) ? floor : 0);
+
+  const out = new Map();
+  for (const r of rows) {
+    const cur = cursors[r.scope_thread_id] || { lastProcessedTs: Number(migrationBaselineTs) || 0, lastProcessedMsgId: '' };
+    const after =
+      r.timestamp_ms > cur.lastProcessedTs ||
+      (r.timestamp_ms === cur.lastProcessedTs && String(r.msg_id) > String(cur.lastProcessedMsgId));
+    if (!after) continue;
+
+    let e = out.get(r.scope_thread_id);
+    if (!e) {
+      e = { msgs: [], newCursor: { lastProcessedTs: 0, lastProcessedMsgId: '' }, oldestTs: r.timestamp_ms };
+      out.set(r.scope_thread_id, e);
+    }
+    e.msgs.push(r);
+    e.newCursor = { lastProcessedTs: r.timestamp_ms, lastProcessedMsgId: String(r.msg_id) };
+  }
+  return out;
+}
+
+// Read ALL group messages (no cursor/floor) grouped by groupId. For the one-shot
+// backfill only — drains historical thread_type='group' rows into the archive.
+// Returns Map<groupId, rows[]>.
+function readAllGroupMessages(db, profile) {
+  const rows = db.prepare(
+    `SELECT scope_thread_id, msg_id, sender_id, sender_name, content_text, msg_type, timestamp_ms
+       FROM messages
+      WHERE profile=? AND thread_type='group'
+      ORDER BY scope_thread_id, timestamp_ms, msg_id`
+  ).all(profile);
+  const out = new Map();
+  for (const r of rows) {
+    let arr = out.get(r.scope_thread_id);
+    if (!arr) { arr = []; out.set(r.scope_thread_id, arr); }
+    arr.push(r);
+  }
+  return out;
+}
+
 // Open the openzca messages SQLite for a profile in read-only mode.
 // Returns null if the DB file does not exist yet.
 // WHY lazy-require better-sqlite3: the module must load under system node (for
@@ -406,6 +458,9 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
   }
 
   const selfId = readSelfId(db, profile);
+  // Defense in depth: alert (once) if the at-landing writer split the archive
+  // under a different owner id than this poller's selfId.
+  try { if (selfId) detectOwnerIdMismatch({ selfId }); } catch {}
 
   // --- State load ---
   const statePath = path.join(ws, 'zalo-profile-sync-state.json');
@@ -430,6 +485,7 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
     state = { migrationBaselineTs: now, threads: {}, extractionDay: _today(now), extractionCount: 0 };
   }
   if (!state.threads) state.threads = {};
+  if (!state.groupThreads) state.groupThreads = {};
 
   // Day-rollover: reset in-memory warn counter and state fields at start of tick
   const today = _today(now);
@@ -440,6 +496,7 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
   if (_warnDay !== today) { _warnDay = today; _warnCount = 0; }
 
   const threadsMap = readNewDmMessages(db, profile, selfId, state.threads, state.migrationBaselineTs);
+  const groupMap = readNewGroupMessages(db, profile, selfId, state.groupThreads, state.migrationBaselineTs);
   // Release the openzca SQLite handle the moment we're done reading. On Windows an
   // open (even readonly) handle can block openzca from replacing messages.sqlite
   // during an account switch — and surviving account switches is a core requirement.
@@ -548,6 +605,25 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
       state.threads[threadId] = newCursor;
       processed++;
     }
+  }
+
+  // --- Group raw archive (parallel to DM, no summaries) ---
+  // Append every new group message to the per-account/per-group JSONL, then
+  // advance the group cursor. appendGroupMessages never throws and dedups by
+  // msgId, so advancing unconditionally is forward-only & idempotent (matches the
+  // DM archive's best-effort guarantee; raw rows also remain in openzca SQLite).
+  // Skip the whole pass while selfId is empty (brief mid-login window before
+  // openzca populates self_profiles): appendGroupMessages would reject the unsafe
+  // '' account as a no-op, and advancing the cursor past those rows would lose them
+  // permanently. Leaving the cursor unadvanced retries next tick (mirrors the
+  // backfillGroupHistory no-selfid guard).
+  if (selfId) for (const [groupId, { msgs, newCursor }] of groupMap) {
+    try {
+      require('./zalo-group-history-archive').appendGroupMessages(ws, selfId, groupId, msgs);
+    } catch (e) {
+      console.error('[customer-memory] group archive append failed for', groupId, e?.message);
+    }
+    state.groupThreads[groupId] = newCursor;
   }
 
   // Soft warn (once per day, log loud)
@@ -684,11 +760,100 @@ async function init({ profile = 'default', wsOverride } = {}) {
   console.log('[customer-memory] init complete, polling every', POLL_INTERVAL_MS / 1000, 's');
 }
 
+// One-shot, idempotent backfill of historical Zalo GROUP messages from openzca
+// SQLite into the group archive. Sealed by <ws>/zalo-group-history/.backfilled so
+// it runs at most once per install. Synchronous + best-effort (called off the boot
+// critical path via setTimeout in main.js). Re-runnable safely if the seal is
+// absent (dedup by msgId prevents duplicate lines). Lazily requires fs/path/
+// workspace/archive so it stays load-safe under system node test harness.
+const GROUP_BACKFILL_VERSION = '1';
+function backfillGroupHistory({ profile = 'default', wsOverride } = {}) {
+  const fs = require('fs');
+  const path = require('path');
+  const { getWorkspace } = require('./workspace');
+  const ga = require('./zalo-group-history-archive');
+
+  const ws = wsOverride || getWorkspace();
+  if (!ws) return { skipped: 'no-ws' };
+
+  const sealDir = path.join(ws, 'zalo-group-history');
+  const seal = path.join(sealDir, '.backfilled');
+  try {
+    if (fs.existsSync(seal) && fs.readFileSync(seal, 'utf-8').trim() === GROUP_BACKFILL_VERSION) {
+      return { skipped: 'sealed' };
+    }
+  } catch {}
+
+  const db = _openDb(profile);
+  if (!db) return { skipped: 'no-db' };
+
+  // If openzca hasn't finished first login, self_profiles is empty → readSelfId
+  // returns ''. appendGroupMessages would reject every row (unsafe '' account) and
+  // we'd seal at archived=0, permanently skipping the backfill. Do NOT seal: leave
+  // it unsealed so the next boot retries once the account exists.
+  const selfId = readSelfId(db, profile);
+  if (!selfId) {
+    try { db.close(); } catch {}
+    return { skipped: 'no-selfid' };
+  }
+
+  let archived = 0;
+  try {
+    const groups = readAllGroupMessages(db, profile);
+    // Append per group, oldest-first (rows already ordered) so each group's own
+    // msgIds stay inside its own 256KB dedup tail on any re-run.
+    for (const [groupId, rows] of groups) {
+      ga.appendGroupMessages(ws, selfId, groupId, rows);
+      archived += rows.length;
+    }
+  } catch (e) {
+    console.error('[customer-memory] group backfill failed (will retry next boot):', e?.message);
+    try { db.close(); } catch {}
+    return { error: e?.message, archived };
+  }
+  try { db.close(); } catch {}
+
+  try {
+    fs.mkdirSync(sealDir, { recursive: true });
+    fs.writeFileSync(seal, GROUP_BACKFILL_VERSION, 'utf-8');
+  } catch (e) {
+    console.error('[customer-memory] group backfill seal write failed:', e?.message);
+  }
+  console.log('[customer-memory] group backfill archived', archived, 'messages');
+  return { archived };
+}
+
+// Defense in depth (spec §Owner-id layer 3): the at-landing writer (modoro-zalo
+// plugin) keys archive folders by botUserId; this poller keys by
+// self_profiles.user_id. If a folder appears under zalo-history/ whose id != the
+// current selfId, the two sources have diverged → a silent split. Surface it
+// loudly + alert the CEO once. Read-only; never throws.
+let _ownerMismatchAlerted = false;
+function detectOwnerIdMismatch({ wsOverride, selfId, alert } = {}) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const { getWorkspace } = require('./workspace');
+    const ws = wsOverride || getWorkspace();
+    if (!ws || !selfId) return false;
+    const root = path.join(ws, 'zalo-history');
+    let names = [];
+    try { names = fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name); } catch { return false; }
+    const stray = names.filter(n => n !== String(selfId));
+    if (stray.length === 0) return false;
+    const msg = `[Trí nhớ khách] Phát hiện kho lịch sử Zalo bị tách: thư mục theo id khác (${stray.join(', ')}) so với tài khoản hiện tại (${selfId}). Có thể tin nhắn đang lưu vào 2 nơi.`;
+    if (typeof alert === 'function') alert(msg);
+    else if (!_ownerMismatchAlerted) { _ownerMismatchAlerted = true; _alertCeo(msg); }
+    console.warn('[customer-memory] owner-id split detected:', stray.join(', '), 'vs', selfId);
+    return true;
+  } catch { return false; }
+}
+
 module.exports = {
   sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev,
-  readNewDmMessages, openDb, readSelfId,
+  readNewDmMessages, readNewGroupMessages, readAllGroupMessages, openDb, readSelfId,
   _isSubstantive, _buildExtractPrompt, extractForThread, _setCall9,
   _compactFacts, _bumpFrontmatter, _setFrontmatterField, _needsEnable,
-  tick, init,
+  tick, init, backfillGroupHistory, detectOwnerIdMismatch,
   _setOpenDb, // test hook: inject fixture db factory without needing Electron binary
 };

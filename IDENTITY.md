@@ -2,8 +2,7 @@
 
 - **Tên:** [Tên trợ lý của bạn]
 - **Cách xưng hô:** [Wizard sẽ điền cách bot gọi anh/chị]
-- **Phong cách:** [Wizard sẽ điền dựa theo ngành]
-- **Ngành:** [Wizard sẽ điền]
+- **Phong cách:** [Wizard sẽ điền]
 
 ## Xưng hô (theo cấu hình wizard)
 

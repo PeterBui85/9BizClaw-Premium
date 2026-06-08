@@ -1,8 +1,8 @@
 # Mẫu SOP giao việc
 
-> **Lưu ý:** File này là mẫu chung. Mẫu giao việc chi tiết theo ngành nằm trong `prompts/sop/active.md`.
+> **Lưu ý:** File này là mẫu giao việc chung dùng cho mọi doanh nghiệp.
 
-Khi CEO gõ "menu" hoặc "lệnh" trên Telegram, ưu tiên đọc `prompts/sop/active.md` (theo ngành). Nếu file không tồn tại, dùng nội dung dưới đây:
+Khi CEO gõ "menu" hoặc "lệnh" trên Telegram, dùng nội dung dưới đây:
 
 ---
 

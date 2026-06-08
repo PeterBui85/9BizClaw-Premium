@@ -1040,6 +1040,13 @@ app.whenReady().then(async () => {
   setTimeout(() => {
     backfillDocumentChunks().catch(e => console.error('[knowledge] chunk backfill error:', e.message));
   }, 10000);
+  // Zalo group history: one-shot sealed backfill of historical group messages
+  // from openzca SQLite, 12s after boot (off the critical path, after gateway
+  // warmup). Idempotent + non-blocking; sealed so it runs once per install.
+  setTimeout(() => {
+    try { require('./lib/customer-memory-updater').backfillGroupHistory({ profile: 'default' }); }
+    catch (e) { console.warn('[customer-memory] group backfill boot error:', e?.message); }
+  }, 12000);
   // H7: verify embedder model SHA early so tamper alert surfaces fast.
   setTimeout(() => {
     verifyEmbedderModelSha().catch(e => console.warn('[embedder-sha] boot:', e?.message));

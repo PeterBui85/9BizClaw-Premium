@@ -393,7 +393,9 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
     } catch (__gdErr) { try { logOutbound("warn", "GROUP-DETECT lookup failed", { err: String(__gdErr) }); } catch {} }
   }
   // === END 9BizClaw GROUP-DETECT PATCH ===
-  const body = text.trim();
+  // 9BizClaw IMAGE-MARKER SAFETY: a [[GUI_ANH: ...]] marker must never reach a
+  // customer even if the deliver-path strip was bypassed. Strip, do not block.
+  const body = text.replace(/\[\[\s*GUI_ANH\s*:[^\]\n]*?\]\]|\[\[\s*GUI_ANH\s*:[^\n]*/gi, "").trim();
   if (!body) {
     return { messageId: "empty", kind: "text" };
   }

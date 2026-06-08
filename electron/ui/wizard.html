@@ -1424,6 +1424,7 @@
                   </div>
 
                   <div class="dual-cta">
+                    <button class="wz-btn wz-btn-ghost" onclick="backPD('3-2', 1)" type="button">&larr; Quay lại</button>
                     <button class="wz-btn wz-btn-secondary" onclick="advancePD('3-2', 2)" type="button">BotFather đã gửi Mã kết nối &rarr;</button>
                   </div>
                 </div>
@@ -1480,10 +1481,13 @@
                       </button>
                     </div>
                     <div class="field-helper" id="token-helper" style="display:none"></div>
-                    <button class="wz-btn wz-btn-primary" id="btn-token-next" disabled
-                            onclick="advanceTokenStep()" type="button" style="margin-top:12px; width:100%">
-                      Tiếp tục &rarr;
-                    </button>
+                    <div class="dual-cta" style="margin-top:12px">
+                      <button class="wz-btn wz-btn-ghost" onclick="backPD('3-2', 2)" type="button">&larr; Quay lại</button>
+                      <button class="wz-btn wz-btn-primary" id="btn-token-next" disabled
+                              onclick="advanceTokenStep()" type="button">
+                        Tiếp tục &rarr;
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1571,7 +1575,7 @@
                   </div>
 
                   <div class="dual-cta" style="margin-top:20px">
-                    <button class="wz-btn wz-btn-ghost" onclick="goToTgScreen('3-1')" type="button">&larr; Quay lại</button>
+                    <button class="wz-btn wz-btn-ghost" onclick="backPD('3-2', 3)" type="button">&larr; Quay lại</button>
                     <button class="wz-btn wz-btn-primary" onclick="goToTgScreen('3-3')" type="button">
                       Đã nhấn Start, tiếp tục &rarr;
                     </button>
@@ -1657,10 +1661,13 @@
                     <div class="tg-copied-tip" id="id-copied-tip">Đã sao chép!</div>
                   </div>
 
-                  <button class="wz-btn-confirm" onclick="advancePD('3-3', 2)" type="button">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                    Tôi đã copy dãy số
-                  </button>
+                  <div class="dual-cta">
+                    <button class="wz-btn wz-btn-ghost" onclick="backPD('3-3', 1)" type="button">&larr; Quay lại</button>
+                    <button class="wz-btn-confirm" onclick="advancePD('3-3', 2)" type="button">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                      Tôi đã copy dãy số
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1687,7 +1694,7 @@
                     <div class="field-helper" id="userid-helper" style="display:none"></div>
                   </div>
                   <div class="dual-cta">
-                    <button class="wz-btn wz-btn-ghost" onclick="goToTgScreen('3-2')" type="button">&larr; Quay lại</button>
+                    <button class="wz-btn wz-btn-ghost" onclick="backPD('3-3', 2)" type="button">&larr; Quay lại</button>
                     <button class="wz-btn wz-btn-primary" id="btn-to-3-4" disabled onclick="goToTgScreen('3-4')" type="button">
                       Kiểm tra kết nối &rarr;
                     </button>
@@ -1915,9 +1922,20 @@
     }
 
     function navBack() {
-      // On step 3, step BACKWARD through the Telegram sub-screens; only leave to
-      // step 2 from the first sub-screen. (Footer "Quay lại" must never dead-end.)
+      // On step 3, step BACKWARD one level at a time: first through the numbered
+      // pd-steps inside the BotFather (3-2) / User-ID (3-3) sub-screens, then
+      // between sub-screens, then out to step 2. (Footer "Quay lại" must never
+      // dead-end or skip the user past a step they're mid-way through.)
       if (currentStep === 3) {
+        const pdMax = ({ '3-2': 4, '3-3': 3 })[_currentTgScreen];
+        if (pdMax) {
+          let active = 0;
+          for (let n = 1; n <= pdMax; n++) {
+            const el = document.getElementById('pd-' + _currentTgScreen + '-' + n);
+            if (el && el.classList.contains('active')) { active = n; break; }
+          }
+          if (active > 1) { backPD(_currentTgScreen, active - 1); return; }
+        }
         const order = ['3-1', '3-2', '3-3', '3-4'];
         const i = order.indexOf(_currentTgScreen);
         if (i > 0) { goToTgScreen(order[i - 1]); return; }
@@ -2086,6 +2104,25 @@
         if (nxt.id === 'pd-3-3-2') setTimeout(setupIdCopyAnim, 100);
         setTimeout(() => nxt.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
       }
+    }
+
+    function backPD(screen, toStep) {
+      // Mirror of advancePD, in reverse: re-open an earlier numbered step in the
+      // SAME sub-screen so the user can go back one step at a time. Steps before
+      // toStep stay done; toStep becomes active; later steps re-lock.
+      const max = ({ '3-2': 4, '3-3': 3 })[screen] || 4;
+      for (let n = 1; n <= max; n++) {
+        const el = document.getElementById('pd-' + screen + '-' + n);
+        if (!el) continue;
+        el.classList.remove('active', 'done', 'locked');
+        el.classList.add(n < toStep ? 'done' : (n === toStep ? 'active' : 'locked'));
+      }
+      // Re-arm the animated demos when their step is re-opened (advancePD does the same).
+      if (screen === '3-2' && toStep === 3) setTimeout(setupTokenCopyAnim, 100);
+      if (screen === '3-2' && toStep === 4) setTimeout(setupSimAnimation, 100);
+      if (screen === '3-3' && toStep === 2) setTimeout(setupIdCopyAnim, 100);
+      const cur = document.getElementById('pd-' + screen + '-' + toStep);
+      if (cur) setTimeout(() => cur.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
     }
 
     async function pasteInto(inputId) {

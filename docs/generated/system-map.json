@@ -1,7 +1,7 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 152,
+    "apiRoutes": 156,
     "ipcHandlers": 212,
     "preloadBridges": 205,
     "dashboardPages": 18,
@@ -109,6 +109,15 @@
     },
     {
       "path": "/api/cron/replace",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/cron/telegram-command",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -1323,6 +1332,24 @@
       ]
     },
     {
+      "path": "/api/zalo/group/history",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/zalo/group/history/groups",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/zalo/groups",
       "sources": [
         "electron/lib/cron-api.js"
@@ -1342,6 +1369,15 @@
     },
     {
       "path": "/api/zalo/history/accounts",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/zalo/history/digest",
       "sources": [
         "electron/lib/cron-api.js"
       ],
@@ -3370,7 +3406,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 99928
+      "bytes": 101213
     },
     {
       "path": "electron/lib/config.js",
@@ -3378,23 +3414,23 @@
     },
     {
       "path": "electron/lib/conversation.js",
-      "bytes": 32582
+      "bytes": 34041
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 191578
+      "bytes": 202330
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 142599
+      "bytes": 144957
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 29734
+      "bytes": 37568
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 290829
+      "bytes": 289108
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3402,11 +3438,11 @@
     },
     {
       "path": "electron/lib/fb-schedule.js",
-      "bytes": 79279
+      "bytes": 86437
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 88499
+      "bytes": 89623
     },
     {
       "path": "electron/lib/google-api.js",
@@ -3442,7 +3478,7 @@
     },
     {
       "path": "electron/lib/skill-manager.js",
-      "bytes": 51030
+      "bytes": 56555
     },
     {
       "path": "electron/lib/vendor-patches.js",
@@ -3462,7 +3498,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 691912
+      "bytes": 693541
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
@@ -3474,7 +3510,7 @@
     },
     {
       "path": "electron/ui/wizard.html",
-      "bytes": 118016
+      "bytes": 120216
     }
   ]
 }

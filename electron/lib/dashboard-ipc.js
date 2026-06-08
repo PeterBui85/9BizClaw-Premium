@@ -2004,12 +2004,13 @@ ipcMain.handle('save-zalo-manager-config', async (_event, { enabled, groupPolicy
   }
 });
 
-// Save personalization (industry, tone, pronouns)
+// Save personalization (tone, pronouns; `industry` accepted but ignored since 2026-06-07 — generic profile)
 ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns, ceoTitle, botName, personaMix, selectedPersona, ceoName, companyName }) => {
   try {
-    // Validate inputs
-    const VALID_INDUSTRIES = ['bat-dong-san', 'fnb', 'thuong-mai', 'dich-vu', 'giao-duc', 'cong-nghe', 'san-xuat', 'tong-quat'];
-    if (!VALID_INDUSTRIES.includes(industry)) return { success: false, error: 'Invalid industry' };
+    // Validate inputs. Industry-specific tailoring was removed (2026-06-07):
+    // the bot ships ONE generic profile — vertical/industry skills are
+    // delivered separately on request (every business differs; bundling them
+    // caused confusion). The `industry` arg is accepted but ignored.
     const VALID_TONES = ['professional', 'friendly', 'concise'];
     if (!VALID_TONES.includes(tone)) tone = 'friendly';
     const VALID_PRONOUNS = ['em-anh-chi', 'toi-quy-khach', 'minh-ban'];
@@ -2026,46 +2027,11 @@ ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns
       console.error('[save-personalization] empty ceoTitle — refusing to write IDENTITY.md');
       return { success: false, error: 'ceoTitle bắt buộc — vui lòng nhập "Trợ lý gọi bạn là" trong wizard' };
     }
-    console.log('[save-personalization] industry=' + industry + ' tone=' + tone + ' pronouns=' + pronouns + ' ceoTitle="' + ceoTitle + '" botName="' + botName + '"');
-
-    // Industry name map for display
-    const INDUSTRY_NAMES = {
-      'bat-dong-san': 'Bất động sản',
-      'fnb': 'F&B (Nhà hàng, Quán cà phê)',
-      'thuong-mai': 'Thương mại / Bán lẻ',
-      'dich-vu': 'Dịch vụ (Spa, Salon, Phòng khám)',
-      'giao-duc': 'Giáo dục / Đào tạo',
-      'cong-nghe': 'Công nghệ / IT',
-      'san-xuat': 'Sản xuất',
-      'tong-quat': 'Tổng quát',
-    };
+    console.log('[save-personalization] tone=' + tone + ' pronouns=' + pronouns + ' ceoTitle="' + ceoTitle + '" botName="' + botName + '"');
 
     const ws = getWorkspace();
-    // 1. Copy skill file -> skills/active.md
-    const skillSrc = path.join(ws, 'skills', `${industry}.md`);
-    const skillDst = path.join(ws, 'skills', 'active.md');
-    if (fs.existsSync(skillSrc)) fs.copyFileSync(skillSrc, skillDst);
 
-    // 2. Copy industry workflow -> industry/active.md
-    const indSrc = path.join(ws, 'industry', `${industry}.md`);
-    const indDst = path.join(ws, 'industry', 'active.md');
-    if (fs.existsSync(indSrc)) fs.copyFileSync(indSrc, indDst);
-
-    // 3. Copy SOP templates -> prompts/sop/active.md
-    const sopDir = path.join(ws, 'prompts', 'sop');
-    if (!fs.existsSync(sopDir)) fs.mkdirSync(sopDir, { recursive: true });
-    const sopSrc = path.join(sopDir, `${industry}.md`);
-    const sopDst = path.join(sopDir, 'active.md');
-    if (fs.existsSync(sopSrc)) fs.copyFileSync(sopSrc, sopDst);
-
-    // 4. Copy training guide -> prompts/training/active.md
-    const trainDir = path.join(ws, 'prompts', 'training');
-    if (!fs.existsSync(trainDir)) fs.mkdirSync(trainDir, { recursive: true });
-    const trainSrc = path.join(trainDir, `${industry}.md`);
-    const trainDst = path.join(trainDir, 'active.md');
-    if (fs.existsSync(trainSrc)) fs.copyFileSync(trainSrc, trainDst);
-
-    // 5. Update IDENTITY.md with tone, pronouns, industry
+    // Update IDENTITY.md with tone + pronouns (industry tailoring removed)
     const identityPath = path.join(ws, 'IDENTITY.md');
     if (!fs.existsSync(identityPath)) {
       // seedWorkspace should have created this. If missing, the bot would
@@ -2088,7 +2054,6 @@ ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns
       };
       const xunghoLine = `- **Cách xưng hô:** ${pronounMap[pronouns] || pronounMap['em-anh-chi']}`;
       const phongcachLine = `- **Phong cách:** ${toneMap[tone] || toneMap['friendly']}`;
-      const nganhLine = `- **Ngành:** ${INDUSTRY_NAMES[industry] || industry}`;
       const before = content;
       // Bot name — replace the "[Tên trợ lý của bạn]" placeholder or update
       // an existing name. If botName is empty, write a sensible default so the
@@ -2097,13 +2062,12 @@ ipcMain.handle('save-personalization', async (_event, { industry, tone, pronouns
       content = content.replace(/- \*\*Tên:\*\* .*/, botNameLine);
       content = content.replace(/- \*\*Cách xưng hô:\*\* .*/, xunghoLine);
       content = content.replace(/- \*\*Phong cách:\*\* .*/, phongcachLine);
-      content = content.replace(/- \*\*Ngành:\*\* .*/, nganhLine);
       if (content === before) {
         // Replace did nothing — IDENTITY.md is missing the expected lines.
         // Append them so bot still gets the right ceoTitle even on a malformed
         // template.
         console.warn('[save-personalization] IDENTITY.md missing expected lines — appending');
-        content = content.trimEnd() + '\n\n' + xunghoLine + '\n' + phongcachLine + '\n' + nganhLine + '\n';
+        content = content.trimEnd() + '\n\n' + xunghoLine + '\n' + phongcachLine + '\n';
       }
       fs.writeFileSync(identityPath, content, 'utf-8');
       // Read back to confirm the write actually persisted (catches silent

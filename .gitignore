@@ -210,3 +210,6 @@ bug-sweep-*.md
 user-skills/_trash/
 _trash/
 *.deleteme/
+
+# /understand knowledge-graph tool cache (regenerable, 20MB) — never commit
+.understand-anything/

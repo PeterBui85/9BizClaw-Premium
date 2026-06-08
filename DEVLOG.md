@@ -4,6 +4,25 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-06-08
+
+**Zalo customer image-send actually works now (Approach Y) + Zalo listener false-`listener_dead` hotfix. App version stays 2.4.11 (CEO's call); AGENTS 119→120; fork v1.0.20→v1.0.21. UNCOMMITTED — pending CEO review.**
+
+- **Root cause found by live testing (not just doc-trace).** A real customer asked the bot "gửi ảnh giao diện app" → the bot refused ("em chưa gửi ảnh trực tiếp được"). Instructions were correct + deployed (v119), but the Zalo customer agent is — by security design — forbidden from calling the cron-API (the bearer is injected only for Telegram sessions; Zalo calls get 403). So the agent was told to call an API it can never reach, and improvised a refusal. Both delivery paths were dead: cron-API `send-media` (403 for the agent) and the `MEDIA:` reply-token (media roots pointed at `~/.openclaw`, not the workspace).
+- **Fix = Approach Y (marker + plugin sends server-side).** The agent now appends `[[GUI_ANH: <từ khóa>]]` to its reply. The modoro-zalo plugin's coalesced-delivery choke point (`__mcDoDeliver`) strips the marker (always — it never reaches the customer) and, if present, calls the cron-API media search **server-to-server** (trusted plugin code, reads the token file) then sends up to **10** public product images to the **current conversation** via the plugin's own `sendMediaModoroZalo`, paced ~1s apart. **No new cron-API auth surface** (the agent still can't call it); target is the current conversation (never agent-supplied) so a prompt-injected customer can't redirect images; `audience=customer` forces product/public server-side; a `media-assets/` containment guard bounds the file. New `image-marker.ts` (pure parse, unit-tested) + `image-send.ts` (IO); marker strip mirrored in `send.ts` + `channels.js`; new smoke guard `check-zalo-image-marker.js`. Delivery proven live (openzca `msg image` returned a real msgId).
+- **Zalo listener false-`listener_dead` hotfix.** Sends intermittently failed `listener_dead` even though the session was valid. Root cause = **contention**: under heavy machine load the openclaw health-monitor restarts the listener subprocess, and the send-path liveness check (`findOpenzcaListenerPid`) cached a transient null for the full 30s window. Fix = asymmetric cache TTL in `channels.js` (alive 30s, dead 2s) so a respawn gap recovers in seconds instead of sticking. Idle isolation test confirmed the listener is rock-stable when the machine isn't starved.
+- Docs/code only — nothing built/pushed/released. Versions bumped so the fix reaches existing installs on the next build.
+
+## 2026-06-07
+
+**Zalo customer image-send reliability (product / bảng giá / menu). App version stays 2.4.11 (CEO's call); AGENTS 118→119.**
+
+- **Root cause found by full pipeline trace.** Image sending to Zalo customers depended on the cheap `ninerouter/zalo` model following `skills/operations/zalo.md`, which instructed a **non-existent** function `sendZaloMedia(photo=…)` — so the bot literally could not succeed even when it tried. The instruction was also not always present (shipped-skill injection is keyword-gated; only AGENTS.md is always loaded).
+- **Fix = correct + always-present instruction, on the proven secure path.** Rewrote zalo.md §GỬI ẢNH and added an always-present rule in AGENTS.md: customer image requests → `GET /api/media/search?q=&audience=customer` (get `id`) → `GET /api/zalo/send-media?mediaId=<id>&targetId=<senderId>` (DM) / `&groupId=<groupId>` (group). Chosen over the `MEDIA:` reply-token because send-media enforces public-only + brand-blocked server-side, uses an opaque `mediaId` (no arbitrary file paths), resolves the correct workspace path (`resolveAllowedMediaRoots` always includes `<ws>/media-assets`), and is GET-reachable (web_fetch auto-POSTs query params). The `MEDIA:` token path is in fact broken in this build (plugin media roots default to `~/.openclaw/…`, not the 9biz workspace).
+- **Menu / bảng giá:** reachable today by uploading those images as **Sản phẩm (product)** assets (CEO's call — no search-route change). Documented in zalo.md + self-knowledge.
+- **Self-knowledge** (`operations/gioi-thieu.md`) CSKH bullet updated so the bot describes this capability truthfully.
+- Docs-only + version bump (no plugin-fork edit, no openclaw.json/config change). Nothing built/pushed/released.
+
 ## 2026-06-04
 
 **Customer memory + data-protection overhaul (triggered by a real complaint: bot "forgot" a customer's name + CEO-taught behavior after an update). App version stays 2.4.11 (CEO's call); AGENTS 111→113.**

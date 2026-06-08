@@ -50,7 +50,6 @@ Decision tree:
 | "khi tạo ảnh" / "thiết kế ảnh" / brand assets | Rule áp `operations/image-generation` | `rule` | `["operations/image-generation"]` |
 | "khi tạo cron" / "lịch tự động" | Rule áp `operations/cron-management` | `rule` | `["operations/cron-management"]` |
 | "khi nhắn anh" / "khi tư vấn cho sếp" | Rule áp `operations/telegram-ceo` | `rule` | `["operations/telegram-ceo"]` |
-| Theo ngành (FNB, BĐS, ...) | Rule áp skill ngành (vd `fnb.md`) | `rule` | `["fnb"]` |
 | "luôn dùng X" / "mọi tình huống" / không kẹp vào skill cụ thể | **Standalone** | `rule` | `[]` |
 | Quy trình nhiều bước có thứ tự | Workflow | `workflow` | `[]` hoặc `["<shipped-id>"]` |
 | Override hành vi mặc định | Override | `override` | `["<shipped-id>"]` |

@@ -94,6 +94,21 @@ web_fetch http://127.0.0.1:20200/api/cron/create?label=Thông+báo+lịch+đào+
 
 **CẢNH BÁO: KHÔNG BAO GIỜ tạo cron text (`content`) chứa đường dẫn ảnh** như `brand-assets/generated/img_xxx.png`. Kết quả: gửi TEXT đường dẫn cho khách, không phải ảnh. Muốn gửi ảnh → agent mode + prompt mô tả ảnh hoặc tham chiếu mediaId.
 
+**CẢNH BÁO: `content` được gửi NGUYÊN VĂN vào nhóm.** TUYỆT ĐỐI KHÔNG đặt prompt workflow / chỉ dẫn cho bot (VD `[WORKFLOW] mỗi ngày tạo 1 bài viết… rồi tạo cron one-time mới`) vào `content` — khách sẽ thấy nguyên prompt thay vì bài viết. Mọi yêu cầu "mỗi ngày tự soạn + gửi bài" hoặc workflow tự tạo cron kế tiếp PHẢI dùng `mode=agent` + `prompt`. API nay **từ chối** (400) `content` trông giống prompt agent/workflow; khi tạo cron kế tiếp trong một workflow, luôn truyền lại `mode=agent` + `prompt`, KHÔNG bao giờ `content`.
+
+## Lịch đăng NGUYÊN VĂN (verbatim) — BẮT BUỘC CEO xác nhận
+
+Khi CEO muốn đăng MỘT ĐOẠN TEXT CỐ ĐỊNH (không phải bài bot tự soạn) vào nhóm theo lịch:
+
+1. Gọi `/api/cron/create` với `content=<text>` + `groupId` + `groupName` + lịch như thường.
+2. API **KHÔNG tạo ngay**. Nó trả `{"pendingConfirm":true}` và **tự gửi CEO một bản xem trước** (nhóm + giờ + đúng đoạn text sẽ đăng).
+3. Nói ngắn gọn với CEO: "Em đã gửi bản xem trước. Anh trả lời **ĐĂNG** để đăng, hoặc **BỎ** để hủy."
+4. Khi CEO trả lời `ĐĂNG` / `BỎ` (hoặc duyệt/hủy) → gọi `web_fetch POST http://127.0.0.1:20200/api/cron/telegram-command` với `{ "text": "<câu CEO vừa nhắn>" }`. Chỉ khi đó cron mới được tạo.
+
+Lý do: đây là rào chắn ở mức hệ thống — text cố định KHÔNG BAO GIỜ vào nhóm khi CEO chưa thấy đúng từng chữ. Bot KHÔNG thể tự tạo lịch verbatim mà bỏ qua bước này. (Bài bot tự soạn `mode=agent` KHÔNG cần bước xác nhận — bot tạo nội dung mới mỗi lần.)
+
+`/api/cron/replace` (sửa nhiều cron) **không nhận** `content` verbatim — dùng `mode=agent`, hoặc tạo từng lịch verbatim qua `/api/cron/create` ở trên.
+
 ## Bước 5: Xác nhận cron đã tạo (BẮT BUỘC)
 
 Sau khi gọi create, PHẢI kiểm tra response:
