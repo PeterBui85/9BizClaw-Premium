@@ -154,16 +154,19 @@ describe('callCodexAPIWithFallback — resolution order', () => {
     callLocal: async () => { throw new Error('callLocal should not run'); },
   });
 
-  test('custom provider succeeds → codex never touched', async () => {
-    let localCalled = false;
+  test('custom provider succeeds → codex never touched, and request STREAMS', async () => {
+    let localCalled = false, sentBody = null;
     const d = { ...baseDeps(),
       readCustom: () => ({ baseUrl: 'https://h/v1', apiKey: 'k', name: 'modoro' }),
       probe: async () => true,
-      callEndpoint: async () => PNG,
+      callEndpoint: async (_cfg, body) => { sentBody = body; return PNG; },
       callLocal: async () => { localCalled = true; throw new Error('x'); },
     };
     assert.deepEqual(await t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', d), PNG);
     assert.equal(localCalled, false);
+    // Must stream over the tunnel — a silent stream:false body returns HTTP 524
+    // (Cloudflare ~100s time-to-first-byte limit) for long generations.
+    assert.equal(sentBody.stream, true, 'custom/tunnel path must use stream:true to survive Cloudflare 524');
   });
 
   test('custom content-policy refusal → throws, does NOT retry on codex', async () => {

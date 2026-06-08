@@ -511,8 +511,11 @@ async function callCodexAPIWithFallback(prompt, assets, size, deps = {}) {
   if (custom) {
     const is9r = await probe(custom.baseUrl, custom.apiKey);
     if (is9r) {
-      // stream:false over the tunnel — ~2.7x faster, half the bytes vs SSE.
-      const body = buildCodexRequest(prompt, assets, size, { stream: false });
+      // stream:true over the tunnel: the origin emits response.created + keepalive
+      // within ~1s, so a Cloudflare-fronted tunnel never trips its ~100s
+      // time-to-first-byte limit (HTTP 524). A silent stream:false body 524s
+      // whenever a generation runs long — and this tunnel baselines ~70s.
+      const body = buildCodexRequest(prompt, assets, size);
       try {
         return await callEndpoint({ rootBase: custom.baseUrl, apiKey: custom.apiKey }, body);
       } catch (err) {
