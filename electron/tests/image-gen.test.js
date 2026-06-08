@@ -121,3 +121,107 @@ describe('probeIs9RouterImageProvider', () => {
     assert.equal(await t.probeIs9RouterImageProvider('http://127.0.0.1:1/v1', 'k'), false);
   });
 });
+
+describe('parseSSEForImage — stream:false (tunnel) bodies', () => {
+  test('extracts PNG from a non-SSE full response object', () => {
+    const body = JSON.stringify({ status: 'completed', output: [{ type: 'image_generation_call', result: PNG_B64 }] });
+    assert.deepEqual(t.parseSSEForImage(body), Buffer.from(PNG_B64, 'base64'));
+  });
+  test('throws with _isContentPolicy on an incomplete content-policy body (not "No image")', () => {
+    const body = JSON.stringify({ status: 'incomplete', status_details: { reason: 'content_policy_violation' } });
+    try { t.parseSSEForImage(body); assert.fail('should have thrown'); }
+    catch (e) { assert.match(e.message, /content_policy_violation/); assert.equal(e._isContentPolicy, true); }
+  });
+  test('throws a real error (not policy) on a generic error body', () => {
+    const body = JSON.stringify({ error: { message: 'rate limit exceeded' } });
+    try { t.parseSSEForImage(body); assert.fail('should have thrown'); }
+    catch (e) { assert.match(e.message, /rate limit/); assert.equal(e._isContentPolicy, false); }
+  });
+  test('still parses SSE (stream:true) success events', () => {
+    const sse = `event: x\ndata: ${JSON.stringify({ type: 'response.output_item.done', item: { type: 'image_generation_call', result: PNG_B64 } })}\n\n`;
+    assert.deepEqual(t.parseSSEForImage(sse), Buffer.from(PNG_B64, 'base64'));
+  });
+});
+
+describe('callCodexAPIWithFallback — resolution order', () => {
+  const PNG = Buffer.from(PNG_B64, 'base64');
+  const baseDeps = () => ({
+    readCustom: () => null,
+    probe: async () => false,
+    callEndpoint: async () => { throw new Error('callEndpoint should not run'); },
+    findAll: () => ({ primary: [], free: [] }),
+    findApi: async () => [],
+    callLocal: async () => { throw new Error('callLocal should not run'); },
+  });
+
+  test('custom provider succeeds → codex never touched', async () => {
+    let localCalled = false;
+    const d = { ...baseDeps(),
+      readCustom: () => ({ baseUrl: 'https://h/v1', apiKey: 'k', name: 'modoro' }),
+      probe: async () => true,
+      callEndpoint: async () => PNG,
+      callLocal: async () => { localCalled = true; throw new Error('x'); },
+    };
+    assert.deepEqual(await t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', d), PNG);
+    assert.equal(localCalled, false);
+  });
+
+  test('custom content-policy refusal → throws, does NOT retry on codex', async () => {
+    let localCalled = false;
+    const policyErr = Object.assign(new Error('blocked by safety'), { _isContentPolicy: true });
+    const d = { ...baseDeps(),
+      readCustom: () => ({ baseUrl: 'https://h/v1', apiKey: 'k', name: 'modoro' }),
+      probe: async () => true,
+      callEndpoint: async () => { throw policyErr; },
+      findAll: () => ({ primary: ['c1'], free: [] }),
+      callLocal: async () => { localCalled = true; return PNG; },
+    };
+    await assert.rejects(() => t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', d), /blocked by safety/);
+    assert.equal(localCalled, false);
+  });
+
+  test('custom non-policy failure → falls back to local codex', async () => {
+    const d = { ...baseDeps(),
+      readCustom: () => ({ baseUrl: 'https://h/v1', apiKey: 'k', name: 'modoro' }),
+      probe: async () => true,
+      callEndpoint: async () => { throw new Error('502 bad gateway'); },
+      findAll: () => ({ primary: ['c1'], free: [] }),
+      callLocal: async () => PNG,
+    };
+    assert.deepEqual(await t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', d), PNG);
+  });
+
+  test('custom provider not a 9router (probe false) → skips to codex', async () => {
+    let endpointCalled = false;
+    const d = { ...baseDeps(),
+      readCustom: () => ({ baseUrl: 'https://h/v1', apiKey: 'k', name: 'groq' }),
+      probe: async () => false,
+      callEndpoint: async () => { endpointCalled = true; return PNG; },
+      findAll: () => ({ primary: ['c1'], free: [] }),
+      callLocal: async () => PNG,
+    };
+    assert.deepEqual(await t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', d), PNG);
+    assert.equal(endpointCalled, false);
+  });
+
+  test('no custom + no codex → throws ChatGPT-Plus-required error', async () => {
+    await assert.rejects(
+      () => t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', baseDeps()),
+      /ChatGPT Plus/
+    );
+  });
+
+  test('custom fails + no codex → surfaces capped custom error', async () => {
+    const longMsg = 'x'.repeat(400);
+    const d = { ...baseDeps(),
+      readCustom: () => ({ baseUrl: 'https://h/v1', apiKey: 'k', name: 'modoro' }),
+      probe: async () => true,
+      callEndpoint: async () => { throw new Error(longMsg); },
+    };
+    try { await t.callCodexAPIWithFallback('a long enough prompt here', [], '1024x1024', d); assert.fail('should throw'); }
+    catch (e) {
+      assert.match(e.message, /Custom provider tạo ảnh lỗi/);
+      assert.ok(e.message.length < 300, 'upstream message is capped, not echoed in full: ' + e.message.length);
+    }
+  });
+});
