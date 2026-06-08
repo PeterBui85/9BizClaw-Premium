@@ -764,12 +764,15 @@
     #page-google.page.active {
       display:flex; flex-direction:column; height:calc(100vh - 32px); overflow:hidden;
     }
-    #page-google .page-header {
-      margin-bottom:14px !important; padding-bottom:14px !important;
-    }
-    #page-google .page-header .page-icon { width:38px !important; height:38px !important; }
-    #page-google .page-header h2 { font-size:22px !important; margin:0 0 2px !important; }
-    #page-google .gw-tabs { flex-shrink:0; }
+    /* Compact header (CEO request): the top channel nav already shows "Google",
+       so the page-header is redundant — hide it and tighten the tab + calendar
+       heading rows so the calendar itself gets the maximum height. */
+    #page-google .page-header { display:none !important; }
+    #page-google .gw-tabs { flex-shrink:0; margin:0 0 8px !important; }
+    #page-google .gw-tab { padding:5px 14px !important; }
+    #page-google .gw-calendar-head { margin-bottom:8px !important; }
+    #page-google .gw-calendar-title { font-size:14px !important; }
+    #page-google .gw-calendar-sub { display:none !important; }
     .gw-panel { flex:1 1 auto; min-height:0; overflow-y:auto; }
     #gw-calendar { display:flex; flex-direction:column; overflow:hidden; }
     #gw-calendar .gw-calendar-head { flex-shrink:0; }
