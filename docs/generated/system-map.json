@@ -3468,7 +3468,7 @@
     },
     {
       "path": "electron/lib/google-routes.js",
-      "bytes": 26851
+      "bytes": 26990
     },
     {
       "path": "electron/lib/image-gen.js",
@@ -3520,7 +3520,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 698245
+      "bytes": 694886
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",

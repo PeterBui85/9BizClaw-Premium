@@ -11410,82 +11410,6 @@
     })();
 
     // --- Calendar tab ---
-    let _calWeekOffset = 0;
-    let _calRequestId = 0;
-    function calNavWeek(delta) { _calWeekOffset += delta; loadCalendarEvents(); }
-
-    async function loadCalendarEvents() {
-      const reqId = ++_calRequestId;
-      const now = new Date();
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - now.getDay() + 1 + (_calWeekOffset * 7));
-      monday.setHours(0,0,0,0);
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      sunday.setHours(23,59,59,999);
-
-      const fmt = d => d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-      document.getElementById('cal-week-label').textContent = fmt(monday) + ' — ' + fmt(sunday);
-
-      const view = document.getElementById('cal-week-view');
-      const empty = document.getElementById('cal-empty');
-      view.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Đang tải...</div>';
-      empty.style.display = 'none';
-
-      try {
-        const data = await window.claw.googleCalendarEvents({
-          from: monday.toISOString(),
-          to: sunday.toISOString()
-        });
-        if (data.error) throw new Error(data.error);
-        if (reqId !== _calRequestId) return;
-        const events = data.events || data.items || data.data || [];
-        if (!events.length) {
-          view.innerHTML = '';
-          empty.style.display = '';
-          return;
-        }
-        const byDay = {};
-        const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(monday);
-          d.setDate(monday.getDate() + i);
-          const key = d.toISOString().slice(0, 10);
-          byDay[key] = { label: dayNames[d.getDay()] + ' ' + fmt(d), events: [] };
-        }
-        events.forEach(ev => {
-          const start = ev.start?.dateTime || ev.start?.date || ev.start || '';
-          const d = new Date(start);
-          if (isNaN(d.getTime())) return;
-          const key = d.toISOString().slice(0, 10);
-          if (byDay[key]) byDay[key].events.push(ev);
-        });
-        let html = '';
-        Object.values(byDay).forEach(day => {
-          html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border)">' + day.label + '</div>';
-          if (!day.events.length) {
-            html += '<div style="padding:6px 0;font-size:13px;color:var(--text-muted);opacity:.5">—</div>';
-          } else {
-            day.events.forEach(ev => {
-              const s = ev.start?.dateTime || ev.start || '';
-              const e = ev.end?.dateTime || ev.end || '';
-              const timeStr = s ? new Date(s).toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit'}) + (e ? ' — ' + new Date(e).toLocaleTimeString('vi-VN', {hour:'2-digit',minute:'2-digit'}) : '') : '';
-              const title = ev.summary || ev.title || 'Không có tiêu đề';
-              html += '<div style="padding:8px 12px;background:var(--surface);border-radius:8px;margin-bottom:4px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)">';
-              html += '<span style="font-size:12px;color:var(--text-muted);min-width:100px">' + esc(timeStr) + '</span>';
-              html += '<span style="font-size:13px;color:var(--text);font-weight:500">' + esc(title) + '</span>';
-              html += '</div>';
-            });
-          }
-          html += '</div>';
-        });
-        view.innerHTML = html;
-        empty.style.display = 'none';
-      } catch (e) {
-        view.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger);font-size:13px">' + esc(formatGoogleErrorMessage(e.message, 'Calendar')) + '</div>' + googleApiEnableButton(e.message, 'Calendar');
-      }
-    }
-
     let _fcCalendar = null;
     let _fcRequestId = 0;
     let _fcLoadingKey = '';
@@ -11611,12 +11535,19 @@
         const data = await window.claw.googleCalendarList();
         if (!data || data.error) return;
         const items = data.items || data.calendars || data.data || (Array.isArray(data) ? data : []);
-        _calCalendars = items.map(c => ({
-          id: c.id,
-          summary: c.summaryOverride || c.summary || c.name || c.id,
-          color: c.backgroundColor || c.color || '#c8a75a',
-          selected: c.selected !== false
-        })).filter(c => c.id);
+        _calCalendars = items.map(c => {
+          // Validate as hex (Google returns #rrggbb). A shared/subscribed calendar's
+          // color is third-party controlled; rejecting non-hex stops CSS injection
+          // when it's concatenated into the filter chip's inline style.
+          const raw = c.backgroundColor || c.color || '';
+          const color = /^#[0-9a-fA-F]{3,8}$/.test(raw) ? raw : 'var(--accent)';
+          return {
+            id: c.id,
+            summary: c.summaryOverride || c.summary || c.name || c.id,
+            color,
+            selected: c.selected !== false
+          };
+        }).filter(c => c.id);
         _calColorById = {};
         for (const c of _calCalendars) _calColorById[c.id] = c.color;
         let stored = null;
@@ -11665,7 +11596,7 @@
         if (!_calEnabled || !cid) return true; // no filter info → show
         return _calEnabled.has(cid);
       });
-      _fcCalendar.removeAllEvents();
+      _fcCalendar.removeAllEventSources(); // removeAllEvents leaves stale sources that accumulate per toggle
       _fcCalendar.addEventSource(normalizeCalendarEvents(visible));
       const empty = document.getElementById('cal-empty');
       if (empty) {
@@ -11711,18 +11642,19 @@
 
     async function loadCalendarEvents(options) {
       if (!ensureGoogleCalendar()) return;
-      if (!_calCalendars.length) await loadCalendarList();
       const view = _fcCalendar.view;
       const from = view.activeStart.toISOString();
       const to = view.activeEnd.toISOString();
       const rangeKey = from + '|' + to;
       const force = Boolean(options?.force);
       if (!force && _fcLoadingKey === rangeKey) return;
-      _fcLoadingKey = rangeKey;
-      const reqId = ++_fcRequestId;
+      _fcLoadingKey = rangeKey;          // claim the slot BEFORE any await below, so a
+      const reqId = ++_fcRequestId;      // burst of datesSet can't launch a 2nd fan-out
       const empty = document.getElementById('cal-empty');
       if (empty) empty.style.display = 'none';
+      _calLastError = null;
       try {
+        if (!_calCalendars.length) await loadCalendarList();
         // One fetch per calendar (gog events carry no calendarId), tagged so the
         // filter + per-calendar color work. Falls back to `primary` if the list
         // couldn't load. A single failing calendar must not blank the whole view.

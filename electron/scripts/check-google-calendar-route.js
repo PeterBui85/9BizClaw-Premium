@@ -33,7 +33,7 @@ assertIncludes('google-routes calendars route', routes, "urlPath === '/calendar/
 assertIncludes('dashboard-ipc calendar-list handler', ipc, "ipcMain.handle('google-calendar-list'");
 assertIncludes('preload calendar-list bridge', preload, 'googleCalendarList:');
 assertIncludes('dashboard calendar filter bar', dashboard, "id=\"cal-filter-bar\"");
-assertIncludes('dashboard per-calendar tag', dashboard, '_calId');
+assertIncludes('dashboard per-calendar tag', dashboard, 'Object.assign({ _calId: calId }');
 assertIncludes('dashboard calendar toggle', dashboard, 'function toggleCalendar(');
 assertIncludes('google-api updateEvent function', api, 'async function updateEvent(');
 assertIncludes('google-api gog calendar update', api, "'calendar', 'update'");

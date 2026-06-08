@@ -246,6 +246,8 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
       return jsonResp(res, 200, r);
     }
     if (urlPath === '/calendar/calendars') {
+      // Calendar names are PII; don't enumerate the CEO's calendars to Zalo.
+      if (blockZaloMutation('Google Calendar list')) return;
       const r = await googleApi.listCalendars();
       return jsonResp(res, 200, r);
     }
