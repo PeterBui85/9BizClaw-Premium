@@ -267,11 +267,23 @@ async function disconnectAccount() {
 
 // --- Calendar ---
 
-async function listEvents(from, to, calendarId) {
+// gog `calendar events` defaults to --max=10, which silently drops events once a
+// week/month view holds more than 10 (confirmed: a 15-event window returned only
+// 10 with nextPageToken set). Always request a high cap AND --all-pages so the
+// dashboard and agent see every event in the window. 2500 is the Google API max
+// page size, so one page covers any realistic calendar view.
+const CALENDAR_LIST_MAX = 2500;
+
+function buildListEventsArgs(from, to, calendarId) {
   const args = ['calendar', 'events', calendarId || 'primary'];
   if (from) args.push('--from', from);
   if (to) args.push('--to', to);
-  return gogReadExec(args);
+  args.push('--max', String(CALENDAR_LIST_MAX), '--all-pages');
+  return args;
+}
+
+async function listEvents(from, to, calendarId) {
+  return gogReadExec(buildListEventsArgs(from, to, calendarId));
 }
 
 async function createEvent(summary, start, end, attendees, calendarId) {
@@ -1108,6 +1120,7 @@ module.exports = {
 
 module.exports._test = {
   buildUpdateEventArgs,
+  buildListEventsArgs,
   hasCalendarUpdateField,
   firstNonEmpty,
   normalizeHeaderValue,

@@ -69,6 +69,20 @@ try {
   failures.push(`google-api updateEvent argv behavior: ${err.message}`);
 }
 
+try {
+  // gog `calendar events` defaults to --max=10 → silently drops events when a
+  // week/month view has more than 10. listEvents MUST raise the cap + paginate.
+  const lsArgs = googleApi._test.buildListEventsArgs('2026-05-18', '2026-05-23', 'primary');
+  assert.deepStrictEqual(lsArgs.slice(0, 3), ['calendar', 'events', 'primary']);
+  assert.deepStrictEqual(lsArgs.slice(lsArgs.indexOf('--from'), lsArgs.indexOf('--from') + 2), ['--from', '2026-05-18']);
+  assert.deepStrictEqual(lsArgs.slice(lsArgs.indexOf('--to'), lsArgs.indexOf('--to') + 2), ['--to', '2026-05-23']);
+  assert.ok(lsArgs.includes('--max'), 'listEvents must set --max (gog default 10 truncates events)');
+  assert.ok(Number(lsArgs[lsArgs.indexOf('--max') + 1]) >= 2500, '--max must be high enough to not truncate a month view');
+  assert.ok(lsArgs.includes('--all-pages'), 'listEvents must fetch all pages');
+} catch (err) {
+  failures.push(`google-api listEvents argv behavior: ${err.message}`);
+}
+
 if (failures.length) {
   console.error('[google-calendar-route] FAIL');
   for (const failure of failures) console.error('  - ' + failure);

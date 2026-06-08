@@ -3446,11 +3446,15 @@
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 39642
+      "bytes": 40257
     },
     {
       "path": "electron/lib/google-routes.js",
       "bytes": 26715
+    },
+    {
+      "path": "electron/lib/image-gen.js",
+      "bytes": 29042
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -3466,7 +3470,7 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 47418
+      "bytes": 47439
     },
     {
       "path": "electron/lib/runtime-installer.js",
