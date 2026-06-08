@@ -258,7 +258,7 @@ async function getAuthUrl(email) {
 async function disconnectAccount() {
   const email = getGogAccount();
   if (email) {
-    try { await gogExec(['auth', 'remove', email], 10000); } catch {}
+    try { await gogExec(['auth', 'remove', email, '--force'], 10000); } catch {} // --force: gog refuses non-interactive destructive ops otherwise
   }
   const accountFile = path.join(getGogConfigDir(), 'account.json');
   try { fs.unlinkSync(accountFile); } catch {}
@@ -331,8 +331,14 @@ async function updateEvent(eventId, updates, calendarId) {
   return gogExec(args, 30000);
 }
 
+// --force: gog refuses destructive commands without it in non-interactive mode
+// (no TTY) — "refusing to delete event ... without --force (non-interactive)".
+function buildDeleteEventArgs(eventId, calendarId) {
+  return ['calendar', 'delete', calendarId || 'primary', eventId, '--force'];
+}
+
 async function deleteEvent(eventId, calendarId) {
-  return gogExec(['calendar', 'delete', calendarId || 'primary', eventId]);
+  return gogExec(buildDeleteEventArgs(eventId, calendarId));
 }
 
 async function getFreeBusy(from, to) {
@@ -1128,6 +1134,7 @@ module.exports = {
 module.exports._test = {
   buildUpdateEventArgs,
   buildListEventsArgs,
+  buildDeleteEventArgs,
   hasCalendarUpdateField,
   firstNonEmpty,
   normalizeHeaderValue,

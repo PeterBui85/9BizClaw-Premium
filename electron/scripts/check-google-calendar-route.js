@@ -78,6 +78,16 @@ try {
 }
 
 try {
+  // gog refuses destructive commands without --force in non-interactive mode
+  // ("refusing to delete event ... without --force"). deleteEvent MUST pass it.
+  const delArgs = googleApi._test.buildDeleteEventArgs('evt_123', 'primary');
+  assert.deepStrictEqual(delArgs.slice(0, 4), ['calendar', 'delete', 'primary', 'evt_123']);
+  assert.ok(delArgs.includes('--force') || delArgs.includes('-y'), 'deleteEvent must pass --force (gog refuses non-interactive deletes otherwise)');
+} catch (err) {
+  failures.push(`google-api deleteEvent argv behavior: ${err.message}`);
+}
+
+try {
   // gog `calendar events` defaults to --max=10 → silently drops events when a
   // week/month view has more than 10. listEvents MUST raise the cap + paginate.
   const lsArgs = googleApi._test.buildListEventsArgs('2026-05-18', '2026-05-23', 'primary');
