@@ -1068,6 +1068,7 @@ module.exports = {
   format9RouterVisionError,
   get9RouterCliTokenCandidates,
   getRouterProcess, setKillPort,
+  get9RouterDataDir,
   _test: {
     compute9RouterCliToken,
     computeLegacy9RouterCliToken,

@@ -1,0 +1,123 @@
+/**
+ * image-gen.test.js
+ * Tests for the custom-provider → codex image routing added 2026-06-08.
+ * Run: node --test electron/tests/image-gen.test.js
+ */
+'use strict';
+
+const { test, describe, after } = require('node:test');
+const assert = require('node:assert');
+const http = require('http');
+
+const imageGen = require('../lib/image-gen');
+const t = imageGen._test;
+
+// 1x1 transparent PNG — base64 starts with the iVBOR marker parseSSEForImage greps for.
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+function startServer(handler) {
+  return new Promise(resolve => {
+    const srv = http.createServer(handler);
+    srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port }));
+  });
+}
+
+const servers = [];
+after(() => { for (const s of servers) try { s.close(); } catch {} });
+
+describe('codexRootFromBaseUrl', () => {
+  test('strips trailing /v1 (image gen lives at root /codex/responses)', () => {
+    assert.equal(t.codexRootFromBaseUrl('https://host/v1'), 'https://host');
+    assert.equal(t.codexRootFromBaseUrl('https://host/v1/'), 'https://host');
+  });
+  test('leaves a root base untouched', () => {
+    assert.equal(t.codexRootFromBaseUrl('http://127.0.0.1:20128'), 'http://127.0.0.1:20128');
+    assert.equal(t.codexRootFromBaseUrl('http://127.0.0.1:20128/'), 'http://127.0.0.1:20128');
+  });
+});
+
+describe('buildCodexRequest stream option', () => {
+  test('defaults to stream:true (local SSE path unchanged)', () => {
+    assert.equal(t.buildCodexRequest('prompt here', [], '1024x1024').stream, true);
+  });
+  test('honors stream:false for the remote tunnel path', () => {
+    assert.equal(t.buildCodexRequest('prompt here', [], '1024x1024', { stream: false }).stream, false);
+  });
+});
+
+describe('callCodexEndpoint', () => {
+  test('POSTs to <root>/codex/responses, sends Bearer, returns decoded PNG', async () => {
+    let seen = null;
+    const { srv, port } = await startServer((req, res) => {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        seen = { url: req.url, auth: req.headers['authorization'], conn: req.headers['x-connection-id'], body };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ output: [{ type: 'image_generation_call', result: PNG_B64 }] }));
+      });
+    });
+    servers.push(srv);
+
+    const buf = await t.callCodexEndpoint(
+      { rootBase: `http://127.0.0.1:${port}`, apiKey: 'sk-test-key' },
+      t.buildCodexRequest('a detailed prompt for the model', [], '1024x1024', { stream: false })
+    );
+
+    assert.ok(Buffer.isBuffer(buf) && buf.length > 0, 'returns a PNG buffer');
+    assert.deepEqual(buf, Buffer.from(PNG_B64, 'base64'), 'buffer matches decoded base64');
+    assert.equal(seen.url, '/codex/responses', 'hits the codex responses route at root, not /v1');
+    assert.equal(seen.auth, 'Bearer sk-test-key', 'forwards the provider key');
+    assert.equal(seen.conn, undefined, 'omits x-connection-id for the remote path');
+  });
+
+  test('includes x-connection-id only when a connection id is given (local path)', async () => {
+    let conn = 'MISSING';
+    const { srv, port } = await startServer((req, res) => {
+      conn = req.headers['x-connection-id'] || null;
+      res.writeHead(200);
+      res.end(JSON.stringify({ output: [{ type: 'image_generation_call', result: PNG_B64 }] }));
+    });
+    servers.push(srv);
+    await t.callCodexEndpoint(
+      { rootBase: `http://127.0.0.1:${port}`, apiKey: 'k', connectionId: 'conn-123' },
+      t.buildCodexRequest('a detailed prompt for the model', [], '1024x1024', { stream: false })
+    );
+    assert.equal(conn, 'conn-123');
+  });
+
+  test('rejects on non-200', async () => {
+    const { srv, port } = await startServer((req, res) => { res.writeHead(401); res.end('{"error":{"message":"Missing API key"}}'); });
+    servers.push(srv);
+    await assert.rejects(
+      () => t.callCodexEndpoint({ rootBase: `http://127.0.0.1:${port}`, apiKey: 'k' }, t.buildCodexRequest('a detailed prompt for the model', [], '1024x1024')),
+      /9router 401/
+    );
+  });
+});
+
+describe('probeIs9RouterImageProvider', () => {
+  test('true when /v1/models lists a cx/* model', async () => {
+    const { srv, port } = await startServer((req, res) => {
+      assert.equal(req.url, '/v1/models');
+      res.writeHead(200);
+      res.end(JSON.stringify({ object: 'list', data: [{ id: 'cx/gpt-5.4' }, { id: 'cx/gpt-5.5' }] }));
+    });
+    servers.push(srv);
+    assert.equal(await t.probeIs9RouterImageProvider(`http://127.0.0.1:${port}/v1`, 'k'), true);
+  });
+
+  test('false when no cx/* model (not a 9router → skip to codex)', async () => {
+    const { srv, port } = await startServer((req, res) => {
+      res.writeHead(200);
+      res.end(JSON.stringify({ data: [{ id: 'gpt-4o' }, { id: 'llama-3' }] }));
+    });
+    servers.push(srv);
+    assert.equal(await t.probeIs9RouterImageProvider(`http://127.0.0.1:${port}/v1`, 'k'), false);
+  });
+
+  test('false on connection error (unreachable provider)', async () => {
+    // Port 1 is not listening; probe must resolve false, never throw.
+    assert.equal(await t.probeIs9RouterImageProvider('http://127.0.0.1:1/v1', 'k'), false);
+  });
+});

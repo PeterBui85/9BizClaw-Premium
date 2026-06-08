@@ -236,7 +236,7 @@ function buildCodexRequest(prompt, assets, size, options = {}) {
     model: 'cx/gpt-5.4',
     input: [{ role: 'user', content }],
     tools: [{ type: 'image_generation', model: 'gpt-image-2', size: normalizedSize, quality: 'high' }],
-    stream: true,
+    stream: options.stream !== false,
     store: false
   };
   if (options.toolChoice !== false) body.tool_choice = { type: 'image_generation' };
@@ -322,22 +322,34 @@ function parseSSEForImage(rawData) {
   return null;
 }
 
-function callCodexAPI(requestBody, connectionId) {
+// Strip a trailing `/v1` (and slashes) so a stored OpenAI-compatible baseUrl
+// (e.g. https://host/v1) yields the 9router ROOT. Image gen lives at
+// `<root>/codex/responses` — NOT under /v1 (verified against the tunnel).
+function codexRootFromBaseUrl(baseUrl) {
+  return String(baseUrl || '').replace(/\/+$/, '').replace(/\/v1$/, '');
+}
+
+// Core codex image caller. Protocol-aware (http for local 127.0.0.1, https for a
+// remote Cloudflare tunnel). `rootBase` is the 9router root (no /v1, no trailing
+// slash). `connectionId` is optional — a remote hosted 9router auto-routes
+// cx/gpt-5.4 to its single codex account, so x-connection-id is omitted there.
+function callCodexEndpoint({ rootBase, apiKey, connectionId }, requestBody) {
   return new Promise((resolve, reject) => {
-    const apiKey = get9RouterApiKey();
-    if (!apiKey) return reject(new Error('9Router API key not configured'));
-    const connId = connectionId || findImageConnectionId();
-    if (!connId) return reject(new Error('No codex provider connection available for image generation'));
+    if (!apiKey) return reject(new Error('image provider API key not configured'));
     const payload = JSON.stringify(requestBody);
-    const url = new URL(NINE_ROUTER_BASE + '/codex/responses');
+    const url = new URL(codexRootFromBaseUrl(rootBase) + '/codex/responses');
+    const isHttps = url.protocol === 'https:';
+    const mod = isHttps ? require('https') : http;
     const headers = {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(payload),
       'Authorization': `Bearer ${apiKey}`,
-      'x-connection-id': connId,
     };
-    const req = http.request({
-      hostname: url.hostname, port: url.port, path: url.pathname,
+    if (connectionId) headers['x-connection-id'] = connectionId;
+    const req = mod.request({
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname,
       method: 'POST', headers,
     }, res => {
       let data = '';
@@ -360,20 +372,131 @@ function callCodexAPI(requestBody, connectionId) {
   });
 }
 
+// Local-9router image call (127.0.0.1:20128). Needs an explicit x-connection-id
+// because a dev machine may hold several codex connections.
+function callCodexAPI(requestBody, connectionId) {
+  const apiKey = get9RouterApiKey();
+  if (!apiKey) return Promise.reject(new Error('9Router API key not configured'));
+  const connId = connectionId || findImageConnectionId();
+  if (!connId) return Promise.reject(new Error('No codex provider connection available for image generation'));
+  return callCodexEndpoint({ rootBase: NINE_ROUTER_BASE, apiKey, connectionId: connId }, requestBody);
+}
+
+const _providerProbeCache = new Map(); // baseUrl -> { ok, at }
+const PROBE_TTL_MS = 10 * 60 * 1000;
+
+// Read the highest-priority active OpenAI-compatible provider the CEO added in
+// 9router. 9router 0.4.63 stores connections in db/data.sqlite (the old db.json
+// is gone); GET /api/providers strips apiKey, so the key is only readable here.
+// Returns { baseUrl, apiKey, name } or null (any failure → null → codex path).
+function readCustom9RouterImageProvider() {
+  try {
+    const { get9RouterDataDir } = require('./nine-router');
+    const dbPath = path.join(get9RouterDataDir(), 'db', 'data.sqlite');
+    if (!fs.existsSync(dbPath)) return null;
+    let Database;
+    try { Database = require('better-sqlite3'); }
+    catch (e) { console.warn('[image-gen] better-sqlite3 unavailable for provider read:', e.message); return null; }
+    const db = new Database(dbPath, { readonly: true });
+    let rows = [];
+    try {
+      rows = db.prepare(
+        "SELECT name, data FROM providerConnections WHERE isActive=1 AND provider LIKE 'openai-compatible%' ORDER BY priority ASC"
+      ).all();
+    } finally { try { db.close(); } catch {} }
+    for (const r of rows) {
+      let d;
+      try { d = JSON.parse(r.data); } catch { continue; }
+      const baseUrl = d?.providerSpecificData?.baseUrl;
+      const apiKey = d?.apiKey;
+      if (baseUrl && apiKey) return { baseUrl, apiKey, name: r.name || 'custom' };
+    }
+    return null;
+  } catch (e) {
+    console.warn('[image-gen] readCustom9RouterImageProvider error:', e.message);
+    return null;
+  }
+}
+
+// Confirm a custom provider is a real 9router with a ChatGPT (codex) account
+// behind it — its /v1/models must list at least one `cx/*` model. A non-9router
+// OpenAI-compatible endpoint has no /codex/responses, so we skip it (→ codex)
+// instead of failing a generation. Cached per baseUrl (10 min).
+function probeIs9RouterImageProvider(baseUrl, apiKey) {
+  return new Promise(resolve => {
+    const cached = _providerProbeCache.get(baseUrl);
+    if (cached && Date.now() - cached.at < PROBE_TTL_MS) return resolve(cached.ok);
+    let url;
+    try { url = new URL(codexRootFromBaseUrl(baseUrl) + '/v1/models'); }
+    catch { return resolve(false); }
+    const isHttps = url.protocol === 'https:';
+    const mod = isHttps ? require('https') : http;
+    const req = mod.request({
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname, method: 'GET',
+      headers: { 'Accept': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    }, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        let ok = false;
+        try {
+          const j = JSON.parse(data);
+          const arr = j?.data || j?.models || [];
+          ok = Array.isArray(arr) && arr.some(m => String(m?.id || '').startsWith('cx/'));
+        } catch {}
+        _providerProbeCache.set(baseUrl, { ok, at: Date.now() });
+        resolve(ok);
+      });
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(5000, () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
 function isImageToolChoiceUnsupported(err) {
   return /tool choice ['"]?image_generation['"]? not found|image_generation.*not found in ['"]?tools/i.test(err?.message || '');
 }
 
 async function callCodexAPIWithFallback(prompt, assets, size) {
+  let customErr = null;
+  // 1. Custom provider FIRST — offload image gen to the CEO's hosted account so
+  //    the local ChatGPT isn't burned. Only a verified 9router-like provider is
+  //    used; anything else (or a read/probe failure) silently skips to codex.
+  const custom = readCustom9RouterImageProvider();
+  if (custom) {
+    const is9r = await probeIs9RouterImageProvider(custom.baseUrl, custom.apiKey);
+    if (is9r) {
+      // stream:false over the tunnel — ~2.7x faster, half the bytes vs SSE.
+      const body = buildCodexRequest(prompt, assets, size, { stream: false });
+      try {
+        return await callCodexEndpoint({ rootBase: custom.baseUrl, apiKey: custom.apiKey }, body);
+      } catch (err) {
+        if (err._isContentPolicy) throw err; // genuine refusal — don't retry on codex
+        customErr = err;
+        console.warn(`[image-gen] custom provider "${custom.name}" failed: ${err.message} — falling back to local codex`);
+      }
+    } else {
+      console.warn(`[image-gen] custom provider "${custom.name}" is not a 9router (no cx/* models) — skipping for image gen`);
+    }
+  }
+
+  // 2. Local codex fallback.
   let { primary, free } = findAllImageConnectionIds();
   let allIds = [...primary, ...free];
   if (allIds.length === 0) {
     const apiIds = await findConnectionIdsViaApi();
     allIds = apiIds;
   }
-  if (allIds.length === 0) throw new Error('No codex provider connection available for image generation');
+  if (allIds.length === 0) {
+    // 3. Nothing usable anywhere.
+    if (customErr) throw new Error(`Custom provider tạo ảnh lỗi (${customErr.message}). Máy chưa có tài khoản ChatGPT Plus dự phòng. Bạn cần tài khoản ChatGPT Plus hoặc cấu hình custom provider để tạo ảnh.`);
+    throw new Error('Bạn cần tài khoản ChatGPT Plus (hoặc cấu hình custom provider) để tạo ảnh.');
+  }
 
-  let lastErr = null;
+  let lastErr = customErr;
   for (const connId of allIds) {
     const body = buildCodexRequest(prompt, assets, size);
     try {
@@ -523,6 +646,10 @@ module.exports = {
     buildCodexRequest,
     isImageToolChoiceUnsupported,
     findImageConnectionId,
+    codexRootFromBaseUrl,
+    readCustom9RouterImageProvider,
+    probeIs9RouterImageProvider,
+    callCodexEndpoint,
     _expireJobIfStale,
     _jobTiming,
     JOB_TIMEOUT_MS,
