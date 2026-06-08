@@ -1,9 +1,9 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 156,
-    "ipcHandlers": 212,
-    "preloadBridges": 205,
+    "apiRoutes": 157,
+    "ipcHandlers": 213,
+    "preloadBridges": 206,
     "dashboardPages": 18,
     "capabilityContracts": 5
   },
@@ -415,6 +415,15 @@
     },
     {
       "path": "/api/google/appscript/run",
+      "sources": [
+        "electron/lib/google-routes.js"
+      ],
+      "kinds": [
+        "google-api"
+      ]
+    },
+    {
+      "path": "/api/google/calendar/calendars",
       "sources": [
         "electron/lib/google-routes.js"
       ],
@@ -1767,6 +1776,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "google-calendar-list",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "google-calendar-update",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -2700,6 +2713,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "googleCalendarList",
+      "channel": "google-calendar-list",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "googleCalendarUpdate",
       "channel": "google-calendar-update",
       "source": "electron/preload.js"
@@ -3430,7 +3448,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 289108
+      "bytes": 289269
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3446,11 +3464,11 @@
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 40257
+      "bytes": 40600
     },
     {
       "path": "electron/lib/google-routes.js",
-      "bytes": 26715
+      "bytes": 26851
     },
     {
       "path": "electron/lib/image-gen.js",
@@ -3502,7 +3520,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 693541
+      "bytes": 698245
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",

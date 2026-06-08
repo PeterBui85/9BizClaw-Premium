@@ -5468,6 +5468,11 @@ ipcMain.handle('download-and-install-update', async () => {
     try { return await googleApi.listEvents(opts?.from, opts?.to, opts?.calendarId); }
     catch (e) { return { error: e.message }; }
   });
+
+  ipcMain.handle('google-calendar-list', async () => {
+    try { return await googleApi.listCalendars(); }
+    catch (e) { return { error: e.message }; }
+  });
   ipcMain.handle('google-calendar-create', async (_ev, opts) => {
     try {
       if (!opts?.summary || !opts?.start || !opts?.end) return { error: 'summary, start, end required' };

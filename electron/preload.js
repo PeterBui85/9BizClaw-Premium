@@ -188,6 +188,7 @@ contextBridge.exposeInMainWorld('claw', {
   googleGetAuthUrl: (email) => ipcRenderer.invoke('google-get-auth-url', email),
   googleDisconnect: () => ipcRenderer.invoke('google-disconnect'),
   googleCalendarEvents: (opts) => ipcRenderer.invoke('google-calendar-events', opts || {}),
+  googleCalendarList: () => ipcRenderer.invoke('google-calendar-list'),
   googleCalendarCreate: (opts) => ipcRenderer.invoke('google-calendar-create', opts),
   googleCalendarUpdate: (opts) => ipcRenderer.invoke('google-calendar-update', opts),
   googleCalendarDelete: (opts) => ipcRenderer.invoke('google-calendar-delete', opts),

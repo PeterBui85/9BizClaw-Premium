@@ -245,6 +245,10 @@ async function handleGoogleRoute(urlPath, params, req, res, jsonResp) {
       const r = await googleApi.listEvents(params.from, params.to, params.calendarId);
       return jsonResp(res, 200, r);
     }
+    if (urlPath === '/calendar/calendars') {
+      const r = await googleApi.listCalendars();
+      return jsonResp(res, 200, r);
+    }
     if (urlPath === '/calendar/create') {
       if (isZalo) return jsonResp(res, 403, { error: 'Google Calendar create not allowed from Zalo channel' });
       if (!params.summary || !params.start || !params.end) return jsonResp(res, 400, { error: 'summary, start, end required' });

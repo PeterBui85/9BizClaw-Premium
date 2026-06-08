@@ -4028,6 +4028,7 @@
             </div>
             <button class="btn btn-primary btn-small" onclick="showCalCreateModal()">Tạo sự kiện</button>
           </div>
+          <div id="cal-filter-bar" style="display:none;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>
           <div id="cal-fullcalendar" class="gw-calendar-shell"></div>
           <div id="cal-empty" class="gw-calendar-empty" style="display:none">Không có sự kiện trong khung thời gian này.</div>
           <!-- Create event modal -->
@@ -11525,7 +11526,9 @@
 
     function getCalEventCalendarId(event) {
       const raw = event?.extendedProps?.raw || {};
-      return raw.calendarId || raw.calendarID || raw.calendar || raw.calendar_id || undefined;
+      // _calId is the calendar we fetched the event from (gog omits calendarId),
+      // so edits/moves target the right calendar instead of defaulting to primary.
+      return raw._calId || raw.calendarId || raw.calendarID || raw.calendar || raw.calendar_id || undefined;
     }
 
     function _calScrollToNow() {
@@ -11591,6 +11594,87 @@
       return true;
     }
 
+    // --- Multi-calendar filter ---
+    // gog events carry no calendarId, so we fetch each calendar separately and
+    // tag events with `_calId` ourselves. Toggling a calendar is a client-side
+    // show/hide over the cached events (no refetch) for snappy UX.
+    let _calCalendars = [];   // [{id, summary, color, selected}]
+    let _calColorById = {};   // id -> hex color
+    let _calEnabled = null;   // Set of visible calendar ids (null until loaded)
+    let _calAllEvents = [];   // cached events for the current range, each tagged _calId
+    let _calLastError = null; // last per-calendar fetch error (surfaced only if ALL fail)
+    const CAL_FILTER_LS = '9biz_cal_enabled';
+
+    async function loadCalendarList() {
+      if (!window.claw?.googleCalendarList) return;
+      try {
+        const data = await window.claw.googleCalendarList();
+        if (!data || data.error) return;
+        const items = data.items || data.calendars || data.data || (Array.isArray(data) ? data : []);
+        _calCalendars = items.map(c => ({
+          id: c.id,
+          summary: c.summaryOverride || c.summary || c.name || c.id,
+          color: c.backgroundColor || c.color || '#c8a75a',
+          selected: c.selected !== false
+        })).filter(c => c.id);
+        _calColorById = {};
+        for (const c of _calCalendars) _calColorById[c.id] = c.color;
+        let stored = null;
+        try { const raw = localStorage.getItem(CAL_FILTER_LS); if (raw) stored = new Set(JSON.parse(raw)); } catch {}
+        _calEnabled = new Set();
+        for (const c of _calCalendars) {
+          // honor saved choice; default new/unseen calendars to their Google `selected`
+          if (stored ? stored.has(c.id) : c.selected) _calEnabled.add(c.id);
+        }
+        renderCalFilterBar();
+      } catch {}
+    }
+
+    function _calSaveEnabled() {
+      try { localStorage.setItem(CAL_FILTER_LS, JSON.stringify([..._calEnabled])); } catch {}
+    }
+
+    function renderCalFilterBar() {
+      const bar = document.getElementById('cal-filter-bar');
+      if (!bar) return;
+      if (_calCalendars.length < 2) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+      bar.style.display = 'flex';
+      bar.innerHTML = _calCalendars.map(c => {
+        const on = _calEnabled.has(c.id);
+        return '<button type="button" data-cal="' + esc(c.id) + '" onclick="toggleCalendar(this.dataset.cal)" '
+          + 'style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--border);'
+          + 'background:' + (on ? 'var(--surface-elevated,var(--surface))' : 'transparent') + ';'
+          + 'color:' + (on ? 'var(--text)' : 'var(--text-muted)') + ';font-size:12px;cursor:pointer;opacity:' + (on ? '1' : '0.5') + '">'
+          + '<span style="width:10px;height:10px;border-radius:3px;flex:none;background:' + esc(c.color) + '"></span>'
+          + esc(c.summary) + '</button>';
+      }).join('');
+    }
+
+    function toggleCalendar(id) {
+      if (!_calEnabled) return;
+      if (_calEnabled.has(id)) _calEnabled.delete(id); else _calEnabled.add(id);
+      _calSaveEnabled();
+      renderCalFilterBar();
+      renderCalEvents();
+    }
+
+    function renderCalEvents() {
+      if (!_fcCalendar) return;
+      const visible = (_calAllEvents || []).filter(ev => {
+        const cid = ev._calId;
+        if (!_calEnabled || !cid) return true; // no filter info → show
+        return _calEnabled.has(cid);
+      });
+      _fcCalendar.removeAllEvents();
+      _fcCalendar.addEventSource(normalizeCalendarEvents(visible));
+      const empty = document.getElementById('cal-empty');
+      if (empty) {
+        empty.style.color = 'var(--text-muted)';
+        empty.textContent = 'Không có sự kiện trong khung thời gian này.';
+        empty.style.display = visible.length ? 'none' : '';
+      }
+    }
+
     function normalizeCalendarEvents(events) {
       return events.map(ev => {
         const start = ev.start?.dateTime || ev.start?.date || ev.start || ev.startTime || '';
@@ -11598,6 +11682,7 @@
         const attendees = Array.isArray(ev.attendees)
           ? ev.attendees.map(a => (a && typeof a === 'object') ? (a.email || a.displayName || '') : a).filter(Boolean).join(', ')
           : (ev.attendees || '');
+        const color = (ev._calId && _calColorById[ev._calId]) || 'var(--accent)';
         return {
           id: ev.id,
           title: ev.summary || ev.title || 'Không có tiêu đề',
@@ -11605,8 +11690,8 @@
           end: end || undefined,
           allDay: Boolean(ev.start?.date && !ev.start?.dateTime),
           url: ev.htmlLink || undefined,
-          backgroundColor: 'var(--accent)',
-          borderColor: 'var(--accent)',
+          backgroundColor: color,
+          borderColor: color,
           extendedProps: {
             raw: ev,
             location: ev.location || '',
@@ -11626,6 +11711,7 @@
 
     async function loadCalendarEvents(options) {
       if (!ensureGoogleCalendar()) return;
+      if (!_calCalendars.length) await loadCalendarList();
       const view = _fcCalendar.view;
       const from = view.activeStart.toISOString();
       const to = view.activeEnd.toISOString();
@@ -11637,17 +11723,23 @@
       const empty = document.getElementById('cal-empty');
       if (empty) empty.style.display = 'none';
       try {
-        const data = await window.claw.googleCalendarEvents({ from, to });
-        if (data.error) throw new Error(data.error);
+        // One fetch per calendar (gog events carry no calendarId), tagged so the
+        // filter + per-calendar color work. Falls back to `primary` if the list
+        // couldn't load. A single failing calendar must not blank the whole view.
+        const targets = _calCalendars.length ? _calCalendars.map(c => c.id) : ['primary'];
+        const perCal = await Promise.all(targets.map(async calId => {
+          try {
+            const data = await window.claw.googleCalendarEvents({ from, to, calendarId: calId });
+            if (data.error) throw new Error(data.error);
+            const evs = data.events || data.items || data.data || [];
+            return evs.map(ev => Object.assign({ _calId: calId }, ev));
+          } catch (e) { _calLastError = e; return null; }
+        }));
         if (reqId !== _fcRequestId) return;
-        const events = data.events || data.items || data.data || [];
-        _fcCalendar.removeAllEvents();
-        _fcCalendar.addEventSource(normalizeCalendarEvents(events));
-        if (empty) {
-          empty.style.color = 'var(--text-muted)';
-          empty.textContent = 'Không có sự kiện trong khung thời gian này.';
-          empty.style.display = events.length ? 'none' : '';
-        }
+        const ok = perCal.filter(Boolean);
+        if (!ok.length && _calLastError) throw _calLastError; // all calendars failed
+        _calAllEvents = ok.flat();
+        renderCalEvents();
       } catch (e) {
         if (empty) {
           empty.style.display = '';

@@ -286,6 +286,13 @@ async function listEvents(from, to, calendarId) {
   return gogReadExec(buildListEventsArgs(from, to, calendarId));
 }
 
+// The user's list of calendars (id, summary, backgroundColor, selected, accessRole).
+// Google lets you create many; the dashboard fetches events per calendar and tags
+// them itself, because gog events carry no calendarId field to group by.
+async function listCalendars() {
+  return gogReadExec(['calendar', 'calendars']);
+}
+
 async function createEvent(summary, start, end, attendees, calendarId) {
   const args = ['calendar', 'create', calendarId || 'primary', '--summary', summary, '--from', start, '--to', end];
   if (attendees) {
@@ -1108,7 +1115,7 @@ module.exports = {
   getGogBinaryPath, getGogConfigDir, getGogAccount,
   gogExec, gogReadExec, gogSpawnAsync, gogEnv, cleanupGogProcesses,
   authStatus, validateOAuthClientSecret, registerCredentials, connectAccount, getAuthUrl, disconnectAccount,
-  listEvents, createEvent, updateEvent, deleteEvent, getFreeBusy, getFreeSlots,
+  listEvents, listCalendars, createEvent, updateEvent, deleteEvent, getFreeBusy, getFreeSlots,
   listInbox, readEmail, downloadGmailAttachment, sendEmail, replyEmail,
   listFiles, listSheets, uploadFile, downloadFile, shareFile,
   listDocs, getDocInfo, readDoc, createDoc, writeDoc, insertDoc, findReplaceDoc, exportDoc,
