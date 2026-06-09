@@ -44,6 +44,15 @@ const MODORO_ZALO_READY_TIMEOUT_MS = 30_000;
 const MODORO_ZALO_READY_POLL_MS = 500;
 const MODORO_ZALO_READY_LOG_AFTER_MS = 10_000;
 const MODORO_ZALO_READY_LOG_INTERVAL_MS = 10_000;
+// Fast-first exponential reconnect. Zalo ROUTINELY closes the web socket with code
+// 1000 (NORMAL_CLOSURE) every ~1.5-4 min as connection rotation — this is normal, not
+// throttle. openzca runs --supervised with zca-js retryOnClose=false, so its native
+// instant reconnect+rotate is off and reconnect falls to us; a routine close therefore
+// needs a FAST reconnect or messages sent during the gap are lost. Do NOT flatten this
+// to a long fixed delay (a 30s flat made every routine close a 30s outage ≈20% downtime
+// and dropped inbound). The 90s stable-reset keeps routine closes at attempt 1 (~1s),
+// and only rapid-fire closes (a real throttle storm) escalate to the 60s cap and trip
+// the circuit breaker below — that, not a long base delay, is the throttle backstop.
 const MODORO_ZALO_RECONNECT_INITIAL_MS = 1_000;
 const MODORO_ZALO_RECONNECT_MAX_MS = 60_000;
 const MODORO_ZALO_RECONNECT_FACTOR = 2;

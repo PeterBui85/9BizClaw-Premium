@@ -2,9 +2,9 @@
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
     "apiRoutes": 157,
-    "ipcHandlers": 213,
-    "preloadBridges": 206,
-    "dashboardPages": 18,
+    "ipcHandlers": 217,
+    "preloadBridges": 210,
+    "dashboardPages": 19,
     "capabilityContracts": 5
   },
   "apiRoutes": [
@@ -1980,6 +1980,10 @@
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
+      "channel": "modoro:setup",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
       "channel": "onboarding:advance",
       "source": "electron/lib/dashboard-ipc.js"
     },
@@ -1997,6 +2001,10 @@
     },
     {
       "channel": "open-external",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "open-generated-folder",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -2197,6 +2205,14 @@
     },
     {
       "channel": "start-9router",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "startup:get",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "startup:set",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -2633,6 +2649,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "getStartupSetting",
+      "channel": "startup:get",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "getTelegramBehavior",
       "channel": "get-telegram-behavior",
       "source": "electron/preload.js"
@@ -2963,6 +2984,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "modoroSetup",
+      "channel": "modoro:setup",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "openBackupFileDialog",
       "channel": "open-backup-file-dialog",
       "source": "electron/preload.js"
@@ -2970,6 +2996,11 @@
     {
       "name": "openExternal",
       "channel": "open-external",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "openGeneratedFolder",
+      "channel": "open-generated-folder",
       "source": "electron/preload.js"
     },
     {
@@ -3198,6 +3229,11 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "setStartupSetting",
+      "channel": "startup:set",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "setup9RouterAuto",
       "channel": "setup-9router-auto",
       "source": "electron/preload.js"
@@ -3346,6 +3382,10 @@
       "source": "electron/ui/dashboard.html"
     },
     {
+      "id": "modoro-ai",
+      "source": "electron/ui/dashboard.html"
+    },
+    {
       "id": "openclaw",
       "source": "electron/ui/dashboard.html"
     },
@@ -3412,7 +3452,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/lib/boot.js",
-      "bytes": 37246
+      "bytes": 38412
     },
     {
       "path": "electron/lib/brain-graph.js",
@@ -3448,7 +3488,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 289269
+      "bytes": 299170
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3472,7 +3512,7 @@
     },
     {
       "path": "electron/lib/image-gen.js",
-      "bytes": 29042
+      "bytes": 29153
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -3504,7 +3544,7 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 50244
+      "bytes": 50488
     },
     {
       "path": "electron/lib/workspace.js",
@@ -3520,7 +3560,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 695173
+      "bytes": 703323
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",

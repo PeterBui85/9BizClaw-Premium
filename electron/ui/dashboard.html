@@ -2829,6 +2829,12 @@
         </div>
 
 
+        <!-- Run-on-startup: compact corner toggle -->
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:-4px 0 12px;font-size:12px;color:var(--text-muted)">
+          <span title="Tự mở 9BizClaw khi bật máy — để bot luôn sẵn sàng, lịch đăng và Zalo không bị lỡ giờ.">Khởi động cùng máy</span>
+          <label class="toggle-switch" title="Tự mở 9BizClaw khi bật máy — bot luôn sẵn sàng"><input type="checkbox" id="startup-toggle" onchange="onStartupToggle(this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+
         <!-- Stat cards -->
         <div class="ov-stats" id="ov-stats">
           <div class="ov-stat">
@@ -3787,6 +3793,23 @@
         </div>
       </div>
 
+      <!-- PAGE: MODORO AI (one-key turnkey provider setup) -->
+      <div class="page" id="page-modoro-ai">
+        <div class="page-header">
+          <span class="page-icon" data-icon="star" data-icon-size="26"></span>
+          <div><h2>MODORO AI</h2><div class="page-sub">Kết nối AI của MODORO bằng một mã key duy nhất</div></div>
+        </div>
+        <div style="padding:0 24px 24px">
+          <div class="card" style="max-width:600px">
+            <h3 style="margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text)">Nhập mã kết nối</h3>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Dán mã key MODORO cấp cho anh/chị. Hệ thống tự kết nối, nạp model và đặt làm AI chính — không cần thao tác gì thêm.</div>
+            <input type="text" id="modoro-ai-key" placeholder="Dán mã key MODORO vào đây" autocomplete="off" spellcheck="false" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:monospace;background:var(--surface);color:var(--text);box-sizing:border-box;margin:0 0 12px">
+            <button class="btn btn-primary" id="modoro-ai-connect-btn" onclick="doModoroSetup()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="zap" data-icon-size="15"></span>Kết nối</button>
+            <div id="modoro-ai-status" style="margin-top:14px;font-size:13px;line-height:1.5"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- PAGE: 9Router (embedded web UI) -->
       <div class="page" id="page-9router">
         <div class="page-header">
@@ -3890,6 +3913,7 @@
                   <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Ảnh đã tạo, ảnh upload vào Knowledge và từng trang PDF scan đã được vision đọc.</div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <button class="btn btn-secondary btn-small" onclick="openGeneratedFolder()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="folder-open" data-icon-size="14"></span>Mở thư mục ảnh AI</button>
                   <button class="btn btn-secondary btn-small" onclick="uploadKnowledgeFromMediaTab()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="upload" data-icon-size="14"></span>Upload PDF/ảnh</button>
                   <button class="btn btn-secondary btn-small" onclick="loadImageAssetsTab()" style="display:inline-flex;align-items:center;gap:6px"><span data-icon="refresh-cw" data-icon-size="14"></span>Làm mới</button>
                 </div>
@@ -5169,6 +5193,20 @@
       }
       return when + timeStr;
     }
+    // One-time jobs store their fire moment in `oneTimeAt` (ISO, naive-local) instead of a
+    // cron expression, so cronToTime/cronToHuman see nothing and the row renders "—".
+    // Returns { time:"HH:MM", date, sameDay, label } for those (else null) so the schedule
+    // list + detail modal show the real time. Mirrors how the cron engine reads oneTimeAt.
+    function oneTimeDisplay(c) {
+      if (!c || c.cronExpr || !c.oneTimeAt) return null;
+      const d = new Date(c.oneTimeAt);
+      if (isNaN(d.getTime())) return null;
+      const time = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      const sameDay = d.toDateString() === new Date().toDateString();
+      const dateStr = String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
+      const label = sameDay ? `1 lần · hôm nay lúc ${time}` : `1 lần · ${dateStr} lúc ${time}`;
+      return { time, date: d, sameDay, label };
+    }
     // Map schedule ID → icon name
     const SCHEDULE_ICON_MAP = {
       morning: 'sun',
@@ -5246,8 +5284,10 @@
         document.getElementById('cron-detail-content').innerHTML = `
           <h3>${icon('bot', 22)}<span style="margin-left:8px">${esc(data.label || 'Custom cron')}</span></h3>
           <div class="cron-detail-row"><span class="cron-detail-label">Loại</span><span class="cron-detail-value">Do bot tạo theo yêu cầu</span></div>
-          <div class="cron-detail-row"><span class="cron-detail-label">Lịch chạy</span><span class="cron-detail-value">${esc(cronToHuman(data.cronExpr))}</span></div>
-          <div class="cron-detail-row"><span class="cron-detail-label">Cron</span><span class="cron-detail-value" style="font-family:monospace">${esc(data.cronExpr)}</span></div>
+          <div class="cron-detail-row"><span class="cron-detail-label">Lịch chạy</span><span class="cron-detail-value">${esc(oneTimeDisplay(data) ? oneTimeDisplay(data).label : cronToHuman(data.cronExpr))}</span></div>
+          ${oneTimeDisplay(data)
+            ? '<div class="cron-detail-row"><span class="cron-detail-label">Chạy lúc</span><span class="cron-detail-value">' + esc(new Date(data.oneTimeAt).toLocaleString('vi-VN')) + '</span></div>'
+            : '<div class="cron-detail-row"><span class="cron-detail-label">Cron</span><span class="cron-detail-value" style="font-family:monospace">' + esc(data.cronExpr) + '</span></div>'}
           <div class="cron-detail-row"><span class="cron-detail-label">Tạo lúc</span><span class="cron-detail-value">${esc(created)}</span></div>
           <div class="cron-detail-row"><span class="cron-detail-label">Trạng thái</span><span class="cron-detail-value">${statusDotHtml(data.enabled)}</span></div>
           <div style="margin-top:8px"><span class="cron-detail-label">Nội dung thực hiện:</span></div>
@@ -5337,9 +5377,10 @@
         { page: 'schedules', icon: 'calendar', label: 'Lịch tự động' },
       ]},
       brain:    { pages: ['brain'], tabs: null },
-      config:   { pages: ['skills','persona-mix','9router','openclaw'], tabs: [
+      config:   { pages: ['skills','persona-mix','modoro-ai','9router','openclaw'], tabs: [
         { page: 'skills', icon: 'zap', label: 'Skills' },
         { page: 'persona-mix', icon: 'sparkles', label: 'Tính cách' },
+        { page: 'modoro-ai', icon: 'star', label: 'MODORO AI' },
         { page: '9router', icon: 'cpu', label: 'AI Models', action: 'openAiModelsBrowser' },
         { page: 'openclaw', icon: 'terminal', label: 'OpenClaw' },
       ]},
@@ -6671,6 +6712,7 @@
     }
 
     async function loadOverview() {
+      initStartupToggle(); // reflect current run-on-startup state (independent of overview data)
       try {
         const data = await window.claw.getOverviewData();
         if (!data || !data.success) {
@@ -6843,7 +6885,7 @@
         } else {
           const show = data.memories.slice(0, 8);
           listEl.innerHTML = show.map(_renderMemRow).join('')
-            + (count > 8 ? '<div style="padding:8px 4px;text-align:center"><button class="ov-card-action" onclick="showMemoryModal()" style="font-size:12px;color:var(--accent);border:none;background:none;cursor:pointer">Xem tất cả ' + count + ' mục</button></div>' : '');
+            + (count > 8 ? '<div style="padding:8px 4px;text-align:center"><button onclick="showMemoryModal()" style="font-size:12px;color:var(--accent);border:none;background:none;cursor:pointer;white-space:nowrap;padding:4px 10px">Xem tất cả ' + count + ' mục</button></div>' : '');
         }
       } catch (e) { console.error('[overview] memory load error', e); }
     }
@@ -6942,7 +6984,7 @@
         } else {
           const show = data.memories.slice(0, 8);
           listEl.innerHTML = show.map(_renderMemRow).join('')
-            + (count > 8 ? '<div style="padding:8px 4px;text-align:center"><button class="ov-card-action" onclick="showMemoryModal()" style="font-size:12px;color:var(--accent);border:none;background:none;cursor:pointer">Xem tất cả ' + count + ' mục</button></div>' : '');
+            + (count > 8 ? '<div style="padding:8px 4px;text-align:center"><button onclick="showMemoryModal()" style="font-size:12px;color:var(--accent);border:none;background:none;cursor:pointer;white-space:nowrap;padding:4px 10px">Xem tất cả ' + count + ' mục</button></div>' : '');
         }
       } catch (e) { console.error('[overview] memory load error', e); }
     }
@@ -7581,6 +7623,63 @@
       try {
         const r = await window.claw.openKnowledgeFolder(cat);
         if (r && !r.success) showToast('Không mở được thư mục: ' + (r.error || ''), 'error');
+      } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
+    }
+
+    // Run-on-startup checkbox: reads/writes the OS login-item via main.
+    async function initStartupToggle() {
+      const cb = document.getElementById('startup-toggle');
+      if (!cb) return;
+      try { const r = await window.claw.getStartupSetting(); cb.checked = !!(r && r.enabled); } catch {}
+    }
+    async function onStartupToggle(checked) {
+      try {
+        const r = await window.claw.setStartupSetting(!!checked);
+        if (r && r.success) {
+          if (typeof showToast === 'function') showToast(checked ? 'Đã bật khởi động cùng máy' : 'Đã tắt khởi động cùng máy', 'success');
+        } else {
+          if (typeof showToast === 'function') showToast('Không đổi được cài đặt: ' + ((r && r.error) || ''), 'error');
+          const cb = document.getElementById('startup-toggle'); if (cb) cb.checked = !checked; // revert on failure
+        }
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('Lỗi: ' + (e && e.message ? e.message : e), 'error');
+        const cb = document.getElementById('startup-toggle'); if (cb) cb.checked = !checked;
+      }
+    }
+
+    // MODORO AI: paste one key → backend adds the provider, imports models, sets combos.
+    async function doModoroSetup() {
+      const input = document.getElementById('modoro-ai-key');
+      const btn = document.getElementById('modoro-ai-connect-btn');
+      const status = document.getElementById('modoro-ai-status');
+      const key = (input.value || '').trim();
+      if (!key) { status.innerHTML = '<span style="color:var(--danger)">Vui lòng dán mã key.</span>'; return; }
+      btn.disabled = true;
+      const _orig = btn.innerHTML;
+      btn.innerHTML = 'Đang kết nối...';
+      status.innerHTML = '<span style="color:var(--text-muted)">Đang kết nối MODORO AI, vui lòng đợi...</span>';
+      try {
+        const r = await window.claw.modoroSetup(key);
+        if (r && r.success) {
+          status.innerHTML = '<span style="color:#22c55e">Đã kết nối MODORO AI — nạp ' + (r.modelCount || 0) + ' model, đã đặt làm AI chính. Sẵn sàng dùng.</span>';
+          input.value = '';
+          if (typeof showToast === 'function') showToast('MODORO AI đã kết nối', 'success');
+        } else {
+          status.innerHTML = '<span style="color:var(--danger)">' + esc((r && r.error) || 'Kết nối thất bại.') + '</span>';
+        }
+      } catch (e) {
+        status.innerHTML = '<span style="color:var(--danger)">Lỗi: ' + esc(e && e.message ? e.message : String(e)) + '</span>';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = _orig;
+      }
+    }
+
+    // Open brand-assets/generated/ — all AI-generated images are kept there forever.
+    async function openGeneratedFolder() {
+      try {
+        const r = await window.claw.openGeneratedFolder();
+        if (r && !r.success) showToast('Không mở được thư mục ảnh AI: ' + (r.error || ''), 'error');
       } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
     }
 
@@ -9066,16 +9165,18 @@
       });
       customCrons.forEach(c => {
         const isOC = c.source === 'openclaw';
-        // Time display priority: explicit displayTime (openclaw) → strict HH:MM → human-readable.
-        // Never leak raw cron expression (e.g., "0 0 * 1 1") into the time column.
+        // One-time (oneTimeAt) jobs carry their time as a timestamp, not a cron expr.
+        const ot = oneTimeDisplay(c);
+        // Time display priority: one-time HH:MM → explicit displayTime (openclaw) → strict
+        // HH:MM → human-readable. Never leak a raw cron expression into the time column.
         const hhmm = cronToTime(c.cronExpr); // strict HH:MM only, '' for intervals/dow/ranges
         const human = cronToHuman(c.cronExpr);
-        const t = isOC ? (c.displayTime || hhmm || human || '') : (hhmm || human || '');
+        const t = ot ? ot.time : (isOC ? (c.displayTime || hhmm || human || '') : (hhmm || human || ''));
         // Sort key: chronological only when HH:MM extractable, else bucket to end.
-        const sortKey = /^\d{1,2}:\d{2}$/.test(hhmm) ? hhmm : '99:99';
-        let meta = human;
+        const sortKey = ot ? ot.time : (/^\d{1,2}:\d{2}$/.test(hhmm) ? hhmm : '99:99');
+        let meta = ot ? ot.label : human;
         if (isOC && c.lastStatus) meta += ' · ' + (c.lastStatus === 'ok' ? 'OK' : c.lastStatus);
-        items.push({ type: isOC ? 'openclaw' : 'custom', id: c.id, time: t, label: c.label || 'Custom cron', desc: c.prompt ? c.prompt.slice(0, 80) : '', enabled: c.enabled, meta, once: !!c.deleteAfterRun, sortKey, firesToday: cronDowAllowedToday(c.cronExpr) });
+        items.push({ type: isOC ? 'openclaw' : 'custom', id: c.id, time: t, label: c.label || 'Custom cron', desc: c.prompt ? c.prompt.slice(0, 80) : '', enabled: c.enabled, meta, once: !!c.deleteAfterRun || !!ot, sortKey, firesToday: ot ? ot.sameDay : cronDowAllowedToday(c.cronExpr), oneTimeDate: ot ? ot.date : null });
       });
       let fbScheds = [];
       try { fbScheds = await window.claw.getFbSchedules() || []; } catch {}
@@ -9092,6 +9193,19 @@
       // Compute relative time until next fire for each item — only if it fires today.
       const _nowMin = new Date().getHours() * 60 + new Date().getMinutes();
       items.forEach(item => {
+        // One-time jobs can fire on a future date — compute the true gap (handles >1 day),
+        // not the today-only HH:MM math below.
+        if (item.oneTimeDate) {
+          const diffMs = item.oneTimeDate.getTime() - Date.now();
+          if (diffMs <= 0) return;
+          const totalMin = Math.floor(diffMs / 60000);
+          const dLeft = Math.floor(totalMin / 1440);
+          const hLeft = Math.floor((totalMin % 1440) / 60);
+          const mLeft = totalMin % 60;
+          const relTime = dLeft > 0 ? dLeft + ' ngày ' + hLeft + 'h' : (hLeft > 0 ? hLeft + 'h ' + mLeft + 'm' : mLeft + ' phút');
+          item.meta = (item.meta || '') + ' · trong ' + relTime;
+          return;
+        }
         if (item.firesToday === false) return;
         const [_rh, _rm] = (item.time || '').split(':').map(Number);
         if (!isNaN(_rh) && !isNaN(_rm)) {
@@ -9111,8 +9225,11 @@
       }
       const now = new Date();
       const nowStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-      const upcoming = items.filter(i => i.sortKey >= nowStr);
-      const past = items.filter(i => i.sortKey < nowStr);
+      // One-time jobs sort by their real datetime (a future-dated post isn't "đã qua" just
+      // because its HH:MM is earlier than now); recurring jobs keep the today HH:MM split.
+      const _isUpcoming = (i) => i.oneTimeDate ? (i.oneTimeDate.getTime() >= now.getTime()) : (i.sortKey >= nowStr);
+      const upcoming = items.filter(_isUpcoming);
+      const past = items.filter(i => !_isUpcoming(i));
       function renderGroup(arr, sectionLabel) {
         if (!arr.length) return;
         const sec = document.createElement('div');

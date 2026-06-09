@@ -490,15 +490,22 @@ export async function handleModoroZaloInbound(params: {
   // are captured and recording survives openzca DB failures. Best-effort; never
   // blocks or throws into the reply path. Keyed by botUserId (owner self id);
   // skips cleanly if that is missing (poller backup still captures).
-  try {
-    captureInbound({
-      ownerId: botUserId || "",
-      threadId: targetThreadId,
-      isGroup: message.isGroup,
-      message,
-      log: runtime.log,
-    });
-  } catch {}
+  // Skip self-messages (delivered because openzca runs --self): the bot's own replies
+  // echoed back and the CEO's takeover messages. They are NOT customer inbound — the
+  // owner-takeover transcript captures the CEO's side separately — so keep them out of
+  // the durable customer archive.
+  const __alIsSelf = !!(botUserId && String(message.senderId) === String(botUserId));
+  if (!__alIsSelf) {
+    try {
+      captureInbound({
+        ownerId: botUserId || "",
+        threadId: targetThreadId,
+        isGroup: message.isGroup,
+        message,
+        log: runtime.log,
+      });
+    } catch {}
+  }
   if (!message.isGroup && rawBody && isZaloFriendshipSystemText(rawBody)) {
     runtime.log?.(`modoro-zalo: drop DM friendship system event from ${message.senderId}: ${rawBody.slice(0, 120)}`);
     return;
@@ -608,6 +615,16 @@ export async function handleModoroZaloInbound(params: {
       return;
     }
     if (__tkDirty) { try { __tkFs.writeFileSync(__tkFile, JSON.stringify(__tkMap, null, 2)); } catch {} }
+    // Any owner self-message that reaches here is NOT a command and the thread is NOT
+    // paused — i.e. the bot's own reply echoed back via openzca --self, or the CEO
+    // chatting outside takeover. A self-message must NEVER continue to dispatch (the bot
+    // would reply to itself → loop). Drop it. This is the single chokepoint that makes
+    // --self safe; every self-message has __tkIsOwner===true (normalize pins senderId to
+    // selfId), so commands return above, paused capture returns above, and this catches
+    // the rest.
+    if (__tkIsOwner) {
+      return;
+    }
     const __tkCtxPath = __tkCtxFile(__tkThread);
     if (__tkFs.existsSync(__tkCtxPath)) {
       try {

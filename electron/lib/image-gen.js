@@ -10,7 +10,6 @@ const PROBE_TIMEOUT_MS = 5 * 1000;          // GET /v1/models reachability probe
 const PROBE_TTL_MS = 10 * 60 * 1000;        // cache a positive "is-9router" verdict
 const PROBE_NEG_TTL_MS = 30 * 1000;         // re-probe quickly after a transient miss
 const _providerProbeCache = new Map();      // baseUrl -> { ok, at }
-const MAX_GENERATED = 20;
 const MAX_ASSET_B64_SIZE = 4 * 1024 * 1024;
 const JOB_TTL_MS = 30 * 60 * 1000;
 const MAX_JOBS = 50;
@@ -572,23 +571,14 @@ async function callCodexAPIWithFallback(prompt, assets, size, deps = {}) {
   throw lastErr;
 }
 
-function cleanupGenerated(generatedDir) {
-  try {
-    const files = fs.readdirSync(generatedDir)
-      .filter(f => f.endsWith('.png'))
-      .map(f => ({ name: f, time: fs.statSync(path.join(generatedDir, f)).mtimeMs }))
-      .sort((a, b) => b.time - a.time);
-    while (files.length > MAX_GENERATED) {
-      const old = files.pop();
-      const oldPath = path.join(generatedDir, old.name);
-      try { fs.unlinkSync(oldPath); } catch {}
-      try {
-        const media = require('./media-library');
-        media.removeAssetByPath(oldPath);
-      } catch {}
-    }
-  } catch {}
-}
+// ANTI-FEATURE (CEO decision, 2026-06-09): we do NOT auto-delete generated images.
+// Every generated image is kept on disk forever. A previous cap (keep 20 newest)
+// silently deleted a scheduled post's already-approved banner before its publish
+// time days later — the post then failed with "ảnh bị mất trước giờ đăng". Keeping
+// everything removes that dangling-reference failure mode entirely. Trade-off: the
+// brand-assets/generated/ folder grows unbounded; revisit only if disk becomes a
+// real problem on a customer machine (then add a cap that EXCLUDES images still
+// referenced by a pending/scheduled FB post — never a blind mtime cap).
 
 let _genWriteChain = Promise.resolve();
 function withGenLock(fn) {
@@ -643,7 +633,7 @@ function startJob(jobId, prompt, brandAssetsDir, assetNames, size, onComplete) {
         });
         job.mediaId = mediaAsset?.id || null;
       } catch (e) { console.warn('[image-gen] media register failed:', e.message); }
-      cleanupGenerated(generatedDir);
+      // No cleanup — every generated image is kept on disk (see ANTI-FEATURE above).
       settle(null, outPath);
     });
   }).catch(err => {

@@ -7,8 +7,10 @@ import {
   sleepWithAbortOrCredentialChange,
 } from "./monitor.ts";
 
-test("openzca listen args use supervised raw mode", () => {
-  assert.deepEqual(OPENZCA_LISTEN_ARGS, ["listen", "--raw", "--supervised"]);
+test("openzca listen args use supervised raw mode with --self for owner-takeover", () => {
+  assert.deepEqual(OPENZCA_LISTEN_ARGS, ["listen", "--self", "--raw", "--supervised"]);
+  // --self delivers the CEO's own /tamdung self-message; without it owner-takeover is dead.
+  assert.equal(OPENZCA_LISTEN_ARGS.includes("--self"), true);
   assert.equal(OPENZCA_LISTEN_ARGS.includes("--keep-alive"), false);
 });
 

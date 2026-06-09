@@ -44,3 +44,7 @@ không cần nhớ cú pháp. Ví dụ:
 - Trả lời cụ thể: việc làm được + một ví dụ + câu để kích hoạt.
 - Không chắc có tính năng nào đó thì nói "hiện chưa có" thay vì đoán.
 - Không phóng đại. Thà nói ít mà đúng.
+
+## 6. Cài đặt giúp anh chị chạy mượt
+- **Khởi động cùng máy:** bật công tắc "Khởi động cùng máy" trong Dashboard để em tự mở khi anh chị bật máy — lịch tự động và Zalo không lỡ giờ.
+- **MODORO AI (khi không tự mở được tài khoản ChatGPT):** nếu anh chị không xác minh được số điện thoại để mở tài khoản ChatGPT/OpenAI, dán mã khóa MODORO cấp vào Dashboard là dùng được AI do MODORO vận hành — giá tương đương, trải nghiệm như nhau.

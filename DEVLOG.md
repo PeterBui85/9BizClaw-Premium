@@ -13,6 +13,14 @@ Daily development log. Each entry records what was shipped, not how.
 - **Deploy gate bumped in lockstep** so the rewrite reaches installs: `CURRENT_AGENTS_MD_VERSION` 120→121 (`electron/lib/workspace.js`) + AGENTS.md line-1 stamp. `smoke-skill-runtime.js` → 55 passed, 0 failed (version sync confirmed v121).
 - Docs/skill + version bump only — nothing built/pushed/released.
 
+**Cron/CEO agent full authority — auth fix (anh Song Quang) + release v2.4.12. AGENTS 121→122; fork already v1.0.23.**
+
+- **Root cause (systematic-debugging + audit log, not guess).** Cron tới giờ báo `403 "CEO Telegram only."` khi gửi ảnh. Gate `_requireCeoTelegram` khỏe (curl: có thẻ→200, không→403); lỗi là cron-agent KHÔNG cấp được thẻ telegram+token vào web_fetch (`audit.jsonl`: `channel=none` / `bad_token`). Default-deny ⇒ rớt auth = cron mất TOÀN BỘ quyền, không chỉ gửi ảnh.
+- **Fix.** cron/CEO `agent` spawn nhận token qua env `BIZCLAW_CRON_API_TOKEN` (`boot.js`, chỉ tiến trình CEO-trust); web_fetch patch đọc env trước, độc lập channel-threading (`vendor-patches.js`, marker v3→v4); test hồi quy (`smoke-skill-runtime.js`). E2E 4/4, smoke pass, karpathy-council 0-blocking. Khách Zalo vẫn bị nhốt (token không vào tiến trình gateway).
+- **Self-knowledge.** `gioi-thieu.md` thêm "Khởi động cùng máy" + "MODORO AI" (dành cho anh chị không verify được SĐT — dùng AI MODORO, giá tương đương). AGENTS 121→122 để máy khách refresh.
+- **Cũng trong build (thay đổi có sẵn, không phải auth fix):** giữ ảnh AI đã tạo, không tự xóa (lỗi mất banner FB trước giờ đăng — chị Huê báo; chị Nương góp ý thư mục ảnh); Khởi động cùng máy (Win+Mac); MODORO AI một-mã-khóa; Zalo `--self` takeover an toàn.
+- **Shipped:** built `9BizClaw Setup 2.4.12.exe`; tag v2.4.12 → Mac CI DMG + GitHub release; EXE+DMG lên Drive.
+
 ## 2026-06-08
 
 **Zalo customer image-send actually works now (Approach Y) + Zalo listener false-`listener_dead` hotfix. App version stays 2.4.11 (CEO's call); AGENTS 119→120; fork v1.0.20→v1.0.21. UNCOMMITTED — pending CEO review.**

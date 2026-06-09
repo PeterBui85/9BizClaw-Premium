@@ -1765,7 +1765,10 @@ try {
   }
   const vendorPatchSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');
   const hasWebFetchTokenPatch =
-    vendorPatchSrc.includes('9BizClaw WEB_FETCH CRON TOKEN PATCH v3') &&
+    vendorPatchSrc.includes('9BizClaw WEB_FETCH CRON TOKEN PATCH v4') &&
+    // v4 (2026-06-09): cron/CEO agent spawns also auth via BIZCLAW_CRON_API_TOKEN env
+    // (reliable delivery independent of --channel threading / token-file location).
+    vendorPatchSrc.includes('process.env.BIZCLAW_CRON_API_TOKEN') &&
     vendorPatchSrc.includes('9BizClaw WEB_FETCH LOCAL API CACHE BYPASS') &&
     vendorPatchSrc.includes('skip9BizClawLocalApiCache') &&
     vendorPatchSrc.includes('params.agentChannel') &&

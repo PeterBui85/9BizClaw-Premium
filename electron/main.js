@@ -591,6 +591,20 @@ app.whenReady().then(async () => {
     invalidateWorkspaceCache(); // Force getWorkspace() to re-evaluate with new ctx.userDataDir
   }
 
+  // Run-on-startup: on first boot, default to launching with the OS (better bot
+  // reliability — app is up when the machine boots so scheduled posts / Zalo don't
+  // miss their window). After that the CEO controls it via the Cấu hình toggle.
+  // Idempotent via marker so we never override a later user choice. Both Win + Mac.
+  if (app.isPackaged) {
+    try {
+      const startupMarker = path.join(app.getPath('userData'), '.startup-initialized');
+      if (!fs.existsSync(startupMarker)) {
+        app.setLoginItemSettings({ openAtLogin: true });
+        try { fs.writeFileSync(startupMarker, '1'); } catch {}
+      }
+    } catch (e) { console.warn('[startup] login-item init failed:', e?.message); }
+  }
+
   // Mac: strip Gatekeeper quarantine xattr from runtime vendor on first boot.
   // DMG drag triggers quarantine on all files inside the DMG. Without xattr
   // strip, spawning userData/vendor/node/bin/node fails with

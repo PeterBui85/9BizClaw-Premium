@@ -2,9 +2,9 @@
 
 Counts
 - apiRoutes: 157
-- ipcHandlers: 213
-- preloadBridges: 206
-- dashboardPages: 18
+- ipcHandlers: 217
+- preloadBridges: 210
+- dashboardPages: 19
 - capabilityContracts: 5
 
 Capability Contracts
@@ -183,6 +183,7 @@ Dashboard Pages
 - image-assets
 - knowledge
 - lark
+- modoro-ai
 - openclaw
 - overview
 - persona-mix
@@ -194,7 +195,7 @@ Dashboard Pages
 - zalo
 
 Large Source Files
-- electron/lib/boot.js: 37246 bytes
+- electron/lib/boot.js: 38412 bytes
 - electron/lib/brain-graph.js: 26223 bytes
 - electron/lib/ceo-memory.js: 36596 bytes
 - electron/lib/channels.js: 101213 bytes
@@ -203,13 +204,13 @@ Large Source Files
 - electron/lib/cron-api.js: 202330 bytes
 - electron/lib/cron.js: 144957 bytes
 - electron/lib/customer-memory-updater.js: 37568 bytes
-- electron/lib/dashboard-ipc.js: 289269 bytes
+- electron/lib/dashboard-ipc.js: 299170 bytes
 - electron/lib/fb-publisher.js: 24489 bytes
 - electron/lib/fb-schedule.js: 86437 bytes
 - electron/lib/gateway.js: 89623 bytes
 - electron/lib/google-api.js: 40982 bytes
 - electron/lib/google-routes.js: 26990 bytes
-- electron/lib/image-gen.js: 29042 bytes
+- electron/lib/image-gen.js: 29153 bytes
 - electron/lib/knowledge.js: 96888 bytes
 - electron/lib/media-library.js: 39069 bytes
 - electron/lib/migration.js: 20682 bytes

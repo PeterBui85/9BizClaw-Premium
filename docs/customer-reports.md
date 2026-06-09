@@ -218,3 +218,27 @@ The "message DB" answer was a pure LLM hallucination — no such UI existed.
 - **Root cause (packaging, mọi máy):** `asarUnpack` unpack `**/mammoth/**` nhưng KHÔNG unpack các dep của mammoth (underscore, @xmldom/xmldom, base64-js, dingbat-to-unicode, lop, path-is-absolute) → mammoth chạy unpacked không resolve được dep nằm trong asar.
 - **Fix (v2.4.11):** bỏ `**/mammoth/**` khỏi asarUnpack → mammoth + toàn bộ dep nằm chung trong asar, resolve bình thường (`**/*.node` vẫn unpack native). Verified trong artifact: mammoth/underscore có trong app.asar, không còn ở app.asar.unpacked.
 - **Status:** Fixed in source + build. Pending reinstall.
+
+---
+
+## 2026-06-09 — Cron tới giờ không gửi được ảnh — "CEO Telegram only" (403)
+
+- **Reporter:** anh Song Quang
+- **Symptom:** Lịch tự động (cron) tới giờ không gửi được ảnh vào Zalo — API trả `{"error":"CEO Telegram only."}` (403).
+- **Root cause:** Tiến trình `agent` do cron spawn không gắn được thẻ `X-9BizClaw-Agent-Channel: telegram` + Bearer token vào web_fetch nội bộ (audit: `channel=none` / `bad_token`) — phụ thuộc cách OpenClaw luồn `--channel` + đọc file token, mong manh. Gate `_requireCeoTelegram` chặn đúng luật; lỗi nằm ở khâu cấp credential cho cron-agent. Default-deny nên KHI rớt auth là cron mất TOÀN BỘ quyền (gửi Zalo, đăng FB, đọc Drive/Sheets, exec...), không chỉ gửi ảnh.
+- **Fix (v2.4.12):** cron/CEO agent nhận token qua env `BIZCLAW_CRON_API_TOKEN` (boot.js, chỉ spawn `agent` — tiến trình CEO-trust, không phục vụ Zalo); web_fetch patch đọc env trước, độc lập channel-threading; marker v3→v4. Verify: e2e 4/4 (env→header→gate 200; không env→403), smoke pass, karpathy-council 0-blocking. Token chỉ vào tiến trình CEO-trust → khách Zalo vẫn bị nhốt.
+- **Status:** Fixed in source + build v2.4.12.
+
+## 2026-06-09 — Bài Facebook lên lịch mất ảnh trước giờ đăng
+
+- **Reporter:** chị Huê (báo lỗi Facebook)
+- **Symptom:** Bài Facebook đã duyệt ảnh nhưng tới giờ đăng thì thiếu/mất ảnh.
+- **Root cause:** image-gen tự dọn ảnh (giữ 20 mới nhất) → xóa nhầm banner đã duyệt của bài lên lịch trước giờ đăng (dangling reference).
+- **Fix (v2.4.12):** bỏ auto-delete — mọi ảnh AI tạo được giữ lại trong `brand-assets/generated/` (anti-feature có chủ đích). Đánh đổi: thư mục phình; chỉ thêm cap sau này nếu đĩa thành vấn đề, và cap PHẢI loại trừ ảnh còn được tham chiếu bởi bài lên lịch.
+- **Status:** Fixed in source + build v2.4.12.
+
+## 2026-06-09 — Góp ý: thư mục ảnh AI đã tạo
+
+- **Reporter:** chị Nương (góp ý)
+- **Note:** Góp ý liên quan thư mục/đường dẫn ảnh AI đã tạo. v2.4.12 giữ lại toàn bộ ảnh trong `brand-assets/generated/` (không tự xóa) nên ảnh đã tạo luôn còn để tra/đăng lại.
+- **Status:** Acknowledged (gắn với fix giữ ảnh v2.4.12).

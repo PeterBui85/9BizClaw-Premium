@@ -4117,6 +4117,165 @@ ipcMain.handle('open-knowledge-folder', async (_event, { category }) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
+// ─── Run-on-startup toggle (login item, Win + Mac) ───────────────────
+// The OS login-item state IS the source of truth — the checkbox reads/writes it
+// directly. main.js sets the default ON once on first boot (idempotent marker).
+ipcMain.handle('startup:get', () => {
+  try { return { enabled: !!app.getLoginItemSettings().openAtLogin }; }
+  catch (e) { return { enabled: false, error: e.message }; }
+});
+ipcMain.handle('startup:set', (_event, { enabled } = {}) => {
+  try { app.setLoginItemSettings({ openAtLogin: !!enabled }); return { success: true, enabled: !!enabled }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
+
+// ─── MODORO AI: one-key turnkey provider setup ──────────────────────
+// The CEO distributes ONE API key per customer. Pasting it here auto-configures the
+// LOCAL 9router to route its combos through MODORO's hosted ChatGPT (an openai-compatible
+// endpoint behind a fixed tunnel) — so the customer needs no ChatGPT account of their own.
+// Flow: create a custom provider NODE (POST /api/provider-nodes, prefix "Modoro") → point
+// the main+zalo combos at Modoro/<model>. Does NOT touch openclaw.json (it already routes
+// ninerouter/main + ninerouter/zalo to the local 9router; combos are a 9router-side concern).
+// NOTE: custom endpoints are NODES, not /api/providers connections (that 400s "Invalid provider").
+const MODORO_AI_BASE_URL = 'https://rd5utqj.abc-tunnel.us/v1';
+const MODORO_AI_PROVIDER_NAME = 'MODORO AI';
+const MODORO_AI_PREFIX = 'Modoro';            // custom-node prefix → combos reference Modoro/<model>
+// Combo model chain (replicates the working machine): primary cx/gpt-5.4, fallback cx/gpt-5.5 — both via the Modoro node.
+const MODORO_AI_COMBO_MODELS = ['Modoro/cx/gpt-5.4', 'Modoro/cx/gpt-5.5'];
+
+ipcMain.handle('modoro:setup', async (_event, { apiKey } = {}) => {
+  const key = String(apiKey || '').trim();
+  if (key.length < 12) return { success: false, error: 'API key chưa đúng — kiểm tra lại đã dán đủ chưa.' };
+  try {
+    // 1. Ensure 9router is up
+    if (!getRouterProcess()) start9Router();
+    let ready = await waitFor9RouterReady(15000);
+    if (!ready) {
+      const ping = await nineRouterApi('GET', '/api/settings', null, 1500);
+      if (ping.statusCode && ping.statusCode >= 500) {
+        const fixed = await autoFix9RouterSqlite();
+        if (fixed) { stop9Router(); await new Promise(r => setTimeout(r, 2500)); start9Router(); ready = await waitFor9RouterReady(30000); }
+      }
+    }
+    if (!ready) return { success: false, error: '9router chưa khởi động được. Đóng/mở lại app rồi thử lại.' };
+
+    // 2. Custom endpoints (openai-compatible) are 9router "provider NODES", NOT
+    //    /api/providers connections (that endpoint only accepts built-in provider types
+    //    and returns "Invalid provider"). Remove any previous Modoro node (dedupe re-runs).
+    const nodeBody = { name: MODORO_AI_PROVIDER_NAME, prefix: MODORO_AI_PREFIX, baseUrl: MODORO_AI_BASE_URL, type: 'openai-compatible', apiType: 'chat', apiKey: key };
+    const listRes = await nineRouterApi('GET', '/api/provider-nodes');
+    if (listRes.success) {
+      const dupes = (listRes.data?.nodes || []).filter(n =>
+        n.prefix === MODORO_AI_PREFIX || n.name === MODORO_AI_PROVIDER_NAME ||
+        String(n.baseUrl || '').replace(/\/+$/, '') === MODORO_AI_BASE_URL);
+      for (const old of dupes) { try { await nineRouterApi('DELETE', `/api/provider-nodes/${old.id}`); } catch {} }
+    }
+    // Also remove any stale MODORO credential connection (re-run safety).
+    try {
+      const connList = await nineRouterApi('GET', '/api/providers');
+      const cdupes = (connList.data?.connections || []).filter(c =>
+        c.name === MODORO_AI_PROVIDER_NAME ||
+        String(c.providerSpecificData?.baseUrl || '').replace(/\/+$/, '') === MODORO_AI_BASE_URL);
+      for (const old of cdupes) { try { await nineRouterApi('DELETE', `/api/providers/${old.id}`); } catch {} }
+    } catch {}
+
+    // 3. Validate the key against the tunnel first (fast-fail on a bad key)
+    try {
+      const valRes = await nineRouterApi('POST', '/api/provider-nodes/validate', nodeBody, 12000);
+      const valErr = String(valRes.data?.error || valRes.error || '');
+      const valid = valRes.success && valRes.data?.valid !== false;
+      const transient = /^HTTP\s*5\d{2}$/.test(valErr) || /ECONNRESET|EPIPE|socket hang up|ETIMEDOUT|network/i.test(valErr);
+      if (!valid && !transient && /401|403|unauthor|invalid.*key|forbidden/i.test(valErr)) {
+        return { success: false, error: 'API key MODORO không hợp lệ (bị từ chối). Kiểm tra lại key anh được cấp.', validationFailed: true };
+      }
+    } catch { /* non-fatal — proceed to create */ }
+
+    // 4. Create the Modoro custom provider node. The key on THIS request only TESTS the
+    //    connection — 9router does NOT persist it as the routing credential.
+    const createRes = await nineRouterApi('POST', '/api/provider-nodes', nodeBody);
+    if (!createRes.success) return { success: false, error: 'Không thêm được MODORO AI: ' + (createRes.error || 'không rõ') };
+    const nodeId = createRes.data?.id || createRes.data?.node?.id || createRes.data?.providerNode?.id;
+    if (!nodeId) return { success: false, error: '9router không trả về node ID cho MODORO AI.' };
+    saveProviderKey('modoro', key); // local backup so a 9router UI wipe can be re-healed
+
+    // 4b. Attach the REAL routing credential: a connection whose `provider` IS the node id
+    //     (verified live — "openai-compatible" alone returns "Invalid provider"). Without this
+    //     the node exists but has no key, so routing through Modoro/* fails.
+    const connRes = await nineRouterApi('POST', '/api/providers', { provider: nodeId, name: MODORO_AI_PROVIDER_NAME, apiKey: key });
+    if (!connRes.success) {
+      try { await nineRouterApi('DELETE', `/api/provider-nodes/${nodeId}`); } catch {}
+      return { success: false, error: 'Không lưu được API key cho MODORO AI: ' + (connRes.error || 'không rõ') };
+    }
+    const connId = connRes.data?.connection?.id || connRes.data?.id || null;
+
+    // 4c. Import the provider's models as ALIASES — replicates the 9router "Import from
+    //     /models" button exactly (so models show in the provider page / model picker without
+    //     a manual Import click). Per model: PUT /api/models/alias {model:"<prefix>/<slug>", alias}.
+    //     Collision-safe: alias = last path segment; if taken (e.g. a local codex already
+    //     registered "gpt-5.5"), fall back to "<prefix>-<segment>"; if both taken, skip.
+    let importedModels = [];
+    try {
+      if (connId) {
+        const existing = (await nineRouterApi('GET', '/api/models/alias', null, 6000)).data?.aliases || {};
+        const m = await nineRouterApi('GET', `/api/providers/${connId}/models`, null, 15000);
+        const slugs = Array.isArray(m.data?.models)
+          ? m.data.models.map(x => (typeof x === 'string' ? x : (x.slug || x.id || x.name))).filter(Boolean)
+          : [];
+        for (const slug of slugs) {
+          const seg = String(slug).split('/').pop();
+          const alias = existing[seg] ? `${MODORO_AI_PREFIX}-${seg}` : seg;
+          if (existing[alias]) continue; // already imported under both names → skip
+          const r = await nineRouterApi('PUT', '/api/models/alias', { model: `${MODORO_AI_PREFIX}/${slug}`, alias });
+          if (r.success) { existing[alias] = true; importedModels.push(alias); }
+        }
+        console.log('[modoro:setup] imported model aliases:', importedModels.slice(0, 12));
+      }
+    } catch (e) { console.warn('[modoro:setup] model import warning:', e?.message); }
+
+    // 5. Point combos main + zalo at the Modoro models (primary cx/gpt-5.4 + fallback cx/gpt-5.5)
+    const combosRes = await nineRouterApi('GET', '/api/combos');
+    const combos = combosRes.data?.combos || combosRes.data || [];
+    const setCombo = async (name) => {
+      const existing = (Array.isArray(combos) ? combos : []).find(c => c.name === name);
+      if (existing) await nineRouterApi('PUT', `/api/combos/${existing.id}`, { name, models: MODORO_AI_COMBO_MODELS });
+      else await nineRouterApi('POST', '/api/combos', { name, models: MODORO_AI_COMBO_MODELS });
+    };
+    await setCombo('main');
+    await setCombo('zalo');
+    console.log('[modoro:setup] node created + combos main+zalo →', MODORO_AI_COMBO_MODELS.join(', '));
+
+    // 6. Ensure a local 9router API key exists (openclaw.json already references it)
+    try {
+      const keysRes = await nineRouterApi('GET', '/api/keys');
+      const keys = keysRes.data?.keys || keysRes.data || [];
+      if (!(Array.isArray(keys) ? keys : []).some(k => k.isActive !== false && k.key)) {
+        await nineRouterApi('POST', '/api/keys', { name: '9BizClaw' });
+      }
+    } catch {}
+
+    return {
+      success: true,
+      modelCount: importedModels.length || MODORO_AI_COMBO_MODELS.length,
+      models: (importedModels.length ? importedModels : MODORO_AI_COMBO_MODELS).slice(0, 8),
+    };
+  } catch (e) {
+    return { success: false, error: 'Lỗi kết nối MODORO AI: ' + (e?.message || String(e)) };
+  }
+});
+
+// Open the AI-generated images folder (brand-assets/generated) in OS file manager.
+// All generated images are kept here forever (no auto-cleanup), so this is the CEO's
+// way to browse / back them up by hand.
+ipcMain.handle('open-generated-folder', async () => {
+  try {
+    const dir = path.join(getBrandAssetsDir(), 'generated');
+    fs.mkdirSync(dir, { recursive: true });
+    const { shell } = require('electron');
+    const err = await shell.openPath(dir);
+    return { success: !err, error: err || undefined };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
 // Create custom knowledge folder
 ipcMain.handle('create-knowledge-folder', async (_event, { name }) => {
   try {

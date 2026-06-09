@@ -84,6 +84,29 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   else bad('cron-api fail-open channel check eliminated', `${matches.length} occurrences still in code`);
 }
 
+// ── 3b. cron-agent auth: env-token delivery (full-authority fix, 2026-06-09) ──
+// A cron/CEO `agent` spawn is a dedicated one-shot process (never serves Zalo),
+// so it gets the Cron API token via env and the web_fetch patch authenticates
+// localhost calls from the env — independent of how OpenClaw threads --channel
+// or where the token file lives. Audit showed cron losing CEO authority via
+// channel=none / bad_token when relying on agentChannel + token-file delivery.
+{
+  const bootSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'boot.js'), 'utf-8');
+  if (/args\[0\] === 'agent'/.test(bootSrc) && /BIZCLAW_CRON_API_TOKEN/.test(bootSrc)) {
+    ok('boot.js injects BIZCLAW_CRON_API_TOKEN into agent spawns');
+  } else bad('boot.js injects BIZCLAW_CRON_API_TOKEN into agent spawns', 'env injection missing — cron loses CEO authority');
+
+  const vpSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');
+  if (/process\.env\.BIZCLAW_CRON_API_TOKEN/.test(vpSrc)) {
+    ok('web_fetch patch reads BIZCLAW_CRON_API_TOKEN env branch');
+  } else bad('web_fetch patch reads BIZCLAW_CRON_API_TOKEN env branch', 'helper env path missing — fix not wired');
+
+  // Marker must be bumped past v3 so the updated helper re-injects over any old one.
+  if (/WEB_FETCH CRON TOKEN PATCH v4/.test(vpSrc)) {
+    ok('web_fetch token patch marker bumped to v4');
+  } else bad('web_fetch token patch marker bumped to v4', 'stale marker — patch skips re-injection of updated helper');
+}
+
 // ── 4. skill-manager: appliesTo migration + folder layout ──
 {
   const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'skill-manager.js'), 'utf-8');

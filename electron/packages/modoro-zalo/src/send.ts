@@ -577,6 +577,29 @@ export async function sendTextModoroZalo(options: SendTextOptions): Promise<Modo
     if (!__ofIsInternal) {
     const __ofZwRe = new RegExp('[\\u200B-\\u200F\\u202A-\\u202E\\uFEFF\\u00AD\\u2060-\\u2064\\u206A-\\u206F]', 'g');
     const __ofSanitized = body.replace(__ofZwRe, '');
+    // ERROR SWALLOW — a customer must NEVER see a system/LLM/gateway error (CEO: "thà im
+    // chứ không show lỗi"). These are English technical signatures that never appear in a
+    // normal Vietnamese CSKH reply, so a match = a leaked error → suppress the send entirely
+    // (stay silent). Telegram (channels.js, CEO channel) still shows errors. Swallow BEFORE
+    // the canned-reply block patterns below so errors get silence, not a "let me check" reply.
+    const __ofErrorPatterns: RegExp[] = [
+      /LLM request failed/i,
+      /provider rejected/i,
+      /request schema|tool payload/i,
+      /\b(?:OAuthException|invalid_request_error|model_not_found|insufficient_quota|context_length_exceeded|rate.?limit)/i,
+      /\b(?:ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ECONNRESET|EAI_AGAIN)\b/,
+      /\b(?:Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b/i,
+      /\bHTTP\s*5\d{2}\b/,
+      /Cannot read propert(?:y|ies) of (?:undefined|null)/i,
+      /\bat\s+\S+\s*\([^)]*:\d+:\d+\)/,            // JS stack frame
+      /traceback \(most recent call last\)/i,
+    ];
+    for (const __ofE of __ofErrorPatterns) {
+      if (__ofE.test(__ofSanitized)) {
+        try { logOutbound("warn", "swallowed system/LLM error on customer Zalo channel", { accountId: account.accountId, preview: body.slice(0, 160) }); } catch {}
+        return { messageId: "silent", kind: "text" as const };
+      }
+    }
     const __ofBlockPatterns: { name: string; re: RegExp }[] = [
       // --- Layer A: file paths + secrets ---
       { name: "file-path-memory", re: /\bmemory\/[\w\-./]*\.md\b/i },

@@ -381,12 +381,22 @@ export function normalizeOpenzcaInboundPayload(
     toId(payload.conversationId) ||
     toId(metadata?.threadId) ||
     toId(metadata?.targetId);
-  const senderId = toId(payload.senderId) || toId(metadata?.senderId) || toId(metadata?.fromId);
+  let senderId = toId(payload.senderId) || toId(metadata?.senderId) || toId(metadata?.fromId);
   if (!threadId || !senderId) {
     return null;
   }
   if (isSelfMessage({ payload, metadata, senderId, selfId })) {
-    return null;
+    // openzca runs with --self, so the logged-in account's own events arrive here too.
+    // Pass them through (pinning senderId to selfId) so inbound.ts owner-takeover can
+    // act on /tamdung·/tieptuc AND capture the CEO's manual replies while a thread is
+    // paused. inbound.ts drops every self-message before dispatch (the __tkIsOwner
+    // guard), so the bot never replies to its own / echoed messages. Without a known
+    // selfId we can't prove ownership → drop, to stay safe.
+    const selfTrimmed = (selfId ?? "").trim();
+    if (!selfTrimmed) {
+      return null;
+    }
+    senderId = selfTrimmed;
   }
   const toIdValue = toId(payload.toId) || toId(metadata?.toId);
 
