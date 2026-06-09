@@ -4,6 +4,15 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-06-09
+
+**Top-tier image-gen prompt-craft upgrade. App version 2.4.11 → 2.4.12 (CEO's call — this batch ships as v2.4.12); AGENTS 120→121. UNCOMMITTED — pending CEO review/build.**
+
+- **Root cause of "shitty pictures": prompt-craft, not transport.** `electron/lib/image-gen.js` already requests `quality: 'high'` and handles sizes/assets correctly — untouched. The bad output came from the thin prompt guidance the bot follows, so it composed vague prompts → generic images.
+- **Fix (skill-only, surgical).** Rewrote the prompt-craft block in `skills/operations/image-generation.md` using the GPT-Image2-Skill craft methodology (github.com/wuyoscar/GPT-Image2-Skill): strict ordering (intended-use+medium → scene → hero subject → details → text → color → lighting → composition → constraints), a fill-in prompt skeleton, 9 craft rules (named lighting setups, concrete materials, HEX palettes, camera/DoF/negative-space, text in straight quotes with full Vietnamese dấu, aspect ratio decided first), one worked example, and an empty-word kill-list. Transport code and tests untouched.
+- **Deploy gate bumped in lockstep** so the rewrite reaches installs: `CURRENT_AGENTS_MD_VERSION` 120→121 (`electron/lib/workspace.js`) + AGENTS.md line-1 stamp. `smoke-skill-runtime.js` → 55 passed, 0 failed (version sync confirmed v121).
+- Docs/skill + version bump only — nothing built/pushed/released.
+
 ## 2026-06-08
 
 **Zalo customer image-send actually works now (Approach Y) + Zalo listener false-`listener_dead` hotfix. App version stays 2.4.11 (CEO's call); AGENTS 119→120; fork v1.0.20→v1.0.21. UNCOMMITTED — pending CEO review.**

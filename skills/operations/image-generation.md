@@ -42,19 +42,33 @@ CEO nói "tạo ảnh", "làm ảnh", "thiết kế ảnh", "ảnh quảng cáo"
    - Xóa skill: `DELETE /api/image/skills?name=<name>`
    - Cron/scheduled: đọc `[SKILL: <name>]` từ prompt hoặc `GET /api/image/preferences`
 
-6. **Sau khi có đáp án, soạn prompt TIẾNG ANH chi tiết (min 150 ký tự, server sẽ reject ngắn hơn).**
+6. **Soạn prompt TIẾNG ANH theo CHUẨN TOP-TIER bên dưới (min 150 ký tự, server reject nếu ngắn hơn).**
+   Đây là phần quyết định ảnh đẹp hay xấu. Prompt mơ hồ = ảnh tệ. Tuân thủ TUYỆT ĐỐI khung dưới đây.
+
    Khi dùng brand asset, prompt PHẢI bắt đầu bằng:
    `IMPORTANT: The attached reference image is a brand asset. Reproduce it EXACTLY as-is — same colors, same shapes, same text, same proportions, same style. Do NOT reinterpret, redesign, redraw, or reimagine it in any way. Place the EXACT original image into the composition.`
 
-   **Prompt PHẢI bao gồm:**
-   - Subject chi tiết (vật liệu, tư thế, context)
-   - Scene/environment cụ thể
-   - Lighting cụ thể (KHÔNG "good lighting" — phải nói rõ loại: soft key, rim, volumetric...)
-   - Color palette dùng mã HEX
-   - Composition (góc, rule of thirds, depth of field)
-   - Style/medium rõ ràng (từ đáp án câu 1)
-   - Typography nếu có text (từ đáp án câu 5)
-   - MỌI CHỮ TIẾNG VIỆT TRONG ẢNH PHẢI CÓ DẤU ĐẦY ĐỦ
+   **THỨ TỰ BẮT BUỘC (model đọc theo trình tự này):**
+   intended use + medium → scene/background → hero subject → key details → text → color → lighting → composition → constraints.
+
+   **Khung prompt mẫu (điền vào, KHÔNG để trống ô nào liên quan):**
+   `[Intended use + medium]. [Scene/background cụ thể]. [Hero subject: vật liệu, bề mặt, tư thế, vị trí]. [Key supporting details]. [Text: nếu có, đặt trong ngoặc kép thẳng, font + vị trí]. [Color palette HEX]. [Lighting setup tên rõ ràng]. [Composition: góc máy, tiêu cự, bố cục, vùng trống]. [Constraints: aspect ratio + những gì KHÔNG được có].`
+
+   **9 QUY TẮC CRAFT (mỗi quy tắc thiếu = ảnh kém một bậc):**
+   1. **Nêu rõ MỤC ĐÍCH + CHẤT LIỆU ngay câu đầu.** Model chọn độ tinh xảo theo mục đích. VD: "Professional Facebook ad banner for a premium Vietnamese SME brand, studio product photography" — KHÔNG chỉ "a product".
+   2. **Nêu MEDIUM trực tiếp.** "photorealistic studio photography", "3D render, octane", "flat vector illustration", "watercolor". KHÔNG bỏ trống medium.
+   3. **CỤ THỂ về vật liệu & bề mặt.** "brushed matte aluminium with soft reflections", KHÔNG "metal object". Vật liệu/bề mặt là thứ tạo cảm giác cao cấp.
+   4. **MỘT hero subject duy nhất** + các chi tiết phụ hỗ trợ. Đừng nhồi 5 chủ thể ngang hàng — ảnh sẽ loãng.
+   5. **Lighting phải GỌI TÊN setup.** "soft key light from left + subtle rim light", "golden hour", "softbox studio lighting", "volumetric god rays". CẤM "good/nice lighting".
+   6. **Color palette bằng mã HEX** (2-4 màu chủ đạo). VD: "palette: deep navy #0A1F44, warm gold #C9A227, off-white #F5F3EC".
+   7. **Composition cụ thể:** góc máy (eye-level / low-angle / top-down), cảm giác tiêu cự (85mm portrait / 24mm wide), rule of thirds, depth of field (shallow f/1.8 bokeh), và CHỪA VÙNG TRỐNG cho chữ nếu là banner.
+   8. **Mọi chữ trong ảnh đặt trong NGOẶC KÉP THẲNG, viết NGUYÊN VĂN, không diễn giải.** VD: headline "Ưu Đãi Tháng 6". Nêu rõ font (bold sans-serif), kích cỡ tương đối, vị trí. MỌI CHỮ TIẾNG VIỆT PHẢI CÓ DẤU ĐẦY ĐỦ — kiểm tra lại từng chữ.
+   9. **Aspect ratio quyết định TRƯỚC**, ghi trong prompt VÀ khớp param `size` (banner ngang → nói "wide horizontal banner composition" + `size=1792x1024`).
+
+   **VÍ DỤ ĐẠT CHUẨN (banner ưu đãi, không brand asset):**
+   `Professional Facebook ad banner, photorealistic studio product photography. Clean minimalist tabletop scene with soft gradient backdrop. Hero subject: a single sleek glass cosmetic bottle, frosted matte surface with delicate condensation droplets, standing center-right. Supporting details: a few fresh green tea leaves and water ripples at the base. Headline text top-left in bold modern sans-serif: "Ưu Đãi Tháng 6 - Giảm 30%". Color palette: deep emerald #0B5D3B, soft gold #D4AF37, clean off-white #FAF8F3. Lighting: soft key light from upper left with a gentle rim light separating the bottle from the background. Composition: eye-level, 85mm look, shallow depth of field with creamy bokeh, generous negative space on the left third for text. Wide horizontal banner. Constraints: no clutter, no extra logos, no text other than the headline.`
+
+   **CHỐNG ẢNH XẤU — loại bỏ các từ rỗng:** "nice", "beautiful", "high quality", "amazing", "good lighting", "4k" đứng một mình. Thay bằng mô tả cụ thể như ví dụ trên.
 7. Gọi:
    `web_fetch` url: `http://127.0.0.1:20200/api/image/generate?autoSendTelegram=true&size=1024x1024&assets=<file1,file2>&prompt=<URL-encoded prompt>`
    - **autoSendTelegram=true** BẮT BUỘC — server tự gửi ảnh qua Telegram khi xong
