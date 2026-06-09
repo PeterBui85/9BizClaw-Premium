@@ -129,7 +129,12 @@ describe('machine fingerprint', () => {
 describe('license expiry', () => {
   const isExpired = (expiryDate) => {
     if (!expiryDate) return false; // no expiry
-    return new Date(expiryDate) < new Date();
+    // Compare at day granularity: a license dated "today" stays valid through the
+    // whole day. Comparing Date objects made expiry fail at 00:00 UTC of the day
+    // (i.e. mid-morning in VN) instead of end-of-day. Date-only string compare is
+    // also timezone-stable for CI.
+    const today = new Date().toISOString().split('T')[0];
+    return String(expiryDate).split('T')[0] < today;
   };
 
   test('valid future date is not expired', () => {

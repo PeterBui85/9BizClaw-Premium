@@ -13,9 +13,11 @@ const path = require('path');
 // Test the core logic without starting real channels
 const TEST_DIR = path.join(__dirname, '_test_channels_' + Date.now());
 
+// Between-test cleanup deletes files but KEEPS the dir — removing the dir mid-run
+// made every later test that writes into TEST_DIR fail with ENOENT (pauseChannel,
+// writeMissedAlert...). The dir itself is removed once at process exit.
 function cleanup() {
   try { for (const f of fs.readdirSync(TEST_DIR)) fs.unlinkSync(path.join(TEST_DIR, f)); } catch {}
-  try { fs.rmdirSync(TEST_DIR); } catch {}
 }
 try { fs.mkdirSync(TEST_DIR, { recursive: true }); } catch {}
 
@@ -179,4 +181,4 @@ describe('sendCeoAlert fallback to disk log', () => {
   });
 });
 
-process.on('exit', () => cleanup());
+process.on('exit', () => { cleanup(); try { fs.rmdirSync(TEST_DIR); } catch {} });
