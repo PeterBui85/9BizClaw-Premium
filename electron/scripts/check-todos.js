@@ -74,4 +74,18 @@ console.log('todos id/dedupe/sanitize OK');
   assert.ok(!/[\u{1F000}-\u{1FAFF}]/u.test(sp.sentence), 'spotlight has no emoji');
   assert.strictEqual(typeof sp.openCount, 'number');
   console.log('todos setStatus/spotlight OK');
+
+  // emitSystemTask convenience wrapper
+  const e1 = await t.emitSystemTask('cron_failed', 'cron_morning', 'Cron buổi sáng lỗi 3 lần', 'Exit code 1');
+  assert.strictEqual(e1.origin.failureType, 'cron_failed');
+  assert.strictEqual(e1.source, 'system');
+  const e2 = await t.emitSystemTask('cron_failed', 'cron_morning', 'dup', '');
+  assert.strictEqual(e1.id, e2.id, 'emitSystemTask dedupes by failureType+resourceId');
+
+  // Concurrency: 20 parallel addTask calls must all persist (lock serializes them).
+  const before = t.listTasks().length;
+  await Promise.all(Array.from({ length: 20 }, (_, i) =>
+    t.addTask({ source: 'manual', title: 'concurrent ' + i })));
+  assert.strictEqual(t.listTasks().length, before + 20, 'all 20 concurrent writes persisted (no lost update)');
+  console.log('todos emit/concurrency OK');
 })().catch(e => { console.error(e); process.exit(1); });

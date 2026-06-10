@@ -186,9 +186,25 @@ function spotlight() {
   return { sentence, openCount, systemCount: sysCount, top: open.slice(0, 3) };
 }
 
+// Code-only entry point for the system hooks (cron/Zalo/license). No LLM. Safe to
+// call repeatedly — dedupes on (failureType, resourceId) so a flapping failure
+// updates nothing rather than spamming. Never throws (callers are failure paths).
+async function emitSystemTask(failureType, resourceId, title, detail = '') {
+  try {
+    return await addTask({
+      source: 'system',
+      origin: { failureType, resourceId },
+      title, detail,
+    });
+  } catch (e) {
+    console.warn('[todos] emitSystemTask error:', e?.message);
+    return null;
+  }
+}
+
 module.exports = {
   VALID_STATUS, OPEN_STATUSES, VALID_SOURCE,
   getTodosPath, readTodos, _withTodoLock,
   _rid, sanitizeTitle, normalizeDedupeKey,
-  addTask, listTasks, setStatus, spotlight,
+  addTask, listTasks, setStatus, spotlight, emitSystemTask,
 };
