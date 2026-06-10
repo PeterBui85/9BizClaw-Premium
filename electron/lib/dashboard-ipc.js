@@ -6158,9 +6158,16 @@ ipcMain.handle('download-and-install-update', async () => {
         const cats = ['cong-ty', 'san-pham', 'nhan-vien'];
         const fname = nodeId.slice(4);
         if (!fname || /[\/\\]|\.\./.test(fname)) return null;
-        for (const cat of cats) {
-          const candidate = path.join(ws, 'knowledge', cat, 'files', fname);
-          if (fs.existsSync(candidate)) { fp = candidate; break; }
+        // Files live under files/<public|noi-bo|ceo-only>/ since the v2.4 migration
+        // (brain-graph emits doc:<filename> from those subfolders); '' keeps the
+        // legacy flat layout working. Without the subfolders, every doc-node click
+        // resolves to null on current installs.
+        const subs = ['', 'public', 'noi-bo', 'ceo-only'];
+        outer: for (const cat of cats) {
+          for (const sub of subs) {
+            const candidate = path.join(ws, 'knowledge', cat, 'files', sub, fname);
+            if (fs.existsSync(candidate)) { fp = candidate; break outer; }
+          }
         }
       }
       else if (nodeId.startsWith('learning:')) {
