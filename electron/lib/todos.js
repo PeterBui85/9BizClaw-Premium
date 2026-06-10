@@ -106,8 +106,54 @@ function normalizeDedupeKey(task) {
   return `manual:${_rid()}`;
 }
 
+// Create a task. If a task with the same dedupeKey is OPEN, return it unchanged
+// (no duplicate). Closed duplicates do NOT block re-creation (the issue recurred).
+async function addTask(input) {
+  return _withTodoLock(async () => {
+    const arr = readTodos();
+    const candidate = {
+      source: VALID_SOURCE.includes(input.source) ? input.source : 'manual',
+      origin: input.origin || {},
+      title: sanitizeTitle(input.title),
+      detail: input.detail ? String(input.detail).slice(0, 2000) : '',
+      categoryKey: input.categoryKey,        // used only for dedupe of customer tasks
+    };
+    candidate.dedupeKey = normalizeDedupeKey(candidate);
+    const dup = arr.find(x => x.dedupeKey === candidate.dedupeKey && OPEN_STATUSES.includes(x.status));
+    if (dup) return dup;
+    const now = new Date().toISOString();
+    const task = {
+      id: _rid(),
+      source: candidate.source,
+      origin: candidate.origin,
+      title: candidate.title,
+      detail: candidate.detail,
+      customerFacing: false,               // Slice 1+2: nothing is customer-facing yet
+      status: 'mở',
+      priority: null, priorityReason: null,
+      signals: {},
+      proposedAction: null,
+      dedupeKey: candidate.dedupeKey,
+      createdAt: now, updatedAt: now,
+      closedAt: null, closedReason: null,
+    };
+    arr.push(task);
+    _writeTodos(arr);
+    try { auditLog('todo_created', { id: task.id, source: task.source, dedupeKey: task.dedupeKey }); } catch {}
+    return task;
+  });
+}
+
+function listTasks({ status } = {}) {
+  const arr = readTodos();
+  if (status === 'open') return arr.filter(x => OPEN_STATUSES.includes(x.status));
+  if (status && VALID_STATUS.includes(status)) return arr.filter(x => x.status === status);
+  return arr;
+}
+
 module.exports = {
   VALID_STATUS, OPEN_STATUSES, VALID_SOURCE,
   getTodosPath, readTodos, _withTodoLock,
   _rid, sanitizeTitle, normalizeDedupeKey,
+  addTask, listTasks,
 };

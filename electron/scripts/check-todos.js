@@ -35,3 +35,23 @@ assert.strictEqual(t.sanitizeTitle('  Trả giá cho chị Lan  '), 'Trả giá 
 assert.ok(t.sanitizeTitle('x'.repeat(500)).length <= 200, 'capped at 200');
 
 console.log('todos id/dedupe/sanitize OK');
+
+// --- addTask + dedupe + listTasks ---
+(async () => {
+  const a = await t.addTask({ source: 'manual', title: 'Gọi nhà cung cấp' });
+  assert.ok(a.id && a.status === 'mở' && a.priority === null, 'new task: open, no priority yet');
+  assert.strictEqual(a.createdAt, a.updatedAt, 'timestamps equal on create');
+
+  // system dedupe: same failureType+resourceId must NOT create a 2nd task
+  const s1 = await t.addTask({ source: 'system', title: 'Cron lỗi', origin: { failureType: 'cron_failed', resourceId: 'cron_x' } });
+  const s2 = await t.addTask({ source: 'system', title: 'Cron lỗi (again)', origin: { failureType: 'cron_failed', resourceId: 'cron_x' } });
+  assert.strictEqual(s1.id, s2.id, 'duplicate system task returns the existing one');
+
+  const all = t.listTasks();
+  assert.strictEqual(all.filter(x => x.origin.resourceId === 'cron_x').length, 1, 'only one cron_x task stored');
+
+  // listTasks status filter
+  const open = t.listTasks({ status: 'open' });
+  assert.ok(open.every(x => t.OPEN_STATUSES.includes(x.status)), 'open filter returns only open');
+  console.log('todos addTask/list OK');
+})().catch(e => { console.error(e); process.exit(1); });
