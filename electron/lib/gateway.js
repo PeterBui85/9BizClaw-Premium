@@ -12,7 +12,7 @@ const {
 } = require('./workspace');
 const {
   getBundledVendorDir, findNodeBin, findOpenClawBin,
-  findOpenClawCliJs,
+  findOpenClawCliJs, spawnOpenClawSafe,
 } = require('./boot');
 const { ensureDefaultConfig, ensureZaloModelDefault } = require('./config');
 const {

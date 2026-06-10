@@ -1575,24 +1575,15 @@ async function runCronViaSessionOrFallback(prompt, opts = {}) {
       return runMultiStepCronPrompt(prompt, opts);
     }
   }
-  // When cron targets a Zalo group, session-send cannot deliver there (it only
-  // replies to the CEO's Telegram session). Always use runCronAgentPrompt which
-  // handles Zalo delivery with the actual agent reply text.
-  if (opts.zaloTarget || opts.groupId || opts.groupIds) {
-    return runCronAgentPrompt(prompt, opts);
-  }
-  const sessionKey = await getCeoSessionKey();
-  if (sessionKey) {
-    // Cap before session-send too: sessions.send carries the prompt in --params
-    // argv (same 32KB Windows limit as the CLI path), so an uncapped weekly report
-    // would throw ENAMETOOLONG here and waste a spawn before falling back.
-    const ok = await sendToGatewaySession(sessionKey, capCronPromptBytes(prompt));
-    if (ok) {
-      journalCronRun({ phase: 'ok', label: opts.label || 'cron', mode: 'session-send' });
-      return true;
-    }
-    console.log('[cron] sessions.send failed, falling back to runCronAgentPrompt');
-  }
+  // ALWAYS run via the CLI agent spawn (2026-06-10 fix). runCronAgentPrompt spawns a
+  // dedicated `agent` process that receives the Cron API token via env
+  // (BIZCLAW_CRON_API_TOKEN, set in boot.js spawnOpenClawSafe), so its internal API
+  // calls authenticate as the CEO. The old `sessions.send` shortcut ran the cron
+  // INSIDE the long-running gateway process, which is deliberately kept token-free so
+  // Zalo customer turns stay sandboxed — so cron internal calls from there got
+  // 403 "CEO Telegram only" (proven: the "Gửi hình Drive" cron 403'd on
+  // /api/google/drive/list via sessions.send, while CLI-path crons like zalo-followup
+  // worked). CLI path = full CEO authority for every cron, regardless of zaloTarget.
   return runCronAgentPrompt(prompt, opts);
 }
 

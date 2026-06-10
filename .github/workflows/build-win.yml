@@ -1,10 +1,11 @@
 name: Build Windows .exe
 
+# Windows EXE is built LOCALLY on the dev machine and uploaded to the release
+# (per project rule: EXE = local, only Mac DMG goes through GitHub CI). So this
+# workflow does NOT trigger on version tags — it stays as a branch/PR test gate.
 on:
   push:
     branches: [main, premium/main]
-    tags:
-      - 'v*'
   pull_request:
     branches: [main, premium/main]
   workflow_dispatch:
