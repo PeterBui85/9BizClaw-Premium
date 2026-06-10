@@ -417,3 +417,39 @@ describe('zalo group history — injection fence', () => {
     assert.ok(src.includes("split('[/DỮ LIỆU NHÓM]').join('[/]')"), 'route must neutralize the embedded close-marker (no breakout)');
   });
 });
+
+describe('one-time cron retry policy (no double-delivery)', () => {
+  // WHY this matters: _runCronAgentPromptImpl re-spawns the SAME [AUTO-MODE] prompt
+  // on every retry. For a one-time Zalo post, if attempt 1's delivery tool call
+  // already landed and the process then exits non-zero (gateway teardown / stdout
+  // pipe race / JSON flush), a blind retry posts to the customer a SECOND time —
+  // not retractable. Recurring crons keep retrying (their next fire is the natural
+  // idempotency boundary). Config-invalid is exempt: it's provably pre-execution.
+  // _runCronAgentPromptImpl does real I/O + process spawn, so this is a source-level
+  // drift guard (this file's convention), not a live run.
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron.js'), 'utf8');
+
+  test('isOneTime short-circuits the retry loop on a generic non-zero exit', () => {
+    assert.ok(/if \(isOneTime\) \{/.test(src), 'retry loop must branch on isOneTime');
+    assert.ok(src.includes('one-time-no-retry-after-nonzero-exit'),
+      'one-time non-zero exit must journal the no-retry reason and return');
+  });
+
+  test('the one-time guard sits AFTER the config-invalid retry (config-heal stays exempt)', () => {
+    const cfgIdx = src.indexOf('config-invalid detected');
+    const oneTimeIdx = src.indexOf('one-time-no-retry-after-nonzero-exit');
+    assert.ok(cfgIdx > 0 && oneTimeIdx > 0, 'both branches must exist');
+    assert.ok(cfgIdx < oneTimeIdx,
+      'config-invalid (pre-execution, safe to retry) must be handled before the one-time stop');
+  });
+
+  test('all one-time cron call sites pass isOneTime (drift guard)', () => {
+    // If a scheduler call site drops `isOneTime`, the guard above goes dark for
+    // that path. Pin that every runCron*/* call that knows c.oneTimeAt forwards it.
+    const matches = src.match(/isOneTime:\s*!!c\.oneTimeAt/g) || [];
+    assert.ok(matches.length >= 4,
+      `expected >=4 call sites forwarding isOneTime, found ${matches.length}`);
+  });
+});

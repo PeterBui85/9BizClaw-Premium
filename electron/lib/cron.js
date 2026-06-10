@@ -756,9 +756,27 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
     }
 
     if (attempt < CRON_AGENT_MAX_RETRIES && isConfigInvalidErr(lastErr)) {
+      // Config-invalid is provably PRE-execution: openclaw rejected the config
+      // before the agent ran any tool, so re-running cannot duplicate a side
+      // effect. Safe to retry even for one-time crons.
       const healed = healOpenClawConfigInline(lastErr);
       console.log(`[cron-agent] config-invalid detected; inline heal ${healed ? 'WROTE' : 'noop'}, retrying immediately`);
       continue;
+    }
+
+    // One-time crons (e.g. a scheduled Zalo post) must NOT auto-retry a generic
+    // non-zero exit. By this point the agent may have ALREADY completed its
+    // delivery tool call and then exited non-zero (gateway teardown, stdout pipe
+    // race, JSON flush). A retry re-spawns the same [AUTO-MODE] prompt → a second
+    // post to the customer. A missed one-time post is re-schedulable by the CEO;
+    // a duplicate post to a customer group is not retractable. Recurring crons keep
+    // retrying — their next scheduled fire is a natural idempotency boundary, and a
+    // missed daily report matters more than a rare dup. Config-invalid (handled
+    // above) is exempt: it never reaches here.
+    if (isOneTime) {
+      journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, reason: 'one-time-no-retry-after-nonzero-exit', err: lastErr.slice(0, 300) });
+      try { await sendCeoAlert(`*Cron một lần "${niceLabel}" lỗi (exit ${lastCode})*\n\nEm KHÔNG tự chạy lại để tránh gửi trùng cho khách (task có thể đã gửi xong rồi mới lỗi). Anh kiểm tra rồi đặt lại lịch nếu cần.\n\`\`\`\n${lastErr.slice(0, 300)}\n\`\`\``); } catch {}
+      return false;
     }
 
     if (attempt < CRON_AGENT_MAX_RETRIES) {
