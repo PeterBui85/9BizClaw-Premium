@@ -211,16 +211,18 @@ function ensureWebFetchLocalhostFix(vendorDir, homeDir) {
       let src = fs.readFileSync(fp, 'utf-8');
       let changed = false;
       if (!src.includes(TOKEN_MARKER)) {
-        // Remove ALL legacy versions (v1, v2, any) in ONE pass using greedy match
-        // from the first function declaration to the final v3 marker.
-        // Non-greedy `*?` in the original regex only matched to the FIRST marker
-        // occurrence, so files with BOTH v1+v2 helpers would leave the v1 marker
-        // after v2 was removed, causing the else-branch to re-inject HEADER_HELPER
-        // a second time → "Identifier has already been declared" SyntaxError.
-        const ALL_LEGACY_RE = /async function maybeBuild9BizClawWebFetchHeaders\(params\) \{[\s\S]*?\/\/ 9BizClaw WEB_FETCH CRON TOKEN PATCH v\d+\n/;
+        // Remove ALL legacy helper versions (v1, v2, v3, …) in one pass. Each helper
+        // is `async function maybeBuild…{ … }// …PATCH vN\n`; a re-patched file has
+        // them stacked back-to-back (every run prepends HEADER_HELPER before
+        // runWebFetch). The `g` flag is load-bearing: without it `replace` strips
+        // only the FIRST block, leaving older helpers behind → the inject below
+        // would add a second `maybeBuild…` → "Identifier has already been declared"
+        // SyntaxError. Non-greedy `*?` keeps each match scoped to its own marker so
+        // we delete exactly the helper blocks and nothing between them.
+        const ALL_LEGACY_RE = /async function maybeBuild9BizClawWebFetchHeaders\(params\) \{[\s\S]*?\/\/ 9BizClaw WEB_FETCH CRON TOKEN PATCH v\d+\n/g;
         if (ALL_LEGACY_RE.test(src)) {
           src = src.replace(ALL_LEGACY_RE, '');
-          console.log('[web-fetch-token-fix] removed all legacy helpers (v1/v2)');
+          console.log('[web-fetch-token-fix] removed all legacy helpers (v1/v2/v3)');
         }
         // Now safely inject v3 — no legacy markers remain so this fires exactly once
         if (!src.includes(RUN_FUNC)) {

@@ -200,9 +200,6 @@ async function recoverChatIdFromTelegram(token) {
         path: `/bot${token}/getUpdates?offset=0&timeout=0&limit=10`,
         method: 'GET',
         timeout: 5000,
-        // family:4 — same broken-IPv6 guard as the other Telegram calls, so this
-        // recovery probe (if ever re-enabled) doesn't stall on IPv6-broken networks.
-        family: 4,
       }, (res) => {
         let body = '';
         res.on('data', (c) => body += c);

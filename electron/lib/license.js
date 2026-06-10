@@ -241,23 +241,36 @@ function base64urlDecode(str) {
  * @returns {{ valid: boolean, payload?: object, error?: string }}
  */
 // Expiry is day-granular: a license dated "2026-06-30" stays valid through the
-// WHOLE of June 30 in the user's local time, expiring at the local midnight that
-// ends it. The old check did `Date.now() > new Date(payload.v)` — but
-// `new Date("2026-06-30")` is parsed as 00:00 UTC, i.e. 07:00 in Vietnam (UTC+7),
-// so a customer lost service mid-morning on the day their license still named as
-// valid. Comparing YYYY-MM-DD strings (today derived from local getFullYear/Month/
-// Date) is both end-of-day-correct and timezone-stable for CI. Exported so the
-// unit test asserts the REAL rule instead of a copy that can silently drift.
-function _localDateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+// WHOLE of June 30 in the user's local time. The old `Date.now() > new Date(v)`
+// check parsed a bare date as 00:00 UTC = 07:00 in Vietnam (UTC+7), so a customer
+// lost service mid-morning on the day their license still named as valid.
+// _dayKey normalizes any date (Date or YYYY-M-D[Thh:mm] string) to a zero-padded
+// YYYY-MM-DD so lexicographic compare == calendar compare. Both isLicenseExpired
+// and daysLeft derive from the SAME key, so they can never disagree on the
+// boundary day. Exported so the test asserts the REAL rule, not a drifting copy.
+function _dayKey(d) {
+  if (d instanceof Date) {
+    if (isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  // String: take the date part before any 'T' and zero-pad Y-M-D so a lexicographic
+  // compare equals a calendar compare ("2026-6-5" → "2026-06-05"). Parse the parts
+  // directly rather than via `new Date(...+'T00:00:00')`, which rejects non-padded
+  // forms as Invalid Date.
+  const parts = String(d).split('T')[0].split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, day] = parts;
+  if (!/^\d{4}$/.test(y) || !/^\d{1,2}$/.test(m) || !/^\d{1,2}$/.test(day)) return null;
+  return `${y}-${m.padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 function isLicenseExpired(expiryDate, now = new Date()) {
   if (!expiryDate) return false; // no expiry → perpetual
-  const today = _localDateStr(now);
-  return String(expiryDate).split('T')[0] < today;
+  const expKey = _dayKey(expiryDate);
+  if (!expKey) return false; // unparseable date → treat as non-expiring, not locked-out
+  return expKey < _dayKey(now);
 }
 
 function verifyLicenseKey(keyStr) {
@@ -357,11 +370,14 @@ function checkLicenseStatus() {
   let daysLeft = null;
   if (payload.v) {
     // Whole calendar days from local today to the expiry date (inclusive of the
-    // expiry day). Anchored at local midnight on both ends so it agrees with
-    // isLicenseExpired: a license expiring today reads 0 (still valid), tomorrow 1.
-    const exp = new Date(String(payload.v).split('T')[0] + 'T00:00:00');
-    const today = new Date(_localDateStr(new Date()) + 'T00:00:00');
-    daysLeft = Math.round((exp.getTime() - today.getTime()) / 86400000);
+    // expiry day): expiring today reads 0 (still valid), tomorrow 1. Anchored on
+    // the same _dayKey as isLicenseExpired so the two never disagree on the boundary.
+    const expKey = _dayKey(payload.v);
+    if (expKey) {
+      const exp = new Date(expKey + 'T00:00:00');
+      const today = new Date(_dayKey(new Date()) + 'T00:00:00');
+      daysLeft = Math.round((exp.getTime() - today.getTime()) / 86400000);
+    }
   }
 
   return {

@@ -134,9 +134,11 @@ describe('machine fingerprint', () => {
 // license must serve the customer through the whole of June 30 in their local
 // timezone — expiring it at 07:00 (00:00 UTC in VN) loses a paid business day.
 describe('license expiry', () => {
-  // Pin "now" to mid-morning Vietnam on 2026-06-30. Under the OLD Date-object
-  // check this instant was already "expired"; the day-granular rule keeps it valid.
-  const NOW = new Date('2026-06-30T03:30:00+07:00'); // 03:30 UTC
+  // Pin "now" to 2026-06-30 09:00 in the RUNNER's local time. Built from local
+  // components (not an offset literal) so _dayKey(NOW) is "2026-06-30" regardless
+  // of the CI machine's timezone — otherwise a UTC box would see the +07:00 form
+  // as the 29th and flip the boundary cases.
+  const NOW = new Date(2026, 5, 30, 9, 0, 0); // month is 0-based: 5 = June
 
   test('valid future date is not expired', () => {
     assert.strictEqual(isLicenseExpired('2026-07-01', NOW), false);
@@ -156,6 +158,17 @@ describe('license expiry', () => {
 
   test('datetime-form expiry is compared by its date part', () => {
     assert.strictEqual(isLicenseExpired('2026-06-30T23:59:59Z', NOW), false);
+  });
+
+  test('non-zero-padded date is normalized, not lexically mis-compared', () => {
+    // "2026-6-5" must NOT pass as valid via naive string compare ('6' > '0').
+    // _dayKey normalizes it to "2026-06-05", which is < today (2026-06-30) → expired.
+    assert.strictEqual(isLicenseExpired('2026-6-5', NOW), true);
+    assert.strictEqual(isLicenseExpired('2026-7-1', NOW), false);
+  });
+
+  test('unparseable expiry does not lock the user out (perpetual)', () => {
+    assert.strictEqual(isLicenseExpired('not-a-date', NOW), false);
   });
 
   test('null/undefined expiry means perpetual (never expired)', () => {

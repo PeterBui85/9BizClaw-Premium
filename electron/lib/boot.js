@@ -612,15 +612,21 @@ async function spawnOpenClawSafe(args, { timeoutMs = 600000, cwd, allowCmdShellF
   let stdout = '', stderr = '';
   let child;
   // Trusted-agent auth (2026-06-09): a cron/CEO `agent` spawn is a dedicated
-  // one-shot process that never serves Zalo turns, so it is safe to hand it the
-  // Cron API token via env. The web_fetch patch reads BIZCLAW_CRON_API_TOKEN and
-  // authenticates localhost calls regardless of how OpenClaw threads --channel —
-  // fixes cron losing CEO authority when agentChannel/token-file delivery is
-  // flaky (audit evidence: channel=none / bad_token). The gateway serves BOTH
-  // telegram and zalo and is NOT spawned via this 'agent' path, so it never gets
-  // the env and its per-turn channel gating stays intact.
+  // one-shot process, so it is safe to hand it the Cron API token via env. The
+  // web_fetch patch reads BIZCLAW_CRON_API_TOKEN and authenticates localhost
+  // calls — fixes cron losing CEO authority when agentChannel/token-file delivery
+  // is flaky (audit evidence: channel=none / bad_token).
+  //
+  // Gate (hardened 2026-06-10): require the EXPLICIT `--channel telegram` flag,
+  // not just args[0]==='agent'. This is the allowlist (fail-closed) doctrine of
+  // cron-api.js#_requireCeoTelegram: only a Telegram-CEO turn may carry CEO
+  // authority. Every current agent spawn (cron, dashboard chat, gateway prewarm)
+  // passes `--channel telegram`, so cron's full power is unchanged — but a future
+  // `agent --channel zalo` spawn can never inherit the token via this path.
   let childEnv = process.env;
-  if (args[0] === 'agent') {
+  const _chIdx = args.indexOf('--channel');
+  const _agentChannel = _chIdx >= 0 ? String(args[_chIdx + 1] || '').toLowerCase() : '';
+  if (args[0] === 'agent' && _agentChannel === 'telegram') {
     try {
       const tok = fs.readFileSync(path.join(getWorkspace(), 'cron-api-token.txt'), 'utf-8').trim();
       if (/^[a-f0-9]{48}$/i.test(tok)) childEnv = { ...process.env, BIZCLAW_CRON_API_TOKEN: tok };
