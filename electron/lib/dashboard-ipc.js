@@ -125,6 +125,7 @@ const {
   fireApptPushTarget, startAppointmentDispatcher, apptDispatcherTick,
 } = require('./appointments');
 const mediaLibrary = require('./media-library');
+const todos = require('./todos');
 const {
   getZcaProfile, getZcaCacheDir, getZcaCacheDirForProfile,
   readZaloChannelState, isZaloTargetAllowed, isKnownZaloTarget,
@@ -4126,6 +4127,26 @@ ipcMain.handle('startup:get', () => {
 });
 ipcMain.handle('startup:set', (_event, { enabled } = {}) => {
   try { app.setLoginItemSettings({ openAtLogin: !!enabled }); return { success: true, enabled: !!enabled }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
+
+// ─── Global to-do store: Dashboard IPC ───────────────────────────────
+ipcMain.handle('todos:list', (_e, { status } = {}) => {
+  try { return { success: true, todos: todos.listTasks({ status }) }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('todos:spotlight', () => {
+  try { return { success: true, ...todos.spotlight() }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('todos:add', async (_e, { title, detail } = {}) => {
+  if (!title || !String(title).trim()) return { success: false, error: 'title required' };
+  try { return { success: true, task: await todos.addTask({ source: 'manual', title, detail }) }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('todos:status', async (_e, { id, status, reason } = {}) => {
+  if (!id || !status) return { success: false, error: 'id and status required' };
+  try { const task = await todos.setStatus(id, status, reason); return task ? { success: true, task } : { success: false, error: 'not found' }; }
   catch (e) { return { success: false, error: e.message }; }
 });
 
