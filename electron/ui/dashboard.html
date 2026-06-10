@@ -3810,6 +3810,22 @@
         </div>
       </div>
 
+      <!-- PAGE: Việc cần làm (global to-do) -->
+      <div class="page" id="page-viec-can-lam">
+        <div class="page-header">
+          <span class="page-icon" data-icon="clipboard" data-icon-size="26"></span>
+          <div><h2>Việc cần làm</h2><div class="page-sub">Mọi việc cần anh quyết, gom về một chỗ</div></div>
+        </div>
+        <div style="padding:0 24px 24px">
+          <div id="todo-spotlight" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;min-height:18px"></div>
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <input type="text" id="todo-add-input" placeholder="Thêm việc mới..." autocomplete="off" style="flex:1;height:36px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);box-sizing:border-box" onkeydown="if(event.key==='Enter')todoAdd()">
+            <button class="btn btn-primary btn-small" onclick="todoAdd()" style="white-space:nowrap">Thêm</button>
+          </div>
+          <div id="todo-list"></div>
+        </div>
+      </div>
+
       <!-- PAGE: 9Router (embedded web UI) -->
       <div class="page" id="page-9router">
         <div class="page-header">
@@ -5377,10 +5393,11 @@
         { page: 'schedules', icon: 'calendar', label: 'Lịch tự động' },
       ]},
       brain:    { pages: ['brain'], tabs: null },
-      config:   { pages: ['skills','persona-mix','modoro-ai','9router','openclaw'], tabs: [
+      config:   { pages: ['skills','persona-mix','modoro-ai','viec-can-lam','9router','openclaw'], tabs: [
         { page: 'skills', icon: 'zap', label: 'Skills' },
         { page: 'persona-mix', icon: 'sparkles', label: 'Tính cách' },
         { page: 'modoro-ai', icon: 'star', label: 'MODORO AI' },
+        { page: 'viec-can-lam', icon: 'clipboard', label: 'Việc cần làm' },
         { page: '9router', icon: 'cpu', label: 'AI Models', action: 'openAiModelsBrowser' },
         { page: 'openclaw', icon: 'terminal', label: 'OpenClaw' },
       ]},
@@ -5561,6 +5578,7 @@
         loadPersonaMix();
       }
       if (page === 'skills') loadSkills();
+      if (page === 'viec-can-lam') loadTodos();
       if (page === 'facebook') {
         loadFacebookTab();
       }
@@ -7673,6 +7691,48 @@
         btn.disabled = false;
         btn.innerHTML = _orig;
       }
+    }
+
+    // ============================================
+    //  VIỆC CẦN LÀM — global to-do page
+    // ============================================
+    async function loadTodos() {
+      const sp = document.getElementById('todo-spotlight');
+      const list = document.getElementById('todo-list');
+      try {
+        const s = await window.claw.todosSpotlight();
+        if (sp && s && s.success) sp.textContent = s.sentence;
+        const r = await window.claw.todosList('open');
+        if (!list) return;
+        if (!r || !r.success) { list.innerHTML = '<div style="color:var(--text-muted)">Không tải được danh sách.</div>'; return; }
+        if (!r.todos.length) { list.innerHTML = '<div style="color:var(--text-muted)">Chưa có việc nào.</div>'; return; }
+        list.innerHTML = r.todos.map(todoCardHtml).join('');
+      } catch (e) { if (list) list.innerHTML = '<div style="color:var(--danger)">Lỗi: ' + esc(e.message) + '</div>'; }
+    }
+    function todoCardHtml(x) {
+      const src = { system: 'Hệ thống', manual: 'Tự nhập', telegram: 'CEO', zalo: 'Zalo', fb: 'FB' }[x.source] || x.source;
+      return '<div class="card" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start">'
+        + '<div><div style="font-weight:600">' + esc(x.title) + '</div>'
+        + (x.detail ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + esc(x.detail) + '</div>' : '')
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + esc(src) + '</div></div>'
+        + '<div style="display:flex;gap:6px;flex-shrink:0">'
+        + '<button class="btn btn-secondary btn-small" onclick="todoSet(\'' + x.id + '\',\'xong\')">Xong</button>'
+        + '<button class="btn btn-secondary btn-small" onclick="todoSet(\'' + x.id + '\',\'hoãn\')">Hoãn</button>'
+        + '<button class="btn btn-secondary btn-small" onclick="todoSet(\'' + x.id + '\',\'bỏ\')">Bỏ</button>'
+        + '</div></div>';
+    }
+    async function todoSet(id, status) {
+      try { const r = await window.claw.todosStatus(id, status);
+        if (r && r.success) { if (typeof showToast === 'function') showToast('Đã cập nhật', 'success'); loadTodos(); }
+        else showToast('Không cập nhật được: ' + ((r && r.error) || ''), 'error');
+      } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
+    }
+    async function todoAdd() {
+      const inp = document.getElementById('todo-add-input'); const v = (inp.value || '').trim();
+      if (!v) return;
+      try { const r = await window.claw.todosAdd(v);
+        if (r && r.success) { inp.value = ''; loadTodos(); } else showToast('Không thêm được: ' + ((r && r.error) || ''), 'error');
+      } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
     }
 
     // Open brand-assets/generated/ — all AI-generated images are kept there forever.
