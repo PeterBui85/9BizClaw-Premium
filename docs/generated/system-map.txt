@@ -204,7 +204,7 @@ Large Source Files
 - electron/lib/cron-api.js: 202330 bytes
 - electron/lib/cron.js: 144957 bytes
 - electron/lib/customer-memory-updater.js: 37568 bytes
-- electron/lib/dashboard-ipc.js: 299170 bytes
+- electron/lib/dashboard-ipc.js: 299599 bytes
 - electron/lib/fb-publisher.js: 24489 bytes
 - electron/lib/fb-schedule.js: 86437 bytes
 - electron/lib/gateway.js: 91348 bytes

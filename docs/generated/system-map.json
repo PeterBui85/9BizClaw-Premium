@@ -3488,7 +3488,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 299170
+      "bytes": 299599
     },
     {
       "path": "electron/lib/fb-publisher.js",
