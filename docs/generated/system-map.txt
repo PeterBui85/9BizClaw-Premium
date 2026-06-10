@@ -1,10 +1,10 @@
 9BizClaw Generated System Map
 
 Counts
-- apiRoutes: 157
-- ipcHandlers: 217
-- preloadBridges: 210
-- dashboardPages: 19
+- apiRoutes: 161
+- ipcHandlers: 221
+- preloadBridges: 214
+- dashboardPages: 20
 - capabilityContracts: 5
 
 Capability Contracts
@@ -151,6 +151,10 @@ API Routes
 - /api/skill/test-exec [local-api]
 - /api/system/info [local-api]
 - /api/telegram/send-photo [local-api]
+- /api/todos/add [local-api]
+- /api/todos/list [local-api]
+- /api/todos/spotlight [local-api]
+- /api/todos/status [local-api]
 - /api/user-skills/check-conflict [local-api]
 - /api/user-skills/create [local-api]
 - /api/user-skills/delete [local-api]
@@ -191,6 +195,7 @@ Dashboard Pages
 - shop-state
 - skills
 - telegram
+- viec-can-lam
 - whatsapp
 - zalo
 
@@ -198,13 +203,13 @@ Large Source Files
 - electron/lib/boot.js: 38821 bytes
 - electron/lib/brain-graph.js: 27460 bytes
 - electron/lib/ceo-memory.js: 36596 bytes
-- electron/lib/channels.js: 101922 bytes
+- electron/lib/channels.js: 102616 bytes
 - electron/lib/config.js: 66842 bytes
 - electron/lib/conversation.js: 34041 bytes
-- electron/lib/cron-api.js: 207089 bytes
-- electron/lib/cron.js: 144763 bytes
+- electron/lib/cron-api.js: 208466 bytes
+- electron/lib/cron.js: 146784 bytes
 - electron/lib/customer-memory-updater.js: 41754 bytes
-- electron/lib/dashboard-ipc.js: 299599 bytes
+- electron/lib/dashboard-ipc.js: 301013 bytes
 - electron/lib/fb-publisher.js: 24489 bytes
 - electron/lib/fb-schedule.js: 86437 bytes
 - electron/lib/gateway.js: 91367 bytes

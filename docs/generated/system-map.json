@@ -1,10 +1,10 @@
 {
   "generatedBy": "electron/scripts/generate-system-map.js",
   "counts": {
-    "apiRoutes": 157,
-    "ipcHandlers": 217,
-    "preloadBridges": 210,
-    "dashboardPages": 19,
+    "apiRoutes": 161,
+    "ipcHandlers": 221,
+    "preloadBridges": 214,
+    "dashboardPages": 20,
     "capabilityContracts": 5
   },
   "apiRoutes": [
@@ -1233,6 +1233,42 @@
       ]
     },
     {
+      "path": "/api/todos/add",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/todos/list",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/todos/spotlight",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
+      "path": "/api/todos/status",
+      "sources": [
+        "electron/lib/cron-api.js"
+      ],
+      "kinds": [
+        "local-api"
+      ]
+    },
+    {
       "path": "/api/user-skills/check-conflict",
       "sources": [
         "electron/lib/cron-api.js"
@@ -2233,6 +2269,22 @@
     },
     {
       "channel": "test-telegram",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "todos:add",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "todos:list",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "todos:spotlight",
+      "source": "electron/lib/dashboard-ipc.js"
+    },
+    {
+      "channel": "todos:status",
       "source": "electron/lib/dashboard-ipc.js"
     },
     {
@@ -3274,6 +3326,26 @@
       "source": "electron/preload.js"
     },
     {
+      "name": "todosAdd",
+      "channel": "todos:add",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "todosList",
+      "channel": "todos:list",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "todosSpotlight",
+      "channel": "todos:spotlight",
+      "source": "electron/preload.js"
+    },
+    {
+      "name": "todosStatus",
+      "channel": "todos:status",
+      "source": "electron/preload.js"
+    },
+    {
       "name": "toggleBot",
       "channel": "toggle-bot",
       "source": "electron/preload.js"
@@ -3414,6 +3486,10 @@
       "source": "electron/ui/dashboard.html"
     },
     {
+      "id": "viec-can-lam",
+      "source": "electron/ui/dashboard.html"
+    },
+    {
       "id": "whatsapp",
       "source": "electron/ui/dashboard.html"
     },
@@ -3464,7 +3540,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 101922
+      "bytes": 102616
     },
     {
       "path": "electron/lib/config.js",
@@ -3476,11 +3552,11 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 207089
+      "bytes": 208466
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 144763
+      "bytes": 146784
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
@@ -3488,7 +3564,7 @@
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
-      "bytes": 299599
+      "bytes": 301013
     },
     {
       "path": "electron/lib/fb-publisher.js",
@@ -3560,7 +3636,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 703323
+      "bytes": 707372
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",
