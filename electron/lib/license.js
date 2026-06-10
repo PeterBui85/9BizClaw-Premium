@@ -380,6 +380,7 @@ function checkLicenseStatus() {
     }
   }
 
+  try { if (typeof daysLeft === 'number' && daysLeft >= 0 && daysLeft <= 7) require('./todos').emitSystemTask('license_expiring', 'license', `License sắp hết hạn (còn ${daysLeft} ngày)`, ''); } catch {}
   return {
     status: 'valid',
     key: maskKey(data.key),

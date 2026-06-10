@@ -752,6 +752,7 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
       }
       try { await sendCeoAlert(userMsg); } catch {}
       journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, reason: 'fatal-no-retry', err: lastErr.slice(0, 300) });
+      try { require('./todos').emitSystemTask('cron_failed', niceLabel, `Cron "${niceLabel}" lỗi, cần anh kiểm tra`, lastErr.slice(0, 300)); } catch {}
       return false;
     }
 
@@ -794,6 +795,7 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
     const diag = gwDrop ? `\n\n_Chẩn đoán: gateway rớt giữa chừng → openclaw chạy embedded (cold) → quá thời gian → bị dừng. Lần sau bot tự khởi động lại gateway trước khi chạy._` : '';
     await sendCeoAlert(`*Cron "${niceLabel}" thất bại sau 3 lần*\n\nExit code: \`${lastCode}\`\n\`\`\`\n${lastErr.slice(0, 500)}\n\`\`\`${diag}`);
   } catch {}
+  try { require('./todos').emitSystemTask('cron_failed', niceLabel, `Cron "${niceLabel}" lỗi, cần anh kiểm tra`, lastErr.slice(0, 300)); } catch {}
   return false;
 }
 

@@ -303,6 +303,16 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   else ok('vendor-patches isTelegram=true absent (old pattern removed)');
 }
 
+// ── 8. todos.js system-task hooks drift guard ──
+{
+  const todoSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'todos.js'), 'utf-8');
+  if (/function emitSystemTask/.test(todoSrc)) ok('todos.js has emitSystemTask'); else bad('todos.js has emitSystemTask', 'missing');
+  for (const f of ['cron.js', 'channels.js', 'license.js']) {
+    const s = fs.readFileSync(path.join(__dirname, '..', 'lib', f), 'utf-8');
+    if (/emitSystemTask/.test(s)) ok(`${f} emits system todo`); else bad(`${f} emits system todo`, 'hook missing');
+  }
+}
+
 console.log('');
 console.log(`[smoke-skill-runtime] ${PASS} passed, ${FAIL} failed`);
 if (FAIL > 0) process.exit(1);

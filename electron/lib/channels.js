@@ -1928,12 +1928,14 @@ async function broadcastChannelStatusOnce() {
       const intentionallyOff = cur.ready === false && _INTENTIONAL_OFF.has(cur.reason);
       if (intentionallyOff || cur.ready === true) {
         delete global._channelDownSince[ch];
+        if (ch === 'zalo') { try { const tdo = require('./todos'); const open = tdo.listTasks({ status: 'open' }).find(x => x.dedupeKey === 'system:zalo_down:zalo'); if (open) await tdo.setStatus(open.id, 'xong', 'bot-detected-done'); } catch {} }
       } else if (cur.ready === false) {
         if (!global._channelDownSince[ch]) global._channelDownSince[ch] = now;
       }
       if (!intentionallyOff && cur.ready === false && global._channelDownSince[ch] && (now - global._channelDownSince[ch]) >= DOWN_GRACE_MS) {
         const downMin = Math.round((now - global._channelDownSince[ch]) / 60000);
         console.warn(`[channel-status] ${labels[ch]} down for ${downMin}min — Dashboard dot reflects this`);
+        if (ch === 'zalo') { try { require('./todos').emitSystemTask('zalo_down', 'zalo', 'Zalo mất kết nối trên 5 phút, cần anh kiểm tra/đăng nhập lại', `down ${downMin} phút`); } catch {} }
       }
       _lastChannelState[ch] = smoothed[ch];
     }
