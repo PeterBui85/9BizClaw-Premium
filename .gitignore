@@ -101,6 +101,8 @@ screenshot-*.png
 /.test-*
 /.tmp-*
 /.run-tests.*
+# license.test.js scratch dirs (timestamped); cleaned on exit but guard against leaks
+electron/tests/_test_license_*/
 /.commit-msg.txt
 /.git-commit-msg.txt
 /.python-binary.txt

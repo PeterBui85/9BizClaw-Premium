@@ -240,6 +240,26 @@ function base64urlDecode(str) {
  * @param {string} keyStr - License key (with or without CLAW- prefix)
  * @returns {{ valid: boolean, payload?: object, error?: string }}
  */
+// Expiry is day-granular: a license dated "2026-06-30" stays valid through the
+// WHOLE of June 30 in the user's local time, expiring at the local midnight that
+// ends it. The old check did `Date.now() > new Date(payload.v)` — but
+// `new Date("2026-06-30")` is parsed as 00:00 UTC, i.e. 07:00 in Vietnam (UTC+7),
+// so a customer lost service mid-morning on the day their license still named as
+// valid. Comparing YYYY-MM-DD strings (today derived from local getFullYear/Month/
+// Date) is both end-of-day-correct and timezone-stable for CI. Exported so the
+// unit test asserts the REAL rule instead of a copy that can silently drift.
+function _localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function isLicenseExpired(expiryDate, now = new Date()) {
+  if (!expiryDate) return false; // no expiry → perpetual
+  const today = _localDateStr(now);
+  return String(expiryDate).split('T')[0] < today;
+}
+
 function verifyLicenseKey(keyStr) {
   try {
     let raw = keyStr.trim();
@@ -257,9 +277,8 @@ function verifyLicenseKey(keyStr) {
 
     const payload = JSON.parse(payloadBytes.toString('utf-8'));
 
-    if (payload.v) {
-      const expiry = new Date(payload.v).getTime();
-      if (Date.now() > expiry) return { valid: false, error: 'expired', payload };
+    if (payload.v && isLicenseExpired(payload.v)) {
+      return { valid: false, error: 'expired', payload };
     }
 
     return { valid: true, payload };
@@ -337,7 +356,12 @@ function checkLicenseStatus() {
   const payload = verify.payload;
   let daysLeft = null;
   if (payload.v) {
-    daysLeft = Math.floor((new Date(payload.v).getTime() - Date.now()) / 86400000);
+    // Whole calendar days from local today to the expiry date (inclusive of the
+    // expiry day). Anchored at local midnight on both ends so it agrees with
+    // isLicenseExpired: a license expiring today reads 0 (still valid), tomorrow 1.
+    const exp = new Date(String(payload.v).split('T')[0] + 'T00:00:00');
+    const today = new Date(_localDateStr(new Date()) + 'T00:00:00');
+    daysLeft = Math.round((exp.getTime() - today.getTime()) / 86400000);
   }
 
   return {
@@ -510,4 +534,5 @@ async function clearLicense() {
 module.exports = {
   getMachineId, checkLicenseStatus, activateLicense,
   revalidateLicense, clearLicense, maskKey, verifyLicenseKey,
+  isLicenseExpired,
 };

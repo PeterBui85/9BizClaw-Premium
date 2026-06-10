@@ -10,13 +10,15 @@ const assert = require('node:assert');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { isLicenseExpired } = require('../lib/license');
 
 const TEST_ROOT = path.join(__dirname, '_test_license_' + Date.now());
+// Recursive remove: the storage-path test creates subdirs (9bizclaw/, workspace/),
+// so the old flat unlinkSync loop left _test_license_* dirs behind whenever the
+// runner was killed (CI timeout/SIGINT). Fire on exit AND on signals so an aborted
+// run still tidies up instead of accumulating tracked junk.
 function cleanup() {
-  try {
-    for (const f of fs.readdirSync(TEST_ROOT)) fs.unlinkSync(path.join(TEST_ROOT, f));
-    fs.rmdirSync(TEST_ROOT);
-  } catch {}
+  try { fs.rmSync(TEST_ROOT, { recursive: true, force: true }); } catch {}
 }
 try { fs.mkdirSync(TEST_ROOT, { recursive: true }); } catch {}
 
@@ -126,35 +128,39 @@ describe('machine fingerprint', () => {
 });
 
 // ─── Expiry check ───────────────────────────────────────────────────────────
+// Exercises the REAL exported license.js#isLicenseExpired (not a local copy) so
+// the test can never silently diverge from shipped behavior. A pinned `now` keeps
+// it deterministic. WHY day-granularity matters: a "valid until 2026-06-30"
+// license must serve the customer through the whole of June 30 in their local
+// timezone — expiring it at 07:00 (00:00 UTC in VN) loses a paid business day.
 describe('license expiry', () => {
-  const isExpired = (expiryDate) => {
-    if (!expiryDate) return false; // no expiry
-    // Compare at day granularity: a license dated "today" stays valid through the
-    // whole day. Comparing Date objects made expiry fail at 00:00 UTC of the day
-    // (i.e. mid-morning in VN) instead of end-of-day. Date-only string compare is
-    // also timezone-stable for CI.
-    const today = new Date().toISOString().split('T')[0];
-    return String(expiryDate).split('T')[0] < today;
-  };
+  // Pin "now" to mid-morning Vietnam on 2026-06-30. Under the OLD Date-object
+  // check this instant was already "expired"; the day-granular rule keeps it valid.
+  const NOW = new Date('2026-06-30T03:30:00+07:00'); // 03:30 UTC
 
   test('valid future date is not expired', () => {
-    const future = new Date(Date.now() + 86400 * 1000).toISOString().split('T')[0]; // tomorrow
-    assert.strictEqual(isExpired(future), false);
+    assert.strictEqual(isLicenseExpired('2026-07-01', NOW), false);
   });
 
   test('past date is expired', () => {
-    const past = '2020-01-01';
-    assert.strictEqual(isExpired(past), true);
+    assert.strictEqual(isLicenseExpired('2020-01-01', NOW), true);
   });
 
-  test('today is still valid', () => {
-    const today = new Date().toISOString().split('T')[0];
-    assert.strictEqual(isExpired(today), false);
+  test('expiry day itself stays valid through end-of-day (the VN morning case)', () => {
+    assert.strictEqual(isLicenseExpired('2026-06-30', NOW), false);
   });
 
-  test('null expiry means no expiry', () => {
-    assert.strictEqual(isExpired(null), false);
-    assert.strictEqual(isExpired(undefined), false);
+  test('yesterday is expired', () => {
+    assert.strictEqual(isLicenseExpired('2026-06-29', NOW), true);
+  });
+
+  test('datetime-form expiry is compared by its date part', () => {
+    assert.strictEqual(isLicenseExpired('2026-06-30T23:59:59Z', NOW), false);
+  });
+
+  test('null/undefined expiry means perpetual (never expired)', () => {
+    assert.strictEqual(isLicenseExpired(null, NOW), false);
+    assert.strictEqual(isLicenseExpired(undefined, NOW), false);
   });
 });
 
@@ -178,3 +184,5 @@ describe('license.json storage path', () => {
 });
 
 process.on('exit', () => cleanup());
+process.on('SIGINT', () => { cleanup(); process.exit(130); });
+process.on('SIGTERM', () => { cleanup(); process.exit(143); });

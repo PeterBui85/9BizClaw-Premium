@@ -200,6 +200,9 @@ async function recoverChatIdFromTelegram(token) {
         path: `/bot${token}/getUpdates?offset=0&timeout=0&limit=10`,
         method: 'GET',
         timeout: 5000,
+        // family:4 — same broken-IPv6 guard as the other Telegram calls, so this
+        // recovery probe (if ever re-enabled) doesn't stall on IPv6-broken networks.
+        family: 4,
       }, (res) => {
         let body = '';
         res.on('data', (c) => body += c);
@@ -841,6 +844,10 @@ async function sendTelegramPhoto(imagePath, caption, _retryCount = 0) {
   return new Promise(resolve => {
     const req = https.request(`https://api.telegram.org/bot${token}/sendPhoto`, {
       method: 'POST',
+      // family:4 — match sendTelegram: some CEO networks have a broken IPv6 path,
+      // and Node otherwise tries IPv6 first and stalls ~30-75s before falling back.
+      // Without this, image/photo cron deliveries hang while text sends succeed.
+      family: 4,
       headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': payload.length }
     }, res => {
       let d = '';
@@ -1357,7 +1364,9 @@ async function probeTelegramReady() {
   return await new Promise((resolve) => {
     const req = https.get(
       `https://api.telegram.org/bot${token}/getMe`,
-      { timeout: 6000 },
+      // family:4 — avoid the IPv6 ETIMEDOUT stall so the readiness probe doesn't
+      // falsely report Telegram as down on networks with broken IPv6.
+      { timeout: 6000, family: 4 },
       (res) => {
         let data = '';
         res.on('data', c => data += c);
