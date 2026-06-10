@@ -13,7 +13,10 @@ const workspace = require('../lib/workspace');
 const TMP = path.join(os.tmpdir(), 'todos_check_' + Date.now());
 fs.mkdirSync(TMP, { recursive: true });
 workspace._setWorkspaceCacheForTest(TMP);
-process.on('exit', () => { try { workspace._setWorkspaceCacheForTest(null); } catch {} });
+process.on('exit', () => {
+  try { workspace._setWorkspaceCacheForTest(null); } catch {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {}
+});
 
 const t = require('../lib/todos');
 
@@ -28,6 +31,11 @@ assert.strictEqual(
 const k1 = t.normalizeDedupeKey({ source: 'manual', title: 'x' });
 const k2 = t.normalizeDedupeKey({ source: 'manual', title: 'x' });
 assert.notStrictEqual(k1, k2, 'manual keys never collide');
+
+// telegram all-emoji/stripped title → slug is empty → fallback → two distinct keys
+const ke1 = t.normalizeDedupeKey({ source: 'telegram', title: '😀😁' });
+const ke2 = t.normalizeDedupeKey({ source: 'telegram', title: '😂😃' });
+assert.notStrictEqual(ke1, ke2, 'all-emoji telegram titles get distinct dedupeKeys');
 
 // --- sanitizeTitle: no newlines, no emoji, capped ---
 assert.ok(!t.sanitizeTitle('a\nb').includes('\n'), 'newlines stripped');

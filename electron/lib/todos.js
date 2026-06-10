@@ -3,7 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { getWorkspace, auditLog } = require('./workspace');
 const { writeJsonAtomic } = require('./util');
-const ctx = require('./context');
+// NOTE: require('./context') is intentionally NOT imported here yet.
+// ctx.ipcInFlightCount will be needed by the periodic RECONCILE tick in Slice 4.
+// The require will be ADDED lazily in Slice 4 when the tick needs it.
 
 // ============================================================
 //   GLOBAL TO-DO STORE  (Việc cần làm)
@@ -23,7 +25,7 @@ const ctx = require('./context');
 // so _tickInFlight is intentionally deferred to Slice 4. _withTodoLock already
 // serializes the only writers that exist now (IPC + HTTP + system hooks).
 //
-// Require direction (no cycles): todos.js requires ONLY workspace/util/context
+// Require direction (no cycles): todos.js requires ONLY workspace/util
 // (leaf deps). cron.js / channels.js / license.js must lazy-`require('./todos')`
 // at call-time inside their hooks — they load during startOpenClaw() which can
 // run before todos.js is warm, and a top-level require there could form a cycle.
@@ -31,6 +33,7 @@ const ctx = require('./context');
 
 const VALID_STATUS = ['mở', 'đang làm', 'chờ duyệt', 'xong', 'hoãn', 'bỏ'];
 const OPEN_STATUSES = ['mở', 'đang làm', 'chờ duyệt'];
+const CLOSED_STATUSES = ['xong', 'bỏ'];
 const VALID_SOURCE = ['zalo', 'fb', 'telegram', 'system', 'manual'];
 
 function getTodosPath() {
@@ -68,17 +71,17 @@ function _writeTodos(arr) {
   return true;
 }
 
+let _ridSeq = 0;
 function _rid() {
-  // 'todo_' + base36 time + 4 hex. Unique enough for a single-machine store.
-  return 'todo_' + Date.now().toString(36) + '_' +
-    Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
+  // Monotonic process counter: same-millisecond calls get distinct suffixes.
+  return 'todo_' + Date.now().toString(36) + '_' + (++_ridSeq).toString(36).padStart(4, '0');
 }
 
 // Strip newlines + emoji + control chars, collapse spaces, cap 200. Vietnamese
 // dấu MUST survive (do not normalize away combining marks). No emoji in CEO UI.
 function sanitizeTitle(s) {
   let x = String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ');
-  // Remove emoji / pictographs (keep Vietnamese letters, which are < U+1F000).
+  // emoji/pictograph ranges — does not affect Vietnamese precomposed chars (U+1EA0–U+1EF9 are below these ranges).
   x = x.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]/gu, '');
   x = x.replace(/\s{2,}/g, ' ').trim();
   return x.slice(0, 200);
@@ -97,9 +100,10 @@ function normalizeDedupeKey(task) {
     return `system:${o.failureType || 'unknown'}:${o.resourceId || 'na'}`;
   }
   if (src === 'telegram') {
-    const slug = sanitizeTitle(task.title).toLowerCase()
+    const slug = (sanitizeTitle(task.title || '').toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g, '')   // strip dấu for slug only
-      .replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      .replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40))
+      || _rid().slice(-8);   // all-emoji/all-stripped titles get a unique suffix
     return `telegram:${o.sessionId || 'main'}:${slug}`;
   }
   // manual: always unique
@@ -138,7 +142,12 @@ async function addTask(input) {
       closedAt: null, closedReason: null,
     };
     arr.push(task);
-    _writeTodos(arr);
+    // writeJsonAtomic throws on ENOSPC/rename failure → addTask's promise rejects;
+    // callers must handle or use emitSystemTask (which swallows).
+    if (!_writeTodos(arr)) {
+      console.warn('[todos] addTask: workspace not ready, task not persisted');
+      return null;
+    }
     try { auditLog('todo_created', { id: task.id, source: task.source, dedupeKey: task.dedupeKey }); } catch {}
     return task;
   });
@@ -151,7 +160,6 @@ function listTasks({ status } = {}) {
   return arr;
 }
 
-const CLOSED_STATUSES = ['xong', 'bỏ'];
 async function setStatus(id, status, closedReason = null) {
   if (!VALID_STATUS.includes(status)) return null;
   return _withTodoLock(async () => {
@@ -166,7 +174,10 @@ async function setStatus(id, status, closedReason = null) {
     } else {
       task.closedAt = null; task.closedReason = null;   // re-opening clears
     }
-    _writeTodos(arr);
+    if (!_writeTodos(arr)) {
+      console.warn('[todos] setStatus: workspace not ready, status change not persisted');
+      return null;
+    }
     try { auditLog('todo_status', { id, status, closedReason: task.closedReason }); } catch {}
     return task;
   });
