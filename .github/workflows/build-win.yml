@@ -115,11 +115,17 @@ jobs:
           $v = (Get-Content package.json | Where-Object { $_ -match '"version"' }).Split(':')[1].Trim().Trim(',"')
           Write-Host "[smoke] package.json version: $v"
 
-          # 2. AGENTS.md version gate
-          if (Select-String ../AGENTS.md -Pattern "modoroclaw-agents-version:\s*110" -Quiet) {
-            Write-Host "[smoke] AGENTS.md version 110: OK"
+          # 2. AGENTS.md version gate — dynamic: AGENTS.md stamp must match
+          # workspace.js CURRENT_AGENTS_MD_VERSION (never hardcode a number — the
+          # old "== 110" check failed every release after the version was bumped).
+          $am = Select-String ../AGENTS.md -Pattern 'modoroclaw-agents-version:\s*(\d+)' | Select-Object -First 1
+          $ws = Select-String lib/workspace.js -Pattern 'CURRENT_AGENTS_MD_VERSION\s*=\s*(\d+)' | Select-Object -First 1
+          $amV = if ($am) { $am.Matches[0].Groups[1].Value } else { '' }
+          $wsV = if ($ws) { $ws.Matches[0].Groups[1].Value } else { '' }
+          if ($amV -ne '' -and $amV -eq $wsV) {
+            Write-Host "[smoke] AGENTS.md version in sync (v$amV): OK"
           } else {
-            Write-Host "[smoke] AGENTS.md version: MISMATCH" -ForegroundColor Red
+            Write-Host "[smoke] AGENTS.md version MISMATCH (AGENTS=$amV workspace=$wsV)" -ForegroundColor Red
             $fail = $true
           }
 
