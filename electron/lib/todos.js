@@ -151,9 +151,44 @@ function listTasks({ status } = {}) {
   return arr;
 }
 
+const CLOSED_STATUSES = ['xong', 'bỏ'];
+async function setStatus(id, status, closedReason = null) {
+  if (!VALID_STATUS.includes(status)) return null;
+  return _withTodoLock(async () => {
+    const arr = readTodos();
+    const task = arr.find(x => x.id === id);
+    if (!task) return null;
+    task.status = status;
+    task.updatedAt = new Date().toISOString();
+    if (CLOSED_STATUSES.includes(status)) {
+      task.closedAt = task.updatedAt;
+      task.closedReason = closedReason || (status === 'xong' ? 'ceo-done' : 'ceo-skip');
+    } else {
+      task.closedAt = null; task.closedReason = null;   // re-opening clears
+    }
+    _writeTodos(arr);
+    try { auditLog('todo_status', { id, status, closedReason: task.closedReason }); } catch {}
+    return task;
+  });
+}
+
+// Slice 1+2 spotlight: a DETERMINISTIC COUNT sentence only. No priority, no AI —
+// those arrive in Slice 4. Keeps the surface honest: "Có N việc cần làm." or, if
+// any are system-flagged problems, name that bucket.
+function spotlight() {
+  const open = listTasks({ status: 'open' });
+  const openCount = open.length;
+  const sysCount = open.filter(x => x.source === 'system').length;
+  let sentence;
+  if (openCount === 0) sentence = 'Hiện chưa có việc nào cần làm.';
+  else if (sysCount > 0) sentence = `Có ${openCount} việc cần làm, trong đó ${sysCount} việc hệ thống cần anh xem.`;
+  else sentence = `Có ${openCount} việc cần làm.`;
+  return { sentence, openCount, systemCount: sysCount, top: open.slice(0, 3) };
+}
+
 module.exports = {
   VALID_STATUS, OPEN_STATUSES, VALID_SOURCE,
   getTodosPath, readTodos, _withTodoLock,
   _rid, sanitizeTitle, normalizeDedupeKey,
-  addTask, listTasks,
+  addTask, listTasks, setStatus, spotlight,
 };

@@ -54,4 +54,24 @@ console.log('todos id/dedupe/sanitize OK');
   const open = t.listTasks({ status: 'open' });
   assert.ok(open.every(x => t.OPEN_STATUSES.includes(x.status)), 'open filter returns only open');
   console.log('todos addTask/list OK');
+
+  // setStatus
+  const m = await t.addTask({ source: 'manual', title: 'Đặt hàng bao bì' });
+  const done = await t.setStatus(m.id, 'xong', 'ceo-done');
+  assert.strictEqual(done.status, 'xong');
+  assert.ok(done.closedAt && done.closedReason === 'ceo-done', 'close stamps closedAt+reason');
+  assert.notStrictEqual(done.updatedAt, done.createdAt, 'updatedAt advances on change');
+  const missing = await t.setStatus('todo_nope', 'xong');
+  assert.strictEqual(missing, null, 'setStatus on missing id returns null');
+  // snooze keeps it out of "open" but not closed
+  const sn = await t.addTask({ source: 'manual', title: 'Xem báo cáo' });
+  await t.setStatus(sn.id, 'hoãn');
+  assert.ok(!t.listTasks({ status: 'open' }).some(x => x.id === sn.id), 'snoozed task leaves open list');
+
+  // spotlight count-stub (no AI): counts OPEN tasks, Vietnamese, no emoji
+  const sp = t.spotlight();
+  assert.ok(/việc cần/i.test(sp.sentence), 'spotlight sentence in Vietnamese');
+  assert.ok(!/[\u{1F000}-\u{1FAFF}]/u.test(sp.sentence), 'spotlight has no emoji');
+  assert.strictEqual(typeof sp.openCount, 'number');
+  console.log('todos setStatus/spotlight OK');
 })().catch(e => { console.error(e); process.exit(1); });
