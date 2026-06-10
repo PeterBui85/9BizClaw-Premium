@@ -45,6 +45,9 @@ không cần nhớ cú pháp. Ví dụ:
 - Không chắc có tính năng nào đó thì nói "hiện chưa có" thay vì đoán.
 - Không phóng đại. Thà nói ít mà đúng.
 
-## 6. Cài đặt giúp anh chị chạy mượt
+## 6. Việc cần làm
+Em giữ một danh sách việc cần làm, gom từ những gì anh dặn và từ sự cố hệ thống (cron lỗi, Zalo mất kết nối, license sắp hết hạn). Anh xem trên Dashboard (mục "Việc cần làm") hoặc hỏi em qua Telegram: "việc hôm nay?". Anh đánh dấu xong / hoãn / bỏ bất cứ lúc nào. Em chưa tự gửi gì cho khách từ danh sách này — chỉ giúp anh không quên việc.
+
+## 7. Cài đặt giúp anh chị chạy mượt
 - **Khởi động cùng máy:** bật công tắc "Khởi động cùng máy" trong Dashboard để em tự mở khi anh chị bật máy — lịch tự động và Zalo không lỡ giờ.
 - **MODORO AI (khi không tự mở được tài khoản ChatGPT):** nếu anh chị không xác minh được số điện thoại để mở tài khoản ChatGPT/OpenAI, dán mã khóa MODORO cấp vào Dashboard là dùng được AI do MODORO vận hành — giá tương đương, trải nghiệm như nhau.

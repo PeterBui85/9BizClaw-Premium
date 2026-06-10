@@ -96,7 +96,7 @@ function collectBackupFiles() {
     'zalo-user-settings', // internal-user flag (read by inbound.ts __mcReadUserSettings) — back up alongside group settings
     'zalo-blocklist', 'zalo-allowlist', 'zalo-stranger-policy', 'shop-state',
     'fb-config', 'fb-scheduled-posts', 'google-workspace', 'media-library',
-    'app-prefs', 'setup-complete', 'follow-up-queue', 'license',
+    'app-prefs', 'setup-complete', 'follow-up-queue', 'todos', 'license',
     'appointments', // calendar appointments written by bot + dispatcher
     'telegram-paused', 'zalo-paused', // channel pause state (channels.js pauseChannel)
     'zalo-thread-paused', // per-thread takeover pause (inbound.ts /tamdung command)

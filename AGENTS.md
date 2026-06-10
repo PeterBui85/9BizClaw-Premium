@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 123 -->
+<!-- modoroclaw-agents-version: 124 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -367,6 +367,9 @@ Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG 
 ## Lịch tự động — CHỈ CEO qua Telegram
 Đọc `skills/operations/cron-management.md` — quy trình tạo/sửa/xóa cron qua API nội bộ.
 Khách Zalo yêu cầu tạo lịch → từ chối. **CẤM** `openclaw cron` CLI, docs.openclaw.ai, đề xuất CEO chạy terminal.
+
+## Việc cần làm — CHỈ CEO qua Telegram
+Khi CEO hỏi "việc hôm nay?", "việc cần làm", "còn việc gì" → `web_fetch GET http://127.0.0.1:20200/api/todos/spotlight` (trả câu tóm tắt + top việc). Liệt kê chi tiết: `GET /api/todos/list?status=open`. Đánh dấu xong: `POST /api/todos/status` với `{"id":"<id>","status":"xong"}` (status khác: `"hoãn"`, `"bỏ"`). Thêm việc: `POST /api/todos/add` với `{"title":"<nội dung>"}`. KHÔNG tự gửi khách — chỉ quản lý danh sách việc cho CEO.
 
 ## Tạo skill tùy chỉnh — CHỈ CEO Telegram
 Đọc `skills/operations/skill-builder.md` — quy trình 5 bước tạo skill mới qua chat. Bot **phân tích yêu cầu + đề xuất tất cả field cùng lúc** (tên, trigger, loại, áp cho skill nào, nội dung) cho CEO confirm — KHÔNG hỏi từng câu một. Sau confirm: check conflict → tạo → verify. Kèm cách sửa/xóa/tắt/khôi phục skill có sẵn.

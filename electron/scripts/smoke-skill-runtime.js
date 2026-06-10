@@ -313,6 +313,20 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   }
 }
 
+// ── 9. global-todo wiring drift guards ──
+{
+  const bk = fs.readFileSync(path.join(__dirname, '..', 'lib', 'backup.js'), 'utf-8');
+  if (/'todos'/.test(bk)) ok('backup manifest includes todos'); else bad('backup manifest includes todos', 'todos.json not backed up');
+  const gi = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'operations', 'gioi-thieu.md'), 'utf-8');
+  if (/Việc cần làm/.test(gi)) ok('self-knowledge mentions Việc cần làm'); else bad('self-knowledge mentions Việc cần làm', 'skill not updated');
+  const ws = fs.readFileSync(path.join(__dirname, '..', 'lib', 'workspace.js'), 'utf-8');
+  const agents = fs.readFileSync(path.join(__dirname, '..', '..', 'AGENTS.md'), 'utf-8');
+  const constMatch = ws.match(/CURRENT_AGENTS_MD_VERSION\s*=\s*(\d+)/);
+  const stampMatch = agents.match(/modoroclaw-agents-version:\s*(\d+)/);
+  if (constMatch && stampMatch && constMatch[1] === stampMatch[1]) ok('AGENTS version stamp matches constant ('+constMatch[1]+')');
+  else bad('AGENTS version stamp matches constant', `const=${constMatch&&constMatch[1]} stamp=${stampMatch&&stampMatch[1]}`);
+}
+
 console.log('');
 console.log(`[smoke-skill-runtime] ${PASS} passed, ${FAIL} failed`);
 if (FAIL > 0) process.exit(1);
