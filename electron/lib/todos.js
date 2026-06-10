@@ -68,7 +68,46 @@ function _writeTodos(arr) {
   return true;
 }
 
+function _rid() {
+  // 'todo_' + base36 time + 4 hex. Unique enough for a single-machine store.
+  return 'todo_' + Date.now().toString(36) + '_' +
+    Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
+}
+
+// Strip newlines + emoji + control chars, collapse spaces, cap 200. Vietnamese
+// dấu MUST survive (do not normalize away combining marks). No emoji in CEO UI.
+function sanitizeTitle(s) {
+  let x = String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ');
+  // Remove emoji / pictographs (keep Vietnamese letters, which are < U+1F000).
+  x = x.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️]/gu, '');
+  x = x.replace(/\s{2,}/g, ' ').trim();
+  return x.slice(0, 200);
+}
+
+// Per-source dedupe key. customerId+fixed-category for customer tasks (NEVER a
+// free-text hash — "muốn báo giá" vs "hỏi báo giá" would differ and re-create
+// every scan). Deterministic for system. Unique for manual.
+function normalizeDedupeKey(task) {
+  const src = task.source;
+  const o = task.origin || {};
+  if (src === 'zalo' || src === 'fb') {
+    return `${src}:${o.customerId || 'unknown'}:${task.categoryKey || 'khac'}`;
+  }
+  if (src === 'system') {
+    return `system:${o.failureType || 'unknown'}:${o.resourceId || 'na'}`;
+  }
+  if (src === 'telegram') {
+    const slug = sanitizeTitle(task.title).toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')   // strip dấu for slug only
+      .replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    return `telegram:${o.sessionId || 'main'}:${slug}`;
+  }
+  // manual: always unique
+  return `manual:${_rid()}`;
+}
+
 module.exports = {
   VALID_STATUS, OPEN_STATUSES, VALID_SOURCE,
   getTodosPath, readTodos, _withTodoLock,
+  _rid, sanitizeTitle, normalizeDedupeKey,
 };
