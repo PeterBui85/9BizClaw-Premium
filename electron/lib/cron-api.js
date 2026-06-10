@@ -1533,7 +1533,7 @@ function startCronApi() {
     } else if (urlPath === '/api/todos/add') {
       const { title, detail } = params;
       if (!title || !String(title).trim()) return jsonResp(res, 400, { error: 'title required' });
-      try { const task = await todos.addTask({ source: 'manual', title, detail }); return jsonResp(res, 200, { success: true, task }); }
+      try { const task = await todos.addTask({ source: 'manual', title, detail }); if (!task) return jsonResp(res, 503, { error: 'workspace not ready' }); return jsonResp(res, 200, { success: true, task }); }
       catch (e) { return jsonResp(res, 500, { error: e.message }); }
     } else if (urlPath === '/api/todos/status') {
       const { id, status, reason } = params;

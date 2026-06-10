@@ -4136,13 +4136,18 @@ ipcMain.handle('todos:list', (_e, { status } = {}) => {
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('todos:spotlight', () => {
-  try { return { success: true, ...todos.spotlight() }; }
-  catch (e) { return { success: false, error: e.message }; }
+  try {
+    const { sentence, openCount, systemCount, top } = todos.spotlight();
+    return { success: true, sentence, openCount, systemCount, top };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('todos:add', async (_e, { title, detail } = {}) => {
   if (!title || !String(title).trim()) return { success: false, error: 'title required' };
-  try { return { success: true, task: await todos.addTask({ source: 'manual', title, detail }) }; }
-  catch (e) { return { success: false, error: e.message }; }
+  try {
+    const task = await todos.addTask({ source: 'manual', title, detail });
+    if (!task) return { success: false, error: 'workspace not ready' };
+    return { success: true, task };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('todos:status', async (_e, { id, status, reason } = {}) => {
   if (!id || !status) return { success: false, error: 'id and status required' };
