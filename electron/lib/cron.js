@@ -777,6 +777,9 @@ async function _runCronAgentPromptImpl(prompt, { label, zaloTarget, isOneTime, s
     if (isOneTime) {
       journalCronRun({ phase: 'fail', label: niceLabel, code: lastCode, reason: 'one-time-no-retry-after-nonzero-exit', err: lastErr.slice(0, 300) });
       try { await sendCeoAlert(`*Cron một lần "${niceLabel}" lỗi (exit ${lastCode})*\n\nEm KHÔNG tự chạy lại để tránh gửi trùng cho khách (task có thể đã gửi xong rồi mới lỗi). Anh kiểm tra rồi đặt lại lịch nếu cần.\n\`\`\`\n${lastErr.slice(0, 300)}\n\`\`\``); } catch {}
+      // NOTE: intentionally no emitSystemTask here — a one-time cron failure already
+      // alerts the CEO directly; a lingering to-do for a one-shot that won't retry
+      // would just be noise. (Recurring crons DO emit — see fatal + after-3-retries paths.)
       return false;
     }
 

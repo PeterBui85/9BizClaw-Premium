@@ -1525,7 +1525,7 @@ function startCronApi() {
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/todos/list') {
-      try { return jsonResp(res, 200, { todos: todos.listTasks({ status: params.status }) }); }
+      try { return jsonResp(res, 200, { success: true, todos: todos.listTasks({ status: params.status }) }); }
       catch (e) { return jsonResp(res, 500, { error: e.message }); }
     } else if (urlPath === '/api/todos/spotlight') {
       try { return jsonResp(res, 200, todos.spotlight()); }

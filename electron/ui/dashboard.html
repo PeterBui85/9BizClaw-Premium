@@ -7706,7 +7706,7 @@
         if (!list) return;
         if (!r || !r.success) { list.innerHTML = '<div style="color:var(--text-muted)">Không tải được danh sách.</div>'; return; }
         if (!r.todos.length) { list.innerHTML = '<div style="color:var(--text-muted)">Chưa có việc nào.</div>'; return; }
-        list.innerHTML = r.todos.map(todoCardHtml).join('');
+        list.innerHTML = (r.todos || []).map(todoCardHtml).join('');
       } catch (e) { if (list) list.innerHTML = '<div style="color:var(--danger)">Lỗi: ' + esc(e.message) + '</div>'; }
     }
     function todoCardHtml(x) {
@@ -7723,7 +7723,7 @@
     }
     async function todoSet(id, status) {
       try { const r = await window.claw.todosStatus(id, status);
-        if (r && r.success) { if (typeof showToast === 'function') showToast('Đã cập nhật', 'success'); loadTodos(); }
+        if (r && r.success) { showToast('Đã cập nhật', 'success'); loadTodos(); }
         else showToast('Không cập nhật được: ' + ((r && r.error) || ''), 'error');
       } catch (e) { showToast('Lỗi: ' + e.message, 'error'); }
     }

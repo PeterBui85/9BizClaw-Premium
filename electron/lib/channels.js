@@ -1927,8 +1927,11 @@ async function broadcastChannelStatusOnce() {
       const cur = probes[ch];
       const intentionallyOff = cur.ready === false && _INTENTIONAL_OFF.has(cur.reason);
       if (intentionallyOff || cur.ready === true) {
+        const wasDown = !!(global._channelDownSince && global._channelDownSince[ch]);
         delete global._channelDownSince[ch];
-        if (ch === 'zalo') { try { const tdo = require('./todos'); const open = tdo.listTasks({ status: 'open' }).find(x => x.dedupeKey === 'system:zalo_down:zalo'); if (open) await tdo.setStatus(open.id, 'xong', 'bot-detected-done'); } catch {} }
+        // Only scan the to-do list if Zalo was actually recorded as down — avoids a
+        // file-read on every healthy probe cycle.
+        if (ch === 'zalo' && wasDown) { try { const tdo = require('./todos'); const open = tdo.listTasks({ status: 'open' }).find(x => x.dedupeKey === 'system:zalo_down:zalo'); if (open) await tdo.setStatus(open.id, 'xong', 'bot-detected-done'); } catch {} }
       } else if (cur.ready === false) {
         if (!global._channelDownSince[ch]) global._channelDownSince[ch] = now;
       }
