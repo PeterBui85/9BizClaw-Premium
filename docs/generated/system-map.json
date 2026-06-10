@@ -3480,7 +3480,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 144957
+      "bytes": 144763
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
@@ -3500,7 +3500,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 91348
+      "bytes": 91367
     },
     {
       "path": "electron/lib/google-api.js",
