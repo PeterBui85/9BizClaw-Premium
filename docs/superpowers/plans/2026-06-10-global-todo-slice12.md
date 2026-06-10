@@ -714,10 +714,10 @@ The store must be required lazily inside each hook to avoid require cycles (cron
   **Up-close hook** — at the recovery point (~line 1929-1930, the `intentionallyOff || cur.ready === true` branch that does `delete global._channelDownSince[ch]`), gate to Zalo only and close any open down-task:
 ```javascript
         if (ch === 'zalo') {
-          try { const tdo = require('./todos'); const open = tdo.listTasks({ status: 'open' }).find(x => x.dedupeKey === 'system:zalo_down:zalo'); if (open) tdo.setStatus(open.id, 'xong', 'bot-detected-done'); } catch {}
+          try { const tdo = require('./todos'); const open = tdo.listTasks({ status: 'open' }).find(x => x.dedupeKey === 'system:zalo_down:zalo'); if (open) await tdo.setStatus(open.id, 'xong', 'bot-detected-done'); } catch {}
         }
 ```
-  (The auto-close is the ONE allowed self-close in Slice 1+2 — deterministic, no transcript scan.)
+  (`broadcastChannelStatusOnce` is `async`, and `setStatus` returns a Promise — `await` it so a lock-chain rejection is caught by the surrounding `try/catch` instead of becoming an unhandled rejection. The auto-close is the ONE allowed self-close in Slice 1+2 — deterministic, no transcript scan.)
 
 - [ ] **Step 3: License hook.** In `license.js` `checkLicenseStatus`, when `daysLeft` is a small positive number (≤ 7), emit a task; use a resourceId that changes by day-bucket so it refreshes but doesn't spam:
 ```javascript
