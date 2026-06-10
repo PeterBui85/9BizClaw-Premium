@@ -196,6 +196,12 @@ paths, one store" — Dashboard uses IPC, NOT the HTTP routes).
 
 ## Slices (each independently shippable)
 
+> **Build decision (2026-06-10, CEO):** Slices 1 + 2 are planned and built
+> TOGETHER as the first deliverable — an empty manual list is thin; bundling the
+> deterministic system-task hooks means day-one value (the bot actually surfaces
+> real cron/Zalo/license problems). Slices 3 (AI harvest) and 4 (priority + autonomy)
+> remain separate later deliverables.
+
 1. **Store + schema + CRUD + both surfaces.** todos.json with the serialized-write
    lock + atomic-write + `_tickInFlight` described in Architecture; HTTP
    `/api/todos/*` behind the CEO gate AND parallel Dashboard `ipcMain` handlers over
