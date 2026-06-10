@@ -11,6 +11,7 @@ const { detectAgentPromptAsContent } = require('./cron-content-guard');
 const mediaLibrary = require('./media-library');
 const fbSchedule = require('./fb-schedule');
 const skillManager = require('./skill-manager');
+const todos = require('./todos');
 const orderManager = require('./order-manager');
 orderManager.init({ getWorkspace });
 const leaveManager = require('./leave-manager');
@@ -1522,6 +1523,23 @@ function startCronApi() {
           return jsonResp(res, 200, { success: true, enabled: target.enabled });
         });
       } catch (e) { return jsonResp(res, 500, { error: e.message }); }
+
+    } else if (urlPath === '/api/todos/list') {
+      try { return jsonResp(res, 200, { todos: todos.listTasks({ status: params.status }) }); }
+      catch (e) { return jsonResp(res, 500, { error: e.message }); }
+    } else if (urlPath === '/api/todos/spotlight') {
+      try { return jsonResp(res, 200, todos.spotlight()); }
+      catch (e) { return jsonResp(res, 500, { error: e.message }); }
+    } else if (urlPath === '/api/todos/add') {
+      const { title, detail } = params;
+      if (!title || !String(title).trim()) return jsonResp(res, 400, { error: 'title required' });
+      try { const task = await todos.addTask({ source: 'manual', title, detail }); return jsonResp(res, 200, { success: true, task }); }
+      catch (e) { return jsonResp(res, 500, { error: e.message }); }
+    } else if (urlPath === '/api/todos/status') {
+      const { id, status, reason } = params;
+      if (!id || !status) return jsonResp(res, 400, { error: 'id and status required' });
+      try { const task = await todos.setStatus(id, status, reason); if (!task) return jsonResp(res, 404, { error: 'task not found or invalid status: ' + id }); return jsonResp(res, 200, { success: true, task }); }
+      catch (e) { return jsonResp(res, 500, { error: e.message }); }
 
     } else if (urlPath === '/api/workspace/read') {
       const ws = getWorkspace();

@@ -453,3 +453,17 @@ describe('one-time cron retry policy (no double-delivery)', () => {
       `expected >=4 call sites forwarding isOneTime, found ${matches.length}`);
   });
 });
+
+describe('todos routes wired + gated', () => {
+  const fs = require('fs'); const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cron-api.js'), 'utf8');
+  test('all four todos routes exist', () => {
+    for (const r of ['/api/todos/list', '/api/todos/spotlight', '/api/todos/add', '/api/todos/status'])
+      assert.ok(src.includes(`urlPath === '${r}'`), 'missing route ' + r);
+  });
+  test('todos routes are NOT in PUBLIC_ROUTES (stay CEO-gated)', () => {
+    const i = src.indexOf('PUBLIC_ROUTES = new Set');
+    const pub = src.slice(i, i + 400);
+    assert.ok(!pub.includes('/api/todos'), 'todos must not be public');
+  });
+});
