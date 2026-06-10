@@ -871,9 +871,18 @@ async function _processKnowledgeChange(filePath) {
           .run(filePath, content, filetype, stat.size, wordCount, visibility, existing.id);
       } else {
         const enabled = getKnowledgeDocumentEnabled(filePath, true) ? 1 : 0;
-        db.prepare('INSERT INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility, enabled) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        // OR IGNORE: the fs.watch handler and the 60s poll can both reach here for
+        // the same file before either commits, both see existing=undefined, and the
+        // second INSERT trips UNIQUE(filename, category). Make the loser a no-op
+        // instead of an error — the row from the winner is identical fresh data.
+        const ins = db.prepare('INSERT OR IGNORE INTO documents (filename, filepath, content, filetype, filesize, word_count, category, summary, visibility, enabled) VALUES (?,?,?,?,?,?,?,?,?,?)')
           .run(filename, filePath, content, filetype, stat.size, wordCount, category, null, visibility, enabled);
-        try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?,?)').run(filename, content); } catch {}
+        // Only mirror to FTS when we actually inserted. documents_fts has no UNIQUE
+        // constraint, so a race-loser (changes=0) would otherwise append a duplicate
+        // FTS row and inflate search results.
+        if (ins.changes > 0) {
+          try { db.prepare('INSERT INTO documents_fts (filename, content) VALUES (?,?)').run(filename, content); } catch {}
+        }
       }
       const doc = db.prepare('SELECT id FROM documents WHERE filename=? AND category=?').get(filename, category);
       if (doc) {

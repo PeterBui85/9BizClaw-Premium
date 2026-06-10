@@ -203,24 +203,49 @@ function collectGroupNodes(workspace) {
 function collectDocNodes(workspace) {
   const nodes = [];
   const categories = ['cong-ty', 'san-pham', 'nhan-vien'];
+  // Since the v2.4 migration, docs live under files/<public|noi-bo|ceo-only>/.
+  // Older installs may still keep files directly under files/. Handle both, and
+  // skip directory entries (statSync without isFile() used to add the visibility
+  // subfolders themselves as "doc:public/noi-bo/ceo-only" nodes — colliding across
+  // all three categories and crashing the layout worker on duplicate node id).
+  const visSubfolders = ['public', 'noi-bo', 'ceo-only'];
+  // Keep the id as 'doc:<filename>' (no '/') — get-brain-node-detail in
+  // dashboard-ipc.js does nodeId.slice(4) and rejects any id containing a slash,
+  // then resolves by filename across categories. Dedup by id so the rare same
+  // filename in two categories can't add a duplicate node and crash the layout.
+  const seen = new Set();
+  const addFile = (cat, dir, f) => {
+    try {
+      const id = 'doc:' + f;
+      if (seen.has(id)) return;
+      const fullPath = path.join(dir, f);
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile()) return;
+      seen.add(id);
+      const sizeKb = stat.size / 1024;
+      nodes.push({
+        id,
+        type: 'doc',
+        label: f.replace(/\.[^.]+$/, ''),
+        size: Math.max(1, Math.round(sizeKb)),
+        meta: { category: cat, filename: f },
+      });
+    } catch (e) {
+      console.warn('[brain-graph] skip corrupt doc file:', f, e?.message);
+    }
+  };
   for (const cat of categories) {
-    const dir = path.join(workspace, 'knowledge', cat, 'files');
-    let files;
-    try { files = fs.readdirSync(dir); } catch { continue; }
-    for (const f of files) {
-      try {
-        const fullPath = path.join(dir, f);
-        const stat = fs.statSync(fullPath);
-        const sizeKb = stat.size / 1024;
-        nodes.push({
-          id: 'doc:' + f,
-          type: 'doc',
-          label: f.replace(/\.[^.]+$/, ''),
-          size: Math.max(1, Math.round(sizeKb)),
-          meta: { category: cat, filename: f },
-        });
-      } catch (e) {
-        console.warn('[brain-graph] skip corrupt doc file:', f, e?.message);
+    const baseDir = path.join(workspace, 'knowledge', cat, 'files');
+    let entries;
+    try { entries = fs.readdirSync(baseDir); } catch { continue; }
+    for (const e of entries) {
+      if (visSubfolders.includes(e)) {
+        const subDir = path.join(baseDir, e);
+        let subFiles;
+        try { subFiles = fs.readdirSync(subDir); } catch { continue; }
+        for (const sf of subFiles) addFile(cat, subDir, sf);
+      } else {
+        addFile(cat, baseDir, e);
       }
     }
   }

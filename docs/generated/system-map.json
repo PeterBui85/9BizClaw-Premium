@@ -3456,7 +3456,7 @@
     },
     {
       "path": "electron/lib/brain-graph.js",
-      "bytes": 26223
+      "bytes": 27460
     },
     {
       "path": "electron/lib/ceo-memory.js",
@@ -3464,7 +3464,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 101213
+      "bytes": 101487
     },
     {
       "path": "electron/lib/config.js",
@@ -3500,7 +3500,7 @@
     },
     {
       "path": "electron/lib/gateway.js",
-      "bytes": 89623
+      "bytes": 91348
     },
     {
       "path": "electron/lib/google-api.js",
@@ -3516,7 +3516,7 @@
     },
     {
       "path": "electron/lib/knowledge.js",
-      "bytes": 96888
+      "bytes": 97506
     },
     {
       "path": "electron/lib/media-library.js",
@@ -3552,7 +3552,7 @@
     },
     {
       "path": "electron/lib/zalo-plugin.js",
-      "bytes": 43404
+      "bytes": 43728
     },
     {
       "path": "electron/ui/brain.js",

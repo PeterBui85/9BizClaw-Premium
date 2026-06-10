@@ -743,7 +743,9 @@ async function sendTelegram(text, { skipFilter = false, skipPauseCheck = false }
     const payload = JSON.stringify({ chat_id: chatId, text });
     const req = https.request(
       `https://api.telegram.org/bot${token}/sendMessage`,
-      { method: 'POST', timeout: 30000, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+      // family:4 — some CEO networks have a broken IPv6 path; Node otherwise picks
+      // Telegram's AAAA record first and stalls the full timeout before retrying.
+      { method: 'POST', timeout: 30000, family: 4, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
       (res) => {
         let d = '';
         res.on('data', c => d += c);
@@ -2045,7 +2047,8 @@ async function registerTelegramCommands() {
     const payload = JSON.stringify({ commands });
     const req = https.request(
       `https://api.telegram.org/bot${token}/setMyCommands`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+      // family:4 — avoid the IPv6 ETIMEDOUT stall on networks with broken IPv6.
+      { method: 'POST', family: 4, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
       (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => { console.log('[telegram] setMyCommands:', d); resolve(d); }); }
     );
     req.on('error', (e) => { console.error('[telegram] setMyCommands error:', e.message); resolve(null); });

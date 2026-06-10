@@ -18,6 +18,7 @@ const { ensureDefaultConfig, ensureZaloModelDefault } = require('./config');
 const {
   broadcastChannelStatusOnce, sendCeoAlert, sendTelegram,
   findOpenzcaListenerPid, registerTelegramCommands, resetGatewayZaloDiag,
+  getTelegramConfigWithRecovery,
 } = require('./channels');
 const { start9Router, stop9Router, getRouterProcess, ensure9RouterApiKeySync, ensure9RouterZaloCombo } = require('./nine-router');
 const {
@@ -557,7 +558,11 @@ async function _startOpenClawImpl(opts = {}) {
       const keys = Array.isArray(db.apiKeys) ? db.apiKeys : [];
       const active = keys.find(k => k && k.isActive !== false && k.name === '9BizClaw') || keys.find(k => k && k.isActive !== false && typeof k.key === 'string');
       if (active?.key) warmupApiKey = active.key;
-    } catch (e) { console.warn(`[boot] pre-warm key read failed: ${e.message}`); }
+    } catch (e) {
+      // Expected on first launch: 9Router may not have flushed db.json yet. The
+      // ping below still succeeds unauthenticated on 127.0.0.1, so this is benign.
+      console.log(`[boot] pre-warm key not available yet (${e.code || e.message}) — pinging without auth`);
+    }
     const payload = JSON.stringify({ model: 'main', messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 });
     const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) };
     if (warmupApiKey) headers['Authorization'] = 'Bearer ' + warmupApiKey;
@@ -757,7 +762,11 @@ async function _startOpenClawImpl(opts = {}) {
     stdio: [
       'ignore',
       'pipe',
-      fs.openSync(path.join(ctx.userDataDir, 'logs', 'openclaw-stderr.log'), 'a'),
+      // 'w' (truncate), not 'a': this file is replayed by readStderrTail() on
+      // crash/slow-start. Appending across runs made stale stderr (e.g. an old
+      // getUpdates 409 from a previous boot) surface as if it belonged to the
+      // current run. Fresh file per spawn = readStderrTail only sees this run.
+      fs.openSync(path.join(ctx.userDataDir, 'logs', 'openclaw-stderr.log'), 'w'),
     ],
     shell: gwSpawnShell,
     windowsHide: true,
@@ -941,6 +950,11 @@ async function _startOpenClawImpl(opts = {}) {
   // Log if the gateway process dies unexpectedly during boot
   if (ctx.openclawProcess) {
     ctx.openclawProcess.on('exit', (code, signal) => {
+      // An intentional stop (stopOpenClaw bumps _gatewayIntentionalStopDepth) or a
+      // caller-owned restart is not a crash. taskkill /f on Windows yields code=1,
+      // which previously read as "exited unexpectedly during boot". The restart
+      // guard handler already logs these — stay quiet here so the log isn't misleading.
+      if (_gatewayIntentionalStopDepth > 0 || ctx.gatewayRestartInFlight) return;
       const tail = readStderrTail(20);
       console.error(`[gateway] process exited unexpectedly during boot — code=${code} signal=${signal}`);
       for (const l of tail) console.error('  [openclaw stderr] ', l.slice(0, 300));
@@ -1224,10 +1238,21 @@ async function _startOpenClawImpl(opts = {}) {
             fs.readSync(fd, buf, 0, readSize, Math.max(0, stat.size - readSize));
             fs.closeSync(fd);
             const tail = buf.toString('utf-8');
-            const errorLines = tail.split('\n').filter(l =>
-              /error|fail|crash|ENOENT|cannot find|TypeScript|TS\d{4}/i.test(l) &&
-              /modoro.?zalo|openzca|openzalo|plugin/i.test(l)
-            ).slice(-5);
+            // openclaw.log is append-only across runs, so its tail can contain
+            // errors from previous boots (days old). Drop any line whose leading
+            // ISO timestamp predates this gateway boot — otherwise stale failures
+            // (e.g. a 3-day-old "Đăng nhập thất bại") read as a live problem.
+            const bootStartMs = global._gatewayStartedAt || (Date.now() - 120000);
+            const errorLines = tail.split('\n').filter(l => {
+              if (!(/error|fail|crash|ENOENT|cannot find|TypeScript|TS\d{4}/i.test(l) &&
+                    /modoro.?zalo|openzca|openzalo|plugin/i.test(l))) return false;
+              const m = l.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2})/);
+              if (m) {
+                const ts = Date.parse(m[1]);
+                if (!Number.isNaN(ts) && ts < bootStartMs - 5000) return false;
+              }
+              return true;
+            }).slice(-5);
             if (errorLines.length > 0) {
               console.warn('[zalo-boot-check] openclaw.log errors:');
               for (const l of errorLines) console.warn('  ', l.trim().slice(0, 300));

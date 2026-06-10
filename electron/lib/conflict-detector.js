@@ -46,6 +46,18 @@ function execNpmSync(npmBin, args, opts) {
   return execFileSync(npmBin, args, opts);
 }
 
+// Async twin of execNpmSync. Passing an absolute npm.cmd path with a space in it
+// (e.g. C:\Users\Peter Bui\...\npm.cmd) to execFile with shell:true makes cmd.exe
+// split at the space ("'C:\Users\Peter' is not recognized"). Route through
+// cmd.exe /d /c "npm.cmd <quoted-args>" so PATH resolves the bare shim instead.
+function execNpm(npmBin, args, opts) {
+  if (process.platform === 'win32') {
+    const command = ['npm.cmd', ...args.map(quoteCmdArg)].join(' ');
+    return execFilePromise('cmd.exe', ['/d', '/c', command], opts);
+  }
+  return execFilePromise(npmBin, args, opts);
+}
+
 // =====================================================================
 // Conflict Detection
 // =====================================================================
@@ -161,22 +173,21 @@ function hasOtherNodeProjects() {
  */
 async function getPackageConflict(pkgName) {
   try {
-    const isWin = process.platform === 'win32';
     const npmBin = findNpmBin();
-    const { stdout } = await execFilePromise(
+    const { stdout } = await execNpm(
       npmBin,
       ['view', pkgName, 'version'],
-      { timeout: 10000, encoding: 'utf-8', shell: isWin }
+      { timeout: 10000, encoding: 'utf-8' }
     );
     const latestVersion = stdout.trim();
 
     // Check if installed
     let installedVersion = null;
     try {
-      const { stdout: lsOut } = await execFilePromise(
+      const { stdout: lsOut } = await execNpm(
         npmBin,
         ['list', '-g', pkgName, '--depth=0', '--json'],
-        { timeout: 10000, encoding: 'utf-8', shell: isWin }
+        { timeout: 10000, encoding: 'utf-8' }
       );
       // npm may prepend warnings before JSON output; try to extract JSON portion
       let jsonStr = lsOut;

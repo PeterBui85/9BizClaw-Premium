@@ -695,6 +695,12 @@ async function seedAllGroupHistories({ source = 'auto' } = {}) {
       const r = await seedGroupHistorySummary(groupId, threadName);
       if (r.ok && r.reason === 'seeded') stats.seeded++;
       else if (r.ok) stats.skipped++;
+      else if (r.reason === 'no-stdout') {
+        // Not an error: at cold-start the Zalo session often isn't live yet, so
+        // `openzca msg recent --source live` returns empty. Count as skipped (the
+        // placeholder stays and the next boot retries) instead of a scary failure.
+        stats.skipped++;
+      }
       else {
         stats.failed++;
         stats.failures.push({ groupId, reason: r.reason });
