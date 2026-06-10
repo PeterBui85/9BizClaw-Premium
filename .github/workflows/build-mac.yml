@@ -1,9 +1,9 @@
 name: Build Mac .dmg
 
+# Tag pushes are handled ONLY by build-mac-release.yml ("Build Mac .dmg (Release)").
+# This workflow is manual-only (workflow_dispatch) for ad-hoc/non-release Mac builds —
+# otherwise a v* tag triggered BOTH and they raced on "Create Release" (Server Error).
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       release:
