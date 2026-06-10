@@ -242,3 +242,14 @@ The "message DB" answer was a pure LLM hallucination — no such UI existed.
 - **Reporter:** chị Nương (góp ý)
 - **Note:** Góp ý liên quan thư mục/đường dẫn ảnh AI đã tạo. v2.4.12 giữ lại toàn bộ ảnh trong `brand-assets/generated/` (không tự xóa) nên ảnh đã tạo luôn còn để tra/đăng lại.
 - **Status:** Acknowledged (gắn với fix giữ ảnh v2.4.12).
+
+## 2026-06-10 — Khách (máy Mac): file Excel thưởng/phạt hỏng, không mở được + lưu vào thư mục ẩn
+
+- **Reporter:** khách chạy bản Mac (yêu cầu bot tạo file Excel thưởng/phạt, lưu ra Desktop).
+- **Symptom:** File `Reward_Penalty.xlsx` 9bizclaw tạo bị corrupt, Excel không mở được. Bot báo đã lưu ở `/Users/mac/Library/Application Support/9bizclaw/media/Reward_Penalty.xlsx` và TỪ CHỐI ghi ra Desktop ("path không nằm trong thư mục được phép"). Câu trả lời tiếng Việt còn bị méo, lẫn ký tự Nga.
+- **Root cause (kiến trúc, mọi máy — lộ rõ trên Mac):**
+  1. `.xlsx` là binary (zip) nhưng bot ghi bằng tool ghi-TEXT (native `write_file` của OpenClaw, hoặc `/api/file/write` ghi `String(content)` utf-8). utf-8 bóp méo mọi byte ≥ 0x80 → vỡ zip → corrupt. Đường binary-safe duy nhất (`skill-runner` → `XLSX.writeFile`) KHÔNG được dùng.
+  2. Bot dùng native `write_file` (sandbox vào workspace=media) → file rơi vào `~/Library/.../media/` (Library ẩn mặc định trên Mac) và TỪ CHỐI Desktop, dù CEO Telegram có full quyền ghi mọi nơi qua skill-runner / `/api/file/write` path tuyệt đối.
+  3. (Phụ) Output tiếng Việt lỗi, lẫn tiếng Nga — chất lượng output model, theo dõi riêng.
+- **Fix (source, chưa build):** (a) Code guard `/api/file/write` chặn ghi `.xlsx/.xlsm/.xls/.docx/.pptx/.pdf` qua đường text + thêm `encoding:"base64"` binary-safe ([cron-api.js](../electron/lib/cron-api.js)); (b) AGENTS.md BẮT BUỘC tạo Office/PDF qua skill-runner `XLSX.writeFile(<absolute path>)` ghi thẳng tới vị trí CEO muốn (kể cả Desktop), cấm native `write_file`/text cho binary; (c) bump AGENTS 122→123 + workspace.js để deploy tới máy khách; (d) smoke assertion khoá guard.
+- **Status:** Fixing in source — chưa build/ship.

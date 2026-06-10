@@ -42,27 +42,33 @@ const _norm = (s) => sanitizeFact(s).toLowerCase().replace(/\s+/g, ' ').trim();
 
 function _renderBlock(facts, prev) {
   const mergeArr = (oldArr, neu) => {
-    const seen = new Set((oldArr || []).map(_norm).filter(Boolean));
-    const out = [...(oldArr || [])];
-    for (const x of (neu || [])) {
+    const seen = new Set();
+    const out = [];
+    // De-dup BOTH previous and new entries uniformly. This also collapses the legacy
+    // "## Tags" that _parsePrev folds into preferences, so a tag duplicating an
+    // existing preference is not stored twice (FIX B).
+    for (const x of [...(oldArr || []), ...(neu || [])]) {
       const c = sanitizeFact(x);
-      if (c && !seen.has(_norm(c))) { seen.add(_norm(c)); out.push(c); }
+      const k = _norm(c);
+      if (c && k && !seen.has(k)) { seen.add(k); out.push(c); }
     }
     return out.slice(-30);
   };
   const summary    = facts.summary != null ? sanitizeFact(facts.summary) : (prev.summary || '');
   const personality = mergeArr(prev.personality, facts.personality);
-  const preferences = mergeArr(prev.preferences, facts.preferences);
+  // Tags were a redundant keyword copy of facts already in Sở thích / Quyết định /
+  // frontmatter. Fold them into preferences (deduped) and drop the separate section.
+  // _parsePrev folds any legacy "## Tags" section into prev.preferences, so an old
+  // file is cleaned on its next merge.
+  const preferences = mergeArr(prev.preferences, [...(facts.preferences || []), ...(facts.tags || [])]);
   const decisions   = mergeArr(prev.decisions,   facts.decisions);
-  const tags        = mergeArr(prev.tags,        facts.tags);
   const li = (a) => a.length ? a.map(x => `- ${x}`).join('\n') : '(chưa có)';
   return (
     `${FACTS_START}\n` +
     `## Tóm tắt\n${summary || '(chưa có)'}\n\n` +
     `## Tính cách\n${li(personality)}\n\n` +
     `## Sở thích\n${li(preferences)}\n\n` +
-    `## Quyết định\n${li(decisions)}\n\n` +
-    `## Tags\n${li(tags)}\n` +
+    `## Quyết định\n${li(decisions)}\n` +
     `${FACTS_END}`
   );
 }
@@ -80,9 +86,10 @@ function _parsePrev(content) {
   return {
     summary: sm ? sm[1].trim().replace(/^\(chưa có\)$/, '') : '',
     personality: grabList('Tính cách'),
-    preferences: grabList('Sở thích'),
+    // Fold any legacy "## Tags" section into preferences (tags are no longer a
+    // separate store); de-dup happens in _renderBlock's mergeArr.
+    preferences: [...grabList('Sở thích'), ...grabList('Tags')],
     decisions:   grabList('Quyết định'),
-    tags:        grabList('Tags'),
   };
 }
 
@@ -270,13 +277,38 @@ const _NON_TEXT_TYPES = new Set(['sticker', 'image', 'video', 'voice', 'audio', 
 // Short acknowledgements that carry no facts worth extracting.
 const _STOP_SET = new Set(['ok', 'alo', 'ừ', 'dạ', 'vâng', 'okê', 'oki', 'hi', 'hello']);
 
+// Accent-fold for robust phrase matching (Zalo system text may arrive with or
+// without diacritics depending on client/locale).
+function _foldAccents(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+
+// Slash-commands and Zalo friendship-system events carry no extractable facts.
+// WHY a 2nd guard (modoro-zalo already drops friendship events): this poller reads
+// openzca's SQLite DIRECTLY, bypassing the plugin's inbound gate — so the noise
+// must be filtered again here before it reaches the LLM extractor.
+function _isSystemNoise(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  if (t.startsWith('/')) return true; // /tieptuc, /tamdung, …
+  const n = _foldAccents(t).toLowerCase();
+  if (/(vua|da)\s+ket\s+ban/.test(n)) return true;
+  if (/ket\s+ban\s+thanh\s+cong/.test(n)) return true;
+  if (/da\s+tro\s+thanh\s+ban\s+be/.test(n)) return true;
+  if (/(da\s+chap\s+nhan|da\s+dong\s+y).{0,20}(ket\s+ban|loi\s+moi)/.test(n)) return true;
+  return false;
+}
+
 // Returns false when a message should be skipped by the extractor.
-// Skips: non-text types, text too short (<=4 chars), pure acknowledgements.
+// Skips: non-text types, text too short (<=4 chars), pure acknowledgements,
+// slash-commands, and Zalo friendship-system events.
 function _isSubstantive(msg) {
   if (_NON_TEXT_TYPES.has(String(msg.msg_type || '').toLowerCase())) return false;
   const t = String(msg.content_text || '').trim();
   if (t.length <= 4) return false;
   if (_STOP_SET.has(t.toLowerCase())) return false;
+  if (_isSystemNoise(t)) return false;
   return true;
 }
 
@@ -428,6 +460,55 @@ function _setFrontmatterField(content, field, value) {
   return fm + rest;
 }
 
+// Append `oldName` to the frontmatter `aka:` inline list (deduped, capped, never
+// the current/new name). Pure function. Used by _setNameWithHistory.
+function _appendAka(content, oldName, newName) {
+  const open = content.indexOf('---');
+  if (open < 0) return content;
+  const close = content.indexOf('\n---', open + 3);
+  if (close < 0) return content;
+  const clean = (s) => String(s).replace(/[\r\n]+/g, ' ').replace(/[\[\]"'`\\<>{},]/g, '').trim();
+  const oldC = clean(oldName), newC = clean(newName);
+  if (!oldC) return content;
+
+  let fm = content.slice(open, close + 4);
+  const rest = content.slice(close + 4);
+
+  const m = fm.match(/^aka:\s*\[([^\]]*)\]\s*$/m);
+  let items = m ? m[1].split(',').map(clean).filter(Boolean) : [];
+  const seen = new Set(items.map(_norm));
+  if (!seen.has(_norm(oldC)) && _norm(oldC) !== _norm(newC)) items.push(oldC);
+  items = items.slice(-10); // keep the last 10 prior names
+  const line = `aka: [${items.join(', ')}]`;
+  fm = m ? fm.replace(/^aka:\s*\[[^\]]*\]\s*$/m, line)
+         : fm.replace(/(\n---\s*)$/, `\n${line}$1`);
+  return fm + rest;
+}
+
+// Set frontmatter `name:` to a newly-stated real name, but PRESERVE the prior name
+// in `aka:` when it differs — so a correction/rename is never silently lost (gap #1).
+// The latest name still wins for addressing (inbound.ts reads `name:` first). A
+// previous value that is just the seeded display name (== zaloName) or the scrubbed
+// brand placeholder is NOT recorded as aka — it was never a real stated name.
+function _setNameWithHistory(content, newName) {
+  const safeNew = String(newName || '').replace(/[\r\n]+/g, ' ').replace(/[\[\]"'`\\<>{}]/g, '').trim();
+  if (!safeNew) return content;
+  const open = content.indexOf('---');
+  const close = open >= 0 ? content.indexOf('\n---', open + 3) : -1;
+  if (open < 0 || close < 0) return _setFrontmatterField(content, 'name', safeNew);
+
+  const fm = content.slice(open, close + 4);
+  const cur  = (fm.match(/^name:\s*(.*)$/m)     || [, ''])[1].trim();
+  const zalo = (fm.match(/^zaloName:\s*(.*)$/m) || [, ''])[1].trim();
+
+  const isPlaceholder = !cur || _norm(cur) === _norm(zalo) || sanitizeFact(cur) === '';
+  let out = content;
+  if (!isPlaceholder && _norm(cur) !== _norm(safeNew)) {
+    out = _appendAka(out, cur, safeNew);
+  }
+  return _setFrontmatterField(out, 'name', safeNew);
+}
+
 // Return today's date string YYYY-MM-DD for a given epoch ms.
 function _today(now) {
   return new Date(now).toISOString().slice(0, 10);
@@ -570,7 +651,8 @@ async function tick({ now = Date.now(), profile = 'default', wsOverride } = {}) 
             // Overwrite frontmatter `name:` ONLY when the customer stated a real
             // name (extractor sets facts.name). zaloName: (display name) is left
             // untouched. Never blanks an existing name (facts.name absent → no-op).
-            if (facts.name) content = _setFrontmatterField(content, 'name', facts.name);
+            // A real prior name that differs is preserved in `aka:` (gap #1).
+            if (facts.name) content = _setNameWithHistory(content, facts.name);
             // Audit: record the sacred write
             try {
               require('./sacred-data').appendSacredAudit({ // SACRED-OK
@@ -853,7 +935,7 @@ module.exports = {
   sanitizeFact, mergeFacts, FACTS_START, FACTS_END, _parsePrev,
   readNewDmMessages, readNewGroupMessages, readAllGroupMessages, openDb, readSelfId,
   _isSubstantive, _buildExtractPrompt, extractForThread, _setCall9,
-  _compactFacts, _bumpFrontmatter, _setFrontmatterField, _needsEnable,
+  _compactFacts, _bumpFrontmatter, _setFrontmatterField, _setNameWithHistory, _needsEnable,
   tick, init, backfillGroupHistory, detectOwnerIdMismatch,
   _setOpenDb, // test hook: inject fixture db factory without needing Electron binary
 };

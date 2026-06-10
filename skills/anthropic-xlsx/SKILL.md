@@ -73,6 +73,8 @@ A user may ask you to create, edit, or analyze the contents of an .xlsx file. Yo
 
 For fresh Windows/macOS customer installs, do not ask the CEO to install Python packages. Create simple/professional XLSX files with the bundled vendor Node package `xlsx@0.18.5` when possible; `require("xlsx")` works when the code runs through the app skill runner, which injects bundled `NODE_PATH`. Do not use raw host exec `node -e` for ad-hoc XLSX scripts. Use pandas/openpyxl/LibreOffice only for advanced analysis, recalculation, or surgical edits after checking Python/package availability.
 
+**MANDATORY — write the binary file via the skill runner, never as text.** An `.xlsx` is a binary zip. Generate it through `POST /api/skill/test-exec {runtime:"node", code:"..."}` and call `XLSX.writeFile(wb, "<ABSOLUTE path>")` so SheetJS writes the real bytes. Use an **absolute** target path (the skill runner's temp cwd is wiped after the run; relative outputs vanish) — and write it directly to where the CEO wants it, e.g. `XLSX.writeFile(wb, "/Users/<user>/Desktop/Reward_Penalty.xlsx")`. NEVER reconstruct the file by hand and save it through `write_file` or `POST /api/file/write` as text/utf-8 — that mangles every byte ≥ 0x80 and produces a corrupt, unopenable file. The CEO Telegram session has full write access to any path (Desktop, Downloads, etc.); do not dump the file into a hidden workspace/`media/` folder and claim the destination is "not allowed".
+
 ## Important Requirements
 
 **LibreOffice Required for Formula Recalculation**: Do not assume LibreOffice is installed on customer machines. Use `scripts/recalc.py` only after checking LibreOffice/Python availability; otherwise create formulas and validate workbook structure without cached formula recalculation.

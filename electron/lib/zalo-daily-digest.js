@@ -97,6 +97,39 @@ function _collect(root, account, ids, sinceMs, untilMs) {
   return threads;
 }
 
+// Resolve the "current" owner account for a READ when the caller has no explicit
+// account AND no live openzca self id. WHY this is needed: the at-landing writer
+// (modoro-zalo plugin, history-capture.ts) archives messages WITHOUT openzca's
+// messages.sqlite — "the layer that fails on real machines". So the SQLite-backed
+// _currentZaloSelfId() can return '' while the on-disk archive is full and fresh
+// (incl. OFF-toggled friends). Returns the owner folder with the most recent write
+// across BOTH the DM and group archives = the account currently receiving messages,
+// or '' if no archive exists. Lives here because this module is the only one that
+// already imports both archives (no require cycle). Never merges accounts — returns
+// a single id; the caller keeps the per-account read invariant. mtime is the
+// freshness signal (append-only archive → mtime ≈ last message; the same signal
+// _readWindow already prunes on).
+function freshestAccount(ws) {
+  if (!ws) return '';
+  const roots = [archiveRoot(ws), groupArchiveRoot(ws)];
+  const accounts = new Set([...dm.listAccounts(ws), ...grp.listGroupAccounts(ws)]);
+  let best = '', bestTs = -1;
+  for (const acc of accounts) {
+    let ts = -1;
+    for (const root of roots) {
+      if (!root) continue;
+      let entries;
+      try { entries = fs.readdirSync(path.join(root, acc), { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
+        try { const m = fs.statSync(path.join(root, acc, e.name)).mtimeMs; if (m > ts) ts = m; } catch {}
+      }
+    }
+    if (ts > bestTs) { bestTs = ts; best = acc; }
+  }
+  return best;
+}
+
 function buildDigest(opts = {}) {
   const {
     ws, account, sinceMs, untilMs, groupsById = {},
@@ -210,7 +243,7 @@ function renderDigestForSummary(digest) {
 }
 
 module.exports = {
-  buildDigest, computeWindow, renderDigestForSummary,
+  buildDigest, computeWindow, renderDigestForSummary, freshestAccount,
   PER_THREAD_MSGS, PER_GROUP_PREVIEWS, GLOBAL_MSG_CAP, DAY_MS,
   _fence, _safeName, _threadFile, _readWindow, _collect,
   DM_OPEN, DM_CLOSE, GRP_OPEN, GRP_CLOSE,

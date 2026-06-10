@@ -82,19 +82,35 @@ function bad(name, why) { FAIL++; console.error('  FAIL', name, '|', why); }
   // 1 match is OK (in the explanatory comment); >1 means old pattern still in code.
   if (!matches || matches.length <= 1) ok('cron-api fail-open channel check eliminated');
   else bad('cron-api fail-open channel check eliminated', `${matches.length} occurrences still in code`);
+
+  // /api/file/write must refuse binary Office/PDF written as text (corrupt-file
+  // guard) and must offer a binary-safe base64 path. Without this, an agent that
+  // writes an .xlsx via the text path silently produces an unopenable file.
+  if (/BINARY_DOC_EXTS/.test(src) && /BINARY_FILE_TEXT_WRITE_BLOCKED/.test(src)) {
+    ok('cron-api /api/file/write blocks binary Office/PDF text-writes');
+  } else bad('cron-api /api/file/write blocks binary Office/PDF text-writes', 'guard missing — xlsx/docx/pptx/pdf corruptible via text write');
+  if (/encoding === 'base64'/.test(src) && /INVALID_BASE64/.test(src) && /Buffer\.from\(b64, 'base64'\)/.test(src)) {
+    ok('cron-api /api/file/write supports validated base64 (binary-safe path)');
+  } else bad('cron-api /api/file/write supports validated base64', 'no validated binary-safe write path — base64 must be charset+length+round-trip checked before decode');
 }
 
 // ── 3b. cron-agent auth: env-token delivery (full-authority fix, 2026-06-09) ──
-// A cron/CEO `agent` spawn is a dedicated one-shot process (never serves Zalo),
-// so it gets the Cron API token via env and the web_fetch patch authenticates
-// localhost calls from the env — independent of how OpenClaw threads --channel
-// or where the token file lives. Audit showed cron losing CEO authority via
-// channel=none / bad_token when relying on agentChannel + token-file delivery.
+// A cron/CEO `agent` spawn is a dedicated one-shot process, so it gets the Cron
+// API token via env and the web_fetch patch authenticates localhost calls from
+// the env. Audit showed cron losing CEO authority via channel=none / bad_token
+// when relying on agentChannel + token-file delivery. The gate is channel-scoped
+// (hardened 2026-06-10): only `agent --channel telegram` spawns inherit the token,
+// matching cron-api.js#_requireCeoTelegram's fail-closed allowlist doctrine.
 {
   const bootSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'boot.js'), 'utf-8');
-  if (/args\[0\] === 'agent'/.test(bootSrc) && /BIZCLAW_CRON_API_TOKEN/.test(bootSrc)) {
-    ok('boot.js injects BIZCLAW_CRON_API_TOKEN into agent spawns');
-  } else bad('boot.js injects BIZCLAW_CRON_API_TOKEN into agent spawns', 'env injection missing — cron loses CEO authority');
+  // Assert BOTH the env injection AND the channel allowlist gate. The gate must
+  // require '--channel telegram' (not the broad args[0]==='agent'), so a future
+  // `agent --channel zalo` spawn can never inherit CEO authority via this path.
+  const hasInject = /BIZCLAW_CRON_API_TOKEN/.test(bootSrc);
+  const hasChannelGate = /_agentChannel === 'telegram'/.test(bootSrc) && /args\[0\] === 'agent' && _agentChannel === 'telegram'/.test(bootSrc);
+  if (hasInject && hasChannelGate) {
+    ok('boot.js injects BIZCLAW_CRON_API_TOKEN only for agent --channel telegram');
+  } else bad('boot.js injects BIZCLAW_CRON_API_TOKEN only for agent --channel telegram', hasInject ? 'channel allowlist gate missing — token may leak to non-telegram agent spawns' : 'env injection missing — cron loses CEO authority');
 
   const vpSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'vendor-patches.js'), 'utf-8');
   if (/process\.env\.BIZCLAW_CRON_API_TOKEN/.test(vpSrc)) {

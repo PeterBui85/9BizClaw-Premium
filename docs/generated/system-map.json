@@ -3452,7 +3452,7 @@
   "largeSourceFiles": [
     {
       "path": "electron/lib/boot.js",
-      "bytes": 38412
+      "bytes": 38821
     },
     {
       "path": "electron/lib/brain-graph.js",
@@ -3464,7 +3464,7 @@
     },
     {
       "path": "electron/lib/channels.js",
-      "bytes": 101487
+      "bytes": 101922
     },
     {
       "path": "electron/lib/config.js",
@@ -3476,7 +3476,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 202330
+      "bytes": 207089
     },
     {
       "path": "electron/lib/cron.js",
@@ -3484,7 +3484,7 @@
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
-      "bytes": 37568
+      "bytes": 41754
     },
     {
       "path": "electron/lib/dashboard-ipc.js",
@@ -3544,7 +3544,7 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 50488
+      "bytes": 50679
     },
     {
       "path": "electron/lib/workspace.js",

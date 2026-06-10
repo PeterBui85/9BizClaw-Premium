@@ -4,6 +4,41 @@ Daily development log. Each entry records what was shipped, not how.
 
 ---
 
+## 2026-06-10 — Customer-memory hygiene (Zalo profile facts) — UNCOMMITTED, not built/shipped
+
+**CEO flagged a "weird" Zalo customer profile. Investigated to the raw openzca transcript + the actual stored `.md`: the facts were REAL (the CEO's own QA account, displayName "Bizclaw", self-stated "Minh/áo xanh/size M/ChatGPT/cơm gà/mua app"), recorded faithfully from a chaotic self-test. The earlier hypothesis "facts hallucinated/imported" was disproved. Fixed 3 genuine product warts in `customer-memory-updater.js` (TDD; full `npm run smoke` clean except expected map-staleness).**
+
+- **A — system-noise filter (NOT brand scrub):** `_isSubstantive` drops slash-commands (`/tieptuc`…) and Zalo friendship-system events ("Bạn vừa kết bạn với…") before they reach the LLM extractor — every real customer triggers the friend-event, and the poller reads openzca SQLite directly, bypassing the plugin's friendship gate (independent 2nd guard). **Brand deliberately NOT scrubbed** (CEO call): "9BizClaw" in a customer message ("muốn mua 9BizClaw") is a legit sales signal; "Bizclaw" was only the QA account's display name.
+- **B — killed triple-storage:** removed the redundant `## Tags` section; tags fold into `## Sở thích` (deduped). Legacy files with a `## Tags` block are folded on their next merge. Signal still reaches the bot (injected wholesale at inbound.ts), just not stored 3×.
+- **C — name-change keeps history (CEO's call):** when a customer states a new real name differing from the stored one, latest wins for addressing (`name:`) but the prior real name is preserved in an `aka:` list. Display-name seeds (== `zaloName`) / scrubbed brand are NOT recorded as aka.
+- **Confirmed NON-bugs / no-ops:** "bot output → customer fact" poisoning isn't real (extractor only reads customer-inbound msgs); relevance-filtering left OFF (CEO: personal facts aid VN relationship-selling).
+- **Tests:** +~20 assertions in `check-customer-memory-updater.js` (FIX A/B/C, incl. end-to-end tick T1d). Live install unaffected until a new build ships (CEO's call); existing profiles self-clean on next interaction.
+
+## 2026-06-10 — Custom Cron API coherence review + file-corruption fix
+
+**Customer (Mac) reported a corrupt `Reward_Penalty.xlsx`; root-caused to binary-written-as-text + an over-tight file sandbox. Fixed the corruption class and relaxed the file-API sandbox (Option B) after a 9-agent coherence review. Not built/shipped.**
+
+- **Corruption fix:** `/api/file/write` now blocks binary Office/PDF written as utf-8 text and accepts validated `encoding:"base64"`; Office/PDF must be created via skill-runner `XLSX.writeFile` (binary). AGENTS.md + anthropic-xlsx + google-workspace docs mandate the skill-runner path. Smoke assertions + a prompt-test (PF1: bot must not refuse a Desktop save) added.
+- **API coherence review (Workflow, 9 agents):** the file-route sandbox confined `/api/file/*` to the workspace, but `/api/skill/test-exec` runs arbitrary node on the **same CEO auth tier with no sandbox** — so the confinement was friction, not containment. **Decision (Option B):** removed `ALLOWED_DIRS` workspace-confinement; KEPT secret-file + control/executable-write denies + the cross-channel auth gate. CEO can now read/write data files anywhere; secrets/scripts stay routed correctly (test-exec).
+- **Test-infra:** `check-api-doc-drift` now strict — a documented route must resolve to a real handler (audit: 0 phantom across 228 docs); better-sqlite3 ABI noise removed from smoke.
+- **Caveat recorded** (`project_custom_api_security_model` memory): if test-exec is ever OS-sandboxed, re-add the file-API workspace allowlist — coupled decisions. test-exec hardening = open roadmap.
+- AGENTS template 122→123.
+
+## 2026-06-10
+
+**Boot-log bug batch + v2.4.12 respin (same version — CEO's call, no bump). 10 production-log bugs fixed; the published v2.4.12 release was rebuilt in place. AGENTS unchanged.**
+
+- **Root-caused from CEO production boot logs (3 parallel investigation agents; every finding verified against source before any fix).** Eight symptoms triaged real-bug vs benign — notably the Zalo `Đăng nhập thất bại` alarm was a stale 3-day-old log line, not a live failure; the "gateway exited unexpectedly during boot" was a normal intentional restart replaying old stderr.
+- **Fixes (surgical; karpathy-council + code-reviewer reviewed):**
+  - gateway: `getTelegramConfigWithRecovery` was never imported → ReferenceError every boot silently skipped session pre-warm → CEO's first message ate the full cold-start. One-line import.
+  - conflict-detector: npm.cmd conflict check broke for any Windows username containing a space (`C:\Users\Peter Bui`) — added an async `execNpm` cmd.exe shim mirroring the existing sync one.
+  - brain-graph: layout worker crashed every build on a duplicate `doc:` node (visibility subfolders were treated as docs) → random positions, ForceAtlas2 never ran. Now recurses `files/<public|noi-bo|ceo-only>/`, skips non-files, dedups by id; the dashboard doc-node detail panel now resolves from those subfolders too.
+  - knowledge: fs.watch vs 60s-poll race tripped `UNIQUE(filename,category)` + duplicate FTS rows → `INSERT OR IGNORE` + FTS gated on `changes>0`.
+  - gateway: per-run stderr truncation + boot-exit guard (intentional restart no longer logs as a crash) + zalo-boot-check timestamp-recency filter (no more stale false alarms).
+  - channels: `family:4` on Telegram calls to skip the broken-IPv6 ETIMEDOUT stall; zalo-plugin: cold-start group-history `no-stdout` counts as skipped not failed; quieter pre-warm ENOENT.
+- **Two self-inflicted regressions caught in review and fixed before publish:** the first brain-graph id format broke the dashboard slash-guard, and `INSERT OR IGNORE` would have appended duplicate FTS rows.
+- **Shipped:** respun the published **v2.4.12** in place (same version) — tag moved to the fix commit, Mac DMG CI rebuilt arm64+x64, GitHub release EXE + both DMGs all replaced. Accepted tradeoff: a same-version respin does NOT auto-update installed clients (`2.4.12 == 2.4.12`); only fresh installs get it. Drive upload handled by CEO (app's Drive auth lives under a different Windows profile, unreachable from the dev shell).
+
 ## 2026-06-09
 
 **Top-tier image-gen prompt-craft upgrade. App version 2.4.11 → 2.4.12 (CEO's call — this batch ships as v2.4.12); AGENTS 120→121. UNCOMMITTED — pending CEO review/build.**

@@ -27,6 +27,33 @@ let _cronApiPort = 20200;
 let _cronApiToken = '';
 const _fbPostApprovals = new Map();
 
+// Secret/sensitive file patterns a CEO turn must never read or write, regardless
+// of auth tier. Module-scope so BOTH the /api/file/* guard AND /api/exec (cat/type)
+// enforce the SAME list — previously the file API blocked these but `exec cat
+// ~/.ssh/id_rsa` slipped through, an inconsistency a prompt-injected CEO turn
+// could exploit to exfiltrate secrets the file API already refuses.
+const SENSITIVE_FILE_PATTERNS = [
+  /credentials\.json/i,
+  /\.p12$/i,
+  /\.pem$/i,
+  /\.key$/i,
+  /private.*key/i,
+  /\.env$/i,
+  /cron-api-token\.txt/i,
+  /rag-secret\.txt/i,
+  /bot.*token/i,
+  /secret/i,
+  /password/i,
+  /\.ssh\//i,
+  /\.gnupg\//i,
+  /client_secret\.json/i,
+  /agents\.md$/i,
+  /bootstrap\.md$/i,
+  /identity\.md$/i,
+  /soul\.md$/i,
+  /openclaw\.json$/i,
+];
+
 const FB_APPROVALS_MAX = 100;
 function cleanupFbPostApprovals(now = Date.now()) {
   for (const [nonce, entry] of _fbPostApprovals.entries()) {
@@ -268,6 +295,24 @@ function startCronApi() {
       try { return String(cmu.readSelfId(db, 'default') || ''); }
       finally { try { db.close(); } catch {} }
     } catch (e) { console.error(`[cron-api] ${label} selfId read failed:`, e?.message); return ''; }
+  }
+
+  // Owner account for a Zalo history READ when no explicit &account is given.
+  // Order: live openzca self id (messages.sqlite) → freshest archive folder.
+  // WHY the archive fallback: the at-landing writer (modoro-zalo plugin) archives
+  // messages WITHOUT messages.sqlite — "the layer that fails on real machines"
+  // (history-capture.ts). When that SQLite is absent, _currentZaloSelfId() returns
+  // '' yet the durable archive is full + fresh (incl. OFF-toggled friends), so
+  // without this the read endpoints 400 ("no current Zalo account") though the data
+  // is right there on disk. Never merges accounts: the freshest single folder = the
+  // live account; the CEO can still target another account via explicit &account.
+  function _resolveReadAccount(explicit, label) {
+    const fromParam = String(explicit || '').trim();
+    if (fromParam) return fromParam;
+    const fromDb = _currentZaloSelfId(label);
+    if (fromDb) return fromDb;
+    try { return require('./zalo-daily-digest').freshestAccount(getWorkspace()); }
+    catch (e) { console.error(`[cron-api] ${label} freshest-archive fallback failed:`, e?.message); return ''; }
   }
 
   function loadGroupsMap() {
@@ -877,38 +922,21 @@ function startCronApi() {
       }
     }
 
-    // Path sandboxing: block reads/writes to sensitive files regardless of token.
-    // Even CEO shouldn't accidentally leak these through bot context.
+    // File-route guards (CEO-tier only — Zalo is already locked out by the auth
+    // gate above). NOT a workspace jail: we block secret files + control/executable
+    // writes regardless of token, but the CEO may read/write ordinary data files
+    // anywhere (Desktop/Downloads/D:). See the note where ALLOWED_DIRS used to be.
     if (urlPath.startsWith('/api/file/') || urlPath === '/api/workspace/read') {
-      const SENSITIVE_PATTERNS = [
-        /credentials\.json/i,
-        /\.p12$/i,
-        /\.pem$/i,
-        /\.key$/i,
-        /private.*key/i,
-        /\.env$/i,
-        /cron-api-token\.txt/i,
-        /rag-secret\.txt/i,
-        /bot.*token/i,
-        /secret/i,
-        /password/i,
-        /\.ssh\//i,
-        /\.gnupg\//i,
-        /client_secret\.json/i,
-        /agents\.md$/i,
-        /bootstrap\.md$/i,
-        /identity\.md$/i,
-        /soul\.md$/i,
-        /openclaw\.json$/i,
-      ];
-      const wsDir = getWorkspace();
-      const ALLOWED_DIRS = wsDir ? [
-        path.join(wsDir, 'knowledge'),
-        path.join(wsDir, 'memory'),
-        path.join(wsDir, 'brand-assets'),
-        path.join(wsDir, 'logs'),
-        wsDir,  // workspace root (last — most general)
-      ] : [];
+      const SENSITIVE_PATTERNS = SENSITIVE_FILE_PATTERNS;
+      // No workspace-confinement here, by design (Option B, 2026-06-10): the CEO's
+      // file deliverables legitimately live on Desktop/Downloads/D:, and
+      // /api/skill/test-exec runs arbitrary node on the SAME CEO auth tier with full
+      // filesystem access — so confining the file API to the workspace only added
+      // friction (the bot refusing the CEO) without real containment (test-exec is
+      // the unsandboxed superset). We KEEP the two guards that still carry weight on
+      // this high-frequency door: SENSITIVE_PATTERNS (never leak secret files) and
+      // WRITE_BLOCK (don't drop control/executable files via the easy path). CAVEAT:
+      // if test-exec is ever OS-sandboxed, re-add a workspace allowlist here.
       // Write-target blocklist: control/executable files that would let a
       // confused-deputy (a prompt-injection surviving to a CEO-token turn) bypass
       // ALL the cron/exec guardrails by writing custom-crons.json directly, or drop
@@ -933,11 +961,6 @@ function startCronApi() {
         if (SENSITIVE_PATTERNS.some(p => p.test(lc))) {
           auditLog('file_api_blocked', { urlPath, path: lc, reason: 'sensitive path' });
           return jsonResp(res, 403, { error: 'SECURITY: access to sensitive file blocked. Path matched security filter.' });
-        }
-        const fileAbs = path.resolve(String(raw));
-        if (!ALLOWED_DIRS.some(dir => fileAbs === dir || fileAbs.startsWith(dir + path.sep))) {
-          auditLog('file_api_blocked', { urlPath, path: fileAbs, reason: 'outside workspace allowlist' });
-          return jsonResp(res, 403, { error: 'SECURITY: path must be inside the workspace directory. Access denied.' });
         }
         if (isWriteOp && WRITE_BLOCK.some(p => p.test(lc))) {
           auditLog('file_api_blocked', { urlPath, path: lc, reason: 'write to control/executable file' });
@@ -2153,11 +2176,42 @@ function startCronApi() {
     } else if (urlPath === '/api/file/write') {
       const filePath = String(params.path || '');
       const content = params.content;
+      const encoding = String(params.encoding || 'utf-8').toLowerCase();
       if (!filePath) return jsonResp(res, 400, { error: 'path required (absolute path)' });
       if (content === undefined || content === null) return jsonResp(res, 400, { error: 'content required' });
       const abs = path.resolve(filePath);
+      // Binary Office/PDF formats are zip/binary containers. Writing them as
+      // utf-8 text mangles every byte >= 0x80 and yields a corrupt, unopenable
+      // file. Force creation through the skill runner (XLSX.writeFile etc.), or
+      // accept pre-encoded base64. Enforced backstop for the AGENTS.md rule
+      // "Tạo file Office/PDF BẮT BUỘC qua skill-runner".
+      const BINARY_DOC_EXTS = ['.xlsx', '.xlsm', '.xls', '.docx', '.pptx', '.pdf'];
+      const _binExt = path.extname(abs).toLowerCase();
+      if (BINARY_DOC_EXTS.includes(_binExt) && encoding !== 'base64') {
+        auditLog('file_write_binary_blocked', { path: abs, ext: _binExt });
+        return jsonResp(res, 400, {
+          error: 'BINARY_FILE_TEXT_WRITE_BLOCKED: "' + _binExt + '" là định dạng nhị phân, ghi qua text/utf-8 sẽ hỏng file. Tạo file qua skill-runner: POST /api/skill/test-exec {runtime:"node", code:"const XLSX=require(\'xlsx\'); /* build wb */ XLSX.writeFile(wb, ' + JSON.stringify(abs) + ')"} — ghi thẳng tới path này (kể cả Desktop). Hoặc gửi lại body kèm encoding:"base64".',
+          hint: 'skills/anthropic-xlsx/SKILL.md',
+        });
+      }
       try {
         fs.mkdirSync(path.dirname(abs), { recursive: true });
+        if (encoding === 'base64') {
+          // Validate strictly first: Buffer.from(x,'base64') silently drops invalid
+          // chars and tolerates truncated input, so garbage/cut-off base64 would
+          // write a corrupt file with a 200 OK — the exact corruption class this
+          // endpoint exists to prevent. Require canonical base64 (charset + length
+          // multiple of 4 + lossless round-trip).
+          const b64 = String(content).replace(/\s+/g, '');
+          if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64) || b64.length % 4 !== 0 ||
+              Buffer.from(b64, 'base64').toString('base64') !== b64) {
+            return jsonResp(res, 400, { error: 'INVALID_BASE64: content is not valid/canonical base64 (bad characters, truncated, or non-canonical padding). Re-encode the full file as base64 and resend.' });
+          }
+          const buf = Buffer.from(b64, 'base64');
+          fs.writeFileSync(abs, buf);
+          console.log('[file-api] write(base64):', abs, '(' + buf.length + ' bytes)');
+          return jsonResp(res, 200, { success: true, path: abs, size: buf.length, encoding: 'base64' });
+        }
         fs.writeFileSync(abs, String(content), 'utf-8');
         console.log('[file-api] write:', abs, '(' + String(content).length + ' chars)');
         return jsonResp(res, 200, { success: true, path: abs, size: Buffer.byteLength(String(content), 'utf-8') });
@@ -2365,6 +2419,17 @@ function startCronApi() {
       if (SHELL_META.test(cmdTrimmed)) {
         auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'shell metacharacter detected' });
         return jsonResp(res, 403, { error: 'SECURITY: command contains blocked shell metacharacters.' });
+      }
+      // Secret-file guard for read commands: `cat`/`type` would otherwise exfiltrate
+      // files the /api/file/read endpoint already refuses (e.g. ~/.ssh/id_rsa,
+      // cron-api-token.txt). Same SENSITIVE_FILE_PATTERNS list, so the two doors
+      // agree. Only cat/type take a file argument worth screening here.
+      if (firstToken === 'cat' || firstToken === 'type') {
+        const lc = cmdTrimmed.toLowerCase().replace(/\\/g, '/');
+        if (SENSITIVE_FILE_PATTERNS.some(p => p.test(lc))) {
+          auditLog('exec_blocked', { command: cmd.slice(0, 200), reason: 'read of sensitive file via exec' });
+          return jsonResp(res, 403, { error: 'SECURITY: reading sensitive/secret files is not allowed.' });
+        }
       }
       auditLog('exec_run', { command: cmd.slice(0, 200), cwd: params.cwd || '(default)' });
       const timeoutMs = Math.min(parseInt(params.timeout) || 30000, 120000);
@@ -3124,9 +3189,8 @@ function startCronApi() {
         return jsonResp(res, 400, { error: 'senderId required (1-64 chars, [A-Za-z0-9_-])' });
       }
 
-      // account: explicit param wins; else current self id from openzca DB.
-      let account = String(params.account || '').trim();
-      if (!account) account = _currentZaloSelfId('/api/zalo/history');
+      // account: explicit param wins; else current self id; else freshest archive.
+      const account = _resolveReadAccount(params.account, '/api/zalo/history');
       if (!ID_RE.test(account)) {
         return jsonResp(res, 400, { error: 'no current Zalo account; pass &account=<ownerAccountId>' });
       }
@@ -3185,9 +3249,8 @@ function startCronApi() {
       }
       if (!groupName) groupName = byId[groupId] || '';
 
-      // account: explicit param wins; else current self id from openzca DB.
-      let account = String(params.account || '').trim();
-      if (!account) account = _currentZaloSelfId('/api/zalo/group/history');
+      // account: explicit param wins; else current self id; else freshest archive.
+      const account = _resolveReadAccount(params.account, '/api/zalo/group/history');
       if (!ID_RE.test(account)) {
         return jsonResp(res, 400, { error: 'no current Zalo account; pass &account=<ownerAccountId>' });
       }
@@ -3222,9 +3285,8 @@ function startCronApi() {
       const ws = getWorkspace();
       if (!ws) return jsonResp(res, 500, { error: 'no workspace' });
 
-      // account: explicit param wins; else current self id from openzca DB.
-      let account = String(params.account || '').trim();
-      if (!account) account = _currentZaloSelfId('/api/zalo/history/digest');
+      // account: explicit param wins; else current self id; else freshest archive.
+      const account = _resolveReadAccount(params.account, '/api/zalo/history/digest');
       if (!ID_RE.test(account)) {
         return jsonResp(res, 400, { error: 'no current Zalo account; pass &account=<ownerAccountId>' });
       }

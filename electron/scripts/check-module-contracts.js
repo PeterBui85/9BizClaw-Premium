@@ -110,35 +110,62 @@ if (undefinedExports === 0) pass('all exports defined');
 console.log('\n[Infinite recursion test]');
 const GETTER_PATTERNS = /^(get|find|resolve|load|read|compute|detect)/;
 const SAFE_TIMEOUT = 500; // ms
+// Zero-arg getters that open native SQLite (better-sqlite3, compiled for Electron
+// ABI). Calling them under system node triggers a NODE_MODULE_VERSION mismatch that
+// is expected and harmless here — but it floods smoke with errors AND makes the DB
+// fall back to disk-only, masking real failures. Skip them loudly; DB correctness is
+// verified under the real runtime via verify-runtime.js (ELECTRON_RUN_AS_NODE=1).
+const NATIVE_DB_GETTERS = new Set(['getDocumentsDb', 'getMemoryDb']);
 
-for (const [file, mod] of Object.entries(loadedModules)) {
-  if (!mod || typeof mod !== 'object') continue;
-  for (const [key, val] of Object.entries(mod)) {
-    if (typeof val !== 'function') continue;
-    if (!GETTER_PATTERNS.test(key)) continue;
-    if (val.length > 0) continue; // skip functions with required params
-
-    try {
-      const start = Date.now();
-      const timer = setTimeout(() => {
-        fail(file + '.' + key + '() — took >500ms (possible infinite recursion)');
-      }, SAFE_TIMEOUT);
-
-      val();
-      clearTimeout(timer);
-
-      const elapsed = Date.now() - start;
-      if (elapsed > 200) {
-        warn(file + '.' + key + '() took ' + elapsed + 'ms (slow)');
+// Calling these getters (or getters that open the DB internally) under system node
+// makes the DB helpers log a NODE_MODULE_VERSION / better-sqlite3 failure — expected
+// here (Electron-ABI binary), but it floods smoke and masks real errors. Filter ONLY
+// that exact ABI noise during this loop; every other console.error still passes
+// through. DB correctness is verified under the real runtime by verify-runtime.js.
+const _origError = console.error;
+let _abiNoise = 0;
+console.error = (...a) => {
+  const s = a.map(x => (x && x.message) || String(x)).join(' ');
+  if (/NODE_MODULE_VERSION|better[_-]?sqlite3/i.test(s)) { _abiNoise++; return; }
+  _origError(...a);
+};
+try {
+  for (const [file, mod] of Object.entries(loadedModules)) {
+    if (!mod || typeof mod !== 'object') continue;
+    for (const [key, val] of Object.entries(mod)) {
+      if (typeof val !== 'function') continue;
+      if (!GETTER_PATTERNS.test(key)) continue;
+      if (val.length > 0) continue; // skip functions with required params
+      if (NATIVE_DB_GETTERS.has(key)) {
+        console.log('  SKIP  ' + file + '.' + key + '() — native SQLite getter (Electron ABI only; not callable under system node)');
+        continue;
       }
-    } catch (e) {
-      if (e.message && e.message.includes('Maximum call stack')) {
-        fail(file + '.' + key + '() INFINITE RECURSION detected');
+
+      try {
+        const start = Date.now();
+        const timer = setTimeout(() => {
+          fail(file + '.' + key + '() — took >500ms (possible infinite recursion)');
+        }, SAFE_TIMEOUT);
+
+        val();
+        clearTimeout(timer);
+
+        const elapsed = Date.now() - start;
+        if (elapsed > 200) {
+          warn(file + '.' + key + '() took ' + elapsed + 'ms (slow)');
+        }
+      } catch (e) {
+        if (e.message && e.message.includes('Maximum call stack')) {
+          fail(file + '.' + key + '() INFINITE RECURSION detected');
+        }
+        // Other errors are OK (may need runtime context)
       }
-      // Other errors are OK (may need runtime context)
     }
   }
+} finally {
+  console.error = _origError;
 }
+if (_abiNoise) console.log('  SKIP  ' + _abiNoise + ' native-SQLite ABI error(s) suppressed (Electron-ABI binary under system node; DB verified by verify-runtime.js)');
 pass('zero-arg getters checked');
 
 // ============================================

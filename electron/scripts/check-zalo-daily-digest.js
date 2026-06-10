@@ -236,4 +236,27 @@ function writeGroup(ws, account, gid, lines) {
   console.log('journal render breakout-neutralization OK');
 }
 
+// --- freshestAccount: read-side owner resolution when openzca SQLite is absent ---
+// The at-landing writer archives WITHOUT messages.sqlite ("the layer that fails on
+// real machines"), so _currentZaloSelfId can be '' while the archive is full. This
+// picks the freshest owner folder across DM + group archives = the live account.
+{
+  const ws = tmpWs();
+  writeDm(ws, 'acctOld', 'c1', [{ msgId: 'o', ts: 1000, senderId: 'c1', senderName: 'A', dir: 'in', msgType: 'text', text: 'cũ' }]);
+  writeDm(ws, 'acctNew', 'c2', [{ msgId: 'n', ts: 2000, senderId: 'c2', senderName: 'B', dir: 'in', msgType: 'text', text: 'mới' }]);
+  // group-only account (no DM folder) — must still be considered via the group archive
+  writeGroup(ws, 'acctGrp', 'g1', [{ msgId: 'g', ts: 3000, senderId: 'm', senderName: 'M', dir: 'in', msgType: 'text', text: 'nhóm' }]);
+  // Pin mtimes deterministically: acctGrp newest.
+  fs.utimesSync(path.join(ws, 'zalo-history', 'acctOld', 'c1.jsonl'), new Date(1000), new Date(1000));
+  fs.utimesSync(path.join(ws, 'zalo-history', 'acctNew', 'c2.jsonl'), new Date(5000), new Date(5000));
+  fs.utimesSync(path.join(ws, 'zalo-group-history', 'acctGrp', 'g1.jsonl'), new Date(9000), new Date(9000));
+  assert.strictEqual(d.freshestAccount(ws), 'acctGrp', 'freshest by mtime across DM + group archives');
+
+  assert.strictEqual(d.freshestAccount(null), '', 'no ws → empty');
+  assert.strictEqual(d.freshestAccount(tmpWs()), '', 'empty archive → empty');
+  assert.strictEqual(d.freshestAccount(path.join(ws, 'nope')), '', 'missing dir → empty (no throw)');
+  fs.rmSync(ws, { recursive: true, force: true });
+  console.log('freshestAccount OK');
+}
+
 console.log('check-zalo-daily-digest: ALL OK');

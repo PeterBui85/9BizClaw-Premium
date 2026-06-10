@@ -4,11 +4,13 @@
 const {
   readText,
   walkFiles,
-  collectApiRoutes,
+  collectApiHandlerRoutes,
   collectApiRefsFromText
 } = require('./lib/architecture-map');
 
-const routeSet = new Set(collectApiRoutes().map(r => r.path));
+// STRICT: a documented route "exists" only if a real handler dispatches it —
+// not if it merely appears as a string literal in a comment/error message.
+const { exact: handlerRoutes, prefixes: handlerPrefixes } = collectApiHandlerRoutes();
 const failures = [];
 const warnings = [];
 
@@ -20,10 +22,13 @@ const files = [
 ];
 
 function routeExists(refPath) {
-  if (routeSet.has(refPath)) return true;
-  if (refPath.endsWith('/*')) {
-    const prefix = refPath.slice(0, -1);
-    return [...routeSet].some(route => route.startsWith(prefix));
+  const clean = refPath.replace(/\/+$/, '');
+  if (handlerRoutes.has(clean)) return true;
+  if (handlerPrefixes.some(pre => clean.startsWith(pre))) return true;
+  if (clean.endsWith('/*')) {
+    const prefix = clean.slice(0, -1);
+    return [...handlerRoutes].some(route => route.startsWith(prefix)) ||
+      handlerPrefixes.some(pre => pre.startsWith(prefix) || prefix.startsWith(pre));
   }
   return false;
 }
@@ -57,5 +62,5 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`[api-doc-drift] PASS ${files.length} docs/skill file(s), ${routeSet.size} implemented route(s)`);
+console.log(`[api-doc-drift] PASS ${files.length} docs/skill file(s), ${handlerRoutes.size} handler route(s) + ${handlerPrefixes.length} prefix(es)`);
 for (const w of warnings.slice(0, 10)) console.warn('[api-doc-drift] WARN ' + w);

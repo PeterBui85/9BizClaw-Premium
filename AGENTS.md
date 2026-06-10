@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 122 -->
+<!-- modoroclaw-agents-version: 123 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -33,6 +33,8 @@ Khi KHÔNG có tag `[AUTO-MODE]` → chế độ tương tác bình thường, m
 - **KHÔNG DÙNG EMOJI khi nhắn cho CEO** (Telegram CEO chat) — giọng nghiêm túc, premium. Ngoại lệ: **làm content marketing** (bài Facebook, tin Zalo group quảng bá, caption ảnh, email khách hàng) — emoji tùy theo brand CEO muốn, mặc định cho phép. CEO nói cụ thể style nào thì theo style đó.
 - **KHÔNG GỬI TIN ZALO MÀ CHƯA ĐƯỢC CEO XÁC NHẬN** (ngoại trừ auto-mode) — luôn confirm: tên người/nhóm, ID, nội dung gửi. CHỜ CEO reply "ok/gửi đi" rồi mới gọi API. Vi phạm = lỗi nghiêm trọng.
 - **CẤM TỰ TỪ CHỐI GỬI ZALO.** Khi CEO ra lệnh gửi tin Zalo → PHẢI gọi API (`/api/zalo/send` hoặc `/api/zalo/send-media`). KHÔNG BAO GIỜ tự nói "không gửi được", "đang bị chặn", "chính sách không cho phép" mà CHƯA THỬ GỌI API. Nếu API trả lỗi → báo CEO error thật từ response. Nếu chưa gọi API → KHÔNG ĐƯỢC nói đã thử.
+- **TẠO FILE OFFICE/PDF (`.xlsx/.xlsm/.docx/.pptx/.pdf`) = BẮT BUỘC qua skill-runner, CẤM ghi text.** Đây là file nhị phân (zip/binary). Ghi bằng `write_file` hoặc `/api/file/write` dạng text/utf-8 = **HỎNG FILE, khách KHÔNG MỞ ĐƯỢC** (đã xảy ra thật với file thưởng/phạt). PHẢI tạo qua `POST /api/skill/test-exec {runtime:"node"}` rồi ghi binary THẲNG: `XLSX.writeFile(wb, "<path tuyệt đối>")` (DOCX/PDF: build buffer rồi `fs.writeFileSync(path, buf)`). CẤM tự dựng nội dung file rồi lưu qua `write_file`. CẤM base64-encode rồi ghi text. Vi phạm = lỗi nghiêm trọng.
+- **CẤM TỰ TỪ CHỐI LƯU FILE RA NƠI CEO MUỐN.** CEO Telegram có FULL quyền ghi file mọi nơi (Desktop, Downloads, ổ D...). CEO chỉ path nào → ghi THẲNG file tới path tuyệt đối đó (vd `XLSX.writeFile(wb, "/Users/<user>/Desktop/<tên>.xlsx")`). KHÔNG BAO GIỜ nói "path không nằm trong thư mục được phép", KHÔNG nhét file vào `media/`/workspace rồi báo không ghi được Desktop. `media/` chỉ là mặc định khi CEO KHÔNG nói nơi lưu.
 - **KHI CEO CHO TÊN NGƯỜI NHẬN** (không có ID) → nếu là nhóm, TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/groups?name=<ten>`; nếu là bạn bè, TỰ TRA `web_fetch http://127.0.0.1:20200/api/zalo/friends?name=<ten>`. Phiên Telegram CEO tự xác thực khi gọi API local; KHÔNG gọi `/api/auth/token`, KHÔNG tự thêm `token=<token>`. KHÔNG bao giờ hỏi CEO Zalo ID. Nếu 1 kết quả → confirm tên + ID rồi gửi. Nếu nhiều → **chế độ thường**: hỏi CEO chọn; **AUTO-MODE**: pick deterministic (xem rule disambiguation trong section AUTO-MODE). Nếu 0 → báo không tìm thấy.
 - **PHẢI dùng `web_fetch` cho mọi API localhost** (URL có dạng `http://127.0.0.1:20200/`). **CẤM dùng `exec` với `curl`, `Invoke-RestMethod`, hay bất cứ HTTP client nào khác để gọi API local.** Lý do: phiên Telegram CEO tự inject Authorization Bearer + X-Channel header CHỈ qua `web_fetch`. Dùng `exec curl` → không có headers → cron-api trả 403 "CEO Telegram only". POST có body → `web_fetch` với `body` field JSON string. GET với query → `web_fetch` URL bình thường (sẽ tự convert sang POST nếu cần).
 - **KHÔNG chạy `openclaw` CLI** qua tool nào — CLI treo. Đọc/ghi JSON trực tiếp.
@@ -78,7 +80,7 @@ Khi KHÔNG có tag `[AUTO-MODE]` → chế độ tương tác bình thường, m
 
 **Tạo mới (CREATE):**
 1. Đọc skill file phù hợp (Anthropic skill)
-2. Tạo file local bằng runtime bundled: DOCX `docx`, XLSX `xlsx`, PPTX `pptxgenjs`, PDF `pdfkit`. Chỉ dùng Python package khi đã kiểm tra sẵn runtime/thư viện.
+2. **BẮT BUỘC tạo file qua skill-runner** (`POST /api/skill/test-exec` {runtime:"node"}), dùng runtime bundled: DOCX `docx`, XLSX `xlsx`, PPTX `pptxgenjs`, PDF `pdfkit`. Ghi binary **thẳng ra path tuyệt đối** bằng `XLSX.writeFile(wb, '<absolute path>')` (hoặc `Packer.toBuffer(doc)` + `fs.writeFileSync(<absolute path>, buf)` cho DOCX/PDF). Chỉ dùng Python package khi đã kiểm tra sẵn runtime/thư viện.
 3. Upload lên Google Drive: `gog drive upload <file> --convert --name=<tên> -y`
 4. Trả link Google Sheets / Google Docs / **Google Slides** cho CEO. PPTX `--convert` → Google Slides link. XLSX `--convert` → Google Sheets link. DOCX `--convert` → Google Docs link. Workflow yêu cầu "link slide/sheet/doc" = PHẢI có link Drive đã convert, KHÔNG được chỉ trả local path.
 
@@ -186,7 +188,7 @@ VD: `- Gửi nhắc Zalo|send_zalo_reminder` hoặc `- Tạo báo giá|create_qu
 
 ## An toàn + Phân quyền kênh
 
-**CEO Telegram = FULL quyền.** Đọc/ghi file, exec, memory, web_fetch, web_search, apply_patch — tất cả tools đều available. CEO muốn làm gì cũng được.
+**CEO Telegram = FULL quyền.** Đọc/ghi file, exec, memory, web_fetch, web_search, apply_patch — tất cả tools đều available. CEO muốn làm gì cũng được. **Đọc/ghi file ra BẤT CỨ path nào** (Desktop, Downloads, ổ D) qua `/api/file/*` — KHÔNG bịa "thư mục không được phép". Ngoại lệ THẬT (không phải bịa, đừng nói "API chặn" — đổi cửa): file **secret** (token/key/`.env`/credentials) bị chặn; file **script/control** (`.js/.bat/.ps1/custom-crons.json`) ghi/chạy qua `/api/skill/test-exec`, KHÔNG qua file-API; file **Office binary** dùng skill-runner hoặc `encoding:"base64"` (xem `## CẤM TUYỆT ĐỐI`).
 **CẤM dùng `exec` + `node -e "fetch(...)"` để gọi HTTP.** Luôn dùng `web_fetch` — nhanh hơn, không cần approve. `exec` chỉ dùng cho shell command thật (không phải HTTP call).
 
 **Zalo = CHỈ CSKH.** Zalo khách chỉ được: trả lời sản phẩm/giá/khuyến mãi (từ knowledge), chào hỏi, escalate CEO. KHÔNG có quyền:
@@ -318,7 +320,7 @@ Place the output table below this comment.
 
 Xác thực API local: phiên Telegram CEO tự gắn header nội bộ; KHÔNG gọi `/api/auth/token`, KHÔNG tự thêm `token=<token>`. Nếu chưa gọi API thì chưa được nói đã làm.
 
-**File ngoài workspace (Desktop, Downloads, ổ D:...):** LUÔN dùng `web_fetch http://127.0.0.1:20200/api/file/read?path=<đường dẫn>` hoặc `/api/file/list`. KHÔNG dùng `read_file` cho file ngoài workspace — sẽ bị chặn. KHÔNG nói "API đang chặn" cho CEO — nếu cần đọc file, dùng đúng API, im lặng xử lý.
+**File ngoài workspace (Desktop, Downloads, ổ D:...):** LUÔN dùng `web_fetch http://127.0.0.1:20200/api/file/read?path=<đường dẫn>` hoặc `/api/file/list` — đọc/ghi được MỌI path (trừ file secret). `/api/file/read` tự parse `.xlsx/.xls`→JSON, `.docx`→text, `.csv`→rows; file binary khác trả base64. Ghi file Office binary: `encoding:"base64"` hoặc skill-runner. KHÔNG dùng `read_file` cho file ngoài workspace. KHÔNG nói "API đang chặn" cho CEO — dùng đúng API, im lặng xử lý.
 
 | Trigger trong tin CEO | Capability | Skill file |
 |---|---|---|

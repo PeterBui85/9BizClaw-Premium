@@ -73,6 +73,28 @@ function collectApiRoutes() {
   return [...routeMap.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
 
+// Strict handler routes: ONLY real dispatch sites (`urlPath === '/api/...'` or
+// `urlPath.startsWith('/api/...')`), not every `/api/` string literal (which would
+// also count routes mentioned only in comments or error messages). Used by the
+// doc-drift guard so a documented route with no real handler is caught — a route
+// that was renamed/deleted but still referenced in AGENTS.md/skills must FAIL.
+function collectApiHandlerRoutes() {
+  const exact = new Set();
+  const prefixes = new Set();
+  const add = (text, mapFn) => {
+    for (const m of (text || '').matchAll(/urlPath\s*===\s*['"`](\/[A-Za-z0-9_./-]+)['"`]/g)) {
+      const r = mapFn(m[1]).replace(/\/+$/, '');
+      if (r.startsWith('/api/')) exact.add(r);
+    }
+  };
+  const cron = readText('electron/lib/cron-api.js');
+  add(cron, p => p);
+  for (const m of (cron || '').matchAll(/urlPath\.startsWith\(\s*['"`](\/api\/[A-Za-z0-9_./-]+)['"`]/g)) prefixes.add(m[1]);
+  add(readText('electron/lib/fb-schedule.js'), p => p);
+  add(readText('electron/lib/google-routes.js'), p => '/api/google' + p);
+  return { exact, prefixes: [...prefixes] };
+}
+
 function collectIpcHandlers() {
   const files = walkFiles('electron/lib', { exts: ['.js'] });
   const handlers = [];
@@ -194,6 +216,7 @@ module.exports = {
   readText,
   walkFiles,
   collectApiRoutes,
+  collectApiHandlerRoutes,
   collectApiRefsFromText,
   buildSystemMap,
   renderSystemMapText
