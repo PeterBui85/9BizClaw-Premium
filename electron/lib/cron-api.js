@@ -52,6 +52,9 @@ const SENSITIVE_FILE_PATTERNS = [
   /identity\.md$/i,
   /soul\.md$/i,
   /openclaw\.json$/i,
+  /\.aws\//i,         // AWS credentials/config dir (~/.aws/credentials has no .json ext)
+  /\.npmrc$/i,        // npm auth tokens
+  /\.netrc$/i,        // classic credential store
 ];
 
 const FB_APPROVALS_MAX = 100;
