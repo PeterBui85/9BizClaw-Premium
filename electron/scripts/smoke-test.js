@@ -550,7 +550,11 @@ const openzcaCli = findOpenzcaCli();
 if (!openzcaCli) {
   warn('openzca CLI', 'not found in vendor or user-global. Skipped.');
 } else {
-  const r = spawnSync('node', [openzcaCli, '--help'], { encoding: 'utf-8', timeout: 10000 });
+  // 30s, not 10s: spawning this CLI standalone is ~0.4s, but a 10s budget
+  // flakes with ETIMEDOUT when smoke runs amid a loaded build (local build:win
+  // and macos-14 release CI). The guard only needs the CLI to be spawnable and
+  // emit help — a wide timeout still catches a genuinely broken/hung CLI.
+  const r = spawnSync('node', [openzcaCli, '--help'], { encoding: 'utf-8', timeout: 30000 });
   if (r.error) {
     fail('openzca --help spawn', r.error.message);
   } else if (r.status !== 0) {
