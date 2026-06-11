@@ -118,19 +118,19 @@ function gogEnv() {
   // Keyring backend is PLATFORM-SPECIFIC. Set AFTER the process.env spread so an
   // inherited GOG_KEYRING_* can never override the platform choice below.
   if (process.platform === 'win32') {
-    // Windows MUST use Credential Manager, never the file backend: gog's file
-    // keyring names each item "token:default:<email>" and the colons are illegal
-    // in Windows filenames, so every token read fails with "The filename,
-    // directory name, or volume label syntax is incorrect" — breaking Google
-    // entirely (reproduced on a customer Windows machine, 2026-06). Credential
-    // Manager has no per-binary ACL on Windows, so the unsigned re-downloaded gog
-    // binary reads it fine (the macOS Keychain problem below does not apply here).
-    env.GOG_KEYRING_BACKEND = 'wincred';
+    // Windows: 'auto' (gog picks Credential Manager). gog v0.13.0 accepts ONLY
+    // auto|keychain|file, and on Windows only 'auto' works — verified against the
+    // real binary: 'file' uses colon-delimited filenames illegal on Windows
+    // ("The filename ... syntax is incorrect"), 'keychain' is "not available",
+    // and 'wincred' is rejected as an invalid backend. Credential Manager has no
+    // per-binary ACL, so the unsigned re-downloaded gog reads it fine (the macOS
+    // Keychain problem below does not apply here). No passphrase needed for auto.
+    env.GOG_KEYRING_BACKEND = 'auto';
   } else {
     // macOS: the unsigned re-downloaded gog binary loses Keychain ACL access, so
-    // force the encrypted file store. Linux: file store is headless-safe (no
-    // secret-service). Colons in filenames are legal on both. See
-    // getGogKeyringPassword().
+    // force the encrypted file store ('auto'/'keychain' would pick Keychain and
+    // re-break it). Linux: file store is headless-safe (no secret-service).
+    // Colons in filenames are legal on both. See getGogKeyringPassword().
     env.GOG_KEYRING_BACKEND = 'file';
     env.GOG_KEYRING_PASSWORD = getGogKeyringPassword();
   }
