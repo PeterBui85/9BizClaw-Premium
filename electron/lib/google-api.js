@@ -65,16 +65,19 @@ function saveGogAccount(email) {
 }
 
 // gog stores the OAuth refresh token in an OS keyring by default — Windows
-// Credential Manager / macOS Keychain. That path is unreliable for our
+// Credential Manager / macOS Keychain. On macOS that path is unreliable for our
 // runtime-downloaded, unsigned gog binary: macOS ties keychain ACLs to the
 // exact binary, so a re-downloaded/updated gog loses access and EVERY read
 // fails with "secret not found in keyring (refresh token missing)" — even
 // after revoking the Google grant or clearing the stale item (confirmed on a
-// customer Mac, 2026-06). We force gog's encrypted *file* backend instead, so
-// the token lives in <userData>/gog/keyring under our control: no OS keyring,
-// no per-binary ACL, identical on Windows and macOS.
+// customer Mac, 2026-06). So on macOS (and Linux) we force gog's encrypted
+// *file* backend. WINDOWS is the opposite: its Credential Manager has no
+// per-binary ACL (the unsigned binary reads it fine), AND the file backend is
+// unusable there because gog names items "token:default:<email>" with colons,
+// which are illegal in Windows filenames. So Windows keeps Credential Manager;
+// only non-Windows uses the file backend below. See gogEnv().
 //
-// The file backend needs a stable passphrase. We generate one per install and
+// The file backend (macOS/Linux) needs a stable passphrase. We generate one per install and
 // store it beside the token. Anti-feature: it is NOT protected by the OS
 // keyring (avoiding that is the whole point); at-rest security reduces to
 // filesystem permissions — same posture as the FB-token plaintext fallback in
@@ -105,18 +108,33 @@ function getGogKeyringPassword() {
 function gogEnv() {
   const configDir = getGogConfigDir();
   try { fs.mkdirSync(configDir, { recursive: true }); } catch {}
-  return {
+  const env = {
     ...process.env,
     GOG_CONFIG_DIR: configDir,
     GOG_JSON: '1',
     GOG_TIMEZONE: 'Asia/Ho_Chi_Minh',
     GOG_ACCOUNT: getGogAccount(),
-    // Force the encrypted file token store — never the OS keyring. Set AFTER
-    // the process.env spread so an inherited GOG_KEYRING_* can never override
-    // it and reintroduce the keychain failure. See getGogKeyringPassword().
-    GOG_KEYRING_BACKEND: 'file',
-    GOG_KEYRING_PASSWORD: getGogKeyringPassword(),
   };
+  // Keyring backend is PLATFORM-SPECIFIC. Set AFTER the process.env spread so an
+  // inherited GOG_KEYRING_* can never override the platform choice below.
+  if (process.platform === 'win32') {
+    // Windows MUST use Credential Manager, never the file backend: gog's file
+    // keyring names each item "token:default:<email>" and the colons are illegal
+    // in Windows filenames, so every token read fails with "The filename,
+    // directory name, or volume label syntax is incorrect" — breaking Google
+    // entirely (reproduced on a customer Windows machine, 2026-06). Credential
+    // Manager has no per-binary ACL on Windows, so the unsigned re-downloaded gog
+    // binary reads it fine (the macOS Keychain problem below does not apply here).
+    env.GOG_KEYRING_BACKEND = 'wincred';
+  } else {
+    // macOS: the unsigned re-downloaded gog binary loses Keychain ACL access, so
+    // force the encrypted file store. Linux: file store is headless-safe (no
+    // secret-service). Colons in filenames are legal on both. See
+    // getGogKeyringPassword().
+    env.GOG_KEYRING_BACKEND = 'file';
+    env.GOG_KEYRING_PASSWORD = getGogKeyringPassword();
+  }
+  return env;
 }
 
 async function gogExec(args, timeoutMs = 15000) {

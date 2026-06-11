@@ -107,28 +107,35 @@ check('apps script is included in health probe', () => {
   assert(apiSrc.includes("probeService('appscript'"));
 });
 
-// Why these two matter: the OS keyring path (Keychain/Credential Manager) is
-// unreliable for our unsigned, runtime-downloaded gog binary and fails with
-// "secret not found in keyring (refresh token missing)" on customer machines.
-// The fix forces gog's encrypted file token store and forces the Google consent
-// screen so a refresh token is always issued. If either regresses, Google
-// Workspace connect silently breaks again.
-check('gog uses its encrypted file token store, never the OS keyring', () => {
+// Why this matters: the keyring backend is PLATFORM-SPECIFIC and getting it wrong
+// silently breaks Google. macOS/Linux must force gog's encrypted file store
+// (the unsigned, runtime-downloaded gog binary loses Keychain ACL access ->
+// "secret not found in keyring"). Windows must NOT use the file store: gog names
+// items "token:default:<email>" and the colons are illegal in Windows filenames,
+// so every token read fails ("The filename ... syntax is incorrect"). Windows
+// uses Credential Manager (wincred), which has no per-binary ACL.
+check('gog keyring backend is correct per platform (Windows=wincred, else file)', () => {
   const env = googleApi._test.gogEnv();
-  assert.strictEqual(env.GOG_KEYRING_BACKEND, 'file',
-    'gogEnv must force GOG_KEYRING_BACKEND=file (OS keyring is unreliable for the unsigned gog binary)');
-  assert(typeof env.GOG_KEYRING_PASSWORD === 'string' && env.GOG_KEYRING_PASSWORD.length >= 32,
-    'file backend needs a stable, non-empty passphrase or it errors with no TTY');
-  assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_PASSWORD, env.GOG_KEYRING_PASSWORD,
-    'passphrase must be stable across calls, else gog cannot decrypt what an earlier run wrote');
-  // Ordering invariant (behavioral): the forced keys are set AFTER the
+  if (process.platform === 'win32') {
+    assert.strictEqual(env.GOG_KEYRING_BACKEND, 'wincred',
+      'Windows must use Credential Manager; the file backend\'s colon filenames break every token read');
+  } else {
+    assert.strictEqual(env.GOG_KEYRING_BACKEND, 'file',
+      'macOS/Linux must force GOG_KEYRING_BACKEND=file (OS keyring is unreliable for the unsigned gog binary)');
+    assert(typeof env.GOG_KEYRING_PASSWORD === 'string' && env.GOG_KEYRING_PASSWORD.length >= 32,
+      'file backend needs a stable, non-empty passphrase or it errors with no TTY');
+    assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_PASSWORD, env.GOG_KEYRING_PASSWORD,
+      'passphrase must be stable across calls, else gog cannot decrypt what an earlier run wrote');
+  }
+  // Ordering invariant (behavioral): the backend key is set AFTER the
   // ...process.env spread, so a stale inherited GOG_KEYRING_BACKEND — e.g. a
-  // customer-applied workaround — must NOT override our file backend.
+  // customer-applied workaround — must NOT override our platform choice.
+  const want = process.platform === 'win32' ? 'wincred' : 'file';
   const prev = process.env.GOG_KEYRING_BACKEND;
-  process.env.GOG_KEYRING_BACKEND = 'wincred';
+  process.env.GOG_KEYRING_BACKEND = want === 'file' ? 'wincred' : 'file';
   try {
-    assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_BACKEND, 'file',
-      'inherited GOG_KEYRING_BACKEND must not override the forced file backend');
+    assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_BACKEND, want,
+      'inherited GOG_KEYRING_BACKEND must not override the platform choice');
   } finally {
     if (prev === undefined) delete process.env.GOG_KEYRING_BACKEND;
     else process.env.GOG_KEYRING_BACKEND = prev;

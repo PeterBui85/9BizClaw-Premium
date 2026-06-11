@@ -17,6 +17,13 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 - **Khách phải làm:** cài v2.4.13, mở app → upload lại JSON (nếu cần) → **Connect** → duyệt. Không cần thao tác keychain/CLI nữa.
 - **Status:** FIXED in source (v2.4.13), pending Mac DMG rebuild + ship.
 
+### 2026-06-11 follow-up — file backend ÉP TRÊN WINDOWS làm HỎNG Google trên Windows (regression)
+- **Symptom (Windows, máy CEO):** sau khi cài build có fix trên, mọi lệnh Calendar/Google báo: `calendar options: token source: get token ... read token: open C:\Users\…\gogcli\keyring\token:default:<email>: The filename, directory name, or volume label syntax is incorrect.`
+- **Root cause:** file backend của gog đặt tên item là `token:default:<email>` — có **dấu hai chấm**, mà Windows **cấm `:` trong tên file**. Ép `GOG_KEYRING_BACKEND=file` cho MỌI nền tảng (giả định "giống nhau Win/Mac" ở trên là SAI) → Windows không đọc/ghi được token → Google chết hẳn. Mac không dính vì macOS cho phép `:` trong tên file. Tái hiện trực tiếp trên gog v0.13.0: `file` → lỗi colon; mặc định (wincred) → chạy bình thường, trả về danh sách lịch.
+- **Fix (`electron/lib/google-api.js`, gogEnv):** chọn backend theo nền tảng — **Windows → `wincred`** (Credential Manager; Windows không khoá ACL theo binary nên gog unsigned đọc được; không có dấu `:`), **macOS/Linux → `file`** (giữ nguyên fix Keychain ở trên). Guard `check-google-workspace-audit-fixes.js` cập nhật theo nền tảng.
+- **Lưu ý:** dòng "Token nằm ở `<userData>/gog/keyring`… đã nằm trong backup" ở trên KHÔNG đúng — file keyring thực tế nằm ở thư mục mặc định của gog (`…/gogcli/keyring`), GOG_CONFIG_DIR không đổi vị trí keyring. Backup keyring (Mac) là việc cần rà lại sau, ngoài phạm vi fix này.
+- **Status:** FIXED in source, pending rebuild + live re-test trên Windows trước khi publish.
+
 ---
 
 ## 2026-06-01 — Mac: app không bật lên (bị kill ngay sau boot)
