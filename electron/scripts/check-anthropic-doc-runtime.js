@@ -13,6 +13,8 @@ const vendorTar = path.join(electronRoot, 'vendor-bundle.tar');
 let fail = 0;
 function ok(name) { console.log('  PASS', name); }
 function bad(name, why) { fail++; console.error('  FAIL', name, '-', why); }
+// Escape regex metachars so scoped pkg names like "@protobi/exceljs" match literally.
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'); }
 
 function read(rel) {
   return fs.readFileSync(path.join(root, rel), 'utf8');
@@ -172,8 +174,8 @@ if (/replace\(\s*\/\^\\uFEFF\/\s*,\s*['"`]['"`]\s*\)/.test(pptxGuide)) {
 }
 
 const prebuildVendor = read('electron/scripts/prebuild-vendor.js');
-for (const pkg of ['docx', 'pptxgenjs', 'xlsx', 'pdfkit']) {
-  if (new RegExp(`${pkg}@`).test(prebuildVendor) || new RegExp(`${pkg}['"]\\s*:`).test(prebuildVendor)) {
+for (const pkg of ['docx', 'pptxgenjs', 'xlsx', '@protobi/exceljs', 'pdfkit']) {
+  if (new RegExp(`${escapeRe(pkg)}@`).test(prebuildVendor) || new RegExp(`${escapeRe(pkg)}['"]\\s*:`).test(prebuildVendor)) {
     ok(`prebuild-vendor pins ${pkg}`);
   } else {
     bad(`prebuild-vendor pins ${pkg}`, 'not pinned in vendor install list');
@@ -210,8 +212,8 @@ if (/step-python/.test(splashHtml) &&
   bad('splash UI shows Python helper runtime step', 'splash.html does not render/handle python installation progress');
 }
 
-for (const pkg of ['docx', 'pptxgenjs', 'xlsx', 'pdfkit']) {
-  if (new RegExp(`name:\\s*['"]${pkg}['"]`).test(runtimeInstaller)) {
+for (const pkg of ['docx', 'pptxgenjs', 'xlsx', '@protobi/exceljs', 'pdfkit']) {
+  if (new RegExp(`name:\\s*['"]${escapeRe(pkg)}['"]`).test(runtimeInstaller)) {
     ok(`runtime installer installs ${pkg} on clean machines`);
   } else {
     bad(`runtime installer installs ${pkg} on clean machines`, `${pkg} missing from runtime PACKAGES`);
@@ -220,7 +222,7 @@ for (const pkg of ['docx', 'pptxgenjs', 'xlsx', 'pdfkit']) {
 
 const entries = tarEntries();
 if (entries.size > 0) {
-  for (const pkg of ['docx', 'pptxgenjs', 'xlsx', 'pdfkit']) {
+  for (const pkg of ['docx', 'pptxgenjs', 'xlsx', '@protobi/exceljs', 'pdfkit']) {
     const entry = `vendor/node_modules/${pkg}/package.json`;
     if (entries.has(entry)) ok(`vendor bundle contains ${pkg}`);
     else bad(`vendor bundle contains ${pkg}`, `${entry} missing`);

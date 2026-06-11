@@ -9,9 +9,9 @@
     },
     "vendorBundle": {
       "path": "electron/vendor-bundle.tar",
-      "baselineBytes": 2151279616,
+      "baselineBytes": 2227391488,
       "maxGrowthBytes": 75000000,
-      "maxBytes": 2250000000
+      "maxBytes": 2320000000
     },
     "embeddingModel": {
       "path": "electron/vendor/models/Xenova/multilingual-e5-small",

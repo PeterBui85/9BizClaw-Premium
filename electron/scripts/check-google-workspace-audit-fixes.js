@@ -107,6 +107,57 @@ check('apps script is included in health probe', () => {
   assert(apiSrc.includes("probeService('appscript'"));
 });
 
+// Why this matters: the keyring backend is PLATFORM-SPECIFIC and getting it wrong
+// silently breaks Google. gog v0.13.0 accepts ONLY auto|keychain|file (any other
+// value errors "invalid keyring backend"). macOS/Linux must force 'file' (the
+// unsigned, runtime-downloaded gog binary loses Keychain ACL access -> "secret
+// not found in keyring"; 'auto'/'keychain' would pick the broken Keychain).
+// Windows must use 'auto' (gog picks Credential Manager): 'file' uses colon
+// filenames illegal on Windows, 'keychain' is "not available", 'wincred' is an
+// invalid value. All verified against the real binary, 2026-06.
+const GOG_VALID_BACKENDS = ['auto', 'keychain', 'file'];
+check('gog keyring backend is valid + correct per platform (Windows=auto, else file)', () => {
+  const env = googleApi._test.gogEnv();
+  // Hard allowlist: catches invalid values gog would reject at runtime (e.g. the
+  // 'wincred' regression). gogEnv must never emit a value outside this set.
+  assert(GOG_VALID_BACKENDS.includes(env.GOG_KEYRING_BACKEND),
+    `GOG_KEYRING_BACKEND must be one of ${GOG_VALID_BACKENDS.join('|')} (gog rejects anything else); got "${env.GOG_KEYRING_BACKEND}"`);
+  if (process.platform === 'win32') {
+    assert.strictEqual(env.GOG_KEYRING_BACKEND, 'auto',
+      'Windows must use auto (Credential Manager); file=colon filenames, keychain=unavailable, wincred=invalid');
+  } else {
+    assert.strictEqual(env.GOG_KEYRING_BACKEND, 'file',
+      'macOS/Linux must force GOG_KEYRING_BACKEND=file (Keychain is unreliable for the unsigned gog binary)');
+    assert(typeof env.GOG_KEYRING_PASSWORD === 'string' && env.GOG_KEYRING_PASSWORD.length >= 32,
+      'file backend needs a stable, non-empty passphrase or it errors with no TTY');
+    assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_PASSWORD, env.GOG_KEYRING_PASSWORD,
+      'passphrase must be stable across calls, else gog cannot decrypt what an earlier run wrote');
+  }
+  // Ordering invariant (behavioral): the backend key is set AFTER the
+  // ...process.env spread, so a stale inherited GOG_KEYRING_BACKEND — e.g. a
+  // customer-applied workaround — must NOT override our platform choice.
+  const want = process.platform === 'win32' ? 'auto' : 'file';
+  const prev = process.env.GOG_KEYRING_BACKEND;
+  process.env.GOG_KEYRING_BACKEND = want === 'file' ? 'auto' : 'file';
+  try {
+    assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_BACKEND, want,
+      'inherited GOG_KEYRING_BACKEND must not override the platform choice');
+  } finally {
+    if (prev === undefined) delete process.env.GOG_KEYRING_BACKEND;
+    else process.env.GOG_KEYRING_BACKEND = prev;
+  }
+});
+
+check('gog connect forces consent so Google issues a refresh token', () => {
+  const args = googleApi._test.buildAuthAddArgs('ceo@example.com');
+  assert.strictEqual(args[0], 'auth');
+  assert.strictEqual(args[1], 'add');
+  assert.strictEqual(args[2], 'ceo@example.com');
+  assert(args.includes('--services'), 'auth add must request the wrapped services');
+  assert(args.includes('--force-consent'),
+    'auth add must pass --force-consent or a reconnect returns no refresh token');
+});
+
 check('release build paths run smoke before electron-builder', () => {
   assert.strictEqual(packageJson.scripts['build:win'], 'node scripts/build-win.js');
   assert(packageJson.scripts['build:mac'].includes('smoke'));

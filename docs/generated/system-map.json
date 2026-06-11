@@ -3552,7 +3552,7 @@
     },
     {
       "path": "electron/lib/cron-api.js",
-      "bytes": 208466
+      "bytes": 208647
     },
     {
       "path": "electron/lib/cron.js",
@@ -3580,7 +3580,7 @@
     },
     {
       "path": "electron/lib/google-api.js",
-      "bytes": 40982
+      "bytes": 45172
     },
     {
       "path": "electron/lib/google-routes.js",
@@ -3608,7 +3608,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 87327
+      "bytes": 87708
     },
     {
       "path": "electron/lib/sacred-data.js",
@@ -3620,7 +3620,7 @@
     },
     {
       "path": "electron/lib/vendor-patches.js",
-      "bytes": 50679
+      "bytes": 52393
     },
     {
       "path": "electron/lib/workspace.js",
@@ -3636,7 +3636,7 @@
     },
     {
       "path": "electron/ui/dashboard.html",
-      "bytes": 707372
+      "bytes": 705224
     },
     {
       "path": "electron/ui/preview-telegram-redesign.html",

@@ -71,9 +71,50 @@ A user may ask you to create, edit, or analyze the contents of an .xlsx file. Yo
 
 ## 9BizClaw clean-install runtime
 
-For fresh Windows/macOS customer installs, do not ask the CEO to install Python packages. Create simple/professional XLSX files with the bundled vendor Node package `xlsx@0.18.5` when possible; `require("xlsx")` works when the code runs through the app skill runner, which injects bundled `NODE_PATH`. Do not use raw host exec `node -e` for ad-hoc XLSX scripts. Use pandas/openpyxl/LibreOffice only for advanced analysis, recalculation, or surgical edits after checking Python/package availability.
+For fresh Windows/macOS customer installs, do not ask the CEO to install Python packages. Both Node libraries below are bundled in the app vendor and resolve via the skill runner's injected `NODE_PATH` — always available, no install needed. Do NOT use raw host exec `node -e` (it misses bundled `NODE_PATH`); always run through `POST /api/skill/test-exec {runtime:"node", code:"..."}`.
 
-**MANDATORY — write the binary file via the skill runner, never as text.** An `.xlsx` is a binary zip. Generate it through `POST /api/skill/test-exec {runtime:"node", code:"..."}` and call `XLSX.writeFile(wb, "<ABSOLUTE path>")` so SheetJS writes the real bytes. Use an **absolute** target path (the skill runner's temp cwd is wiped after the run; relative outputs vanish) — and write it directly to where the CEO wants it, e.g. `XLSX.writeFile(wb, "/Users/<user>/Desktop/Reward_Penalty.xlsx")`. NEVER reconstruct the file by hand and save it through `write_file` or `POST /api/file/write` as text/utf-8 — that mangles every byte ≥ 0x80 and produces a corrupt, unopenable file. The CEO Telegram session has full write access to any path (Desktop, Downloads, etc.); do not dump the file into a hidden workspace/`media/` folder and claim the destination is "not allowed".
+**Two libraries, two jobs — pick the right one:**
+
+| Need | Library | Why |
+|---|---|---|
+| **CREATE a file the CEO will SEE** (any styling: bold headers, fills, borders, colors, currency/number formats, frozen panes, merged cells, column widths) | **`@protobi/exceljs`** | `xlsx@0.18.5` is SheetJS **Community** — it SILENTLY DROPS all cell styling (fills/bold/borders become nothing). Proven by round-trip test. exceljs writes real styled OOXML. |
+| **READ / parse / analyze** an existing sheet (extract data, no styling output) | `xlsx@0.18.5` | Fast, fine for reads. |
+
+**DEFAULT to `@protobi/exceljs` for any created file.** The CEO's bar is "đẹp" — a plain unstyled sheet is a fail. Only fall back to `xlsx` for pure data dumps the CEO explicitly says don't need formatting.
+
+**MANDATORY — write the binary via the skill runner to an ABSOLUTE path, never as text.** An `.xlsx` is a binary zip; never reconstruct it by hand or save via `write_file`/`/api/file/write` as text/utf-8 (that corrupts every byte ≥ 0x80 → unopenable file). Use the library's binary writer directly to an absolute path: exceljs `await wb.xlsx.writeFile("<absolute path>")` for styled files, or `XLSX.writeFile(wb, "<absolute path>")` if you only used the read-oriented `xlsx` lib. The skill runner's temp cwd is wiped after the run, so relative outputs vanish — write directly to where the CEO wants it (Desktop/Downloads/D:). The CEO Telegram session has full write access to any path; do not dump into a hidden `media/` folder and claim "not allowed".
+
+**Beautiful-xlsx recipe (exceljs) — use this shape:**
+```js
+const ExcelJS = require('@protobi/exceljs');
+const wb = new ExcelJS.Workbook();
+const ws = wb.addWorksheet('Báo cáo');
+ws.columns = [
+  { header: 'Ngày', key: 'ngay', width: 16 },
+  { header: 'Số đơn', key: 'sodon', width: 12 },
+  { header: 'Doanh thu', key: 'dt', width: 18 },
+];
+const head = ws.getRow(1);
+head.eachCell(c => {
+  c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12, name: 'Arial' };
+  c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } };
+  c.alignment = { horizontal: 'center', vertical: 'middle' };
+  c.border = { bottom: { style: 'thin', color: { argb: 'FF000000' } } };
+});
+head.height = 22;
+ws.getColumn('dt').numFmt = '#,##0" đ"';      // set column format BEFORE addRow
+ws.addRow({ ngay: '2026-06-11', sodon: 12, dt: 4200000 });
+ws.views = [{ state: 'frozen', ySplit: 1 }];   // freeze header
+await wb.xlsx.writeFile('C:\\Users\\<user>\\Desktop\\BaoCao.xlsx'); // ABSOLUTE path
+```
+Overshoot the formatting: banded rows, totals in bold, conditional fills for highs/lows, sensible number formats, frozen header — make it look like a designer made it. (`await wb.xlsx.writeFile(...)` is async; the skill runner runs the code as a real `.js` file under Node 22, which supports top-level await — but if you ever hit an await error, wrap the body in `(async () => { ... })()`.)
+
+**LIMITATION — exceljs CANNOT create native Excel charts** (`ws.addChart` does not exist; no pure-JS xlsx library can write a native chart object). If the CEO wants a chart:
+- **Best (recommended):** create the styled sheet → upload with `--convert` → then add a NATIVE Google chart via the Sheets API (`POST` a `batchUpdate` with `addChart` to the converted spreadsheet). The CEO shares Google links, so a live editable Google chart is the right deliverable.
+- **Alternative:** render the chart as a PNG (a charting lib / QuickChart) and embed it with `ws.addImage` — but that is a static picture, not an editable chart.
+Do NOT promise an "Excel chart" and silently ship a chartless sheet — say which form you produced.
+
+Use pandas/openpyxl/LibreOffice ONLY for advanced analysis / formula recalculation / surgical edits, and only AFTER checking Python availability (it is NOT guaranteed on fresh installs — the embedded Python ships no pip, so `import openpyxl` will fail unless system Python has it).
 
 ## Important Requirements
 

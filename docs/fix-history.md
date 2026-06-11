@@ -4,6 +4,13 @@ Historical bug post-mortems, the license-system reference, and legacy behavioral
 
 ---
 
+### Beautiful XLSX via @protobi/exceljs (2026-06-11)
+**Vấn đề:** file Excel bot tạo luôn TRƠN (không bold/màu/viền) dù prompt yêu cầu. Root cause: vendor bundle dùng `xlsx@0.18.5` = SheetJS **Community**, KHÔNG ghi được cell style (paywall của SheetJS-Pro). Chứng minh bằng round-trip: set bold+fill → đọc lại `patternType:none`. openpyxl (Python) ghi style được nhưng embedded Python của app KHÔNG có pip → `import openpyxl` fail trên máy fresh → bế tắc.
+**Fix:** thêm **`@protobi/exceljs@4.4.0-protobi.10`** (fork được maintain, pure-JS, KHÔNG native binding → không cần electron-rebuild) làm styling engine. Wire vào CẢ HAI đường cài: `prebuild-vendor.js` (PINNED_DOCUMENT_VENDOR_VERSIONS + cache-key + npm install array) và `runtime-installer.js` (PINNED_DOCUMENT_VERSIONS + PACKAGES) + `vendor/package.json`. Guard `check-anthropic-doc-runtime.js` thêm `@protobi/exceljs` vào 3 vòng kiểm + helper `escapeRe` cho tên scoped. Skill `anthropic-xlsx/SKILL.md` + AGENTS.md mặc định styled xlsx = exceljs (`await wb.xlsx.writeFile`), giữ `xlsx` chỉ để ĐỌC (knowledge.js dùng cho RAG ingest). AGENTS version bump 124. `verify-capabilities.js` thêm round-trip styled-write test.
+**Chi phí:** +76MB vendor bundle (exceljs kéo 77 transitive dep: archiver/jszip/unzipper/fast-csv/saxes...). `build-size-budget.json` vendor baseline reset 2151→2227MB, maxBytes 2250→2320MB.
+**Giới hạn (anti-feature):** exceljs KHÔNG tạo được chart Excel native (`ws.addChart` không tồn tại — không lib pure-JS nào ghi được). Chart native phải làm qua Google Sheets API `addChart` SAU khi convert (CEO share link Google nên đây là cách đúng). Hoặc render chart thành ảnh + `ws.addImage` (ảnh tĩnh).
+**Verify:** offline round-trip từ vendor đã build → style persist; live skill-runner trên app đã cài → `STYLED_OK exit 0`; bot tạo file end-to-end → CEO xác nhận "quá đẹp", gog --convert → Google Sheet giữ style. docx/pptx/pdf đã dùng đúng lib pure-JS (docx/pptxgenjs/pdfkit) — không đổi.
+
 ### Dashboard Tổng quan redesign (v2.2.9) — actually useful for CEO
 **Trước:** 2 cards tĩnh — channel status (đã có ở sidebar) + lệnh nhanh tĩnh (đã có ở tab Telegram). CEO mở vào không học được gì.
 **Sau:** 4 section trả lời 4 câu hỏi cụ thể CEO cần biết:

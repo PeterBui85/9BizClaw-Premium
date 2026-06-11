@@ -529,9 +529,16 @@ function ensureOpenzcaFriendEventFix(vendorDir, workspaceDir) {
       return;
     }
     let content = fs.readFileSync(cliPath, 'utf-8');
-    if (content.includes('9BIZCLAW FRIEND-EVENT PATCH')) {
-      console.log('[openzca-friend-event] already patched');
+    // V2 gates the type-2 auto-accept on the stranger policy: when "ignore" (UI "Bỏ qua"),
+    // the bot must NOT auto-accept incoming friend requests. V1 accepted unconditionally.
+    if (content.includes('9BIZCLAW FRIEND-EVENT PATCH V2')) {
+      console.log('[openzca-friend-event] already patched (V2)');
       return;
+    }
+    // Re-patch over an older V1 block (no policy gate): strip it, then inject V2.
+    if (content.includes('9BIZCLAW FRIEND-EVENT PATCH')) {
+      content = content.replace(/[ \t]*\/\/ === 9BIZCLAW FRIEND-EVENT PATCH ===[\s\S]*?\/\/ === END 9BIZCLAW FRIEND-EVENT PATCH ===\r?\n?/, '');
+      console.log('[openzca-friend-event] stripped old V1 patch, re-injecting V2');
     }
 
     const anchor = 'api.listener.on("message", async (message) => {';
@@ -548,7 +555,7 @@ function ensureOpenzcaFriendEventFix(vendorDir, workspaceDir) {
       return;
     }
 
-    const injection = `// === 9BIZCLAW FRIEND-EVENT PATCH ===
+    const injection = `// === 9BIZCLAW FRIEND-EVENT PATCH V2 ===
         api.listener.on("friend_event", async (event) => {
           try {
             if (!event || typeof event.type !== "number") return;
@@ -556,11 +563,26 @@ function ensureOpenzcaFriendEventFix(vendorDir, workspaceDir) {
             if (event.type === 2) {
               const fromUid = event.data && event.data.fromUid;
               if (fromUid) {
+                // Stranger policy gate: "ignore" (UI "Bỏ qua") => do NOT auto-accept. Default fail-safe = ignore.
+                let __faPolicy = "ignore";
                 try {
-                  await api.acceptFriendRequest(fromUid);
-                  console.log("[friend_event] auto-accepted friend request from " + fromUid);
-                } catch (acceptErr) {
-                  console.error("[friend_event] auto-accept failed:", acceptErr && acceptErr.message ? acceptErr.message : String(acceptErr));
+                  const __faFs = require("fs"), __faPath = require("path"), __faOs = require("os");
+                  const __faCands = [];
+                  if (process.env['9BIZ_WORKSPACE']) __faCands.push(__faPath.join(process.env['9BIZ_WORKSPACE'], "zalo-stranger-policy.json"));
+                  __faCands.push(__faPath.join(__faOs.homedir(), ".openclaw", "workspace", "zalo-stranger-policy.json"));
+                  for (const __faPp of __faCands) {
+                    try { if (__faFs.existsSync(__faPp)) { const __faRaw = JSON.parse(__faFs.readFileSync(__faPp, "utf-8")); if (__faRaw && __faRaw.mode) { __faPolicy = String(__faRaw.mode); break; } } } catch (e) {}
+                  }
+                } catch (e) {}
+                if (__faPolicy === "ignore") {
+                  console.log("[friend_event] policy=ignore (Bỏ qua) — NOT auto-accepting friend request from " + fromUid);
+                } else {
+                  try {
+                    await api.acceptFriendRequest(fromUid);
+                    console.log("[friend_event] auto-accepted friend request from " + fromUid);
+                  } catch (acceptErr) {
+                    console.error("[friend_event] auto-accept failed:", acceptErr && acceptErr.message ? acceptErr.message : String(acceptErr));
+                  }
                 }
               }
             }
@@ -632,7 +654,7 @@ function ensureOpenzcaFriendEventFix(vendorDir, workspaceDir) {
             console.error("[friend_event] handler error:", handlerErr && handlerErr.message ? handlerErr.message : String(handlerErr));
           }
         });
-        // === END 9BIZCLAW FRIEND-EVENT PATCH ===
+        // === END 9BIZCLAW FRIEND-EVENT PATCH V2 ===
         `;
 
     const patched = content.slice(0, anchorIdx) + injection + content.slice(anchorIdx);

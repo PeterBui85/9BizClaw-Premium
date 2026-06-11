@@ -61,7 +61,15 @@ const PINNED_VENDOR_VERSIONS = {
 const PINNED_DOCUMENT_VENDOR_VERSIONS = {
   docx: '9.6.1',
   pptxgenjs: '4.0.1',
+  // xlsx@0.18.5 = SheetJS Community: fast reads/parsing, but CANNOT write cell
+  // styles (fills/bold/borders are silently stripped — a SheetJS-Pro paywall,
+  // proven by round-trip test). Kept ONLY for reading/parsing existing sheets.
   xlsx: '0.18.5',
+  // @protobi/exceljs = maintained fork of exceljs (pure-JS, no native bindings,
+  // no electron-rebuild). This is the styling engine: fills, bold, borders,
+  // fonts, number formats, frozen panes, merged cells. Use for ANY xlsx the CEO
+  // will see. Scoped name → installs to node_modules/@protobi/exceljs.
+  '@protobi/exceljs': '4.4.0-protobi.10',
   pdfkit: '0.18.0',
 };
 
@@ -149,6 +157,7 @@ function getVendorBundleVersion(platform, arch) {
     `docx-${PINNED_DOCUMENT_VENDOR_VERSIONS.docx}`,
     `pptxgenjs-${PINNED_DOCUMENT_VENDOR_VERSIONS.pptxgenjs}`,
     `xlsx-${PINNED_DOCUMENT_VENDOR_VERSIONS.xlsx}`,
+    `exceljs-${PINNED_DOCUMENT_VENDOR_VERSIONS['@protobi/exceljs']}`,
     `pdfkit-${PINNED_DOCUMENT_VENDOR_VERSIONS.pdfkit}`,
     `gog-${GOG_VERSION}`,
     `${platform}-${arch}`,
@@ -574,6 +583,7 @@ function npmInstallVendorPackages() {
     `docx@${PINNED_DOCUMENT_VENDOR_VERSIONS.docx}`,
     `pptxgenjs@${PINNED_DOCUMENT_VENDOR_VERSIONS.pptxgenjs}`,
     `xlsx@${PINNED_DOCUMENT_VENDOR_VERSIONS.xlsx}`,
+    `@protobi/exceljs@${PINNED_DOCUMENT_VENDOR_VERSIONS['@protobi/exceljs']}`,
     `pdfkit@${PINNED_DOCUMENT_VENDOR_VERSIONS.pdfkit}`,
   ];
 

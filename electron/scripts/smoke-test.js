@@ -550,7 +550,18 @@ const openzcaCli = findOpenzcaCli();
 if (!openzcaCli) {
   warn('openzca CLI', 'not found in vendor or user-global. Skipped.');
 } else {
-  const r = spawnSync('node', [openzcaCli, '--help'], { encoding: 'utf-8', timeout: 10000 });
+  // Retry on spawn timeout. The FIRST exec of a freshly-extracted vendor cli.js
+  // triggers a cold Windows Defender scan of the 324K file (and prebuild just
+  // wrote ~145MB of vendor files, so Defender is also scanning the whole tree).
+  // That cold scan can exceed any fixed budget under build I/O — measured ~7.5s
+  // standalone, >30s amid a build. A killed attempt still warms the scan, so a
+  // later attempt runs warm (~0.3s). A genuinely broken/hung CLI times out on
+  // EVERY attempt, so the guard still catches real breakage.
+  let r;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    r = spawnSync('node', [openzcaCli, '--help'], { encoding: 'utf-8', timeout: 25000 });
+    if (!r.error) break;
+  }
   if (r.error) {
     fail('openzca --help spawn', r.error.message);
   } else if (r.status !== 0) {

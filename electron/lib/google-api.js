@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const attachmentSecurity = require('./attachment-security');
 
@@ -63,16 +64,77 @@ function saveGogAccount(email) {
   fs.writeFileSync(path.join(dir, 'account.json'), JSON.stringify({ email }));
 }
 
+// gog stores the OAuth refresh token in an OS keyring by default — Windows
+// Credential Manager / macOS Keychain. On macOS that path is unreliable for our
+// runtime-downloaded, unsigned gog binary: macOS ties keychain ACLs to the
+// exact binary, so a re-downloaded/updated gog loses access and EVERY read
+// fails with "secret not found in keyring (refresh token missing)" — even
+// after revoking the Google grant or clearing the stale item (confirmed on a
+// customer Mac, 2026-06). So on macOS (and Linux) we force gog's encrypted
+// *file* backend. WINDOWS is the opposite: its Credential Manager has no
+// per-binary ACL (the unsigned binary reads it fine), AND the file backend is
+// unusable there because gog names items "token:default:<email>" with colons,
+// which are illegal in Windows filenames. So Windows keeps Credential Manager;
+// only non-Windows uses the file backend below. See gogEnv().
+//
+// The file backend (macOS/Linux) needs a stable passphrase. We generate one per install and
+// store it beside the token. Anti-feature: it is NOT protected by the OS
+// keyring (avoiding that is the whole point); at-rest security reduces to
+// filesystem permissions — same posture as the FB-token plaintext fallback in
+// workspace.js. Both .keyring-pass and keyring/ live inside <userData>/gog,
+// which backup.js already captures and restores whole, so a connection
+// survives backup/restore.
+let _gogKeyringPass;
+function getGogKeyringPassword() {
+  if (_gogKeyringPass) return _gogKeyringPass;
+  const passFile = path.join(getGogConfigDir(), '.keyring-pass');
+  try {
+    const existing = fs.readFileSync(passFile, 'utf-8').trim();
+    if (existing) return (_gogKeyringPass = existing);
+  } catch {}
+  const pass = crypto.randomBytes(24).toString('hex');
+  try {
+    fs.mkdirSync(getGogConfigDir(), { recursive: true });
+    fs.writeFileSync(passFile, pass, { mode: 0o600 });
+  } catch (e) {
+    // Fail loud, not silent: an unpersisted passphrase means the next launch
+    // regenerates a different one and gog can no longer decrypt this session's
+    // token — exactly the failure we are fixing. Surface it.
+    console.error('[google-api] could NOT persist gog keyring passphrase — Google connection will not survive restart:', e && e.message);
+  }
+  return (_gogKeyringPass = pass);
+}
+
 function gogEnv() {
   const configDir = getGogConfigDir();
   try { fs.mkdirSync(configDir, { recursive: true }); } catch {}
-  return {
+  const env = {
     ...process.env,
     GOG_CONFIG_DIR: configDir,
     GOG_JSON: '1',
     GOG_TIMEZONE: 'Asia/Ho_Chi_Minh',
     GOG_ACCOUNT: getGogAccount(),
   };
+  // Keyring backend is PLATFORM-SPECIFIC. Set AFTER the process.env spread so an
+  // inherited GOG_KEYRING_* can never override the platform choice below.
+  if (process.platform === 'win32') {
+    // Windows: 'auto' (gog picks Credential Manager). gog v0.13.0 accepts ONLY
+    // auto|keychain|file, and on Windows only 'auto' works — verified against the
+    // real binary: 'file' uses colon-delimited filenames illegal on Windows
+    // ("The filename ... syntax is incorrect"), 'keychain' is "not available",
+    // and 'wincred' is rejected as an invalid backend. Credential Manager has no
+    // per-binary ACL, so the unsigned re-downloaded gog reads it fine (the macOS
+    // Keychain problem below does not apply here). No passphrase needed for auto.
+    env.GOG_KEYRING_BACKEND = 'auto';
+  } else {
+    // macOS: the unsigned re-downloaded gog binary loses Keychain ACL access, so
+    // force the encrypted file store ('auto'/'keychain' would pick Keychain and
+    // re-break it). Linux: file store is headless-safe (no secret-service).
+    // Colons in filenames are legal on both. See getGogKeyringPassword().
+    env.GOG_KEYRING_BACKEND = 'file';
+    env.GOG_KEYRING_PASSWORD = getGogKeyringPassword();
+  }
+  return env;
 }
 
 async function gogExec(args, timeoutMs = 15000) {
@@ -228,14 +290,21 @@ async function registerCredentials(clientSecretPath) {
   return gogExec(['auth', 'credentials', clientSecretPath], 10000);
 }
 
+// --force-consent: Google only returns a refresh token on the account's FIRST
+// grant of a client_id; a reconnect without prompt=consent yields an access
+// token but NO refresh token, so gog has nothing durable to store and fails
+// with "refresh token missing". Forcing the consent screen makes Google
+// re-issue a refresh token on every connect, even for an already-granted
+// account (confirmed in gogcli oauth_flow.go: --force-consent → prompt=consent).
+function buildAuthAddArgs(email) {
+  return ['auth', 'add', email, '--services', GOOGLE_SERVICES, '--force-consent'];
+}
+
 async function connectAccount(email) {
   if (_connectInFlight) return _connectInFlight;
   _connectInFlight = (async () => {
     try {
-      const result = await gogSpawnAsync(
-        ['auth', 'add', email, '--services', GOOGLE_SERVICES],
-        120000
-      );
+      const result = await gogSpawnAsync(buildAuthAddArgs(email), 120000);
       saveGogAccount(email);
       return result;
     } finally {
@@ -1132,6 +1201,9 @@ module.exports = {
 };
 
 module.exports._test = {
+  buildAuthAddArgs,
+  getGogKeyringPassword,
+  gogEnv,
   buildUpdateEventArgs,
   buildListEventsArgs,
   buildDeleteEventArgs,
