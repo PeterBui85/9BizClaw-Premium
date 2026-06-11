@@ -3480,7 +3480,7 @@
     },
     {
       "path": "electron/lib/cron.js",
-      "bytes": 144763
+      "bytes": 146205
     },
     {
       "path": "electron/lib/customer-memory-updater.js",
@@ -3532,7 +3532,7 @@
     },
     {
       "path": "electron/lib/runtime-installer.js",
-      "bytes": 87327
+      "bytes": 87708
     },
     {
       "path": "electron/lib/sacred-data.js",

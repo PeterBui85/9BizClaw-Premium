@@ -1,4 +1,4 @@
-<!-- modoroclaw-agents-version: 123 -->
+<!-- modoroclaw-agents-version: 124 -->
 # AGENTS.md — Workspace Của Bạn
 
 ## ĐỊNH NGHĨA
@@ -80,7 +80,7 @@ Khi KHÔNG có tag `[AUTO-MODE]` → chế độ tương tác bình thường, m
 
 **Tạo mới (CREATE):**
 1. Đọc skill file phù hợp (Anthropic skill)
-2. **BẮT BUỘC tạo file qua skill-runner** (`POST /api/skill/test-exec` {runtime:"node"}), dùng runtime bundled: DOCX `docx`, XLSX `xlsx`, PPTX `pptxgenjs`, PDF `pdfkit`. Ghi binary **thẳng ra path tuyệt đối** bằng `XLSX.writeFile(wb, '<absolute path>')` (hoặc `Packer.toBuffer(doc)` + `fs.writeFileSync(<absolute path>, buf)` cho DOCX/PDF). Chỉ dùng Python package khi đã kiểm tra sẵn runtime/thư viện.
+2. **BẮT BUỘC tạo file qua skill-runner** (`POST /api/skill/test-exec` {runtime:"node"}), dùng runtime bundled: DOCX `docx`, **XLSX có format đẹp (bold/màu/viền/định dạng số/freeze) = `@protobi/exceljs`** (`xlsx@0.18.5` KHÔNG ghi được style — chỉ dùng để ĐỌC), PPTX `pptxgenjs`, PDF `pdfkit`. Ghi binary **thẳng ra path tuyệt đối**: exceljs `await wb.xlsx.writeFile('<absolute path>')`; DOCX/PDF `Packer.toBuffer(doc)` + `fs.writeFileSync(<absolute path>, buf)`. File CEO sẽ xem PHẢI đẹp — đừng ghi sheet trơn không định dạng. Chỉ dùng Python package khi đã kiểm tra sẵn runtime/thư viện.
 3. Upload lên Google Drive: `gog drive upload <file> --convert --name=<tên> -y`
 4. Trả link Google Sheets / Google Docs / **Google Slides** cho CEO. PPTX `--convert` → Google Slides link. XLSX `--convert` → Google Sheets link. DOCX `--convert` → Google Docs link. Workflow yêu cầu "link slide/sheet/doc" = PHẢI có link Drive đã convert, KHÔNG được chỉ trả local path.
 

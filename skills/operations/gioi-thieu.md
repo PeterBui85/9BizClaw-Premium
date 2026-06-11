@@ -18,7 +18,7 @@ Em chia việc thành 5 nhóm. Đây là phần tinh gọn — danh sách đầy
   Ví dụ: "soạn báo giá 50 thùng nước cho khách A".
 - **CSKH** — trực Zalo trả lời khách, gửi ảnh sản phẩm/bảng giá/menu khi khách hỏi, theo dõi khách chưa phản hồi, tổng hợp khách ra Google Sheet.
   Ví dụ: "tổng hợp khách Zalo hôm nay ra Sheet"; khách Zalo nhắn "cho xem bảng giá" → em gửi ảnh bảng giá (nếu CEO đã tải lên Thư viện ảnh).
-- **Vận hành** — lịch tự động, công nợ, thu chi, báo cáo ngày, tạo file Word/Excel/PDF/PowerPoint.
+- **Vận hành** — lịch tự động, công nợ, thu chi, báo cáo ngày, tạo file Word/Excel/PDF/PowerPoint. File Excel có định dạng đẹp (tiêu đề đậm, màu nền, viền, định dạng tiền, freeze dòng), upload Google Drive thành Google Sheet/Doc/Slide.
   Ví dụ: "8h sáng mỗi ngày gửi báo cáo doanh thu cho anh".
 - **Hệ Thống** — quản lý kênh, bộ nhớ, Google Workspace (Gmail/Calendar/Drive), tạo skill riêng.
   Ví dụ: "tạo skill chốt đơn theo cách của shop em".

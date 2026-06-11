@@ -51,6 +51,10 @@ const PINNED_DOCUMENT_VERSIONS = {
   docx: '9.6.1',
   pptxgenjs: '4.0.1',
   xlsx: '0.18.5',
+  // @protobi/exceljs: maintained fork, pure-JS xlsx STYLING engine (fills, bold,
+  // borders, fonts, number formats, frozen panes). xlsx@0.18.5 (SheetJS Community)
+  // cannot write cell styles. Scoped name installs to node_modules/@protobi/exceljs.
+  '@protobi/exceljs': '4.4.0-protobi.10',
   pdfkit: '0.18.0',
 };
 
@@ -68,6 +72,7 @@ const PACKAGES = [
   { name: 'docx', version: PINNED_DOCUMENT_VERSIONS.docx },
   { name: 'pptxgenjs', version: PINNED_DOCUMENT_VERSIONS.pptxgenjs },
   { name: 'xlsx', version: PINNED_DOCUMENT_VERSIONS.xlsx },
+  { name: '@protobi/exceljs', version: PINNED_DOCUMENT_VERSIONS['@protobi/exceljs'] },
   { name: 'pdfkit', version: PINNED_DOCUMENT_VERSIONS.pdfkit },
 ];
 

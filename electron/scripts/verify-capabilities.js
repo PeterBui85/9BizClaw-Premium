@@ -68,6 +68,26 @@ async function checkDocs() {
       const f = path.join(tmp, 't.xlsx'); XLSX.writeFile(wb, f);
       const m = magicOf(f); row('XLSX (xlsx)', m.zip ? 'PASS' : 'FAIL', m.zip ? `zip, ${m.size}B` : 'bad magic');
     } catch (e) { row('XLSX (xlsx)', 'FAIL', e.message); }
+    // XLSX styled (@protobi/exceljs — the styling engine; round-trip proves
+    // fills/bold actually persist, which xlsx@0.18.5 cannot do)
+    try {
+      const lib = resolveLib('@protobi/exceljs'); if (!lib) throw new Error('@protobi/exceljs not installed (vendor)');
+      const ExcelJS = require(lib);
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('G');
+      ws.columns = [{ header: 'SP', key: 'sp', width: 12 }, { header: 'Giá', key: 'gia', width: 12 }];
+      const h = ws.getRow(1).getCell(1);
+      h.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } };
+      ws.addRow({ sp: 'Cà phê', gia: 25000 });
+      const f = path.join(tmp, 't-styled.xlsx');
+      await wb.xlsx.writeFile(f);
+      const wb2 = new ExcelJS.Workbook(); await wb2.xlsx.readFile(f);
+      const a1 = wb2.getWorksheet('G').getRow(1).getCell(1);
+      const styled = !!(a1.font && a1.font.bold) && !!(a1.fill && a1.fill.fgColor && a1.fill.fgColor.argb);
+      const m = magicOf(f);
+      row('XLSX-styled (@protobi/exceljs)', (m.zip && styled) ? 'PASS' : 'FAIL', (m.zip && styled) ? `zip+styles persist, ${m.size}B` : (m.zip ? 'zip but styles LOST' : 'bad magic'));
+    } catch (e) { row('XLSX-styled (@protobi/exceljs)', 'FAIL', e.message); }
     // PPTX
     try {
       const lib = resolveLib('pptxgenjs'); if (!lib) throw new Error('pptxgenjs not installed');
