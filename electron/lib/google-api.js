@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const attachmentSecurity = require('./attachment-security');
 
@@ -63,6 +64,44 @@ function saveGogAccount(email) {
   fs.writeFileSync(path.join(dir, 'account.json'), JSON.stringify({ email }));
 }
 
+// gog stores the OAuth refresh token in an OS keyring by default — Windows
+// Credential Manager / macOS Keychain. That path is unreliable for our
+// runtime-downloaded, unsigned gog binary: macOS ties keychain ACLs to the
+// exact binary, so a re-downloaded/updated gog loses access and EVERY read
+// fails with "secret not found in keyring (refresh token missing)" — even
+// after revoking the Google grant or clearing the stale item (confirmed on a
+// customer Mac, 2026-06). We force gog's encrypted *file* backend instead, so
+// the token lives in <userData>/gog/keyring under our control: no OS keyring,
+// no per-binary ACL, identical on Windows and macOS.
+//
+// The file backend needs a stable passphrase. We generate one per install and
+// store it beside the token. Anti-feature: it is NOT protected by the OS
+// keyring (avoiding that is the whole point); at-rest security reduces to
+// filesystem permissions — same posture as the FB-token plaintext fallback in
+// workspace.js. Both .keyring-pass and keyring/ live inside <userData>/gog,
+// which backup.js already captures and restores whole, so a connection
+// survives backup/restore.
+let _gogKeyringPass;
+function getGogKeyringPassword() {
+  if (_gogKeyringPass) return _gogKeyringPass;
+  const passFile = path.join(getGogConfigDir(), '.keyring-pass');
+  try {
+    const existing = fs.readFileSync(passFile, 'utf-8').trim();
+    if (existing) return (_gogKeyringPass = existing);
+  } catch {}
+  const pass = crypto.randomBytes(24).toString('hex');
+  try {
+    fs.mkdirSync(getGogConfigDir(), { recursive: true });
+    fs.writeFileSync(passFile, pass, { mode: 0o600 });
+  } catch (e) {
+    // Fail loud, not silent: an unpersisted passphrase means the next launch
+    // regenerates a different one and gog can no longer decrypt this session's
+    // token — exactly the failure we are fixing. Surface it.
+    console.error('[google-api] could NOT persist gog keyring passphrase — Google connection will not survive restart:', e && e.message);
+  }
+  return (_gogKeyringPass = pass);
+}
+
 function gogEnv() {
   const configDir = getGogConfigDir();
   try { fs.mkdirSync(configDir, { recursive: true }); } catch {}
@@ -72,6 +111,11 @@ function gogEnv() {
     GOG_JSON: '1',
     GOG_TIMEZONE: 'Asia/Ho_Chi_Minh',
     GOG_ACCOUNT: getGogAccount(),
+    // Force the encrypted file token store — never the OS keyring. Set AFTER
+    // the process.env spread so an inherited GOG_KEYRING_* can never override
+    // it and reintroduce the keychain failure. See getGogKeyringPassword().
+    GOG_KEYRING_BACKEND: 'file',
+    GOG_KEYRING_PASSWORD: getGogKeyringPassword(),
   };
 }
 
@@ -228,14 +272,21 @@ async function registerCredentials(clientSecretPath) {
   return gogExec(['auth', 'credentials', clientSecretPath], 10000);
 }
 
+// --force-consent: Google only returns a refresh token on the account's FIRST
+// grant of a client_id; a reconnect without prompt=consent yields an access
+// token but NO refresh token, so gog has nothing durable to store and fails
+// with "refresh token missing". Forcing the consent screen makes Google
+// re-issue a refresh token on every connect, even for an already-granted
+// account (confirmed in gogcli oauth_flow.go: --force-consent → prompt=consent).
+function buildAuthAddArgs(email) {
+  return ['auth', 'add', email, '--services', GOOGLE_SERVICES, '--force-consent'];
+}
+
 async function connectAccount(email) {
   if (_connectInFlight) return _connectInFlight;
   _connectInFlight = (async () => {
     try {
-      const result = await gogSpawnAsync(
-        ['auth', 'add', email, '--services', GOOGLE_SERVICES],
-        120000
-      );
+      const result = await gogSpawnAsync(buildAuthAddArgs(email), 120000);
       saveGogAccount(email);
       return result;
     } finally {
@@ -1132,6 +1183,9 @@ module.exports = {
 };
 
 module.exports._test = {
+  buildAuthAddArgs,
+  getGogKeyringPassword,
+  gogEnv,
   buildUpdateEventArgs,
   buildListEventsArgs,
   buildDeleteEventArgs,

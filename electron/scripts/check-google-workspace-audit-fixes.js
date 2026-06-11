@@ -107,6 +107,44 @@ check('apps script is included in health probe', () => {
   assert(apiSrc.includes("probeService('appscript'"));
 });
 
+// Why these two matter: the OS keyring path (Keychain/Credential Manager) is
+// unreliable for our unsigned, runtime-downloaded gog binary and fails with
+// "secret not found in keyring (refresh token missing)" on customer machines.
+// The fix forces gog's encrypted file token store and forces the Google consent
+// screen so a refresh token is always issued. If either regresses, Google
+// Workspace connect silently breaks again.
+check('gog uses its encrypted file token store, never the OS keyring', () => {
+  const env = googleApi._test.gogEnv();
+  assert.strictEqual(env.GOG_KEYRING_BACKEND, 'file',
+    'gogEnv must force GOG_KEYRING_BACKEND=file (OS keyring is unreliable for the unsigned gog binary)');
+  assert(typeof env.GOG_KEYRING_PASSWORD === 'string' && env.GOG_KEYRING_PASSWORD.length >= 32,
+    'file backend needs a stable, non-empty passphrase or it errors with no TTY');
+  assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_PASSWORD, env.GOG_KEYRING_PASSWORD,
+    'passphrase must be stable across calls, else gog cannot decrypt what an earlier run wrote');
+  // Ordering invariant (behavioral): the forced keys are set AFTER the
+  // ...process.env spread, so a stale inherited GOG_KEYRING_BACKEND — e.g. a
+  // customer-applied workaround — must NOT override our file backend.
+  const prev = process.env.GOG_KEYRING_BACKEND;
+  process.env.GOG_KEYRING_BACKEND = 'wincred';
+  try {
+    assert.strictEqual(googleApi._test.gogEnv().GOG_KEYRING_BACKEND, 'file',
+      'inherited GOG_KEYRING_BACKEND must not override the forced file backend');
+  } finally {
+    if (prev === undefined) delete process.env.GOG_KEYRING_BACKEND;
+    else process.env.GOG_KEYRING_BACKEND = prev;
+  }
+});
+
+check('gog connect forces consent so Google issues a refresh token', () => {
+  const args = googleApi._test.buildAuthAddArgs('ceo@example.com');
+  assert.strictEqual(args[0], 'auth');
+  assert.strictEqual(args[1], 'add');
+  assert.strictEqual(args[2], 'ceo@example.com');
+  assert(args.includes('--services'), 'auth add must request the wrapped services');
+  assert(args.includes('--force-consent'),
+    'auth add must pass --force-consent or a reconnect returns no refresh token');
+});
+
 check('release build paths run smoke before electron-builder', () => {
   assert.strictEqual(packageJson.scripts['build:win'], 'node scripts/build-win.js');
   assert(packageJson.scripts['build:mac'].includes('smoke'));

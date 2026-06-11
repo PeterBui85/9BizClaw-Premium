@@ -4,6 +4,21 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 
 ---
 
+## 2026-06-11 — Mac: Google Workspace không kết nối được — "secret not found in keyring (refresh token missing)"
+
+- **Reporter:** CEO (chuyển tiếp từ khách dùng máy Mac).
+- **Symptom (khách Mac):** Upload OAuth Client JSON, bấm Connect, duyệt trên web → "Authorization received. Finishing…" rồi báo **"Secret not found in keyring (refresh token missing). Run: gog auth add <email>"**. Lúc khởi động app còn hiện popup **hỏi mật khẩu Keychain** dù chưa kết nối gogcli. Khách từng cài bản cũ trước đó. KHÔNG tái hiện trên máy CEO.
+- **Đã thử, KHÔNG được:** (A) revoke quyền tại myaccount.google.com/permissions rồi connect lại; (B) xoá keychain item `gogcli` + reconnect + "Always Allow".
+- **Root cause:** gog (gogcli v0.13.0) lưu refresh token vào **OS keyring** — macOS Keychain. Binary gog là bản tải runtime, **không ký** (unsigned); macOS gắn quyền truy cập Keychain theo *hash binary cụ thể*, nên gog tải lại/đổi bản → mất quyền đọc item cũ (do bản cài cũ tạo) → mọi read trả "secret not found in keyring". Popup Keychain lúc boot = `gog auth status` chạy lúc khởi động chạm Keychain. Vì token không bao giờ ghi/đọc được nên revoke ở Google vô tác dụng. (Bệnh tương tự tồn tại trên Windows: blob > 2560 byte của Credential Manager + 15 scope.)
+- **Fix (`electron/lib/google-api.js`, v2.4.13):**
+  1. **Ép gog dùng file token store mã hoá** thay OS keyring: `gogEnv()` set `GOG_KEYRING_BACKEND=file` + `GOG_KEYRING_PASSWORD` (passphrase random/ một-lần/ một-máy, lưu `<userData>/gog/.keyring-pass`, đã nằm trong backup). Token nằm ở `<userData>/gog/keyring` — không Keychain, không ACL theo binary, giống nhau Win/Mac. Popup Keychain lúc boot cũng biến mất.
+  2. **`--force-consent`** trong `connectAccount()` → Google luôn cấp lại refresh token kể cả tài khoản đã grant trước đó (gogcli: `--force-consent` → `prompt=consent`).
+  - Guard mới trong `check-google-workspace-audit-fixes.js` (chạy trong `smoke`/build). Xác nhận trên binary v0.13.0 thật: cờ + file backend đều chạy. Backup không cần sửa (đã gom cả `userData/gog/`).
+- **Khách phải làm:** cài v2.4.13, mở app → upload lại JSON (nếu cần) → **Connect** → duyệt. Không cần thao tác keychain/CLI nữa.
+- **Status:** FIXED in source (v2.4.13), pending Mac DMG rebuild + ship.
+
+---
+
 ## 2026-06-01 — Mac: app không bật lên (bị kill ngay sau boot)
 
 - **Symptom (khách Mac arm64):** Cài bản mới nhất (2.4.10), mở app → cửa sổ không hiện. Terminal chạy trực tiếp → boot log bình thường cho đến `[boot] cold-start: killing stale gateway on :18789` → `zsh: killed`. `pkill -9` tất cả processes cũng vô ích — chúng lập tức tái xuất.
