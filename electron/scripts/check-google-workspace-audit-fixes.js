@@ -148,6 +148,32 @@ check('gog keyring backend is valid + correct per platform (Windows=auto, else f
   }
 });
 
+check('stale token after keyring move is detected as needs-reconnect (not silently "connected")', () => {
+  assert.strictEqual(typeof googleApi._test.isGogNoAuth, 'function');
+  // The exact string a customer hit on Mac after v2.4.13 moved Keychain -> file.
+  // authStatus must treat this as NOT connected so the UI offers a one-tap
+  // reconnect instead of a "connected" state where every Gmail call fails.
+  const real = 'No auth for gmail le.nuong2307@gmail.com. OAuth (browser flow): gog auth add le.nuong2307@gmail.com --services gmail';
+  assert(googleApi._test.isGogNoAuth(real), 'observed gog no-auth message must be classified as needs-reconnect');
+  assert(googleApi._test.isGogNoAuth('secret not found in keyring (refresh token missing)'), 'Mac Keychain miss must be needs-reconnect');
+  // A genuinely-connected status line must NOT trip the detector (no false reconnect prompt).
+  assert(!googleApi._test.isGogNoAuth('gmail: authorized (token ok)'), 'a healthy status must not be flagged as needs-reconnect');
+});
+
+check('keyring migration uses gog tokens export/import so working users skip reconnect', () => {
+  assert.strictEqual(typeof googleApi._test.buildTokenExportArgs, 'function');
+  assert.strictEqual(typeof googleApi._test.buildTokenImportArgs, 'function');
+  // export reads from the active backend; --overwrite so a stale migrate file can't wedge it.
+  assert.deepStrictEqual(
+    googleApi._test.buildTokenExportArgs('ceo@example.com', '/tmp/t.json'),
+    ['auth', 'tokens', 'export', 'ceo@example.com', '--out', '/tmp/t.json', '--overwrite'],
+    'export args must match gog v0.13.0 CLI (auth tokens export <email> --out <path> --overwrite)');
+  assert.deepStrictEqual(
+    googleApi._test.buildTokenImportArgs('/tmp/t.json'),
+    ['auth', 'tokens', 'import', '/tmp/t.json'],
+    'import args must match gog v0.13.0 CLI (auth tokens import <inPath>)');
+});
+
 check('gog connect forces consent so Google issues a refresh token', () => {
   const args = googleApi._test.buildAuthAddArgs('ceo@example.com');
   assert.strictEqual(args[0], 'auth');

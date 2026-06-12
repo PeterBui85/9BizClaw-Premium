@@ -11978,8 +11978,23 @@
       'People': 'https://console.cloud.google.com/apis/api/people.googleapis.com',
       'Tasks': 'https://console.cloud.google.com/apis/api/tasks.googleapis.com',
     };
+    // Mirror of GOG_NO_AUTH_RE in google-api.js — edit BOTH. After an app update
+    // the Google token store can change, so an account connected on the old version
+    // needs to reconnect ONCE. Show that plainly instead of gog's raw CLI error.
+    const GOOGLE_NO_AUTH_RE = /no auth for|refresh token missing|secret not found in keyring|gog auth add/i;
+    function isGoogleReconnectError(message) {
+      return GOOGLE_NO_AUTH_RE.test(String(message || ''));
+    }
+    function googleReconnectButton() {
+      return '<button class="btn btn-primary btn-small" onclick="reconnectGoogle()" style="margin-top:8px">Kết nối lại Google</button>';
+    }
+    function googleErrorAction(message, service, retryCall) {
+      if (isGoogleReconnectError(message)) return googleReconnectButton();
+      return googleApiEnableButton(message, service) || ('<button class="btn btn-secondary btn-small" onclick="' + retryCall + '">Thử lại</button>');
+    }
     function formatGoogleErrorMessage(message, service) {
       const raw = String(message || '').trim();
+      if (isGoogleReconnectError(raw)) return 'Sau khi cập nhật, Google cần kết nối lại 1 lần để cấp lại quyền. Bấm “Kết nối lại Google” bên dưới — chỉ làm 1 lần.';
       if (/not connected|chưa kết nối|not authenticated/i.test(raw)) return 'Google Workspace chưa kết nối. Mở tab Cài đặt để kết nối lại.';
       if (/invalid_grant|token.*expired|token.*revoked/i.test(raw)) return 'Phiên Google đã hết hạn. Mở tab Cài đặt > Google Workspace > Kết nối lại để cấp quyền mới.';
       if (/has not been used|accessNotConfigured|API has not been used/i.test(raw)) return 'Google API cho ' + service + ' chưa được bật trong Google Cloud.';
@@ -12036,7 +12051,7 @@
             '<span class="row-date">' + esc(dateStr) + '</span></div>';
         }).join('');
       } catch (e) {
-        renderGoogleListState(list, { type: 'error', title: 'Không tải được Gmail', detail: formatGoogleErrorMessage(e.message, 'Gmail'), action: googleApiEnableButton(e.message, 'Gmail') || '<button class="btn btn-secondary btn-small" onclick="loadGmailInbox()">Thử lại</button>' });
+        renderGoogleListState(list, { type: 'error', title: 'Không tải được Gmail', detail: formatGoogleErrorMessage(e.message, 'Gmail'), action: googleErrorAction(e.message, 'Gmail', 'loadGmailInbox()') });
       } finally {
         setBtnLoading(button, false);
       }
@@ -12140,7 +12155,7 @@
             '</div>';
         }).join('');
       } catch (e) {
-        renderGoogleListState(list, { type: 'error', title: 'Không tải được Drive', detail: formatGoogleErrorMessage(e.message, 'Drive'), action: googleApiEnableButton(e.message, 'Drive') || '<button class="btn btn-secondary btn-small" onclick="loadDriveFiles()">Thử lại</button>' });
+        renderGoogleListState(list, { type: 'error', title: 'Không tải được Drive', detail: formatGoogleErrorMessage(e.message, 'Drive'), action: googleErrorAction(e.message, 'Drive', 'loadDriveFiles()') });
       }
     }
 
@@ -12194,7 +12209,7 @@
             '</button>';
         }).join('');
       } catch (e) {
-        renderGoogleListState(box, { type: 'error', compact: true, title: 'Không tải được Docs', detail: formatGoogleErrorMessage(e.message, 'Docs'), action: googleApiEnableButton(e.message, 'Docs') });
+        renderGoogleListState(box, { type: 'error', compact: true, title: 'Không tải được Docs', detail: formatGoogleErrorMessage(e.message, 'Docs'), action: googleErrorAction(e.message, 'Docs', 'loadRecentDocs(false)') });
       }
     }
     async function loadDocInfo() {
@@ -12322,7 +12337,7 @@
         }).join('');
       } catch (e) {
         box.dataset.loaded = '';
-        renderGoogleListState(box, { type: 'error', compact: true, title: 'Không tải được Sheets', detail: formatGoogleErrorMessage(e.message, 'Sheets'), action: googleApiEnableButton(e.message, 'Sheets') });
+        renderGoogleListState(box, { type: 'error', compact: true, title: 'Không tải được Sheets', detail: formatGoogleErrorMessage(e.message, 'Sheets'), action: googleErrorAction(e.message, 'Sheets', 'loadRecentSheets(false)') });
       }
     }
     async function loadSheetMetadata() {
@@ -12488,10 +12503,13 @@
           document.getElementById('gw-connected-section').style.display = '';
         } else {
           dot.style.background = 'var(--text-muted)';
-          txt.textContent = 'Chưa kết nối';
+          txt.textContent = s.needsReconnect ? 'Cần kết nối lại (sau cập nhật)' : 'Chưa kết nối';
           email.textContent = '';
           document.getElementById('gw-setup-section').style.display = '';
           document.getElementById('gw-connected-section').style.display = 'none';
+          // Prefill the previously-connected account so re-consent is one tap.
+          const emailInput = document.getElementById('gw-email');
+          if (emailInput && s.email && !emailInput.value) emailInput.value = s.email;
         }
       } catch (e) {
         console.error('loadGoogleStatus error:', e);
@@ -12551,6 +12569,13 @@
         _connectingGoogle = false;
         if (btn) { btn.disabled = false; btn.textContent = 'Kết nối'; }
       }
+    }
+
+    // One-tap path out of the "needs reconnect after update" state: jump to the
+    // Google settings sub-tab where loadGoogleStatus() shows the Connect screen
+    // with the email prefilled, so the CEO only has to click Kết nối.
+    function reconnectGoogle() {
+      if (typeof switchGwTab === 'function') switchGwTab('settings');
     }
 
     async function disconnectGoogle() {

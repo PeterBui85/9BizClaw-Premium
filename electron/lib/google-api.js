@@ -201,12 +201,12 @@ function normalizeGogArgs(args) {
   return normalized;
 }
 
-function gogSpawnAsync(args, timeoutMs = 120000) {
+function gogSpawnAsync(args, timeoutMs = 120000, envOverride = null) {
   return new Promise((resolve, reject) => {
     let child;
     (async () => {
       const bin = await ensureGogBinaryAvailable();
-      child = spawn(bin, normalizeGogArgs(args), { env: gogEnv(), windowsHide: true });
+      child = spawn(bin, normalizeGogArgs(args), { env: envOverride || gogEnv(), windowsHide: true });
       _activeChildren.add(child);
       let stdout = '', stderr = '';
       let settled = false;
@@ -251,13 +251,87 @@ function cleanupGogProcesses() {
 
 // --- Auth ---
 
-async function authStatus() {
+// gog's own "no usable token" phrasing. A saved account email is NOT proof of a
+// live token: v2.4.13 moved the Mac token store from Keychain → file backend, so
+// every already-connected Mac user keeps their saved email but their token is
+// still in the Keychain — gog reads the empty file store and emits these. Treat
+// them as NOT connected so the UI shows the Connect screen (one-tap re-consent)
+// instead of a "connected" state where every call fails. Mirrored in
+// dashboard.html formatGoogleErrorMessage() — edit BOTH.
+const GOG_NO_AUTH_RE = /no auth for|refresh token missing|secret not found in keyring|not authenticated|gog auth add/i;
+
+function gogReplyText(result) {
+  if (typeof result === 'string') return result;
+  return String(result?.stdout || result?.output || result?.stderr || result?.raw || '');
+}
+
+// One-time best-effort migration after v2.4.13 moved the Mac token store from the
+// OS keyring (Keychain — the pre-v2.4.13 default) to the encrypted file backend.
+// If the old token is still readable from the OS keyring we copy it into the file
+// store via gog's own `auth tokens export|import`, so the user never sees a
+// reconnect. If it isn't readable (the unsigned re-downloaded binary lost its
+// Keychain ACL — the exact cohort the file backend was meant to rescue) we fail
+// quietly and the UI's one-tap reconnect takes over. macOS/Linux only; Windows
+// never changed stores (auto == Credential Manager == old default).
+// gog v0.13.0: `auth tokens export <email> --out <path> --overwrite` reads the
+// refresh token from the ACTIVE keyring backend; `auth tokens import <path>`
+// writes it into the active backend. Backend is selected per-spawn via env.
+function buildTokenExportArgs(email, outPath) {
+  return ['auth', 'tokens', 'export', email, '--out', outPath, '--overwrite'];
+}
+function buildTokenImportArgs(inPath) {
+  return ['auth', 'tokens', 'import', inPath];
+}
+
+let _keyringMigrationDone = false;
+async function migrateKeyringTokenIfNeeded() {
+  if (_keyringMigrationDone || process.platform === 'win32') return false;
+  _keyringMigrationDone = true; // attempt at most once per boot, success or not
+  const email = getGogAccount();
+  if (!email) return false;
+  // Token file holds a refresh token — keep it inside the app-private config dir
+  // and delete it immediately, never the world-readable os.tmpdir().
+  const tokenFile = path.join(getGogConfigDir(), '.keyring-migrate.json');
   try {
-    const result = await gogReadExec(['auth', 'status'], 15000);
-    const email = getGogAccount();
-    return { connected: !!email, email, services: GOOGLE_SERVICES.split(','), raw: result };
-  } catch {
-    return { connected: false, email: '', services: [] };
+    // Read from the OLD store. 'auto' resolves to Keychain on macOS, matching the
+    // pre-fix default that wrote the token. Keychain needs no file passphrase.
+    const srcEnv = { ...gogEnv(), GOG_KEYRING_BACKEND: 'auto' };
+    delete srcEnv.GOG_KEYRING_PASSWORD;
+    await gogSpawnAsync(buildTokenExportArgs(email, tokenFile), 20000, srcEnv);
+    // Write into the NEW file store (gogEnv() already = file + passphrase on Mac).
+    await gogSpawnAsync(buildTokenImportArgs(tokenFile), 20000, gogEnv());
+    console.log('[google-api] migrated Google token from OS keyring → file backend (no reconnect needed)');
+    return true;
+  } catch (e) {
+    console.warn('[google-api] keyring token migration skipped (will fall back to one-tap reconnect):', e && e.message);
+    return false;
+  } finally {
+    try { fs.unlinkSync(tokenFile); } catch {}
+  }
+}
+
+async function authStatus() {
+  const email = getGogAccount();
+  if (!email) return { connected: false, email: '', services: [] };
+  try {
+    let result = await gogReadExec(['auth', 'status'], 15000);
+    // A saved email alone is stale after the keyring backend move; require that
+    // gog does not report a missing/empty token for the account.
+    if (GOG_NO_AUTH_RE.test(gogReplyText(result))) {
+      // Try the silent Keychain→file migration once before asking the user to
+      // reconnect; re-check status if it copied a token across.
+      if (await migrateKeyringTokenIfNeeded()) {
+        result = await gogReadExec(['auth', 'status'], 15000);
+      }
+      if (GOG_NO_AUTH_RE.test(gogReplyText(result))) {
+        return { connected: false, email, services: [], needsReconnect: true };
+      }
+    }
+    return { connected: true, email, services: GOOGLE_SERVICES.split(','), raw: result };
+  } catch (e) {
+    // gog exiting non-zero on a missing token also means not connected. Surface
+    // needsReconnect so the UI can say "reconnect once" rather than "never set up".
+    return { connected: false, email, services: [], needsReconnect: GOG_NO_AUTH_RE.test(gogReplyText(e?.message || e)) };
   }
 }
 
@@ -1204,6 +1278,9 @@ module.exports._test = {
   buildAuthAddArgs,
   getGogKeyringPassword,
   gogEnv,
+  isGogNoAuth: (s) => GOG_NO_AUTH_RE.test(gogReplyText(s)),
+  buildTokenExportArgs,
+  buildTokenImportArgs,
   buildUpdateEventArgs,
   buildListEventsArgs,
   buildDeleteEventArgs,
