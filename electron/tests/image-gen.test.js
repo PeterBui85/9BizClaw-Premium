@@ -228,3 +228,23 @@ describe('callCodexAPIWithFallback — resolution order', () => {
     }
   });
 });
+
+describe('categorizeCodexConnections — plan buckets', () => {
+  const conn = (id, plan) => ({ id, provider: 'codex', isActive: true, providerSpecificData: { chatgptPlanType: plan } });
+
+  test('ChatGPT Pro is eligible (regression: was dropped → "need ChatGPT Plus")', () => {
+    const cat = t.categorizeCodexConnections([conn('cpro', 'pro')]);
+    const all = [...cat.primary, ...cat.free];
+    assert.ok(all.includes('cpro'), 'a ChatGPT Pro account must be a usable image-gen connection, not silently excluded');
+    assert.ok(cat.primary.includes('cpro'), 'Pro is a paid tier → primary');
+  });
+
+  test('every paid tier (plus/team/pro/enterprise) is primary; free/empty is free', () => {
+    const cat = t.categorizeCodexConnections([
+      conn('cplus', 'plus'), conn('cteam', 'team'), conn('cpro', 'pro'),
+      conn('cent', 'enterprise'), conn('cfree', 'free'), conn('cnone', undefined),
+    ]);
+    assert.deepEqual(cat.primary.sort(), ['cent', 'cplus', 'cpro', 'cteam']);
+    assert.deepEqual(cat.free.sort(), ['cfree', 'cnone']);
+  });
+});

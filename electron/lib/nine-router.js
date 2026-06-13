@@ -1030,7 +1030,7 @@ async function detectChatgptPlusOAuth() {
         return conns.some(p => {
           if (p?.provider !== 'codex' || p.isActive === false) return false;
           const plan = String(p.providerSpecificData?.chatgptPlanType || '').toLowerCase();
-          return plan === 'plus' || plan === 'team' ||
+          return (plan && plan !== 'free') ||
             String(p.authType || '').toLowerCase().includes('oauth') ||
             String(p.authType || '').toLowerCase().includes('access_token');
         });
@@ -1052,7 +1052,7 @@ async function detectChatgptPlusOAuth() {
       String(p.authType || '').toLowerCase().includes('oauth') ||
       String(p.authType || '').toLowerCase().includes('access_token') ||
       String(p.label || '').toLowerCase().includes('chatgpt plus') ||
-      ['plus', 'team'].includes(String(p.providerSpecificData?.chatgptPlanType || '').toLowerCase())
+      (s => s && s !== 'free')(String(p.providerSpecificData?.chatgptPlanType || '').toLowerCase())
       )
     );
   } catch { return false; }

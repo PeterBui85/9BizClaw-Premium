@@ -176,15 +176,18 @@ function categorizeCodexConnections(conns) {
     c.provider === 'codex' && c.isActive !== false &&
     typeof c['modelLock_gpt-5.4-image'] !== 'string'
   );
-  const plus = codex.filter(c => c.providerSpecificData?.chatgptPlanType === 'plus');
-  const team = codex.filter(c => c.providerSpecificData?.chatgptPlanType === 'team');
-  const free = codex.filter(c => {
-    const plan = c.providerSpecificData?.chatgptPlanType;
+  // Buckets must be EXHAUSTIVE: every paid tier (plus, pro, team, enterprise, …)
+  // is "primary", only no-plan/free is "free". Enumerating just plus+team
+  // silently dropped ChatGPT Pro accounts (plan='pro' matched no bucket → 0
+  // eligible connections → bogus "need ChatGPT Plus" error). Don't list paid
+  // tiers by name again — anything that isn't free is a usable paid account.
+  const isFree = c => {
+    const plan = String(c.providerSpecificData?.chatgptPlanType || '').toLowerCase();
     return !plan || plan === 'free';
-  });
+  };
   return {
-    primary: [...plus.map(c => c.id), ...team.map(c => c.id)],
-    free: free.map(c => c.id),
+    primary: codex.filter(c => !isFree(c)).map(c => c.id),
+    free: codex.filter(isFree).map(c => c.id),
   };
 }
 
@@ -684,6 +687,7 @@ module.exports = {
     buildCodexRequest,
     isImageToolChoiceUnsupported,
     findImageConnectionId,
+    categorizeCodexConnections,
     codexRootFromBaseUrl,
     readCustom9RouterImageProvider,
     readProviderConnectionsFromSqlite,

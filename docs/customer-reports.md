@@ -4,6 +4,17 @@ Tracking customer-reported issues. Each entry: date, symptom, root cause, fix, s
 
 ---
 
+## 2026-06-13 (hotfix v2.4.14) — Khách dùng acc ChatGPT **Pro** không tạo được ảnh (acc **Plus** thì được)
+
+- **Reporter:** CEO (chuyển tiếp từ khách, đang dùng Mac). CEO nghi đúng: lỗi do **naming** khiến code không nhận ra acc Pro. Khách gửi kèm bằng chứng `"chatgptPlanType": "pro"`.
+- **Symptom:** Acc ChatGPT Plus → tạo ảnh OK. Acc ChatGPT Pro → fail, bot báo "Bạn cần tài khoản ChatGPT Plus … để tạo ảnh" dù máy ĐANG có acc Pro hợp lệ.
+- **Root cause (naming, đúng như CEO đoán):** [image-gen.js](../electron/lib/image-gen.js) `categorizeCodexConnections()` phân loại connection bằng **liệt kê tên gói cứng**: `primary` = chỉ `plus` + `team`; `free` = không-plan hoặc `free`. Acc Pro có `chatgptPlanType === 'pro'` → KHÔNG khớp `plus`/`team` (không vào `primary`) và KHÔNG phải `free` (không vào `free`) → **rơi khỏi cả hai rổ** → `allIds.length === 0` → ném lỗi "cần ChatGPT Plus". Mọi gói trả phí ngoài danh sách (pro, enterprise, business, edu…) đều rớt y vậy.
+- **Fix (v2.4.14):**
+  1. [image-gen.js](../electron/lib/image-gen.js): phân loại **vét cạn** — `free` = không-plan/`free`, `primary` = **mọi gói còn lại** (mọi tier trả phí). Không liệt kê tên gói nữa → không drift lần sau.
+  2. [nine-router.js](../electron/lib/nine-router.js) `detectChatgptPlusOAuth()`: 2 chỗ cũng chỉ nhận `plus`/`team` → đổi thành "có plan và ≠ free", để user Pro được mặc định combo `main` (rẻ, có sẵn ChatGPT) thay vì `fast`.
+  3. Test regression trong [image-gen.test.js](../electron/tests/image-gen.test.js): acc Pro phải eligible + mọi tier trả phí vào `primary`.
+- **Status:** Hotfix sạch tách từ tag v2.4.13 (KHÔNG mang WIP Higgsfield/ffmpeg/tts của branch 2.5.0). Bump 2.4.13 → 2.4.14.
+
 ## 2026-06-11 — Mac: Google Workspace không kết nối được — "secret not found in keyring (refresh token missing)"
 
 - **Reporter:** CEO (chuyển tiếp từ khách dùng máy Mac).

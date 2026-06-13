@@ -3512,7 +3512,7 @@
     },
     {
       "path": "electron/lib/image-gen.js",
-      "bytes": 29153
+      "bytes": 29439
     },
     {
       "path": "electron/lib/knowledge.js",
@@ -3528,7 +3528,7 @@
     },
     {
       "path": "electron/lib/nine-router.js",
-      "bytes": 47439
+      "bytes": 47429
     },
     {
       "path": "electron/lib/runtime-installer.js",
